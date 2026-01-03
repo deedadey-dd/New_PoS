@@ -1,0 +1,224 @@
+{% extends 'base.html' %}
+
+{% block title %}Transfer {{ transfer.transfer_number }} - {{ current_tenant.name }}{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{% url 'transfers:transfer_list' %}">Transfers</a></li>
+            <li class="breadcrumb-item active">{{ transfer.transfer_number }}</li>
+        </ol>
+    </nav>
+    <div class="d-flex justify-content-between align-items-start">
+        <div>
+            <h2 class="mb-1">{{ transfer.transfer_number }}</h2>
+            <p class="text-muted mb-0">{{ transfer.source_location.name }} → {{ transfer.destination_location.name }}
+            </p>
+        </div>
+        <div>
+            <span
+                class="badge fs-6 bg-{% if transfer.status == 'DRAFT' %}secondary{% elif transfer.status == 'SENT' %}primary{% elif transfer.status == 'RECEIVED' %}success{% elif transfer.status == 'PARTIAL' %}warning{% elif transfer.status == 'DISPUTED' %}danger{% elif transfer.status == 'CLOSED' %}dark{% else %}light{% endif %}">
+                {{ transfer.get_status_display }}
+            </span>
+        </div>
+    </div>
+</div>
+
+<!-- Action Buttons -->
+<div class="mb-4">
+    {% if transfer.can_send %}
+    <form action="{% url 'transfers:transfer_send' transfer.pk %}" method="post" class="d-inline">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-success"
+            onclick="return confirm('Send this transfer? Stock will be deducted from source location.')">
+            <i class="bi bi-send me-1"></i>Send Transfer
+        </button>
+    </form>
+    {% endif %}
+
+    {% if transfer.can_receive %}
+    <a href="{% url 'transfers:transfer_receive' transfer.pk %}" class="btn btn-primary">
+        <i class="bi bi-check-circle me-1"></i>Receive Transfer
+    </a>
+    {% endif %}
+
+    {% if transfer.can_dispute %}
+    <a href="{% url 'transfers:transfer_dispute' transfer.pk %}" class="btn btn-warning">
+        <i class="bi bi-exclamation-triangle me-1"></i>Dispute
+    </a>
+    {% endif %}
+
+    {% if transfer.can_close %}
+    <form action="{% url 'transfers:transfer_close' transfer.pk %}" method="post" class="d-inline">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-dark" onclick="return confirm('Close this transfer?')">
+            <i class="bi bi-check2-all me-1"></i>Close Transfer
+        </button>
+    </form>
+    {% endif %}
+
+    {% if transfer.can_cancel %}
+    <form action="{% url 'transfers:transfer_cancel' transfer.pk %}" method="post" class="d-inline">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-outline-danger" onclick="return confirm('Cancel this transfer?')">
+            <i class="bi bi-x-circle me-1"></i>Cancel
+        </button>
+    </form>
+    {% endif %}
+</div>
+
+<div class="row g-4">
+    <!-- Transfer Info -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Transfer Information</h5>
+            </div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-5">Source</dt>
+                    <dd class="col-7">{{ transfer.source_location.name }}</dd>
+
+                    <dt class="col-5">Destination</dt>
+                    <dd class="col-7">{{ transfer.destination_location.name }}</dd>
+
+                    <dt class="col-5">Total Items</dt>
+                    <dd class="col-7">{{ transfer.total_items }}</dd>
+
+                    <dt class="col-5">Requested Qty</dt>
+                    <dd class="col-7">{{ transfer.total_quantity_requested }}</dd>
+
+                    {% if transfer.status != 'DRAFT' %}
+                    <dt class="col-5">Received Qty</dt>
+                    <dd class="col-7">{{ transfer.total_quantity_received }}</dd>
+                    {% endif %}
+                </dl>
+            </div>
+        </div>
+    </div>
+
+    <!-- Timeline -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Timeline</h5>
+            </div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-5">Created</dt>
+                    <dd class="col-7">
+                        {{ transfer.created_at|date:"M d, Y H:i" }}<br>
+                        <small class="text-muted">by {{
+                            transfer.created_by.get_full_name|default:transfer.created_by.email }}</small>
+                    </dd>
+
+                    {% if transfer.sent_at %}
+                    <dt class="col-5">Sent</dt>
+                    <dd class="col-7">
+                        {{ transfer.sent_at|date:"M d, Y H:i" }}<br>
+                        <small class="text-muted">by {{ transfer.sent_by.get_full_name|default:transfer.sent_by.email
+                            }}</small>
+                    </dd>
+                    {% endif %}
+
+                    {% if transfer.received_at %}
+                    <dt class="col-5">Received</dt>
+                    <dd class="col-7">
+                        {{ transfer.received_at|date:"M d, Y H:i" }}<br>
+                        <small class="text-muted">by {{
+                            transfer.received_by.get_full_name|default:transfer.received_by.email }}</small>
+                    </dd>
+                    {% endif %}
+                </dl>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Notes -->
+{% if transfer.notes or transfer.dispute_reason or transfer.resolution_notes %}
+<div class="row g-4 mt-0">
+    {% if transfer.notes %}
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">Notes</h6>
+            </div>
+            <div class="card-body">
+                <p class="mb-0">{{ transfer.notes }}</p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if transfer.dispute_reason %}
+    <div class="col-md-4">
+        <div class="card border-danger">
+            <div class="card-header bg-danger bg-opacity-10">
+                <h6 class="mb-0 text-danger">Dispute Reason</h6>
+            </div>
+            <div class="card-body">
+                <p class="mb-0">{{ transfer.dispute_reason }}</p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if transfer.resolution_notes %}
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">Resolution</h6>
+            </div>
+            <div class="card-body">
+                <p class="mb-0">{{ transfer.resolution_notes }}</p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+<!-- Items -->
+<div class="card mt-4">
+    <div class="card-header">
+        <h5 class="mb-0">Transfer Items</h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Product</th>
+                        <th>Batch</th>
+                        <th class="text-end">Requested</th>
+                        <th class="text-end">Sent</th>
+                        <th class="text-end">Received</th>
+                        <th class="text-end">Unit Cost</th>
+                        <th class="text-end">Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in transfer.items.all %}
+                    <tr class="{% if item.discrepancy != 0 and transfer.status != 'DRAFT' %}table-warning{% endif %}">
+                        <td>{{ item.product.name }}</td>
+                        <td>{{ item.batch.batch_number|default:"-" }}</td>
+                        <td class="text-end">{{ item.quantity_requested }}</td>
+                        <td class="text-end">{{ item.quantity_sent }}</td>
+                        <td class="text-end">
+                            {{ item.quantity_received }}
+                            {% if item.discrepancy != 0 and transfer.status != 'DRAFT' %}
+                            <span class="badge bg-warning text-dark">-{{ item.discrepancy }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">{{ currency_symbol }}{{ item.unit_cost }}</td>
+                        <td class="text-end">{{ currency_symbol }}{{ item.total_cost }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

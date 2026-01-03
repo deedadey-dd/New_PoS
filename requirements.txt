@@ -1,0 +1,11 @@
+# Django Multi-Store POS System
+Django==6.0
+psycopg2-binary==2.9.11
+python-dotenv==1.2.1
+Pillow==12.1.0
+
+# Development
+django-debug-toolbar==4.4.6
+
+# For offline support and API
+django-pwa==1.1.0

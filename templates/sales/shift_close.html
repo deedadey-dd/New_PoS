@@ -1,0 +1,72 @@
+{% extends 'base.html' %}
+
+{% block title %}Close Shift{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+        <div class="card shadow">
+            <div class="card-header bg-warning">
+                <h4 class="mb-0"><i class="bi bi-clock-history me-2"></i>Close Shift</h4>
+            </div>
+            <div class="card-body">
+                <!-- Shift Summary -->
+                <div class="row mb-4">
+                    <div class="col-6">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <h6 class="text-muted">Opening Cash</h6>
+                                <h3>{{ current_tenant.currency.symbol|default:'$' }}{{ shift.opening_cash }}</h3>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <h6 class="text-muted">Cash Sales</h6>
+                                <h3 class="text-success">{{ current_tenant.currency.symbol|default:'$' }}{{ total_sales
+                                    }}</h3>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="alert alert-info">
+                    <strong>Expected Cash:</strong>
+                    <span class="h4">{{ current_tenant.currency.symbol|default:'$' }}{{ expected_cash }}</span>
+                    <small class="d-block mt-1">(Opening + Cash Sales)</small>
+                </div>
+
+                <form method="post">
+                    {% csrf_token %}
+
+                    <div class="mb-3">
+                        <label for="closing_cash" class="form-label">Actual Closing Cash</label>
+                        <div class="input-group input-group-lg">
+                            <span class="input-group-text">{{ current_tenant.currency.symbol|default:'$' }}</span>
+                            <input type="number" class="form-control" id="closing_cash" name="closing_cash"
+                                value="{{ expected_cash }}" step="0.01" min="0" required>
+                        </div>
+                        <div class="form-text">Count the cash in your drawer and enter the total amount.</div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="notes" class="form-label">Notes (Optional)</label>
+                        <textarea class="form-control" id="notes" name="notes" rows="2"
+                            placeholder="Any notes about this shift..."></textarea>
+                    </div>
+
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-danger btn-lg">
+                            <i class="bi bi-stop-circle me-2"></i>Close Shift
+                        </button>
+                        <a href="{% url 'sales:pos' %}" class="btn btn-outline-secondary">
+                            Back to POS
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

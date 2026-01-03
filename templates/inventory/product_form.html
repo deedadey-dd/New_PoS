@@ -1,0 +1,103 @@
+{% extends 'base.html' %}
+
+{% block title %}{% if object %}Edit{% else %}Add{% endif %} Product - {{ current_tenant.name }}{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{% url 'inventory:product_list' %}">Products</a></li>
+            <li class="breadcrumb-item active">{% if object %}Edit{% else %}Add{% endif %}</li>
+        </ol>
+    </nav>
+    <h2 class="mb-1">{% if object %}Edit Product{% else %}Add New Product{% endif %}</h2>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-body">
+                <form method="post" enctype="multipart/form-data" class="needs-validation" novalidate>
+                    {% csrf_token %}
+
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label for="id_sku" class="form-label">SKU/Barcode <span
+                                    class="text-danger">*</span></label>
+                            {{ form.sku }}
+                            {% if form.sku.errors %}
+                            <div class="invalid-feedback d-block">{% for e in form.sku.errors %}{{ e }}{% endfor %}
+                            </div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-8 mb-3">
+                            <label for="id_name" class="form-label">Product Name <span
+                                    class="text-danger">*</span></label>
+                            {{ form.name }}
+                            {% if form.name.errors %}
+                            <div class="invalid-feedback d-block">{% for e in form.name.errors %}{{ e }}{% endfor %}
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="id_description" class="form-label">Description</label>
+                        {{ form.description }}
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="id_category" class="form-label">Category</label>
+                            {{ form.category }}
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="id_unit_of_measure" class="form-label">Unit of Measure <span
+                                    class="text-danger">*</span></label>
+                            {{ form.unit_of_measure }}
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="id_default_selling_price" class="form-label">Default Selling Price <span
+                                    class="text-danger">*</span></label>
+                            <div class="input-group">
+                                <span class="input-group-text">{{ currency_symbol }}</span>
+                                {{ form.default_selling_price }}
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="id_reorder_level" class="form-label">Reorder Level</label>
+                            {{ form.reorder_level }}
+                            <div class="form-text">Alert when stock falls below this level</div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="id_image" class="form-label">Product Image</label>
+                        {{ form.image }}
+                    </div>
+
+                    {% if object %}
+                    <div class="mb-3">
+                        <div class="form-check">
+                            {{ form.is_active }}
+                            <label class="form-check-label" for="id_is_active">Active</label>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-circle me-2"></i>{% if object %}Update{% else %}Create{% endif %}
+                            Product
+                        </button>
+                        <a href="{% url 'inventory:product_list' %}" class="btn btn-outline-secondary">Cancel</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

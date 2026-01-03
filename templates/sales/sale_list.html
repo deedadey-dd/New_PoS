@@ -1,0 +1,111 @@
+{% extends 'base.html' %}
+
+{% block title %}Sales History{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1">Sales History</h2>
+        <p class="text-muted mb-0">View and manage sales transactions</p>
+    </div>
+    <a href="{% url 'sales:pos' %}" class="btn btn-primary">
+        <i class="bi bi-shop me-2"></i>Open POS
+    </a>
+</div>
+
+<!-- Filters -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-4">
+                <select name="status" class="form-select">
+                    <option value="">All Statuses</option>
+                    <option value="COMPLETED" {% if request.GET.status=='COMPLETED' %}selected{% endif %}>Completed
+                    </option>
+                    <option value="VOIDED" {% if request.GET.status=='VOIDED' %}selected{% endif %}>Voided</option>
+                    <option value="PENDING" {% if request.GET.status=='PENDING' %}selected{% endif %}>Pending</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <button type="submit" class="btn btn-outline-primary">Filter</button>
+                <a href="{% url 'sales:sale_list' %}" class="btn btn-outline-secondary">Clear</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        {% if sales %}
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Sale #</th>
+                        <th>Date</th>
+                        <th>Shop</th>
+                        <th>Attendant</th>
+                        <th>Payment</th>
+                        <th>Total</th>
+                        <th>Status</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for sale in sales %}
+                    <tr>
+                        <td>
+                            <a href="{% url 'sales:sale_receipt' sale.pk %}" class="fw-bold text-decoration-none">
+                                {{ sale.sale_number }}
+                            </a>
+                        </td>
+                        <td>{{ sale.created_at|date:"M d, Y H:i" }}</td>
+                        <td>{{ sale.shop.name }}</td>
+                        <td>{{ sale.attendant.get_full_name|default:sale.attendant.email }}</td>
+                        <td>
+                            {% if sale.payment_method == 'CASH' %}
+                            <span class="badge bg-success">Cash</span>
+                            {% elif sale.payment_method == 'ECASH' %}
+                            <span class="badge bg-primary">E-Cash</span>
+                            {% elif sale.payment_method == 'CREDIT' %}
+                            <span class="badge bg-warning">Credit</span>
+                            {% else %}
+                            <span class="badge bg-secondary">{{ sale.get_payment_method_display }}</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ current_tenant.currency.symbol|default:'$' }}{{ sale.total }}</td>
+                        <td>
+                            {% if sale.status == 'COMPLETED' %}
+                            <span class="badge bg-success">Completed</span>
+                            {% elif sale.status == 'VOIDED' %}
+                            <span class="badge bg-danger">Voided</span>
+                            {% elif sale.status == 'PENDING' %}
+                            <span class="badge bg-warning">Pending</span>
+                            {% else %}
+                            <span class="badge bg-secondary">{{ sale.get_status_display }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">
+                            <a href="{% url 'sales:sale_receipt' sale.pk %}" class="btn btn-sm btn-outline-info"
+                                target="_blank">
+                                <i class="bi bi-receipt"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5">
+            <i class="bi bi-receipt display-1 text-muted"></i>
+            <h4 class="mt-3">No Sales Yet</h4>
+            <p class="text-muted">Sales will appear here once you start using the POS.</p>
+            <a href="{% url 'sales:pos' %}" class="btn btn-primary">
+                <i class="bi bi-shop me-2"></i>Open POS
+            </a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,70 @@
+{% extends 'base.html' %}
+
+{% block title %}Stock Adjustment - {{ current_tenant.name }}{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{% url 'inventory:stock_overview' %}">Stock</a></li>
+            <li class="breadcrumb-item active">Adjustment</li>
+        </ol>
+    </nav>
+    <h2 class="mb-1">Stock Adjustment</h2>
+    <p class="text-muted">Record inventory adjustments or write-offs</p>
+</div>
+
+<div class="row">
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-body">
+                <form method="post" class="needs-validation" novalidate>
+                    {% csrf_token %}
+
+                    <div class="mb-3">
+                        <label for="id_product" class="form-label">Product <span class="text-danger">*</span></label>
+                        {{ form.product }}
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="id_location" class="form-label">Location <span class="text-danger">*</span></label>
+                        {{ form.location }}
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="id_batch" class="form-label">Batch (Optional)</label>
+                        {{ form.batch }}
+                        <div class="form-text">Leave empty for general adjustment</div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="id_adjustment_type" class="form-label">Type <span
+                                    class="text-danger">*</span></label>
+                            {{ form.adjustment_type }}
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="id_quantity" class="form-label">Quantity <span
+                                    class="text-danger">*</span></label>
+                            {{ form.quantity }}
+                            <div class="form-text">Positive to add, negative to remove</div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="id_reason" class="form-label">Reason <span class="text-danger">*</span></label>
+                        {{ form.reason }}
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-circle me-2"></i>Record Adjustment
+                        </button>
+                        <a href="{% url 'inventory:stock_overview' %}" class="btn btn-outline-secondary">Cancel</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,72 @@
+{% extends 'base.html' %}
+
+{% block title %}Receive Transfer {{ transfer.transfer_number }} - {{ current_tenant.name }}{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{% url 'transfers:transfer_list' %}">Transfers</a></li>
+            <li class="breadcrumb-item"><a href="{% url 'transfers:transfer_detail' transfer.pk %}">{{
+                    transfer.transfer_number }}</a></li>
+            <li class="breadcrumb-item active">Receive</li>
+        </ol>
+    </nav>
+    <h2 class="mb-1">Receive Transfer</h2>
+    <p class="text-muted">{{ transfer.transfer_number }} from {{ transfer.source_location.name }}</p>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Confirm Received Quantities</h5>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+
+                    <div class="table-responsive">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Product</th>
+                                    <th>Batch</th>
+                                    <th class="text-end">Sent</th>
+                                    <th class="text-end">Received</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in transfer.items.all %}
+                                <tr>
+                                    <td>{{ item.product.name }}</td>
+                                    <td>{{ item.batch.batch_number|default:"-" }}</td>
+                                    <td class="text-end">{{ item.quantity_sent }}</td>
+                                    <td class="text-end" style="width: 150px;">
+                                        {{ form|lookup:item.pk }}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        Enter the actual quantity received for each item. If quantities don't match, the transfer will
+                        be marked as "Partially Received".
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-circle me-2"></i>Confirm Receipt
+                        </button>
+                        <a href="{% url 'transfers:transfer_detail' transfer.pk %}"
+                            class="btn btn-outline-secondary">Cancel</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,113 @@
+{% extends 'base.html' %}
+
+{% block title %}Transfers - {{ current_tenant.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1">Stock Transfers</h2>
+        <p class="text-muted mb-0">Manage transfers between locations</p>
+    </div>
+    <a href="{% url 'transfers:transfer_create' %}" class="btn btn-primary">
+        <i class="bi bi-plus-circle me-2"></i>New Transfer
+    </a>
+</div>
+
+<!-- Filters -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-4">
+                <select name="status" class="form-select">
+                    <option value="">All Statuses</option>
+                    {% for code, label in status_choices %}
+                    <option value="{{ code }}" {% if request.GET.status == code %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-4">
+                <select name="location" class="form-select">
+                    <option value="">All Locations</option>
+                    {% for loc in locations %}
+                    <option value="{{ loc.pk }}" {% if request.GET.location == loc.pk|stringformat:"i" %}selected{% endif %}>{{ loc.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-4">
+                <button type="submit" class="btn btn-outline-primary">Filter</button>
+                <a href="{% url 'transfers:transfer_list' %}" class="btn btn-outline-secondary">Clear</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        {% if transfers %}
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Transfer #</th>
+                        <th>From</th>
+                        <th>To</th>
+                        <th>Items</th>
+                        <th>Status</th>
+                        <th>Created</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for transfer in transfers %}
+                    <tr>
+                        <td>
+                            <a href="{% url 'transfers:transfer_detail' transfer.pk %}"
+                                class="fw-bold text-decoration-none">
+                                {{ transfer.transfer_number }}
+                            </a>
+                        </td>
+                        <td>{{ transfer.source_location.name }}</td>
+                        <td>{{ transfer.destination_location.name }}</td>
+                        <td>{{ transfer.total_items }}</td>
+                        <td>
+                            {% if transfer.status == 'DRAFT' %}
+                            <span class="badge bg-secondary">Draft</span>
+                            {% elif transfer.status == 'SENT' %}
+                            <span class="badge bg-primary">Sent</span>
+                            {% elif transfer.status == 'RECEIVED' %}
+                            <span class="badge bg-success">Received</span>
+                            {% elif transfer.status == 'PARTIAL' %}
+                            <span class="badge bg-warning">Partial</span>
+                            {% elif transfer.status == 'DISPUTED' %}
+                            <span class="badge bg-danger">Disputed</span>
+                            {% elif transfer.status == 'CLOSED' %}
+                            <span class="badge bg-dark">Closed</span>
+                            {% else %}
+                            <span class="badge bg-light text-dark">{{ transfer.get_status_display }}</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ transfer.created_at|date:"M d, Y" }}</td>
+                        <td class="text-end">
+                            <a href="{% url 'transfers:transfer_detail' transfer.pk %}"
+                                class="btn btn-sm btn-outline-info">
+                                <i class="bi bi-eye"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5">
+            <i class="bi bi-arrow-left-right display-1 text-muted"></i>
+            <h4 class="mt-3">No Transfers Yet</h4>
+            <p class="text-muted">Create a transfer to move stock between locations.</p>
+            <a href="{% url 'transfers:transfer_create' %}" class="btn btn-primary">
+                <i class="bi bi-plus-circle me-2"></i>New Transfer
+            </a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

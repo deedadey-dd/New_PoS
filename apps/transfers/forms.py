@@ -1,0 +1,188 @@
+"""
+Forms for the transfers app.
+"""
+from django import forms
+from django.forms import inlineformset_factory
+from decimal import Decimal
+
+from .models import Transfer, TransferItem
+from apps.core.models import Location
+from apps.inventory.models import Product, Batch
+
+
+class TransferForm(forms.ModelForm):
+    """Form for creating/editing transfers."""
+    
+    # Transfer direction rules by location type:
+    # PRODUCTION → STORES only
+    # STORES → SHOP or PRODUCTION
+    # SHOP → STORES only (cannot transfer to other shops)
+    
+    TRANSFER_RULES = {
+        'PRODUCTION': ['STORES'],      # Production can only transfer to Stores
+        'STORES': ['SHOP', 'PRODUCTION'],  # Stores can transfer to Shops or back to Production
+        'SHOP': ['STORES'],            # Shop can only transfer back to Stores
+    }
+    
+    class Meta:
+        model = Transfer
+        fields = ['source_location', 'destination_location', 'notes']
+        widgets = {
+            'source_location': forms.Select(attrs={'class': 'form-select'}),
+            'destination_location': forms.Select(attrs={'class': 'form-select'}),
+            'notes': forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
+        }
+    
+    def __init__(self, *args, tenant=None, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.tenant = tenant
+        self.user = user
+        
+        if tenant:
+            # Filter locations by tenant
+            self.fields['source_location'].queryset = Location.objects.filter(
+                tenant=tenant, is_active=True
+            )
+            self.fields['destination_location'].queryset = Location.objects.filter(
+                tenant=tenant, is_active=True
+            )
+        
+        # Pre-populate and filter based on user's location
+        if user and user.location and not self.instance.pk:
+            source_location = user.location
+            self.initial['source_location'] = source_location.pk
+            
+            # Get allowed destination types based on source location type
+            source_type = source_location.location_type
+            allowed_dest_types = self.TRANSFER_RULES.get(source_type, [])
+            
+            # Filter destinations to valid types only
+            if tenant and allowed_dest_types:
+                valid_destinations = Location.objects.filter(
+                    tenant=tenant, 
+                    is_active=True,
+                    location_type__in=allowed_dest_types
+                ).exclude(pk=source_location.pk)
+                
+                self.fields['destination_location'].queryset = valid_destinations
+                
+                # Pre-select first valid destination if only one exists
+                if valid_destinations.count() == 1:
+                    self.initial['destination_location'] = valid_destinations.first().pk
+    
+    def clean(self):
+        cleaned_data = super().clean()
+        source = cleaned_data.get('source_location')
+        destination = cleaned_data.get('destination_location')
+        
+        if source and destination:
+            if source == destination:
+                raise forms.ValidationError("Source and destination locations must be different.")
+            
+            # Validate transfer direction
+            allowed_dest_types = self.TRANSFER_RULES.get(source.location_type, [])
+            if destination.location_type not in allowed_dest_types:
+                allowed_names = ', '.join(allowed_dest_types) or 'none'
+                raise forms.ValidationError(
+                    f"Transfers from {source.location_type} can only go to: {allowed_names}. "
+                    f"Cannot transfer to {destination.location_type}."
+                )
+        
+        return cleaned_data
+
+
+class TransferItemForm(forms.ModelForm):
+    """Form for transfer items."""
+    
+    class Meta:
+        model = TransferItem
+        fields = ['product', 'batch', 'quantity_requested', 'unit_cost', 'notes']
+        widgets = {
+            'product': forms.Select(attrs={'class': 'form-select product-select'}),
+            'batch': forms.Select(attrs={'class': 'form-select batch-select'}),
+            'quantity_requested': forms.NumberInput(attrs={'class': 'form-control', 'min': '0.01', 'step': '0.01'}),
+            'unit_cost': forms.NumberInput(attrs={'class': 'form-control', 'min': '0', 'step': '0.01', 'placeholder': 'Auto from batch'}),
+            'notes': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Optional notes'}),
+        }
+    
+    def __init__(self, *args, tenant=None, source_location=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Make unit_cost optional - will be set from batch if not provided
+        self.fields['unit_cost'].required = False
+        self.fields['batch'].required = False
+        
+        if tenant:
+            self.fields['product'].queryset = Product.objects.filter(
+                tenant=tenant, is_active=True
+            )
+            # Initially empty - will be populated by JavaScript based on product selection
+            self.fields['batch'].queryset = Batch.objects.none()
+        
+        if source_location:
+            # Filter batches by source location if provided
+            self.fields['batch'].queryset = Batch.objects.filter(
+                tenant=tenant,
+                location=source_location,
+                status='AVAILABLE',
+                current_quantity__gt=0
+            )
+
+
+# Formset for transfer items - start with 1 empty row
+TransferItemFormSet = inlineformset_factory(
+    Transfer,
+    TransferItem,
+    form=TransferItemForm,
+    extra=0,  # Start with 0 extra, we add 1 in the view
+    can_delete=True,
+    min_num=1,
+    validate_min=True,
+)
+
+
+class TransferReceiveForm(forms.Form):
+    """Form for receiving transfer items."""
+    
+    def __init__(self, *args, transfer=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        if transfer:
+            for item in transfer.items.all():
+                self.fields[f'received_{item.pk}'] = forms.DecimalField(
+                    label=f"{item.product.name}",
+                    initial=item.quantity_sent,
+                    min_value=Decimal('0'),
+                    max_value=item.quantity_sent,
+                    widget=forms.NumberInput(attrs={
+                        'class': 'form-control',
+                        'min': '0',
+                        'max': str(item.quantity_sent),
+                        'step': '0.01'
+                    })
+                )
+
+
+class TransferDisputeForm(forms.Form):
+    """Form for disputing a transfer."""
+    
+    dispute_reason = forms.CharField(
+        widget=forms.Textarea(attrs={
+            'class': 'form-control',
+            'rows': 4,
+            'placeholder': 'Describe the reason for the dispute...'
+        }),
+        min_length=10
+    )
+
+
+class TransferCloseForm(forms.Form):
+    """Form for closing a transfer."""
+    
+    resolution_notes = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={
+            'class': 'form-control',
+            'rows': 3,
+            'placeholder': 'Resolution notes (optional)...'
+        })
+    )

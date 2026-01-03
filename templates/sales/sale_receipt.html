@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Receipt - {{ sale.sale_number }}</title>
+    <style>
+        /* Thermal receipt styles (80mm width = ~300px at 96dpi) */
+        @page {
+            size: 80mm auto;
+            margin: 5mm;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            line-height: 1.4;
+            margin: 0;
+            padding: 10px;
+
+                {
+                % if shop_settings.receipt_printer_type=='THERMAL_80MM' %
+            }
+
+            width: 280px;
+
+                {
+                % elif shop_settings.receipt_printer_type=='THERMAL_58MM' %
+            }
+
+            width: 200px;
+            font-size: 10px;
+
+                {
+                % else %
+            }
+
+            max-width: 400px;
+            margin: 0 auto;
+
+                {
+                % endif %
+            }
+        }
+
+        .receipt-header {
+            text-align: center;
+            margin-bottom: 15px;
+            border-bottom: 1px dashed #000;
+            padding-bottom: 10px;
+        }
+
+        .receipt-header h1 {
+            font-size: 16px;
+            margin: 0 0 5px;
+        }
+
+        .receipt-header p {
+            margin: 2px 0;
+            font-size: 11px;
+        }
+
+        .receipt-info {
+            margin-bottom: 10px;
+            font-size: 11px;
+        }
+
+        .receipt-info table {
+            width: 100%;
+        }
+
+        .receipt-info td {
+            padding: 1px 0;
+        }
+
+        .receipt-items {
+            border-top: 1px dashed #000;
+            border-bottom: 1px dashed #000;
+            padding: 10px 0;
+        }
+
+        .receipt-items table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .receipt-items th {
+            text-align: left;
+            border-bottom: 1px solid #000;
+            padding-bottom: 3px;
+            font-size: 11px;
+        }
+
+        .receipt-items td {
+            padding: 3px 0;
+            vertical-align: top;
+        }
+
+        .item-name {
+            max-width: 140px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .text-right {
+            text-align: right;
+        }
+
+        .receipt-totals {
+            padding: 10px 0;
+            border-bottom: 1px dashed #000;
+        }
+
+        .totals-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 2px 0;
+        }
+
+        .totals-row.total {
+            font-weight: bold;
+            font-size: 14px;
+            border-top: 1px solid #000;
+            margin-top: 5px;
+            padding-top: 5px;
+        }
+
+        .receipt-payment {
+            margin: 10px 0;
+        }
+
+        .receipt-footer {
+            text-align: center;
+            margin-top: 15px;
+            font-size: 11px;
+        }
+
+        .receipt-footer p {
+            margin: 5px 0;
+        }
+
+        .barcode {
+            text-align: center;
+            margin: 15px 0;
+            font-family: 'Libre Barcode 39', monospace;
+            font-size: 36px;
+        }
+
+        @media print {
+            body {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+
+            .no-print {
+                display: none;
+            }
+        }
+
+        .print-btn {
+            display: block;
+            margin: 20px auto;
+            padding: 10px 30px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="receipt-header">
+        {% if shop_settings.receipt_header %}
+        <p>{{ shop_settings.receipt_header|linebreaksbr }}</p>
+        {% else %}
+        <h1>{{ sale.shop.name }}</h1>
+        <p>{{ sale.tenant.name }}</p>
+        {% endif %}
+    </div>
+
+    <div class="receipt-info">
+        <table>
+            <tr>
+                <td>Receipt #:</td>
+                <td class="text-right"><strong>{{ sale.sale_number }}</strong></td>
+            </tr>
+            <tr>
+                <td>Date:</td>
+                <td class="text-right">{{ sale.created_at|date:"d/m/Y H:i" }}</td>
+            </tr>
+            <tr>
+                <td>Cashier:</td>
+                <td class="text-right">{{ sale.attendant.get_full_name|default:sale.attendant.email }}</td>
+            </tr>
+            {% if sale.payment_method %}
+            <tr>
+                <td>Payment:</td>
+                <td class="text-right">{{ sale.get_payment_method_display }}</td>
+            </tr>
+            {% endif %}
+        </table>
+    </div>
+
+    <div class="receipt-items">
+        <table>
+            <thead>
+                <tr>
+                    <th>Item</th>
+                    <th class="text-right">Qty</th>
+                    <th class="text-right">Price</th>
+                    <th class="text-right">Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in sale.items.all %}
+                <tr>
+                    <td class="item-name">{{ item.product.name }}</td>
+                    <td class="text-right">{{ item.quantity }}</td>
+                    <td class="text-right">{{ item.unit_price }}</td>
+                    <td class="text-right">{{ item.total }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="receipt-totals">
+        <div class="totals-row">
+            <span>Subtotal:</span>
+            <span>{{ sale.subtotal }}</span>
+        </div>
+        {% if sale.discount_amount %}
+        <div class="totals-row">
+            <span>Discount:</span>
+            <span>-{{ sale.discount_amount }}</span>
+        </div>
+        {% endif %}
+        {% if sale.tax_amount %}
+        <div class="totals-row">
+            <span>Tax:</span>
+            <span>{{ sale.tax_amount }}</span>
+        </div>
+        {% endif %}
+        <div class="totals-row total">
+            <span>TOTAL:</span>
+            <span>{{ sale.total }}</span>
+        </div>
+    </div>
+
+    <div class="receipt-payment">
+        <div class="totals-row">
+            <span>Amount Paid:</span>
+            <span>{{ sale.amount_paid }}</span>
+        </div>
+        {% if sale.change_given %}
+        <div class="totals-row">
+            <span>Change:</span>
+            <span>{{ sale.change_given }}</span>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="receipt-footer">
+        {% if shop_settings.receipt_footer %}
+        <p>{{ shop_settings.receipt_footer|linebreaksbr }}</p>
+        {% else %}
+        <p>Thank you for your purchase!</p>
+        <p>Please come again</p>
+        {% endif %}
+
+        <div class="barcode">*{{ sale.sale_number }}*</div>
+    </div>
+
+    <button class="print-btn no-print" onclick="window.print()">
+        🖨️ Print Receipt
+    </button>
+</body>
+
+</html>

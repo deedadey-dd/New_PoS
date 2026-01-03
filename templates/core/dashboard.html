@@ -1,0 +1,151 @@
+{% extends 'base.html' %}
+
+{% block title %}Dashboard - {{ current_tenant.name|default:"POS System" }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1">Dashboard</h2>
+        <p class="text-muted mb-0">Welcome back, {{ user.get_full_name|default:user.email }}</p>
+    </div>
+</div>
+
+<!-- Stats Cards -->
+<div class="row g-4 mb-4">
+    <div class="col-md-6 col-lg-3">
+        <div class="card stat-card">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="stat-value text-primary">{{ total_locations|default:0 }}</div>
+                    <div class="stat-label">Total Locations</div>
+                </div>
+                <div class="stat-icon bg-primary bg-opacity-10 text-primary">
+                    <i class="bi bi-geo-alt"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6 col-lg-3">
+        <div class="card stat-card">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="stat-value text-success">{{ total_shops|default:0 }}</div>
+                    <div class="stat-label">Active Shops</div>
+                </div>
+                <div class="stat-icon bg-success bg-opacity-10 text-success">
+                    <i class="bi bi-shop"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6 col-lg-3">
+        <div class="card stat-card">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="stat-value text-info">{{ total_users|default:0 }}</div>
+                    <div class="stat-label">Total Users</div>
+                </div>
+                <div class="stat-icon bg-info bg-opacity-10 text-info">
+                    <i class="bi bi-people"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6 col-lg-3">
+        <div class="card stat-card">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="stat-value text-warning">{{ currency_symbol }}0.00</div>
+                    <div class="stat-label">Today's Sales</div>
+                </div>
+                <div class="stat-icon bg-warning bg-opacity-10 text-warning">
+                    <i class="bi bi-cash-stack"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Actions -->
+{% if user.role.name == 'ADMIN' %}
+<div class="row g-4 mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Quick Actions</h5>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <a href="{% url 'core:location_create' %}" class="btn btn-outline-primary w-100 py-3">
+                            <i class="bi bi-plus-circle me-2"></i>Add Location
+                        </a>
+                    </div>
+                    <div class="col-md-3">
+                        <a href="{% url 'core:user_create' %}" class="btn btn-outline-success w-100 py-3">
+                            <i class="bi bi-person-plus me-2"></i>Add User
+                        </a>
+                    </div>
+                    <div class="col-md-3">
+                        <a href="#" class="btn btn-outline-info w-100 py-3">
+                            <i class="bi bi-box-seam me-2"></i>Add Product
+                        </a>
+                    </div>
+                    <div class="col-md-3">
+                        <a href="#" class="btn btn-outline-secondary w-100 py-3">
+                            <i class="bi bi-graph-up me-2"></i>View Reports
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Locations Overview -->
+{% if locations_by_type %}
+<div class="row g-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Locations Overview</h5>
+                <a href="{% url 'core:location_list' %}" class="btn btn-sm btn-primary">View All</a>
+            </div>
+            <div class="card-body">
+                <ul class="list-group list-group-flush">
+                    {% for loc in locations_by_type %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <span>
+                            {% if loc.location_type == 'PRODUCTION' %}
+                            <i class="bi bi-gear text-primary me-2"></i>Production
+                            {% elif loc.location_type == 'STORES' %}
+                            <i class="bi bi-box-seam text-info me-2"></i>Stores/Warehouse
+                            {% else %}
+                            <i class="bi bi-shop text-success me-2"></i>Shops
+                            {% endif %}
+                        </span>
+                        <span class="badge bg-secondary rounded-pill">{{ loc.count }}</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Recent Activity</h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted text-center py-4">No recent activity to display.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

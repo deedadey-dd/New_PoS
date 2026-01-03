@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>POS - {{ shop.name }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        :root {
+            --pos-primary: #4f46e5;
+            --pos-success: #10b981;
+            --pos-warning: #f59e0b;
+            --pos-danger: #ef4444;
+        }
+
+        body {
+            background: #1e1e2e;
+            color: #fff;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .pos-header {
+            background: linear-gradient(135deg, var(--pos-primary), #6366f1);
+            padding: 0.75rem 1rem;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .pos-main {
+            height: calc(100vh - 56px);
+            display: flex;
+        }
+
+        .products-section {
+            flex: 1;
+            padding: 1rem;
+            overflow-y: auto;
+            background: #262638;
+        }
+
+        .cart-section {
+            width: 380px;
+            background: #1a1a2e;
+            display: flex;
+            flex-direction: column;
+            border-left: 1px solid #333;
+        }
+
+        .search-box {
+            position: relative;
+        }
+
+        .search-box input.form-control {
+            background: #333 !important;
+            border: 1px solid #444;
+            color: #fff !important;
+            padding: 0.75rem 1rem 0.75rem 2.5rem;
+            border-radius: 8px;
+            font-size: 1rem;
+        }
+
+        .search-box input.form-control::placeholder {
+            color: #aaa;
+        }
+
+        .search-box input:focus {
+            background: #3a3a4e;
+            border-color: var(--pos-primary);
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.3);
+        }
+
+        .search-box i {
+            position: absolute;
+            left: 0.75rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #888;
+        }
+
+        .category-tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 1rem;
+            overflow-x: auto;
+            padding-bottom: 0.5rem;
+        }
+
+        .category-tab {
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            background: #333;
+            border: none;
+            color: #ccc;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s;
+        }
+
+        .category-tab:hover,
+        .category-tab.active {
+            background: var(--pos-primary);
+            color: #fff;
+        }
+
+        .products-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 0.75rem;
+            margin-top: 1rem;
+        }
+
+        .product-card {
+            background: #333;
+            border-radius: 12px;
+            padding: 1rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 2px solid transparent;
+        }
+
+        .product-card:hover {
+            transform: translateY(-2px);
+            border-color: var(--pos-primary);
+            box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+        }
+
+        .product-name {
+            font-size: 0.85rem;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .product-price {
+            color: var(--pos-success);
+            font-weight: 700;
+            font-size: 1rem;
+        }
+
+        /* Cart Styles */
+        .cart-header {
+            padding: 1rem;
+            border-bottom: 1px solid #333;
+        }
+
+        .cart-items {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0.5rem;
+        }
+
+        .cart-item {
+            background: #262638;
+            border-radius: 8px;
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .cart-item-name {
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .cart-item-qty {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .qty-btn {
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            border: none;
+            background: #444;
+            color: #fff;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .qty-btn:hover {
+            background: var(--pos-primary);
+        }
+
+        .qty-value {
+            min-width: 30px;
+            text-align: center;
+            font-weight: 600;
+        }
+
+        .cart-item-remove {
+            color: var(--pos-danger);
+            cursor: pointer;
+            padding: 0.25rem;
+        }
+
+        .cart-summary {
+            border-top: 1px solid #333;
+            padding: 1rem;
+        }
+
+        .summary-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+        }
+
+        .summary-total {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--pos-success);
+        }
+
+        .cart-actions {
+            padding: 0 1rem 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .btn-pay {
+            padding: 1rem;
+            font-size: 1.1rem;
+            border-radius: 10px;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            transition: all 0.2s;
+        }
+
+        .btn-pay-cash {
+            background: var(--pos-success);
+            color: #fff;
+        }
+
+        .btn-pay-ecash {
+            background: #6366f1;
+            color: #fff;
+        }
+
+        .btn-pay:hover {
+            filter: brightness(1.1);
+            transform: translateY(-1px);
+        }
+
+        .btn-pay:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Empty cart */
+        .cart-empty {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #666;
+        }
+
+        .cart-empty i {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+
+        /* Modal */
+        .checkout-modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .checkout-modal.active {
+            display: flex;
+        }
+
+        .checkout-dialog {
+            background: #262638;
+            border-radius: 16px;
+            padding: 2rem;
+            width: 400px;
+            max-width: 90%;
+        }
+
+        .checkout-input {
+            background: #333;
+            border: 2px solid #444;
+            color: #fff;
+            padding: 1rem;
+            font-size: 1.5rem;
+            border-radius: 8px;
+            text-align: center;
+            width: 100%;
+        }
+
+        .checkout-input:focus {
+            border-color: var(--pos-primary);
+            outline: none;
+        }
+
+        /* Shift banner */
+        .shift-banner {
+            background: var(--pos-warning);
+            color: #000;
+            padding: 0.5rem 1rem;
+            text-align: center;
+        }
+
+        @media print {
+            body * {
+                visibility: hidden;
+            }
+
+            .receipt-print,
+            .receipt-print * {
+                visibility: visible;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Header -->
+    <header class="pos-header d-flex justify-content-between align-items-center">
+        <div class="d-flex align-items-center gap-3">
+            <h5 class="mb-0"><i class="bi bi-shop me-2"></i>{{ shop.name }}</h5>
+        </div>
+        <div class="d-flex align-items-center gap-3">
+            {% if shift %}
+            <span class="badge bg-success"><i class="bi bi-clock me-1"></i>Shift Open</span>
+            <a href="{% url 'sales:shift_close' shift.pk %}" class="btn btn-outline-light btn-sm">Close Shift</a>
+            {% else %}
+            <a href="{% url 'sales:shift_open' %}" class="btn btn-warning btn-sm">Open Shift</a>
+            {% endif %}
+            <span class="text-light">{{ user.get_full_name|default:user.email }}</span>
+            <a href="{% url 'core:logout' %}" class="btn btn-outline-light btn-sm">
+                <i class="bi bi-box-arrow-right"></i>
+            </a>
+        </div>
+    </header>
+
+    {% if not shift %}
+    <div class="shift-banner">
+        <i class="bi bi-exclamation-triangle me-2"></i>
+        <strong>No open shift!</strong> Please open a shift before making sales.
+        <a href="{% url 'sales:shift_open' %}" class="btn btn-dark btn-sm ms-2">Open Shift Now</a>
+    </div>
+    {% endif %}
+
+    <main class="pos-main">
+        <!-- Products Section -->
+        <div class="products-section">
+            <div class="search-box">
+                <i class="bi bi-search"></i>
+                <input type="text" id="product-search" class="form-control"
+                    placeholder="Search products by name, SKU, or barcode...">
+            </div>
+
+            <div class="category-tabs">
+                <button class="category-tab active" data-category="all">All</button>
+                {% for category in categories %}
+                <button class="category-tab" data-category="{{ category.name }}">{{ category.name }}</button>
+                {% endfor %}
+            </div>
+
+            <div class="products-grid" id="products-grid">
+                <!-- Products loaded via JavaScript -->
+            </div>
+        </div>
+
+        <!-- Cart Section -->
+        <div class="cart-section">
+            <div class="cart-header">
+                <h5 class="mb-0"><i class="bi bi-cart3 me-2"></i>Cart <span id="cart-count"
+                        class="badge bg-primary">0</span></h5>
+            </div>
+
+            <div class="cart-items" id="cart-items">
+                <div class="cart-empty">
+                    <i class="bi bi-cart-x"></i>
+                    <p>Cart is empty</p>
+                    <small>Click products to add</small>
+                </div>
+            </div>
+
+            <div class="cart-summary">
+                <div class="summary-row">
+                    <span>Subtotal</span>
+                    <span id="cart-subtotal">{{ currency_symbol }}0.00</span>
+                </div>
+                <div class="summary-row">
+                    <span>Discount</span>
+                    <span id="cart-discount">-{{ currency_symbol }}0.00</span>
+                </div>
+                <div class="summary-row summary-total">
+                    <span>Total</span>
+                    <span id="cart-total">{{ currency_symbol }}0.00</span>
+                </div>
+            </div>
+
+            <div class="cart-actions">
+                <button class="btn-pay btn-pay-cash" id="btn-pay-cash" disabled>
+                    <i class="bi bi-cash"></i> Pay Cash
+                </button>
+                {% if shop_settings.enable_ecash_payment %}
+                <button class="btn-pay btn-pay-ecash" id="btn-pay-ecash" disabled>
+                    <i class="bi bi-credit-card"></i> Pay E-Cash
+                </button>
+                {% endif %}
+                <div class="d-flex gap-2">
+                    <button class="btn btn-outline-warning flex-fill" id="btn-discount">
+                        <i class="bi bi-percent"></i> Discount
+                    </button>
+                    <button class="btn btn-outline-danger flex-fill" id="btn-clear-cart">
+                        <i class="bi bi-trash"></i> Clear
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Checkout Modal -->
+    <div class="checkout-modal" id="checkout-modal">
+        <div class="checkout-dialog">
+            <h4 class="mb-4 text-center"><i class="bi bi-cash-coin me-2"></i>Cash Payment</h4>
+            <div class="mb-3">
+                <label class="form-label">Total Due</label>
+                <div class="h2 text-success" id="modal-total">{{ currency_symbol }}0.00</div>
+            </div>
+            <div class="mb-4">
+                <label class="form-label">Amount Received</label>
+                <input type="number" class="checkout-input" id="amount-received" step="0.01" min="0" autofocus>
+            </div>
+            <div class="mb-4">
+                <label class="form-label">Change</label>
+                <div class="h3" id="modal-change">{{ currency_symbol }}0.00</div>
+            </div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-secondary flex-fill" onclick="closeCheckoutModal()">Cancel</button>
+                <button class="btn btn-success flex-fill" id="btn-complete-sale">Complete Sale</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const CURRENCY = '{{ currency_symbol }}';
+        const PRODUCTS = {{ products| safe }};
+        const CSRF_TOKEN = '{{ csrf_token }}';
+
+        let cart = [];
+        let discountAmount = 0;
+        let currentCategory = 'all';
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function () {
+            renderProducts();
+            loadCartFromStorage();
+
+            // Search
+            document.getElementById('product-search').addEventListener('input', function (e) {
+                renderProducts(e.target.value);
+            });
+
+            // Category tabs
+            document.querySelectorAll('.category-tab').forEach(tab => {
+                tab.addEventListener('click', function () {
+                    document.querySelectorAll('.category-tab').forEach(t => t.classList.remove('active'));
+                    this.classList.add('active');
+                    currentCategory = this.dataset.category;
+                    renderProducts();
+                });
+            });
+
+            // Payment buttons
+            document.getElementById('btn-pay-cash').addEventListener('click', openCashCheckout);
+            document.getElementById('btn-clear-cart').addEventListener('click', clearCart);
+            document.getElementById('btn-discount').addEventListener('click', applyDiscount);
+
+            // Checkout modal
+            document.getElementById('amount-received').addEventListener('input', updateChange);
+            document.getElementById('btn-complete-sale').addEventListener('click', completeSale);
+        });
+
+        function renderProducts(search = '') {
+            const grid = document.getElementById('products-grid');
+            const searchLower = search.toLowerCase();
+
+            let filtered = PRODUCTS.filter(p => {
+                const matchSearch = !search ||
+                    p.name.toLowerCase().includes(searchLower) ||
+                    p.sku.toLowerCase().includes(searchLower);
+                const matchCategory = currentCategory === 'all' || p.category === currentCategory;
+                return matchSearch && matchCategory;
+            });
+
+            grid.innerHTML = filtered.map(p => `
+                <div class="product-card" onclick="addToCart(${p.id})">
+                    <div class="product-name">${p.name}</div>
+                    <div class="product-price">${CURRENCY}${parseFloat(p.price).toFixed(2)}</div>
+                </div>
+            `).join('');
+        }
+
+        function addToCart(productId) {
+            const product = PRODUCTS.find(p => p.id === productId);
+            if (!product) return;
+
+            const existing = cart.find(item => item.id === productId);
+            if (existing) {
+                existing.quantity += 1;
+            } else {
+                cart.push({
+                    id: product.id,
+                    name: product.name,
+                    price: parseFloat(product.price),
+                    quantity: 1
+                });
+            }
+
+            updateCart();
+            saveCartToStorage();
+        }
+
+        function updateItemQty(productId, delta) {
+            const item = cart.find(i => i.id === productId);
+            if (!item) return;
+
+            item.quantity += delta;
+            if (item.quantity <= 0) {
+                cart = cart.filter(i => i.id !== productId);
+            }
+
+            updateCart();
+            saveCartToStorage();
+        }
+
+        function removeItem(productId) {
+            cart = cart.filter(i => i.id !== productId);
+            updateCart();
+            saveCartToStorage();
+        }
+
+        function updateCart() {
+            const cartDiv = document.getElementById('cart-items');
+            const countEl = document.getElementById('cart-count');
+
+            if (cart.length === 0) {
+                cartDiv.innerHTML = `
+                    <div class="cart-empty">
+                        <i class="bi bi-cart-x"></i>
+                        <p>Cart is empty</p>
+                        <small>Click products to add</small>
+                    </div>
+                `;
+                countEl.textContent = '0';
+            } else {
+                cartDiv.innerHTML = cart.map(item => `
+                    <div class="cart-item">
+                        <div>
+                            <div class="cart-item-name">${item.name}</div>
+                            <small class="text-muted">${CURRENCY}${item.price.toFixed(2)} each</small>
+                        </div>
+                        <div class="cart-item-qty">
+                            <button class="qty-btn" onclick="updateItemQty(${item.id}, -1)">-</button>
+                            <span class="qty-value">${item.quantity}</span>
+                            <button class="qty-btn" onclick="updateItemQty(${item.id}, 1)">+</button>
+                            <span class="cart-item-remove" onclick="removeItem(${item.id})">
+                                <i class="bi bi-x-lg"></i>
+                            </span>
+                        </div>
+                    </div>
+                `).join('');
+                countEl.textContent = cart.reduce((sum, i) => sum + i.quantity, 0);
+            }
+
+            updateTotals();
+        }
+
+        function updateTotals() {
+            const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+            const total = subtotal - discountAmount;
+
+            document.getElementById('cart-subtotal').textContent = CURRENCY + subtotal.toFixed(2);
+            document.getElementById('cart-discount').textContent = '-' + CURRENCY + discountAmount.toFixed(2);
+            document.getElementById('cart-total').textContent = CURRENCY + total.toFixed(2);
+
+            const hasItems = cart.length > 0;
+            document.getElementById('btn-pay-cash').disabled = !hasItems;
+            const ecashBtn = document.getElementById('btn-pay-ecash');
+            if (ecashBtn) ecashBtn.disabled = !hasItems;
+        }
+
+        function clearCart() {
+            if (!confirm('Clear the cart?')) return;
+            cart = [];
+            discountAmount = 0;
+            updateCart();
+            saveCartToStorage();
+        }
+
+        function applyDiscount() {
+            const amount = prompt('Enter discount amount:', discountAmount);
+            if (amount !== null) {
+                discountAmount = Math.max(0, parseFloat(amount) || 0);
+                updateTotals();
+                saveCartToStorage();
+            }
+        }
+
+        function openCashCheckout() {
+            const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0) - discountAmount;
+            document.getElementById('modal-total').textContent = CURRENCY + total.toFixed(2);
+            document.getElementById('amount-received').value = '';
+            document.getElementById('modal-change').textContent = CURRENCY + '0.00';
+            document.getElementById('checkout-modal').classList.add('active');
+            document.getElementById('amount-received').focus();
+        }
+
+        function closeCheckoutModal() {
+            document.getElementById('checkout-modal').classList.remove('active');
+        }
+
+        function updateChange() {
+            const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0) - discountAmount;
+            const received = parseFloat(document.getElementById('amount-received').value) || 0;
+            const change = Math.max(0, received - total);
+            document.getElementById('modal-change').textContent = CURRENCY + change.toFixed(2);
+        }
+
+        async function completeSale() {
+            const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0) - discountAmount;
+            const received = parseFloat(document.getElementById('amount-received').value) || 0;
+
+            if (received < total) {
+                alert('Amount received is less than total');
+                return;
+            }
+
+            const saleData = {
+                items: cart.map(item => ({
+                    product_id: item.id,
+                    quantity: item.quantity,
+                    unit_price: item.price
+                })),
+                payment_method: 'CASH',
+                amount_paid: received,
+                discount_amount: discountAmount
+            };
+
+            try {
+                const response = await fetch('{% url "sales:api_checkout" %}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': CSRF_TOKEN
+                    },
+                    body: JSON.stringify(saleData)
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    alert(`Sale completed! ${result.sale_number}\nChange: ${CURRENCY}${result.change}`);
+                    cart = [];
+                    discountAmount = 0;
+                    updateCart();
+                    saveCartToStorage();
+                    closeCheckoutModal();
+
+                    // Open receipt in new tab
+                    window.open(`/sales/${result.sale_id}/receipt/`, '_blank');
+                } else {
+                    alert('Error: ' + result.error);
+                }
+            } catch (err) {
+                alert('Error completing sale: ' + err);
+            }
+        }
+
+        function saveCartToStorage() {
+            localStorage.setItem('pos_cart', JSON.stringify({ cart, discountAmount }));
+        }
+
+        function loadCartFromStorage() {
+            try {
+                const saved = localStorage.getItem('pos_cart');
+                if (saved) {
+                    const data = JSON.parse(saved);
+                    cart = data.cart || [];
+                    discountAmount = data.discountAmount || 0;
+                    updateCart();
+                }
+            } catch (e) { }
+        }
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,172 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ title }} - {{ current_tenant.name }}{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{% url 'transfers:transfer_list' %}">Transfers</a></li>
+            <li class="breadcrumb-item active">{{ title }}</li>
+        </ol>
+    </nav>
+    <h2 class="mb-1">{{ title }}</h2>
+    <p class="text-muted">Select source, destination, and items to transfer</p>
+</div>
+
+<form method="post" id="transfer-form">
+    {% csrf_token %}
+
+    <div class="row">
+        <div class="col-lg-8">
+            <!-- Locations -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Locations</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="id_source_location" class="form-label">Source Location <span
+                                    class="text-danger">*</span></label>
+                            {{ form.source_location }}
+                            {% if form.source_location.errors %}
+                            <div class="invalid-feedback d-block">{{ form.source_location.errors|join:", " }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="id_destination_location" class="form-label">Destination Location <span
+                                    class="text-danger">*</span></label>
+                            {{ form.destination_location }}
+                            {% if form.destination_location.errors %}
+                            <div class="invalid-feedback d-block">{{ form.destination_location.errors|join:", " }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="mb-0">
+                        <label for="id_notes" class="form-label">Notes</label>
+                        {{ form.notes }}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Items -->
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Transfer Items</h5>
+                    <button type="button" class="btn btn-sm btn-outline-primary" id="add-item">
+                        <i class="bi bi-plus me-1"></i>Add Item
+                    </button>
+                </div>
+                <div class="card-body">
+                    {{ formset.management_form }}
+
+                    <div id="item-formset">
+                        {% for item_form in formset %}
+                        <div class="item-row border rounded p-3 mb-3 {% if forloop.last %}template-row{% endif %}">
+                            <div class="row">
+                                <div class="col-md-4 mb-2">
+                                    <label class="form-label">Product <span class="text-danger">*</span></label>
+                                    {{ item_form.product }}
+                                </div>
+                                <div class="col-md-3 mb-2">
+                                    <label class="form-label">Batch (Optional)</label>
+                                    {{ item_form.batch }}
+                                </div>
+                                <div class="col-md-2 mb-2">
+                                    <label class="form-label">Quantity <span class="text-danger">*</span></label>
+                                    {{ item_form.quantity_requested }}
+                                </div>
+                                <div class="col-md-2 mb-2">
+                                    <label class="form-label">Unit Cost <span class="text-danger">*</span></label>
+                                    {{ item_form.unit_cost }}
+                                </div>
+                                <div class="col-md-1 mb-2 d-flex align-items-end">
+                                    <button type="button" class="btn btn-outline-danger btn-sm remove-item">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            {{ item_form.id }}
+                            {% if item_form.DELETE %}
+                            <div class="d-none">{{ item_form.DELETE }}</div>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card sticky-top" style="top: 1rem;">
+                <div class="card-body">
+                    <h5 class="card-title">Summary</h5>
+                    <p class="text-muted">Review and submit the transfer</p>
+
+                    <hr>
+
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="bi bi-save me-2"></i>Save as Draft
+                        </button>
+                        <a href="{% url 'transfers:transfer_list' %}" class="btn btn-outline-secondary">
+                            Cancel
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const formsetDiv = document.getElementById('item-formset');
+        const addBtn = document.getElementById('add-item');
+        const totalForms = document.getElementById('id_items-TOTAL_FORMS');
+
+        addBtn.addEventListener('click', function () {
+            const rows = formsetDiv.querySelectorAll('.item-row');
+            const templateRow = rows[rows.length - 1];
+            const newRow = templateRow.cloneNode(true);
+            const formCount = parseInt(totalForms.value);
+
+            newRow.innerHTML = newRow.innerHTML.replace(/-\d+-/g, `-${formCount}-`);
+
+            newRow.querySelectorAll('input').forEach(input => {
+                if (input.type !== 'hidden') input.value = '';
+            });
+            newRow.querySelectorAll('select').forEach(select => {
+                select.selectedIndex = 0;
+            });
+
+            formsetDiv.appendChild(newRow);
+            totalForms.value = formCount + 1;
+
+            newRow.querySelector('.remove-item').addEventListener('click', function () {
+                removeRow(newRow);
+            });
+        });
+
+        document.querySelectorAll('.remove-item').forEach(btn => {
+            btn.addEventListener('click', function () {
+                removeRow(this.closest('.item-row'));
+            });
+        });
+
+        function removeRow(row) {
+            const deleteCheckbox = row.querySelector('input[type="checkbox"][name$="-DELETE"]');
+            if (deleteCheckbox) {
+                deleteCheckbox.checked = true;
+                row.style.display = 'none';
+            } else {
+                row.remove();
+                totalForms.value = parseInt(totalForms.value) - 1;
+            }
+        }
+    });
+</script>
+{% endblock %}
