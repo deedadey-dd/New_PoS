@@ -46,6 +46,8 @@
             display: flex;
             flex-direction: column;
             border-left: 1px solid #333;
+            max-height: 100%;
+            overflow: hidden;
         }
 
         .search-box {
@@ -219,12 +221,14 @@
         .cart-header {
             padding: 1rem;
             border-bottom: 1px solid #333;
+            flex-shrink: 0;
         }
 
         .cart-items {
             flex: 1;
             overflow-y: auto;
             padding: 0.5rem;
+            min-height: 0;
         }
 
         .cart-item {
@@ -280,6 +284,7 @@
         .cart-summary {
             border-top: 1px solid #333;
             padding: 1rem;
+            flex-shrink: 0;
         }
 
         .summary-row {
@@ -299,6 +304,7 @@
             display: flex;
             flex-direction: column;
             gap: 0.5rem;
+            flex-shrink: 0;
         }
 
         .btn-pay {

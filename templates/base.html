@@ -157,12 +157,14 @@
                             </ul>
                         </div>
                     </li>
+                    {% if role_name != 'AUDITOR' %}
                     <li class="nav-item">
                         <a class="nav-link text-white {% if 'transfers' in request.path %}active{% endif %}"
                             href="{% url 'transfers:transfer_list' %}">
                             <i class="bi bi-arrow-left-right me-2"></i> Transfers
                         </a>
                     </li>
+                    {% endif %}
                     {% endif %}
 
                     <!-- Admin -->

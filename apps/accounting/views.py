@@ -385,7 +385,7 @@ class SalesReportView(LoginRequiredMixin, View):
             sale__in=sales
         ).values('product__id', 'product__name').annotate(
             qty_sold=Sum('quantity'),
-            revenue=Sum('subtotal')
+            revenue=Sum('total')
         ).order_by('-revenue')[:10]
         
         # Get filter options
