@@ -1,0 +1,314 @@
+{% extends 'base.html' %}
+
+{% block title %}Auditor Dashboard - {{ current_tenant.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-clipboard-data me-2"></i>Auditor Dashboard</h2>
+        <p class="text-muted mb-0">Financial reports and inventory movement tracking</p>
+    </div>
+    <!-- Date Range Filter -->
+    <div class="btn-group" role="group">
+        <a href="?range=today" class="btn btn-outline-primary {% if current_range == 'today' %}active{% endif %}">
+            Today
+        </a>
+        <a href="?range=week" class="btn btn-outline-primary {% if current_range == 'week' %}active{% endif %}">
+            7 Days
+        </a>
+        <a href="?range=month" class="btn btn-outline-primary {% if current_range == 'month' %}active{% endif %}">
+            30 Days
+        </a>
+        <a href="?range=all" class="btn btn-outline-primary {% if current_range == 'all' %}active{% endif %}">
+            All Time
+        </a>
+    </div>
+</div>
+
+<!-- Period Badge -->
+<div class="mb-4">
+    <span class="badge bg-info fs-6">
+        <i class="bi bi-calendar-range me-1"></i>{{ date_range_label }}
+    </span>
+</div>
+
+<!-- Financial Summary Cards -->
+<div class="row g-4 mb-4">
+    <div class="col-md-6 col-lg-3">
+        <div class="card bg-success text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <h6 class="card-subtitle mb-2 opacity-75">Total Revenue</h6>
+                        <h3 class="card-title mb-0">{{ currency_symbol }}{{ financial.total_revenue|floatformat:2 }}
+                        </h3>
+                    </div>
+                    <i class="bi bi-currency-dollar fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6 col-lg-3">
+        <div class="card bg-primary text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <h6 class="card-subtitle mb-2 opacity-75">Total Sales</h6>
+                        <h3 class="card-title mb-0">{{ financial.total_sales }}</h3>
+                        <small class="opacity-75">Avg:
+                            {{ currency_symbol }}{{ financial.avg_sale|floatformat:2 }}</small>
+                    </div>
+                    <i class="bi bi-receipt fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6 col-lg-3">
+        <div class="card bg-warning text-dark h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <h6 class="card-subtitle mb-2 opacity-75">Cash Sales</h6>
+                        <h3 class="card-title mb-0">{{ currency_symbol }}{{ financial.cash_sales|floatformat:2 }}</h3>
+                    </div>
+                    <i class="bi bi-cash fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6 col-lg-3">
+        <div class="card bg-info text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <h6 class="card-subtitle mb-2 opacity-75">E-Cash Sales</h6>
+                        <h3 class="card-title mb-0">{{ currency_symbol }}{{ financial.ecash_sales|floatformat:2 }}</h3>
+                    </div>
+                    <i class="bi bi-credit-card fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Product Movement Summary -->
+<div class="row g-4 mb-4">
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="bi bi-arrow-left-right me-2 text-primary"></i>Product Movements</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Movement Type</th>
+                                <th class="text-center">Transactions</th>
+                                <th class="text-end">Total Qty</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>
+                                    <span class="badge bg-success me-2">IN</span>
+                                    Stock In (Production)
+                                </td>
+                                <td class="text-center">{{ movements.IN.count|default:0 }}</td>
+                                <td class="text-end text-success fw-bold">
+                                    +{{ movements.IN.quantity|default:0|floatformat:0 }}</td>
+                            </tr>
+                            <tr>
+                                <td>
+                                    <span class="badge bg-info me-2">→</span>
+                                    Transfer Out
+                                </td>
+                                <td class="text-center">{{ movements.TRANSFER_OUT.count|default:0 }}</td>
+                                <td class="text-end text-danger">
+                                    {{ movements.TRANSFER_OUT.quantity|default:0|floatformat:0 }}</td>
+                            </tr>
+                            <tr>
+                                <td>
+                                    <span class="badge bg-info me-2">←</span>
+                                    Transfer In
+                                </td>
+                                <td class="text-center">{{ movements.TRANSFER_IN.count|default:0 }}</td>
+                                <td class="text-end text-success">
+                                    +{{ movements.TRANSFER_IN.quantity|default:0|floatformat:0 }}</td>
+                            </tr>
+                            <tr>
+                                <td>
+                                    <span class="badge bg-primary me-2">$</span>
+                                    Sales
+                                </td>
+                                <td class="text-center">{{ movements.SALE.count|default:0 }}</td>
+                                <td class="text-end text-danger">{{ movements.SALE.quantity|default:0|floatformat:0 }}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>
+                                    <span class="badge bg-warning text-dark me-2">↩</span>
+                                    Returns
+                                </td>
+                                <td class="text-center">{{ movements.RETURN.count|default:0 }}</td>
+                                <td class="text-end text-success">
+                                    +{{ movements.RETURN.quantity|default:0|floatformat:0 }}</td>
+                            </tr>
+                            <tr>
+                                <td>
+                                    <span class="badge bg-secondary me-2">±</span>
+                                    Adjustments
+                                </td>
+                                <td class="text-center">{{ movements.ADJUST.count|default:0 }}</td>
+                                <td class="text-end">{{ movements.ADJUST.quantity|default:0|floatformat:0 }}</td>
+                            </tr>
+                            <tr>
+                                <td>
+                                    <span class="badge bg-danger me-2">✗</span>
+                                    Damage/Write-off
+                                </td>
+                                <td class="text-center">{{ movements.DAMAGE.count|default:0 }}</td>
+                                <td class="text-end text-danger">{{ movements.DAMAGE.quantity|default:0|floatformat:0 }}
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="bi bi-truck me-2 text-info"></i>Transfer Status</h5>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-6">
+                        <div class="p-3 bg-light rounded text-center">
+                            <div class="h3 mb-0 text-secondary">{{ transfers.DRAFT|default:0 }}</div>
+                            <small class="text-muted">Draft</small>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="p-3 bg-light rounded text-center">
+                            <div class="h3 mb-0 text-primary">{{ transfers.SENT|default:0 }}</div>
+                            <small class="text-muted">In Transit</small>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="p-3 bg-light rounded text-center">
+                            <div class="h3 mb-0 text-success">{{ transfers.RECEIVED|default:0 }}</div>
+                            <small class="text-muted">Received</small>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="p-3 bg-light rounded text-center">
+                            <div class="h3 mb-0 text-warning">{{ transfers.PARTIAL|default:0 }}</div>
+                            <small class="text-muted">Partial</small>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="p-3 bg-light rounded text-center">
+                            <div class="h3 mb-0 text-danger">{{ transfers.DISPUTED|default:0 }}</div>
+                            <small class="text-muted">Disputed</small>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="p-3 bg-light rounded text-center">
+                            <div class="h3 mb-0 text-dark">{{ transfers.CLOSED|default:0 }}</div>
+                            <small class="text-muted">Closed</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Inventory Movements -->
+<div class="card">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-journal-text me-2 text-secondary"></i>Recent Inventory Movements</h5>
+        <a href="{% url 'inventory:inventory_ledger' %}" class="btn btn-sm btn-primary">
+            View Full Ledger <i class="bi bi-arrow-right ms-1"></i>
+        </a>
+    </div>
+    <div class="card-body">
+        {% if recent_ledger %}
+        <div class="table-responsive">
+            <table class="table table-hover table-sm">
+                <thead class="table-light">
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Type</th>
+                        <th>Product</th>
+                        <th>Location</th>
+                        <th class="text-end">Quantity</th>
+                        <th>User</th>
+                        <th>Reference</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for entry in recent_ledger %}
+                    <tr>
+                        <td class="text-nowrap">
+                            <small>{{ entry.created_at|date:"M d, H:i" }}</small>
+                        </td>
+                        <td>
+                            {% if entry.transaction_type == 'IN' %}
+                            <span class="badge bg-success">Stock In</span>
+                            {% elif entry.transaction_type == 'OUT' %}
+                            <span class="badge bg-danger">Stock Out</span>
+                            {% elif entry.transaction_type == 'TRANSFER_OUT' %}
+                            <span class="badge bg-info">Transfer Out</span>
+                            {% elif entry.transaction_type == 'TRANSFER_IN' %}
+                            <span class="badge bg-info">Transfer In</span>
+                            {% elif entry.transaction_type == 'SALE' %}
+                            <span class="badge bg-primary">Sale</span>
+                            {% elif entry.transaction_type == 'RETURN' %}
+                            <span class="badge bg-warning text-dark">Return</span>
+                            {% elif entry.transaction_type == 'ADJUST' %}
+                            <span class="badge bg-secondary">Adjustment</span>
+                            {% elif entry.transaction_type == 'DAMAGE' %}
+                            <span class="badge bg-danger">Damage</span>
+                            {% elif entry.transaction_type == 'PRODUCTION' %}
+                            <span class="badge bg-success">Production</span>
+                            {% else %}
+                            <span class="badge bg-secondary">{{ entry.get_transaction_type_display }}</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ entry.product.name }}</td>
+                        <td>{{ entry.location.name }}</td>
+                        <td
+                            class="text-end fw-bold {% if entry.quantity > 0 %}text-success{% else %}text-danger{% endif %}">
+                            {% if entry.quantity > 0 %}+{% endif %}{{ entry.quantity|floatformat:0 }}
+                        </td>
+                        <td>
+                            <small>{{ entry.created_by.get_full_name|default:entry.created_by.email|default:"-" }}</small>
+                        </td>
+                        <td>
+                            {% if entry.reference_type %}
+                            <small class="text-muted">{{ entry.reference_type }} #{{ entry.reference_id }}</small>
+                            {% else %}
+                            <small class="text-muted">-</small>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-4 text-muted">
+            <i class="bi bi-inbox display-4"></i>
+            <p class="mt-2">No inventory movements recorded yet.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

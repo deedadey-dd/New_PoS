@@ -1,0 +1,150 @@
+{% extends 'base.html' %}
+
+{% block title %}Shop Pricing - {{ current_tenant.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-tags me-2"></i>Shop Pricing</h2>
+        <p class="text-muted mb-0">Set prices for products to sell in {{ shop.name|default:"your shop" }}</p>
+    </div>
+</div>
+
+{% if not shop %}
+<!-- Shop Selection for Admin -->
+<div class="card">
+    <div class="card-body text-center py-5">
+        <i class="bi bi-shop display-1 text-muted"></i>
+        <h4 class="mt-3">Select a Shop</h4>
+        <p class="text-muted">Choose a shop to manage pricing.</p>
+        <div class="d-flex flex-wrap justify-content-center gap-2 mt-4">
+            {% for s in shops %}
+            <a href="?shop={{ s.pk }}" class="btn btn-primary">
+                <i class="bi bi-shop me-1"></i>{{ s.name }}
+            </a>
+            {% empty %}
+            <p class="text-muted">No shops found.</p>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% else %}
+
+<!-- Stats -->
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="card bg-primary text-white">
+            <div class="card-body text-center">
+                <h3 class="mb-0">{{ total_products }}</h3>
+                <small>Total Products</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card bg-success text-white">
+            <div class="card-body text-center">
+                <h3 class="mb-0">{{ priced_count }}</h3>
+                <small>With Prices</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card bg-warning text-dark">
+            <div class="card-body text-center">
+                <h3 class="mb-0">{{ total_products|add:"-"|add:priced_count }}</h3>
+                <small>Need Pricing</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-6">
+                <input type="text" name="q" class="form-control" placeholder="Search products..."
+                    value="{{ request.GET.q }}">
+            </div>
+            <div class="col-md-4">
+                <select name="status" class="form-select">
+                    <option value="">All Products</option>
+                    <option value="with_price" {% if request.GET.status == 'with_price' %}selected{% endif %}>With Shop
+                        Price</option>
+                    <option value="without_price" {% if request.GET.status == 'without_price' %}selected{% endif %}>Need
+                        Pricing</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary w-100">Filter</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Products Table -->
+<div class="card">
+    <div class="card-body">
+        {% if products %}
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead class="table-light">
+                    <tr>
+                        <th>Product</th>
+                        <th>Category</th>
+                        <th>Default Price</th>
+                        <th>Shop Price</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in products %}
+                    <tr>
+                        <td>
+                            <strong>{{ p.product.name }}</strong><br>
+                            <small class="text-muted">{{ p.product.sku }}</small>
+                        </td>
+                        <td>{{ p.product.category.name|default:"-" }}</td>
+                        <td>{{ currency_symbol }}{{ p.product.default_selling_price|floatformat:2 }}</td>
+                        <td>
+                            {% if p.has_price %}
+                            <strong
+                                class="text-success">{{ currency_symbol }}{{ p.selling_price|floatformat:2 }}</strong>
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if p.has_price %}
+                            <span class="badge bg-success">Active</span>
+                            {% else %}
+                            <span class="badge bg-warning text-dark">Not Set</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a href="{% url 'inventory:shop_price_set' p.product.pk %}"
+                                class="btn btn-sm {% if p.has_price %}btn-outline-primary{% else %}btn-primary{% endif %}">
+                                {% if p.has_price %}
+                                <i class="bi bi-pencil"></i> Edit
+                                {% else %}
+                                <i class="bi bi-plus"></i> Set Price
+                                {% endif %}
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-box-seam display-1"></i>
+            <h4 class="mt-3">No Products</h4>
+            <p>No products match your filters.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}

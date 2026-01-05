@@ -1,0 +1,187 @@
+{% extends 'base.html' %}
+
+{% block title %}Financial Dashboard - {{ current_tenant.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-bank me-2"></i>Financial Dashboard</h2>
+        <p class="text-muted mb-0">Complete financial overview</p>
+    </div>
+    <div class="btn-group" role="group">
+        <a href="?range=today"
+            class="btn btn-outline-primary {% if current_range == 'today' %}active{% endif %}">Today</a>
+        <a href="?range=week" class="btn btn-outline-primary {% if current_range == 'week' %}active{% endif %}">7
+            Days</a>
+        <a href="?range=month" class="btn btn-outline-primary {% if current_range == 'month' %}active{% endif %}">30
+            Days</a>
+    </div>
+</div>
+
+<!-- Pending Deposits Alert -->
+{% if pending_deposits %}
+<div class="alert alert-warning d-flex align-items-center mb-4">
+    <i class="bi bi-exclamation-triangle-fill me-2 fs-5"></i>
+    <div class="flex-grow-1">
+        <strong>{{ pending_deposits|length }} pending deposit{{ pending_deposits|pluralize }} awaiting your
+            confirmation.</strong>
+    </div>
+    <a href="{% url 'accounting:cash_transfer_list' %}?status=PENDING" class="btn btn-warning btn-sm">
+        View Pending
+    </a>
+</div>
+{% endif %}
+
+<!-- Sales Summary Row -->
+<div class="row g-4 mb-4">
+    <div class="col-md-6 col-lg-3">
+        <div class="card bg-success text-white h-100">
+            <div class="card-body text-center">
+                <h6 class="card-subtitle mb-2 opacity-75">Total Revenue</h6>
+                <h3 class="mb-0">{{ currency_symbol }}{{ sales_summary.total_revenue|default:0|floatformat:2 }}</h3>
+                <small class="opacity-75">{{ sales_summary.total_count|default:0 }} sales</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-lg-3">
+        <div class="card bg-warning text-dark h-100">
+            <div class="card-body text-center">
+                <h6 class="card-subtitle mb-2 opacity-75">Cash Sales</h6>
+                <h3 class="mb-0">{{ currency_symbol }}{{ sales_summary.cash_total|default:0|floatformat:2 }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-lg-3">
+        <div class="card bg-info text-white h-100">
+            <div class="card-body text-center">
+                <h6 class="card-subtitle mb-2 opacity-75">E-Cash Sales</h6>
+                <h3 class="mb-0">{{ currency_symbol }}{{ sales_summary.ecash_total|default:0|floatformat:2 }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-lg-3">
+        <div class="card bg-primary text-white h-100">
+            <div class="card-body text-center">
+                <h6 class="card-subtitle mb-2 opacity-75">Cash Deposited</h6>
+                <h3 class="mb-0">{{ currency_symbol }}{{ deposits_summary.confirmed_amount|default:0|floatformat:2 }}
+                </h3>
+                <small class="opacity-75">{{ deposits_summary.confirmed_count|default:0 }} deposits</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Sales by Shop -->
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="bi bi-shop me-2"></i>Sales by Shop</h5>
+            </div>
+            <div class="card-body">
+                {% if sales_by_shop %}
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Shop</th>
+                                <th class="text-center"># Sales</th>
+                                <th class="text-end">Revenue</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for shop in sales_by_shop %}
+                            <tr>
+                                <td><i class="bi bi-shop me-1 text-muted"></i>{{ shop.shop__name }}</td>
+                                <td class="text-center"><span class="badge bg-secondary">{{ shop.count }}</span></td>
+                                <td class="text-end fw-bold text-success">
+                                    {{ currency_symbol }}{{ shop.revenue|floatformat:2 }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted text-center py-4">No sales data</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Deposits by Shop -->
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-cash-stack me-2"></i>Deposits by Shop</h5>
+                <a href="{% url 'accounting:cash_transfer_list' %}" class="btn btn-sm btn-outline-primary">View All</a>
+            </div>
+            <div class="card-body">
+                {% if deposits_by_shop %}
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Shop</th>
+                                <th class="text-center"># Deposits</th>
+                                <th class="text-end">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for dep in deposits_by_shop %}
+                            <tr>
+                                <td><i class="bi bi-shop me-1 text-muted"></i>{{ dep.from_location__name }}</td>
+                                <td class="text-center"><span class="badge bg-secondary">{{ dep.count }}</span></td>
+                                <td class="text-end fw-bold text-primary">
+                                    {{ currency_symbol }}{{ dep.total|floatformat:2 }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted text-center py-4">No deposits data</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Deposits -->
+<div class="card mt-4">
+    <div class="card-header bg-white">
+        <h5 class="mb-0"><i class="bi bi-clock-history me-2"></i>Recent Confirmed Deposits</h5>
+    </div>
+    <div class="card-body">
+        {% if recent_deposits %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover">
+                <thead class="table-light">
+                    <tr>
+                        <th>Reference</th>
+                        <th>Date</th>
+                        <th>From Shop</th>
+                        <th>Shop Manager</th>
+                        <th class="text-end">Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for d in recent_deposits %}
+                    <tr>
+                        <td><strong>{{ d.transfer_number }}</strong></td>
+                        <td>
+                            <small>{{ d.confirmed_at|date:"M d, Y H:i" }}</small>
+                        </td>
+                        <td>{{ d.from_location.name|default:"-" }}</td>
+                        <td>{{ d.from_user.get_full_name|default:d.from_user.email }}</td>
+                        <td class="text-end fw-bold text-success">{{ currency_symbol }}{{ d.amount|floatformat:2 }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted text-center py-3">No recent deposits</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

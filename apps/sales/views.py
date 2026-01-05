@@ -52,18 +52,19 @@ class POSView(LoginRequiredMixin, View):
             is_active=True
         ).select_related('category').prefetch_related('shop_prices')
         
-        # Get products with prices for this shop
+        # Get products with prices for this shop (ShopPrice required)
         products_with_prices = []
         for product in products:
             shop_price = product.shop_prices.filter(
-                shop=user_shop, is_active=True
+                location=user_shop, is_active=True
             ).first()
             
+            # Only include products with shop-specific pricing
             if shop_price:
                 products_with_prices.append({
                     'id': product.pk,
                     'name': product.name,
-                    'sku': product.sku,
+                    'sku': product.sku or '',
                     'category': product.category.name if product.category else 'Uncategorized',
                     'price': str(shop_price.selling_price),
                     'unit': product.unit_of_measure,
@@ -146,10 +147,20 @@ class ShiftCloseView(LoginRequiredMixin, View):
             status='OPEN'
         )
         
+        # Find shop manager for this location
+        from apps.core.models import User
+        shop_manager = User.objects.filter(
+            tenant=request.user.tenant,
+            location=shift.shop,
+            role__name='SHOP_MANAGER',
+            is_active=True
+        ).first()
+        
         return render(request, self.template_name, {
             'shift': shift,
             'expected_cash': shift.expected_cash,
             'total_sales': shift.total_sales,
+            'shop_manager': shop_manager,
         })
     
     def post(self, request, pk):
@@ -179,6 +190,47 @@ class ShiftCloseView(LoginRequiredMixin, View):
                 messages.warning(request, f"Shift closed. Cash shortage: {abs(variance)}")
         else:
             messages.success(request, "Shift closed successfully. Cash balanced.")
+        
+        # Create cash transfer to shop manager if closing cash > 0
+        if closing_cash > 0:
+            from apps.core.models import User
+            from apps.accounting.models import CashTransfer
+            from apps.notifications.models import Notification
+            
+            shop_manager = User.objects.filter(
+                tenant=request.user.tenant,
+                location=shift.shop,
+                role__name='SHOP_MANAGER',
+                is_active=True
+            ).first()
+            
+            if shop_manager:
+                # Create pending transfer
+                transfer = CashTransfer.objects.create(
+                    tenant=request.user.tenant,
+                    amount=closing_cash,
+                    transfer_type='DEPOSIT',
+                    from_user=request.user,
+                    from_location=shift.shop,
+                    to_user=shop_manager,
+                    to_location=shift.shop,
+                    notes=f"Shift closing deposit - {shift.sale_number if hasattr(shift, 'sale_number') else f'Shift #{shift.pk}'}"
+                )
+                
+                # Notify shop manager
+                Notification.objects.create(
+                    tenant=request.user.tenant,
+                    user=shop_manager,
+                    title="Cash Deposit from Attendant",
+                    message=f"{request.user.get_full_name() or request.user.email} has deposited {request.user.tenant.currency_symbol}{closing_cash} from their shift. Please confirm receipt.",
+                    notification_type='SYSTEM',
+                    reference_type='CashTransfer',
+                    reference_id=transfer.pk
+                )
+                
+                messages.info(request, f"Cash transfer of {closing_cash} sent to {shop_manager.get_full_name()} for confirmation.")
+            else:
+                messages.warning(request, "No shop manager found. Please manually transfer your cash.")
         
         return redirect('core:dashboard')
 
@@ -256,7 +308,7 @@ def api_product_search(request):
     for product in products:
         shop_price = ShopPrice.objects.filter(
             product=product,
-            shop=shop,
+            location=shop,
             is_active=True
         ).first()
         
@@ -368,3 +420,117 @@ def api_void_sale(request, pk):
         return JsonResponse({'success': True})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=400)
+
+
+class ShopSalesReportView(LoginRequiredMixin, View):
+    """
+    Shop Manager view showing sales breakdown by attendant.
+    """
+    template_name = 'sales/shop_sales_report.html'
+    
+    def get(self, request):
+        from django.db.models import Sum, Count, Q
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        user = request.user
+        role_name = user.role.name if user.role else None
+        
+        # Only shop managers and admin can access
+        if role_name not in ['SHOP_MANAGER', 'ADMIN']:
+            messages.error(request, 'You do not have permission to view this report.')
+            return redirect('core:dashboard')
+        
+        # Get the shop
+        shop = user.location
+        if not shop and role_name == 'ADMIN':
+            # Admin can select a shop
+            shop_id = request.GET.get('shop')
+            if shop_id:
+                shop = Location.objects.filter(
+                    tenant=user.tenant, pk=shop_id, location_type='SHOP'
+                ).first()
+        
+        context = {'shop': shop}
+        
+        if not shop or shop.location_type != 'SHOP':
+            context['shops'] = Location.objects.filter(
+                tenant=user.tenant, location_type='SHOP', is_active=True
+            )
+            return render(request, self.template_name, context)
+        
+        # Date range filter
+        date_range = request.GET.get('range', 'today')
+        today = timezone.now().date()
+        
+        if date_range == 'week':
+            start_date = today - timedelta(days=7)
+            context['date_range_label'] = 'Last 7 Days'
+        elif date_range == 'month':
+            start_date = today - timedelta(days=30)
+            context['date_range_label'] = 'Last 30 Days'
+        else:
+            start_date = today
+            context['date_range_label'] = 'Today'
+        
+        context['current_range'] = date_range
+        
+        # Get sales by attendant
+        sales_filter = Q(
+            tenant=user.tenant,
+            shop=shop,
+            status='COMPLETED',
+            created_at__date__gte=start_date
+        )
+        
+        attendant_stats = Sale.objects.filter(sales_filter).values(
+            'attendant__id',
+            'attendant__first_name',
+            'attendant__last_name',
+            'attendant__email'
+        ).annotate(
+            total_sales=Count('id'),
+            total_revenue=Sum('total'),
+            cash_amount=Sum('total', filter=Q(payment_method='CASH')),
+            ecash_amount=Sum('total', filter=Q(payment_method='ECASH')),
+        ).order_by('-total_revenue')
+        
+        context['attendant_stats'] = attendant_stats
+        
+        # Get shop totals
+        context['shop_totals'] = Sale.objects.filter(sales_filter).aggregate(
+            total_sales=Count('id'),
+            total_revenue=Sum('total'),
+            cash_total=Sum('total', filter=Q(payment_method='CASH')),
+            ecash_total=Sum('total', filter=Q(payment_method='ECASH')),
+        )
+        
+        # Top products sold
+        context['top_products'] = SaleItem.objects.filter(
+            sale__tenant=user.tenant,
+            sale__shop=shop,
+            sale__status='COMPLETED',
+            sale__created_at__date__gte=start_date
+        ).values('product__id', 'product__name').annotate(
+            qty_sold=Sum('quantity'),
+            revenue=Sum('subtotal')
+        ).order_by('-revenue')[:5]
+        
+        # Sales by day (for week/month view)
+        if date_range != 'today':
+            context['sales_by_day'] = Sale.objects.filter(sales_filter).values(
+                'created_at__date'
+            ).annotate(
+                revenue=Sum('total'),
+                count=Count('id')
+            ).order_by('-created_at__date')[:7]
+        
+        # Recent price changes for this shop
+        from apps.inventory.models import ShopPrice
+        context['recent_price_changes'] = ShopPrice.objects.filter(
+            tenant=user.tenant,
+            location=shop
+        ).select_related('product').order_by('-created_at')[:10]
+        
+        return render(request, self.template_name, context)
+

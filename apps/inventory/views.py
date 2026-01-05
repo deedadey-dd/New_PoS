@@ -112,6 +112,55 @@ class ProductListView(LoginRequiredMixin, ListView):
             tenant=self.request.user.tenant,
             is_active=True
         )
+        
+        # Determine user's location(s) for stock display
+        user = self.request.user
+        user_location = user.location
+        user_location_type = None
+        
+        # Map role to location type if user has no specific location
+        if not user_location and user.role:
+            role_location_map = {
+                'PRODUCTION_MANAGER': 'PRODUCTION',
+                'STORES_MANAGER': 'STORES',
+                'SHOP_MANAGER': 'SHOP',
+            }
+            user_location_type = role_location_map.get(user.role.name)
+        
+        # Calculate stock by product for user's location
+        stock_filter = {'product__tenant': user.tenant}
+        if user_location:
+            stock_filter['location'] = user_location
+        elif user_location_type:
+            stock_filter['location__location_type'] = user_location_type
+        
+        # Get stock quantities from ledger
+        from django.db.models import Sum
+        stock_data = InventoryLedger.objects.filter(
+            **stock_filter
+        ).values('product_id').annotate(
+            total_stock=Sum('quantity')
+        )
+        
+        # Create dict for easy lookup in template
+        context['stock_by_product'] = {
+            item['product_id']: item['total_stock'] or 0 
+            for item in stock_data
+        }
+        
+        # Pass location info for display
+        if user_location:
+            context['current_location'] = user_location
+        elif user_location_type:
+            from apps.core.models import Location
+            context['current_location'] = Location.objects.filter(
+                tenant=user.tenant,
+                is_active=True,
+                location_type=user_location_type
+            ).first()
+        else:
+            context['current_location'] = None
+        
         return context
 
 
@@ -158,6 +207,14 @@ class ProductCreateView(LoginRequiredMixin, CreateView):
     form_class = ProductForm
     template_name = 'inventory/product_form.html'
     success_url = reverse_lazy('inventory:product_list')
+    
+    def dispatch(self, request, *args, **kwargs):
+        # Check if shop manager has permission
+        if request.user.role and request.user.role.name == 'SHOP_MANAGER':
+            if not request.user.tenant.shop_manager_can_add_products:
+                messages.error(request, "You don't have permission to add products.")
+                return redirect('inventory:product_list')
+        return super().dispatch(request, *args, **kwargs)
     
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
@@ -240,10 +297,26 @@ class BatchCreateView(LoginRequiredMixin, CreateView):
     template_name = 'inventory/batch_form.html'
     success_url = reverse_lazy('inventory:batch_list')
     
+    def dispatch(self, request, *args, **kwargs):
+        # Check if shop manager has permission
+        if request.user.role and request.user.role.name == 'SHOP_MANAGER':
+            if not request.user.tenant.shop_manager_can_receive_stock:
+                messages.error(request, "You don't have permission to receive stock.")
+                return redirect('inventory:batch_list')
+        return super().dispatch(request, *args, **kwargs)
+    
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs['tenant'] = self.request.user.tenant
+        kwargs['user'] = self.request.user
         return kwargs
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        form = context.get('form')
+        if form and hasattr(form, 'auto_location'):
+            context['auto_location'] = form.auto_location
+        return context
     
     def form_valid(self, form):
         form.instance.tenant = self.request.user.tenant
@@ -375,6 +448,72 @@ class StockAdjustmentView(LoginRequiredMixin, View):
         return render(request, self.template_name, {'form': form})
 
 
+class InventoryLedgerListView(LoginRequiredMixin, ListView):
+    """
+    Complete audit trail of all inventory movements.
+    Read-only view for Auditors and Admins.
+    """
+    model = InventoryLedger
+    template_name = 'inventory/inventory_ledger.html'
+    context_object_name = 'entries'
+    paginate_by = 50
+    
+    def get_queryset(self):
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        user = self.request.user
+        queryset = InventoryLedger.objects.filter(
+            tenant=user.tenant
+        ).select_related(
+            'product', 'location', 'batch', 'created_by'
+        ).order_by('-created_at')
+        
+        # Date range filter
+        date_range = self.request.GET.get('range', 'all')
+        today = timezone.now().date()
+        
+        if date_range == 'today':
+            queryset = queryset.filter(created_at__date=today)
+        elif date_range == 'week':
+            queryset = queryset.filter(created_at__date__gte=today - timedelta(days=7))
+        elif date_range == 'month':
+            queryset = queryset.filter(created_at__date__gte=today - timedelta(days=30))
+        
+        # Transaction type filter
+        tx_type = self.request.GET.get('type')
+        if tx_type:
+            queryset = queryset.filter(transaction_type=tx_type)
+        
+        # Location filter
+        location = self.request.GET.get('location')
+        if location:
+            queryset = queryset.filter(location_id=location)
+        
+        # Product search
+        product = self.request.GET.get('product')
+        if product:
+            queryset = queryset.filter(
+                Q(product__name__icontains=product) |
+                Q(product__sku__icontains=product)
+            )
+        
+        return queryset
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['transaction_types'] = InventoryLedger.TRANSACTION_TYPES
+        context['locations'] = Location.objects.filter(
+            tenant=self.request.user.tenant,
+            is_active=True
+        )
+        context['current_range'] = self.request.GET.get('range', 'all')
+        context['current_type'] = self.request.GET.get('type', '')
+        context['current_location'] = self.request.GET.get('location', '')
+        context['current_product'] = self.request.GET.get('product', '')
+        return context
+
+
 # ============ API Views ============
 def get_batches_for_product(request):
     """AJAX endpoint to get batches for a product at a location."""
@@ -393,3 +532,199 @@ def get_batches_for_product(request):
     ).values('id', 'batch_number', 'current_quantity', 'unit_cost', 'expiry_date')
     
     return JsonResponse({'batches': list(batches)})
+
+
+def search_products(request):
+    """AJAX endpoint for product search autocomplete."""
+    query = request.GET.get('q', '')
+    
+    if not query or len(query) < 2:
+        return JsonResponse({'products': []})
+    
+    products = Product.objects.filter(
+        tenant=request.user.tenant,
+        is_active=True
+    ).filter(
+        Q(name__icontains=query) | 
+        Q(sku__icontains=query)
+    )[:10]  # Limit to 10 suggestions
+    
+    results = [
+        {
+            'id': p.pk,
+            'name': p.name,
+            'sku': p.sku,
+            'category': p.category.name if p.category else None,
+        }
+        for p in products
+    ]
+    
+    return JsonResponse({'products': results})
+
+
+# ============ Shop Price Management ============
+
+class ShopPriceListView(LoginRequiredMixin, View):
+    """
+    List all products with their shop price status for the shop manager's location.
+    """
+    template_name = 'inventory/shop_price_list.html'
+    
+    def dispatch(self, request, *args, **kwargs):
+        role_name = request.user.role.name if request.user.role else None
+        if role_name not in ['SHOP_MANAGER', 'ADMIN']:
+            messages.error(request, 'Only shop managers can access pricing.')
+            return redirect('core:dashboard')
+        return super().dispatch(request, *args, **kwargs)
+    
+    def get(self, request):
+        user = request.user
+        shop = user.location
+        
+        # Admin can select a shop
+        if not shop or shop.location_type != 'SHOP':
+            shop_id = request.GET.get('shop')
+            if shop_id:
+                shop = Location.objects.filter(
+                    tenant=user.tenant, pk=shop_id, location_type='SHOP'
+                ).first()
+        
+        context = {'shop': shop}
+        
+        if not shop or shop.location_type != 'SHOP':
+            context['shops'] = Location.objects.filter(
+                tenant=user.tenant, location_type='SHOP', is_active=True
+            )
+            return render(request, self.template_name, context)
+        
+        # Get all active products
+        products = Product.objects.filter(
+            tenant=user.tenant,
+            is_active=True
+        ).select_related('category').prefetch_related('shop_prices')
+        
+        # Build product list with price status
+        products_with_status = []
+        for product in products:
+            shop_price = product.shop_prices.filter(
+                location=shop, is_active=True
+            ).first()
+            
+            products_with_status.append({
+                'product': product,
+                'shop_price': shop_price,
+                'has_price': shop_price is not None,
+                'selling_price': shop_price.selling_price if shop_price else None,
+            })
+        
+        # Filter by status
+        status_filter = request.GET.get('status')
+        if status_filter == 'with_price':
+            products_with_status = [p for p in products_with_status if p['has_price']]
+        elif status_filter == 'without_price':
+            products_with_status = [p for p in products_with_status if not p['has_price']]
+        
+        # Search filter
+        search = request.GET.get('q', '').lower()
+        if search:
+            products_with_status = [
+                p for p in products_with_status 
+                if search in p['product'].name.lower() or search in (p['product'].sku or '').lower()
+            ]
+        
+        context['products'] = products_with_status
+        context['total_products'] = len(products_with_status)
+        context['priced_count'] = sum(1 for p in products_with_status if p['has_price'])
+        
+        return render(request, self.template_name, context)
+
+
+class ShopPriceSetView(LoginRequiredMixin, View):
+    """
+    Set or update shop price for a product.
+    """
+    template_name = 'inventory/shop_price_form.html'
+    
+    def dispatch(self, request, *args, **kwargs):
+        role_name = request.user.role.name if request.user.role else None
+        if role_name not in ['SHOP_MANAGER', 'ADMIN']:
+            messages.error(request, 'Only shop managers can set pricing.')
+            return redirect('core:dashboard')
+        return super().dispatch(request, *args, **kwargs)
+    
+    def get_shop_and_product(self, request, product_pk):
+        user = request.user
+        shop = user.location
+        
+        if not shop or shop.location_type != 'SHOP':
+            shop_id = request.GET.get('shop')
+            if shop_id:
+                shop = Location.objects.filter(
+                    tenant=user.tenant, pk=shop_id, location_type='SHOP'
+                ).first()
+        
+        product = get_object_or_404(Product, pk=product_pk, tenant=user.tenant)
+        return shop, product
+    
+    def get(self, request, pk):
+        shop, product = self.get_shop_and_product(request, pk)
+        
+        if not shop:
+            messages.error(request, 'No shop selected.')
+            return redirect('inventory:shop_price_list')
+        
+        # Get existing price or create new
+        existing_price = ShopPrice.objects.filter(
+            product=product,
+            location=shop,
+            is_active=True
+        ).first()
+        
+        initial = {'selling_price': product.default_selling_price}
+        if existing_price:
+            initial['selling_price'] = existing_price.selling_price
+        
+        context = {
+            'product': product,
+            'shop': shop,
+            'existing_price': existing_price,
+            'initial_price': initial['selling_price'],
+        }
+        
+        return render(request, self.template_name, context)
+    
+    def post(self, request, pk):
+        shop, product = self.get_shop_and_product(request, pk)
+        
+        if not shop:
+            messages.error(request, 'No shop selected.')
+            return redirect('inventory:shop_price_list')
+        
+        selling_price = request.POST.get('selling_price', '0')
+        
+        try:
+            selling_price = Decimal(selling_price)
+            if selling_price <= 0:
+                raise ValueError("Price must be positive")
+        except:
+            messages.error(request, 'Invalid price. Please enter a valid number.')
+            return redirect('inventory:shop_price_set', pk=pk)
+        
+        # Deactivate old prices for this product/shop
+        ShopPrice.objects.filter(
+            product=product,
+            location=shop,
+            is_active=True
+        ).update(is_active=False)
+        
+        # Create new shop price
+        ShopPrice.objects.create(
+            tenant=request.user.tenant,
+            product=product,
+            location=shop,
+            selling_price=selling_price,
+            is_active=True
+        )
+        
+        messages.success(request, f'Price for "{product.name}" set to {request.user.tenant.currency_symbol}{selling_price}')
+        return redirect('inventory:shop_price_list')

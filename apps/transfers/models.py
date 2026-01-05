@@ -98,8 +98,16 @@ class Transfer(TenantModel):
         super().save(*args, **kwargs)
     
     def clean(self):
-        if self.source_location == self.destination_location:
-            raise ValidationError("Source and destination locations must be different.")
+        # Safely check if both locations are set before comparing
+        try:
+            source = self.source_location
+            dest = self.destination_location
+            if source and dest and source == dest:
+                raise ValidationError("Source and destination locations must be different.")
+        except Transfer.source_location.RelatedObjectDoesNotExist:
+            pass  # Will be caught by form validation
+        except Transfer.destination_location.RelatedObjectDoesNotExist:
+            pass  # Will be caught by form validation
     
     @property
     def total_items(self):
@@ -132,6 +140,77 @@ class Transfer(TenantModel):
     @property
     def can_cancel(self):
         return self.status == 'DRAFT'
+    
+    # Access control methods
+    def user_is_source(self, user):
+        """Check if user belongs to source location."""
+        if not user or not user.is_authenticated:
+            return False
+        # Admin can act as source
+        if user.role and user.role.name == 'ADMIN':
+            return True
+        # Check if user's location matches source
+        if user.location and user.location == self.source_location:
+            return True
+        # Check if user's role matches source location type
+        role_location_map = {
+            'PRODUCTION_MANAGER': 'PRODUCTION',
+            'STORES_MANAGER': 'STORES',
+            'SHOP_MANAGER': 'SHOP',
+        }
+        if user.role:
+            user_location_type = role_location_map.get(user.role.name)
+            if user_location_type == self.source_location.location_type:
+                return True
+        return False
+    
+    def user_is_destination(self, user):
+        """Check if user belongs to destination location."""
+        if not user or not user.is_authenticated:
+            return False
+        # Admin can act as destination
+        if user.role and user.role.name == 'ADMIN':
+            return True
+        # Check if user's location matches destination
+        if user.location and user.location == self.destination_location:
+            return True
+        # Check if user's role matches destination location type
+        role_location_map = {
+            'PRODUCTION_MANAGER': 'PRODUCTION',
+            'STORES_MANAGER': 'STORES',
+            'SHOP_MANAGER': 'SHOP',
+        }
+        if user.role:
+            user_location_type = role_location_map.get(user.role.name)
+            if user_location_type == self.destination_location.location_type:
+                return True
+        return False
+    
+    def user_can_view(self, user):
+        """Check if user can view this transfer."""
+        if not user or not user.is_authenticated:
+            return False
+        # Admin can view all
+        if user.role and user.role.name == 'ADMIN':
+            return True
+        return self.user_is_source(user) or self.user_is_destination(user)
+    
+    def user_can_send(self, user):
+        """Check if user can send this transfer."""
+        return self.can_send and self.user_is_source(user)
+    
+    def user_can_receive(self, user):
+        """Check if user can receive this transfer."""
+        return self.can_receive and self.user_is_destination(user)
+    
+    def user_can_cancel(self, user):
+        """Check if user can cancel this transfer."""
+        if self.status == 'DRAFT':
+            return self.user_is_source(user)
+        elif self.status == 'SENT':
+            # Destination can cancel/reject a sent transfer
+            return self.user_is_destination(user)
+        return False
     
     def send(self, user):
         """

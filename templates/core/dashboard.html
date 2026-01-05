@@ -10,7 +10,86 @@
     </div>
 </div>
 
-<!-- Stats Cards -->
+<!-- URGENT ALERTS SECTION -->
+{% if pending_incoming_transfers or disputed_transfers %}
+<div class="row g-3 mb-4">
+    {% if pending_incoming_transfers %}
+    <div class="col-12">
+        <div class="alert alert-warning border-0 shadow-sm d-flex align-items-center" role="alert"
+            style="background: linear-gradient(135deg, #ffc107 0%, #ffca2c 100%); animation: pulse 2s infinite;">
+            <div class="flex-shrink-0 me-3">
+                <i class="bi bi-box-arrow-in-down-right fs-1 text-dark"></i>
+            </div>
+            <div class="flex-grow-1">
+                <h5 class="alert-heading mb-1 text-dark">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    {{ pending_incoming_transfers|length }} Incoming
+                    Transfer{{ pending_incoming_transfers|length|pluralize }} Awaiting Receipt!
+                </h5>
+                <p class="mb-2 text-dark">
+                    You have incoming stock transfers that need to be received and verified.
+                </p>
+                <div class="d-flex flex-wrap gap-2">
+                    {% for transfer in pending_incoming_transfers %}
+                    <a href="{% url 'transfers:transfer_detail' transfer.pk %}" class="btn btn-dark btn-sm">
+                        <i class="bi bi-eye me-1"></i>{{ transfer.transfer_number }}
+                        <span class="badge bg-light text-dark ms-1">{{ transfer.total_items }} items</span>
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if disputed_transfers %}
+    <div class="col-12">
+        <div class="alert alert-danger border-0 shadow-sm d-flex align-items-center" role="alert"
+            style="background: linear-gradient(135deg, #dc3545 0%, #e35d6a 100%); animation: pulse 2s infinite;">
+            <div class="flex-shrink-0 me-3">
+                <i class="bi bi-exclamation-octagon fs-1 text-white"></i>
+            </div>
+            <div class="flex-grow-1 text-white">
+                <h5 class="alert-heading mb-1">
+                    <i class="bi bi-shield-exclamation me-2"></i>
+                    {{ disputed_transfers|length }} Disputed Transfer{{ disputed_transfers|length|pluralize }} Need
+                    Attention!
+                </h5>
+                <p class="mb-2">
+                    There are disputed transfers that require resolution.
+                </p>
+                <div class="d-flex flex-wrap gap-2">
+                    {% for transfer in disputed_transfers %}
+                    <a href="{% url 'transfers:transfer_detail' transfer.pk %}" class="btn btn-light btn-sm">
+                        <i class="bi bi-eye me-1"></i>{{ transfer.transfer_number }}
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<style>
+    @keyframes pulse {
+        0% {
+            box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.4);
+        }
+
+        50% {
+            box-shadow: 0 0 0 10px rgba(255, 193, 7, 0);
+        }
+
+        100% {
+            box-shadow: 0 0 0 0 rgba(255, 193, 7, 0);
+        }
+    }
+</style>
+{% endif %}
+
+<!-- Stats Cards - Hidden from Shop Attendants -->
+{% if user.role.name != 'SHOP_ATTENDANT' %}
 <div class="row g-4 mb-4">
     <div class="col-md-6 col-lg-3">
         <div class="card stat-card">
@@ -68,8 +147,48 @@
         </div>
     </div>
 </div>
+{% else %}
+<!-- Simplified stats for Shop Attendants -->
+<div class="row g-4 mb-4">
+    <div class="col-md-6 col-lg-4">
+        <div class="card stat-card">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="stat-value text-warning">{{ currency_symbol }}0.00</div>
+                    <div class="stat-label">Today's Sales</div>
+                </div>
+                <div class="stat-icon bg-warning bg-opacity-10 text-warning">
+                    <i class="bi bi-cash-stack"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-lg-4">
+        <div class="card stat-card">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="stat-value text-success">{{ user.location.name|default:"Not Assigned" }}</div>
+                    <div class="stat-label">Your Location</div>
+                </div>
+                <div class="stat-icon bg-success bg-opacity-10 text-success">
+                    <i class="bi bi-shop"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-lg-4">
+        <div class="card">
+            <div class="card-body text-center py-3">
+                <a href="{% url 'sales:pos' %}" class="btn btn-primary btn-lg">
+                    <i class="bi bi-cart3 me-2"></i>Open POS
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 
-<!-- Quick Actions -->
+<!-- Quick Actions - Admin Only -->
 {% if user.role.name == 'ADMIN' %}
 <div class="row g-4 mb-4">
     <div class="col-12">
@@ -106,8 +225,8 @@
 </div>
 {% endif %}
 
-<!-- Locations Overview -->
-{% if locations_by_type %}
+<!-- Locations Overview - Hidden from Shop Attendants -->
+{% if locations_by_type and user.role.name != 'SHOP_ATTENDANT' %}
 <div class="row g-4">
     <div class="col-md-6">
         <div class="card">

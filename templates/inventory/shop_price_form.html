@@ -1,0 +1,72 @@
+{% extends 'base.html' %}
+
+{% block title %}Set Price - {{ product.name }} - {{ current_tenant.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-tag me-2"></i>Set Shop Price</h2>
+        <p class="text-muted mb-0">{{ shop.name }}</p>
+    </div>
+    <a href="{% url 'inventory:shop_price_list' %}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left me-1"></i>Back
+    </a>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">{{ product.name }}</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <strong>SKU:</strong> {{ product.sku|default:"-" }}<br>
+                    <strong>Category:</strong> {{ product.category.name|default:"Uncategorized" }}<br>
+                    <strong>Default Price:</strong>
+                    {{ currency_symbol }}{{ product.default_selling_price|floatformat:2 }}
+                </div>
+
+                <hr>
+
+                <form method="post">
+                    {% csrf_token %}
+
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">Selling Price for {{ shop.name }} *</label>
+                        <div class="input-group input-group-lg">
+                            <span class="input-group-text">{{ currency_symbol }}</span>
+                            <input type="number" name="selling_price" class="form-control"
+                                value="{{ initial_price|floatformat:2 }}" step="0.01" min="0.01" required autofocus>
+                        </div>
+                        {% if existing_price %}
+                        <small class="text-muted">Current price:
+                            {{ currency_symbol }}{{ existing_price.selling_price|floatformat:2 }}</small>
+                        {% else %}
+                        <small class="text-muted">This product has no price set for this shop yet.</small>
+                        {% endif %}
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <a href="{% url 'inventory:shop_price_list' %}" class="btn btn-secondary">Cancel</a>
+                        <button type="submit" class="btn btn-success flex-grow-1">
+                            <i class="bi bi-check-lg me-1"></i>
+                            {% if existing_price %}Update Price{% else %}Set Price{% endif %}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-body">
+                <h6 class="card-title"><i class="bi bi-info-circle me-2"></i>Note</h6>
+                <p class="card-text small text-muted mb-0">
+                    Products must have a shop price set before they can be sold at the POS.
+                    Setting a price here makes the product available for sale at {{ shop.name }}.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

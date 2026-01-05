@@ -28,6 +28,10 @@ class CategoryForm(forms.ModelForm):
             self.fields['parent'].queryset = Category.objects.filter(tenant=tenant, is_active=True)
         else:
             self.fields['parent'].queryset = Category.objects.none()
+        
+        # Default is_active to True for new categories
+        if not self.instance.pk:
+            self.initial['is_active'] = True
 
 
 class ProductForm(forms.ModelForm):
@@ -75,8 +79,11 @@ class BatchForm(forms.ModelForm):
             'notes': forms.Textarea(attrs={'class': 'form-control', 'rows': 2, 'placeholder': 'Notes'}),
         }
     
-    def __init__(self, *args, tenant=None, **kwargs):
+    def __init__(self, *args, tenant=None, user=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self.user = user
+        self.auto_location = None
+        
         if tenant:
             self.fields['product'].queryset = Product.objects.filter(tenant=tenant, is_active=True)
             # Only Production and Stores can receive batches
@@ -88,6 +95,24 @@ class BatchForm(forms.ModelForm):
         else:
             self.fields['product'].queryset = Product.objects.none()
             self.fields['location'].queryset = Location.objects.none()
+        
+        # Auto-set location based on user's assigned location
+        if user and user.location and user.location.location_type in ['PRODUCTION', 'STORES']:
+            self.initial['location'] = user.location.pk
+            self.auto_location = user.location
+            # Make location field hidden when auto-set
+            self.fields['location'].widget = forms.HiddenInput()
+        elif user and tenant:
+            # For users without location, find first Production or Stores
+            auto_loc = Location.objects.filter(
+                tenant=tenant,
+                is_active=True,
+                location_type__in=['PRODUCTION', 'STORES']
+            ).first()
+            if auto_loc:
+                self.initial['location'] = auto_loc.pk
+                self.auto_location = auto_loc
+                self.fields['location'].widget = forms.HiddenInput()
     
     def clean(self):
         cleaned_data = super().clean()

@@ -28,7 +28,13 @@ urlpatterns = [
     # Stock
     path('stock/', views.StockOverviewView.as_view(), name='stock_overview'),
     path('stock/adjustment/', views.StockAdjustmentView.as_view(), name='stock_adjustment'),
+    path('ledger/', views.InventoryLedgerListView.as_view(), name='inventory_ledger'),
+    
+    # Shop Pricing (for Shop Managers)
+    path('shop-prices/', views.ShopPriceListView.as_view(), name='shop_price_list'),
+    path('shop-prices/<int:pk>/set/', views.ShopPriceSetView.as_view(), name='shop_price_set'),
     
     # API
     path('api/batches/', views.get_batches_for_product, name='api_batches'),
+    path('api/products/search/', views.search_products, name='api_product_search'),
 ]

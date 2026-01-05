@@ -1,0 +1,122 @@
+{% extends 'base.html' %}
+
+{% block title %}Price History - {{ current_tenant.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-clock-history me-2"></i>Price Change History</h2>
+        <p class="text-muted mb-0">Audit trail of all shop price adjustments</p>
+    </div>
+    <a href="{% url 'accounting:accountant_dashboard' %}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left me-1"></i>Dashboard
+    </a>
+</div>
+
+<!-- Filters -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">Shop</label>
+                <select name="shop" class="form-select">
+                    <option value="">All Shops</option>
+                    {% for shop in shops %}
+                    <option value="{{ shop.pk }}"
+                        {% if request.GET.shop == shop.pk|stringformat:"i" %}selected{% endif %}>{{ shop.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Product</label>
+                <select name="product" class="form-select">
+                    <option value="">All Products</option>
+                    {% for p in products %}
+                    <option value="{{ p.pk }}" {% if request.GET.product == p.pk|stringformat:"i" %}selected{% endif %}>
+                        {{ p.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">From Date</label>
+                <input type="date" name="date_from" class="form-control" value="{{ request.GET.date_from }}">
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary w-100">Filter</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Results -->
+<div class="card">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">Price Changes</h5>
+        <span class="badge bg-secondary">{{ total_count }} records</span>
+    </div>
+    <div class="card-body">
+        {% if prices %}
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead class="table-light">
+                    <tr>
+                        <th>Date</th>
+                        <th>Product</th>
+                        <th>Shop</th>
+                        <th class="text-end">Price</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for price in prices %}
+                    <tr{% if not price.is_active %} class="text-muted" {% endif %}>
+                        <td>
+                            <small>{{ price.created_at|date:"M d, Y" }}</small><br>
+                            <small class="text-muted">{{ price.created_at|time:"H:i" }}</small>
+                        </td>
+                        <td>
+                            <strong>{{ price.product.name }}</strong><br>
+                            <small class="text-muted">{{ price.product.sku }}</small>
+                        </td>
+                        <td>
+                            <i class="bi bi-shop me-1 text-muted"></i>{{ price.location.name }}
+                        </td>
+                        <td class="text-end">
+                            <strong
+                                class="{% if price.is_active %}text-success{% endif %}">{{ currency_symbol }}{{ price.selling_price|floatformat:2 }}</strong>
+                        </td>
+                        <td>
+                            {% if price.is_active %}
+                            <span class="badge bg-success">Active</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Superseded</span>
+                            {% endif %}
+                        </td>
+                        </tr>
+                        {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-tags display-1"></i>
+            <h4 class="mt-3">No Price Changes</h4>
+            <p>No price adjustments found for the selected filters.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card mt-4">
+    <div class="card-body">
+        <h6><i class="bi bi-info-circle me-2"></i>Understanding Price History</h6>
+        <ul class="mb-0 small text-muted">
+            <li><strong>Active</strong> - Currently active selling price for the product at that shop</li>
+            <li><strong>Superseded</strong> - Previous price that has been replaced by a newer price</li>
+            <li>Each time a shop manager updates a product's price, a new record is created and the old one is marked as
+                superseded</li>
+        </ul>
+    </div>
+</div>
+{% endblock %}

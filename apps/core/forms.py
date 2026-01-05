@@ -168,3 +168,33 @@ class UserEditForm(forms.ModelForm):
         
         if tenant:
             self.fields['location'].queryset = Location.objects.filter(tenant=tenant)
+
+
+class TenantSettingsForm(forms.ModelForm):
+    """Form for editing tenant settings."""
+    
+    class Meta:
+        model = Tenant
+        fields = [
+            'name', 'email', 'phone', 'address', 'currency',
+            'allow_negative_stock', 'require_refund_approval', 'require_return_approval',
+            'credit_limit_warning_percent', 'backdating_allowed_days',
+            'shop_manager_can_add_products', 'shop_manager_can_receive_stock',
+            'allow_accountant_to_shop_transfers',
+        ]
+        widgets = {
+            'name': forms.TextInput(attrs={'class': 'form-control'}),
+            'email': forms.EmailInput(attrs={'class': 'form-control'}),
+            'phone': forms.TextInput(attrs={'class': 'form-control'}),
+            'address': forms.Textarea(attrs={'class': 'form-control', 'rows': 2}),
+            'currency': forms.Select(attrs={'class': 'form-select'}),
+            'credit_limit_warning_percent': forms.NumberInput(attrs={'class': 'form-control', 'min': 0, 'max': 100}),
+            'backdating_allowed_days': forms.NumberInput(attrs={'class': 'form-control', 'min': 0}),
+            'allow_negative_stock': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'require_refund_approval': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'require_return_approval': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'shop_manager_can_add_products': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'shop_manager_can_receive_stock': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'allow_accountant_to_shop_transfers': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+        }
+

@@ -27,7 +27,7 @@
 
 <!-- Action Buttons -->
 <div class="mb-4">
-    {% if transfer.can_send %}
+    {% if can_send %}
     <form action="{% url 'transfers:transfer_send' transfer.pk %}" method="post" class="d-inline">
         {% csrf_token %}
         <button type="submit" class="btn btn-success"
@@ -37,13 +37,13 @@
     </form>
     {% endif %}
 
-    {% if transfer.can_receive %}
+    {% if can_receive %}
     <a href="{% url 'transfers:transfer_receive' transfer.pk %}" class="btn btn-primary">
         <i class="bi bi-check-circle me-1"></i>Receive Transfer
     </a>
     {% endif %}
 
-    {% if transfer.can_dispute %}
+    {% if is_destination and transfer.can_dispute %}
     <a href="{% url 'transfers:transfer_dispute' transfer.pk %}" class="btn btn-warning">
         <i class="bi bi-exclamation-triangle me-1"></i>Dispute
     </a>
@@ -58,7 +58,7 @@
     </form>
     {% endif %}
 
-    {% if transfer.can_cancel %}
+    {% if can_cancel %}
     <form action="{% url 'transfers:transfer_cancel' transfer.pk %}" method="post" class="d-inline">
         {% csrf_token %}
         <button type="submit" class="btn btn-outline-danger" onclick="return confirm('Cancel this transfer?')">
@@ -109,16 +109,16 @@
                     <dt class="col-5">Created</dt>
                     <dd class="col-7">
                         {{ transfer.created_at|date:"M d, Y H:i" }}<br>
-                        <small class="text-muted">by {{
-                            transfer.created_by.get_full_name|default:transfer.created_by.email }}</small>
+                        <small class="text-muted">by
+                            {{ transfer.created_by.get_full_name|default:transfer.created_by.email }}</small>
                     </dd>
 
                     {% if transfer.sent_at %}
                     <dt class="col-5">Sent</dt>
                     <dd class="col-7">
                         {{ transfer.sent_at|date:"M d, Y H:i" }}<br>
-                        <small class="text-muted">by {{ transfer.sent_by.get_full_name|default:transfer.sent_by.email
-                            }}</small>
+                        <small class="text-muted">by
+                            {{ transfer.sent_by.get_full_name|default:transfer.sent_by.email }}</small>
                     </dd>
                     {% endif %}
 
@@ -126,8 +126,26 @@
                     <dt class="col-5">Received</dt>
                     <dd class="col-7">
                         {{ transfer.received_at|date:"M d, Y H:i" }}<br>
-                        <small class="text-muted">by {{
-                            transfer.received_by.get_full_name|default:transfer.received_by.email }}</small>
+                        <small class="text-muted">by
+                            {{ transfer.received_by.get_full_name|default:transfer.received_by.email }}</small>
+                    </dd>
+                    {% endif %}
+
+                    {% if transfer.disputed_at %}
+                    <dt class="col-5">Disputed</dt>
+                    <dd class="col-7">
+                        {{ transfer.disputed_at|date:"M d, Y H:i" }}<br>
+                        <small class="text-muted">by
+                            {{ transfer.disputed_by.get_full_name|default:transfer.disputed_by.email }}</small>
+                    </dd>
+                    {% endif %}
+
+                    {% if transfer.closed_at %}
+                    <dt class="col-5">Closed</dt>
+                    <dd class="col-7">
+                        {{ transfer.closed_at|date:"M d, Y H:i" }}<br>
+                        <small class="text-muted">by
+                            {{ transfer.closed_by.get_full_name|default:transfer.closed_by.email }}</small>
                     </dd>
                     {% endif %}
                 </dl>

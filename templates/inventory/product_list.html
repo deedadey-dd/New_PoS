@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load transfer_filters %}
 
 {% block title %}Products - {{ current_tenant.name }}{% endblock %}
 
@@ -6,29 +7,42 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
         <h2 class="mb-1">Products</h2>
-        <p class="text-muted mb-0">Manage your product catalog</p>
+        <p class="text-muted mb-0">
+            Manage your product catalog
+            {% if current_location %}
+            <span class="badge bg-info ms-2"><i class="bi bi-geo-alt me-1"></i>{{ current_location.name }}</span>
+            {% endif %}
+        </p>
     </div>
+    {% if user.role.name != 'SHOP_MANAGER' or current_tenant.shop_manager_can_add_products %}
     <a href="{% url 'inventory:product_create' %}" class="btn btn-primary">
         <i class="bi bi-plus-circle me-2"></i>Add Product
     </a>
+    {% endif %}
 </div>
 
 <!-- Filters -->
 <div class="card mb-4">
     <div class="card-body">
-        <form method="get" class="row g-3">
+        <form method="get" class="row g-3" id="searchForm">
             <div class="col-md-6">
-                <div class="input-group">
+                <div class="input-group position-relative">
                     <span class="input-group-text"><i class="bi bi-search"></i></span>
-                    <input type="text" name="search" class="form-control" placeholder="Search products..."
-                        value="{{ request.GET.search }}">
+                    <input type="text" name="search" id="productSearch" class="form-control"
+                        placeholder="Search products..." value="{{ request.GET.search }}" autocomplete="off">
+                    <!-- Autocomplete dropdown -->
+                    <div id="searchSuggestions" class="dropdown-menu w-100"
+                        style="display: none; max-height: 300px; overflow-y: auto;">
+                    </div>
                 </div>
             </div>
             <div class="col-md-4">
                 <select name="category" class="form-select">
                     <option value="">All Categories</option>
                     {% for cat in categories %}
-                    <option value="{{ cat.pk }}" {% if request.GET.category == cat.pk|stringformat:"i" %}selected{% endif %}>{{ cat.name }}</option>
+                    <option value="{{ cat.pk }}"
+                        {% if request.GET.category == cat.pk|stringformat:"i" %}selected{% endif %}>{{ cat.name }}
+                    </option>
                     {% endfor %}
                 </select>
             </div>
@@ -49,6 +63,7 @@
                         <th>SKU</th>
                         <th>Name</th>
                         <th>Category</th>
+                        <th class="text-end">Stock</th>
                         <th>Unit</th>
                         <th class="text-end">Price</th>
                         <th>Status</th>
@@ -65,6 +80,16 @@
                             </a>
                         </td>
                         <td>{{ product.category.name|default:"-" }}</td>
+                        <td class="text-end">
+                            {% with qty=stock_by_product|default_if_none:0 %}
+                            {% with product_qty=qty|get_item:product.pk %}
+                            <span
+                                class="badge {% if product_qty == 0 or product_qty == None %}bg-danger{% elif product_qty < 10 %}bg-warning text-dark{% else %}bg-success{% endif %}">
+                                {{ product_qty|default:0 }}
+                            </span>
+                            {% endwith %}
+                            {% endwith %}
+                        </td>
                         <td>{{ product.get_unit_of_measure_display }}</td>
                         <td class="text-end">{{ currency_symbol }}{{ product.default_selling_price }}</td>
                         <td>
@@ -98,11 +123,106 @@
             <i class="bi bi-box-seam display-1 text-muted"></i>
             <h4 class="mt-3">No Products Yet</h4>
             <p class="text-muted">Get started by adding your first product.</p>
+            {% if user.role.name != 'SHOP_MANAGER' or current_tenant.shop_manager_can_add_products %}
             <a href="{% url 'inventory:product_create' %}" class="btn btn-primary">
                 <i class="bi bi-plus-circle me-2"></i>Add Product
             </a>
+            {% endif %}
         </div>
         {% endif %}
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const searchInput = document.getElementById('productSearch');
+        const suggestions = document.getElementById('searchSuggestions');
+        let debounceTimer;
+        let selectedIndex = -1;
+
+        if (!searchInput || !suggestions) return;
+
+        searchInput.addEventListener('input', function () {
+            clearTimeout(debounceTimer);
+            const query = this.value.trim();
+
+            if (query.length < 2) {
+                suggestions.style.display = 'none';
+                return;
+            }
+
+            debounceTimer = setTimeout(() => {
+                fetch(`{% url 'inventory:api_product_search' %}?q=${encodeURIComponent(query)}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.products.length === 0) {
+                            suggestions.innerHTML = '<div class="dropdown-item text-muted">No products found</div>';
+                        } else {
+                            suggestions.innerHTML = data.products.map((p, index) => `
+                            <a href="{% url 'inventory:product_list' %}?search=${encodeURIComponent(p.name)}" 
+                               class="dropdown-item d-flex justify-content-between align-items-center" 
+                               data-index="${index}" data-name="${p.name}">
+                                <div>
+                                    <strong>${p.name}</strong>
+                                    <small class="text-muted ms-2">${p.sku}</small>
+                                </div>
+                                ${p.category ? `<span class="badge bg-secondary">${p.category}</span>` : ''}
+                            </a>
+                        `).join('');
+                        }
+                        suggestions.style.display = 'block';
+                        selectedIndex = -1;
+                    })
+                    .catch(() => {
+                        suggestions.style.display = 'none';
+                    });
+            }, 300);
+        });
+
+        // Keyboard navigation
+        searchInput.addEventListener('keydown', function (e) {
+            const items = suggestions.querySelectorAll('.dropdown-item[data-index]');
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                selectedIndex = Math.min(selectedIndex + 1, items.length - 1);
+                updateSelection(items);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                selectedIndex = Math.max(selectedIndex - 1, -1);
+                updateSelection(items);
+            } else if (e.key === 'Enter' && selectedIndex >= 0) {
+                e.preventDefault();
+                const selectedItem = items[selectedIndex];
+                if (selectedItem) {
+                    window.location.href = selectedItem.href;
+                }
+            } else if (e.key === 'Escape') {
+                suggestions.style.display = 'none';
+            }
+        });
+
+        function updateSelection(items) {
+            items.forEach((item, index) => {
+                item.classList.toggle('active', index === selectedIndex);
+            });
+        }
+
+        // Hide suggestions when clicking outside
+        document.addEventListener('click', function (e) {
+            if (!searchInput.contains(e.target) && !suggestions.contains(e.target)) {
+                suggestions.style.display = 'none';
+            }
+        });
+
+        // Show suggestions when focusing on input with existing query
+        searchInput.addEventListener('focus', function () {
+            if (this.value.length >= 2 && suggestions.children.length > 0) {
+                suggestions.style.display = 'block';
+            }
+        });
+    });
+</script>
 {% endblock %}

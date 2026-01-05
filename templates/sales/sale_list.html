@@ -20,10 +20,10 @@
             <div class="col-md-4">
                 <select name="status" class="form-select">
                     <option value="">All Statuses</option>
-                    <option value="COMPLETED" {% if request.GET.status=='COMPLETED' %}selected{% endif %}>Completed
+                    <option value="COMPLETED" {% if request.GET.status == 'COMPLETED' %}selected{% endif %}>Completed
                     </option>
-                    <option value="VOIDED" {% if request.GET.status=='VOIDED' %}selected{% endif %}>Voided</option>
-                    <option value="PENDING" {% if request.GET.status=='PENDING' %}selected{% endif %}>Pending</option>
+                    <option value="VOIDED" {% if request.GET.status == 'VOIDED' %}selected{% endif %}>Voided</option>
+                    <option value="PENDING" {% if request.GET.status == 'PENDING' %}selected{% endif %}>Pending</option>
                 </select>
             </div>
             <div class="col-md-4">

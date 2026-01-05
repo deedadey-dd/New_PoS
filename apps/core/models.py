@@ -48,6 +48,22 @@ class Tenant(models.Model):
     credit_limit_warning_percent = models.IntegerField(default=80)
     backdating_allowed_days = models.IntegerField(default=0)
     
+    # Shop Manager permissions
+    shop_manager_can_add_products = models.BooleanField(
+        default=False,
+        help_text="Allow shop managers to add new products"
+    )
+    shop_manager_can_receive_stock = models.BooleanField(
+        default=False,
+        help_text="Allow shop managers to receive stock (create batches)"
+    )
+    
+    # Cash Transfer settings
+    allow_accountant_to_shop_transfers = models.BooleanField(
+        default=False,
+        help_text="Allow accountants to send cash (float/change) to shops"
+    )
+    
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

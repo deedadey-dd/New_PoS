@@ -37,13 +37,13 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                {% for item in transfer.items.all %}
+                                {% for entry in items_with_fields %}
                                 <tr>
-                                    <td>{{ item.product.name }}</td>
-                                    <td>{{ item.batch.batch_number|default:"-" }}</td>
-                                    <td class="text-end">{{ item.quantity_sent }}</td>
+                                    <td>{{ entry.item.product.name }}</td>
+                                    <td>{{ entry.item.batch.batch_number|default:"-" }}</td>
+                                    <td class="text-end">{{ entry.item.quantity_sent }}</td>
                                     <td class="text-end" style="width: 150px;">
-                                        {{ form|lookup:item.pk }}
+                                        {{ entry.field }}
                                     </td>
                                 </tr>
                                 {% endfor %}

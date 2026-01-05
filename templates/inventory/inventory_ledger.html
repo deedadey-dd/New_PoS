@@ -1,0 +1,228 @@
+{% extends 'base.html' %}
+
+{% block title %}Inventory Ledger - {{ current_tenant.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-journal-text me-2"></i>Inventory Ledger</h2>
+        <p class="text-muted mb-0">Complete audit trail of all inventory movements</p>
+    </div>
+    <a href="{% url 'core:auditor_dashboard' %}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left me-1"></i>Back to Dashboard
+    </a>
+</div>
+
+<!-- Filters -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <!-- Date Range -->
+            <div class="col-md-2">
+                <label class="form-label small">Date Range</label>
+                <select name="range" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="all" {% if current_range == 'all' %}selected{% endif %}>All Time</option>
+                    <option value="today" {% if current_range == 'today' %}selected{% endif %}>Today</option>
+                    <option value="week" {% if current_range == 'week' %}selected{% endif %}>Last 7 Days</option>
+                    <option value="month" {% if current_range == 'month' %}selected{% endif %}>Last 30 Days</option>
+                </select>
+            </div>
+
+            <!-- Transaction Type -->
+            <div class="col-md-2">
+                <label class="form-label small">Transaction Type</label>
+                <select name="type" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="">All Types</option>
+                    {% for code, label in transaction_types %}
+                    <option value="{{ code }}" {% if current_type == code %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Location -->
+            <div class="col-md-2">
+                <label class="form-label small">Location</label>
+                <select name="location" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="">All Locations</option>
+                    {% for loc in locations %}
+                    <option value="{{ loc.id }}"
+                        {% if current_location == loc.id|stringformat:"d" %}selected{% endif %}>{{ loc.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Product Search -->
+            <div class="col-md-4">
+                <label class="form-label small">Product Search</label>
+                <div class="input-group input-group-sm">
+                    <input type="text" name="product" class="form-control" placeholder="Search by name or SKU..."
+                        value="{{ current_product }}">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-search"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Clear Filters -->
+            <div class="col-md-2 d-flex align-items-end">
+                <a href="{% url 'inventory:inventory_ledger' %}" class="btn btn-outline-secondary btn-sm w-100">
+                    <i class="bi bi-x-circle me-1"></i>Clear
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Ledger Table -->
+<div class="card">
+    <div class="card-body">
+        {% if entries %}
+        <div class="table-responsive">
+            <table class="table table-hover table-sm">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width: 140px;">Timestamp</th>
+                        <th style="width: 120px;">Type</th>
+                        <th>Product</th>
+                        <th>Batch</th>
+                        <th>Location</th>
+                        <th class="text-end" style="width: 100px;">Quantity</th>
+                        <th class="text-end" style="width: 100px;">Unit Cost</th>
+                        <th>User</th>
+                        <th>Reference</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for entry in entries %}
+                    <tr>
+                        <td class="text-nowrap">
+                            <small>{{ entry.created_at|date:"M d, Y" }}</small><br>
+                            <small class="text-muted">{{ entry.created_at|date:"H:i:s" }}</small>
+                        </td>
+                        <td>
+                            {% if entry.transaction_type == 'IN' %}
+                            <span class="badge bg-success">Stock In</span>
+                            {% elif entry.transaction_type == 'OUT' %}
+                            <span class="badge bg-danger">Stock Out</span>
+                            {% elif entry.transaction_type == 'TRANSFER_OUT' %}
+                            <span class="badge bg-info">Transfer Out</span>
+                            {% elif entry.transaction_type == 'TRANSFER_IN' %}
+                            <span class="badge bg-info">Transfer In</span>
+                            {% elif entry.transaction_type == 'SALE' %}
+                            <span class="badge bg-primary">Sale</span>
+                            {% elif entry.transaction_type == 'RETURN' %}
+                            <span class="badge bg-warning text-dark">Return</span>
+                            {% elif entry.transaction_type == 'ADJUST' %}
+                            <span class="badge bg-secondary">Adjustment</span>
+                            {% elif entry.transaction_type == 'DAMAGE' %}
+                            <span class="badge bg-danger">Damage</span>
+                            {% elif entry.transaction_type == 'PRODUCTION' %}
+                            <span class="badge bg-success">Production</span>
+                            {% else %}
+                            <span class="badge bg-secondary">{{ entry.get_transaction_type_display }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <strong>{{ entry.product.name }}</strong><br>
+                            <small class="text-muted">{{ entry.product.sku }}</small>
+                        </td>
+                        <td>
+                            {% if entry.batch %}
+                            <small>{{ entry.batch.batch_number }}</small>
+                            {% else %}
+                            <small class="text-muted">-</small>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {{ entry.location.name }}<br>
+                            <small class="text-muted">{{ entry.location.get_location_type_display }}</small>
+                        </td>
+                        <td
+                            class="text-end fw-bold {% if entry.quantity > 0 %}text-success{% else %}text-danger{% endif %}">
+                            {% if entry.quantity > 0 %}+{% endif %}{{ entry.quantity|floatformat:0 }}
+                        </td>
+                        <td class="text-end">
+                            {% if entry.unit_cost %}
+                            {{ currency_symbol }}{{ entry.unit_cost|floatformat:2 }}
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <small>{{ entry.created_by.get_full_name|default:entry.created_by.email|default:"-" }}</small>
+                        </td>
+                        <td>
+                            {% if entry.reference_type %}
+                            <small>{{ entry.reference_type }} #{{ entry.reference_id }}</small>
+                            {% if entry.notes %}
+                            <br><small class="text-muted">{{ entry.notes|truncatewords:8 }}</small>
+                            {% endif %}
+                            {% else %}
+                            {% if entry.notes %}
+                            <small class="text-muted">{{ entry.notes|truncatewords:10 }}</small>
+                            {% else %}
+                            <small class="text-muted">-</small>
+                            {% endif %}
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if page_obj.has_other_pages %}
+        <nav class="mt-4">
+            <ul class="pagination justify-content-center mb-0">
+                {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link"
+                        href="?page=1&range={{ current_range }}&type={{ current_type }}&location={{ current_location }}&product={{ current_product }}">
+                        <i class="bi bi-chevron-double-left"></i>
+                    </a>
+                </li>
+                <li class="page-item">
+                    <a class="page-link"
+                        href="?page={{ page_obj.previous_page_number }}&range={{ current_range }}&type={{ current_type }}&location={{ current_location }}&product={{ current_product }}">
+                        <i class="bi bi-chevron-left"></i>
+                    </a>
+                </li>
+                {% endif %}
+
+                <li class="page-item disabled">
+                    <span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+                </li>
+
+                {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link"
+                        href="?page={{ page_obj.next_page_number }}&range={{ current_range }}&type={{ current_type }}&location={{ current_location }}&product={{ current_product }}">
+                        <i class="bi bi-chevron-right"></i>
+                    </a>
+                </li>
+                <li class="page-item">
+                    <a class="page-link"
+                        href="?page={{ page_obj.paginator.num_pages }}&range={{ current_range }}&type={{ current_type }}&location={{ current_location }}&product={{ current_product }}">
+                        <i class="bi bi-chevron-double-right"></i>
+                    </a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+        {% endif %}
+
+        <div class="text-center text-muted mt-3">
+            <small>Showing {{ page_obj.start_index }}-{{ page_obj.end_index }} of {{ page_obj.paginator.count }}
+                entries</small>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-inbox display-1"></i>
+            <h4 class="mt-3">No Entries Found</h4>
+            <p>No inventory movements match your current filters.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

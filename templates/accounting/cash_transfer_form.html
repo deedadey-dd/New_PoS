@@ -1,0 +1,71 @@
+{% extends 'base.html' %}
+
+{% block title %}New Cash Transfer - {{ current_tenant.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-cash-stack me-2"></i>New Cash Transfer</h2>
+        <p class="text-muted mb-0">Send cash to accountant or receive float</p>
+    </div>
+    <a href="{% url 'accounting:cash_transfer_list' %}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left me-1"></i>Back
+    </a>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0"><i class="bi bi-send me-2"></i>Transfer Details</h5>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">Amount *</label>
+                        {{ form.amount }}
+                        <small class="text-muted">Enter the amount to transfer</small>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">{{ form.to_user.label }} *</label>
+                        {{ form.to_user }}
+                        {% if not form.to_user.field.queryset.exists %}
+                        <div class="alert alert-warning mt-2 mb-0">
+                            <small><i class="bi bi-exclamation-triangle me-1"></i>No eligible recipients found.</small>
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label">Notes (Optional)</label>
+                        {{ form.notes }}
+                        <small class="text-muted">Reference number or description</small>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <a href="{% url 'accounting:cash_transfer_list' %}" class="btn btn-secondary">Cancel</a>
+                        <button type="submit" class="btn btn-success flex-grow-1">
+                            <i class="bi bi-send me-1"></i>Create Transfer
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-body">
+                <h6 class="card-title"><i class="bi bi-info-circle me-2"></i>How it works</h6>
+                <ol class="mb-0 small text-muted">
+                    <li>You create a transfer request</li>
+                    <li>The recipient is notified</li>
+                    <li>Recipient confirms when they receive the cash</li>
+                    <li>Transfer is marked as confirmed</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

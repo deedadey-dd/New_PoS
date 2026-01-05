@@ -40,8 +40,8 @@
                             {% for item in low_stock %}
                             <tr>
                                 <td>
-                                    <a href="{% url 'inventory:product_detail' item.product.pk %}">{{ item.product.name
-                                        }}</a>
+                                    <a
+                                        href="{% url 'inventory:product_detail' item.product.pk %}">{{ item.product.name }}</a>
                                 </td>
                                 <td class="text-end text-danger"><strong>{{ item.current_stock }}</strong></td>
                                 <td class="text-end">{{ item.reorder_level }}</td>

@@ -1,0 +1,249 @@
+{% extends 'base.html' %}
+
+{% block title %}Shop Sales Report - {{ current_tenant.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-graph-up me-2"></i>Sales Report</h2>
+        <p class="text-muted mb-0">Sales breakdown by attendant{% if shop %} - {{ shop.name }}{% endif %}</p>
+    </div>
+    <!-- Date Range Filter -->
+    {% if shop %}
+    <div class="btn-group" role="group">
+        <a href="?range=today"
+            class="btn btn-outline-primary {% if current_range == 'today' %}active{% endif %}">Today</a>
+        <a href="?range=week" class="btn btn-outline-primary {% if current_range == 'week' %}active{% endif %}">7
+            Days</a>
+        <a href="?range=month" class="btn btn-outline-primary {% if current_range == 'month' %}active{% endif %}">30
+            Days</a>
+    </div>
+    {% endif %}
+</div>
+
+{% if not shop %}
+<!-- Shop Selection for Admin -->
+<div class="card">
+    <div class="card-body text-center py-5">
+        <i class="bi bi-shop display-1 text-muted"></i>
+        <h4 class="mt-3">Select a Shop</h4>
+        <p class="text-muted">Choose a shop to view sales report.</p>
+        <div class="d-flex flex-wrap justify-content-center gap-2 mt-4">
+            {% for s in shops %}
+            <a href="?shop={{ s.pk }}" class="btn btn-primary">
+                <i class="bi bi-shop me-1"></i>{{ s.name }}
+            </a>
+            {% empty %}
+            <p class="text-muted">No shops found.</p>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% else %}
+
+<!-- Period Badge -->
+<div class="mb-3">
+    <span class="badge bg-info fs-6">
+        <i class="bi bi-calendar-range me-1"></i>{{ date_range_label }}
+    </span>
+</div>
+
+<!-- Summary Cards -->
+<div class="row g-4 mb-4">
+    <div class="col-md-6 col-lg-3">
+        <div class="card bg-success text-white h-100">
+            <div class="card-body text-center">
+                <h6 class="card-subtitle mb-2 opacity-75">Total Revenue</h6>
+                <h3 class="mb-0">{{ currency_symbol }}{{ shop_totals.total_revenue|default:0|floatformat:2 }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-lg-3">
+        <div class="card bg-primary text-white h-100">
+            <div class="card-body text-center">
+                <h6 class="card-subtitle mb-2 opacity-75">Total Sales</h6>
+                <h3 class="mb-0">{{ shop_totals.total_sales|default:0 }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-lg-3">
+        <div class="card bg-warning text-dark h-100">
+            <div class="card-body text-center">
+                <h6 class="card-subtitle mb-2 opacity-75">Cash Sales</h6>
+                <h3 class="mb-0">{{ currency_symbol }}{{ shop_totals.cash_total|default:0|floatformat:2 }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-lg-3">
+        <div class="card bg-info text-white h-100">
+            <div class="card-body text-center">
+                <h6 class="card-subtitle mb-2 opacity-75">E-Cash Sales</h6>
+                <h3 class="mb-0">{{ currency_symbol }}{{ shop_totals.ecash_total|default:0|floatformat:2 }}</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Attendant Breakdown -->
+<div class="card">
+    <div class="card-header bg-white">
+        <h5 class="mb-0"><i class="bi bi-people me-2"></i>Sales by Attendant</h5>
+    </div>
+    <div class="card-body">
+        {% if attendant_stats %}
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead class="table-light">
+                    <tr>
+                        <th>Attendant</th>
+                        <th class="text-center"># Sales</th>
+                        <th class="text-end">Total Revenue</th>
+                        <th class="text-end">Cash</th>
+                        <th class="text-end">E-Cash</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for stat in attendant_stats %}
+                    <tr>
+                        <td>
+                            <i class="bi bi-person-circle me-2 text-muted"></i>
+                            {% if stat.attendant__first_name %}
+                            {{ stat.attendant__first_name }} {{ stat.attendant__last_name }}
+                            {% else %}
+                            {{ stat.attendant__email }}
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            <span class="badge bg-secondary">{{ stat.total_sales }}</span>
+                        </td>
+                        <td class="text-end fw-bold text-success">
+                            {{ currency_symbol }}{{ stat.total_revenue|default:0|floatformat:2 }}
+                        </td>
+                        <td class="text-end">
+                            {{ currency_symbol }}{{ stat.cash_amount|default:0|floatformat:2 }}
+                        </td>
+                        <td class="text-end">
+                            {{ currency_symbol }}{{ stat.ecash_amount|default:0|floatformat:2 }}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-inbox display-1"></i>
+            <h4 class="mt-3">No Sales</h4>
+            <p>No completed sales for this period.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="row g-4 mt-4">
+    <!-- Top Products -->
+    {% if top_products %}
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="bi bi-trophy me-2"></i>Top Selling Products</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Product</th>
+                            <th class="text-center">Qty</th>
+                            <th class="text-end">Revenue</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for p in top_products %}
+                        <tr>
+                            <td>{{ p.product__name }}</td>
+                            <td class="text-center"><span
+                                    class="badge bg-secondary">{{ p.qty_sold|floatformat:0 }}</span></td>
+                            <td class="text-end fw-bold text-success">{{ currency_symbol }}{{ p.revenue|floatformat:2 }}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Sales by Day -->
+    {% if sales_by_day %}
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="bi bi-calendar3 me-2"></i>Sales by Day</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Date</th>
+                            <th class="text-center"># Sales</th>
+                            <th class="text-end">Revenue</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for day in sales_by_day %}
+                        <tr>
+                            <td>{{ day.created_at__date|date:"D, M d" }}</td>
+                            <td class="text-center"><span class="badge bg-secondary">{{ day.count }}</span></td>
+                            <td class="text-end fw-bold text-success">
+                                {{ currency_symbol }}{{ day.revenue|floatformat:2 }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Recent Price Changes -->
+{% if recent_price_changes %}
+<div class="card mt-4">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-clock-history me-2"></i>Recent Price Changes</h5>
+        <a href="{% url 'inventory:shop_price_list' %}" class="btn btn-sm btn-outline-primary">Manage Prices</a>
+    </div>
+    <div class="card-body">
+        <table class="table table-sm">
+            <thead class="table-light">
+                <tr>
+                    <th>Date</th>
+                    <th>Product</th>
+                    <th class="text-end">Price</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for price in recent_price_changes %}
+                <tr{% if not price.is_active %} class="text-muted" {% endif %}>
+                    <td><small>{{ price.created_at|date:"M d, H:i" }}</small></td>
+                    <td>{{ price.product.name }}</td>
+                    <td class="text-end"><strong>{{ currency_symbol }}{{ price.selling_price|floatformat:2 }}</strong>
+                    </td>
+                    <td>
+                        {% if price.is_active %}
+                        <span class="badge bg-success">Active</span>
+                        {% else %}
+                        <span class="badge bg-secondary">Old</span>
+                        {% endif %}
+                    </td>
+                    </tr>
+                    {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}

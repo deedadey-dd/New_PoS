@@ -22,4 +22,7 @@ urlpatterns = [
     path('api/products/search/', views.api_product_search, name='api_product_search'),
     path('api/checkout/', views.api_complete_sale, name='api_checkout'),
     path('api/<int:pk>/void/', views.api_void_sale, name='api_void_sale'),
+    
+    # Reports
+    path('report/', views.ShopSalesReportView.as_view(), name='shop_sales_report'),
 ]

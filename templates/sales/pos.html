@@ -78,6 +78,77 @@
             top: 50%;
             transform: translateY(-50%);
             color: #888;
+            z-index: 1;
+        }
+
+        /* Autocomplete suggestions */
+        .search-suggestions {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: #333;
+            border: 1px solid #444;
+            border-top: none;
+            border-radius: 0 0 8px 8px;
+            max-height: 300px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+        }
+
+        .search-suggestions.show {
+            display: block;
+        }
+
+        .suggestion-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem 1rem;
+            cursor: pointer;
+            border-bottom: 1px solid #444;
+            transition: background 0.15s;
+        }
+
+        .suggestion-item:last-child {
+            border-bottom: none;
+        }
+
+        .suggestion-item:hover,
+        .suggestion-item.active {
+            background: var(--pos-primary);
+        }
+
+        .suggestion-name {
+            font-weight: 500;
+        }
+
+        .suggestion-sku {
+            font-size: 0.8rem;
+            color: #aaa;
+            margin-left: 0.5rem;
+        }
+
+        .suggestion-item:hover .suggestion-sku,
+        .suggestion-item.active .suggestion-sku {
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .suggestion-price {
+            color: var(--pos-success);
+            font-weight: 600;
+        }
+
+        .suggestion-item:hover .suggestion-price,
+        .suggestion-item.active .suggestion-price {
+            color: #fff;
+        }
+
+        .suggestion-empty {
+            padding: 1rem;
+            text-align: center;
+            color: #888;
         }
 
         .category-tabs {
@@ -373,7 +444,8 @@
             <div class="search-box">
                 <i class="bi bi-search"></i>
                 <input type="text" id="product-search" class="form-control"
-                    placeholder="Search products by name, SKU, or barcode...">
+                    placeholder="Search products by name, SKU, or barcode..." autocomplete="off">
+                <div class="search-suggestions" id="search-suggestions"></div>
             </div>
 
             <div class="category-tabs">
@@ -476,11 +548,7 @@
         document.addEventListener('DOMContentLoaded', function () {
             renderProducts();
             loadCartFromStorage();
-
-            // Search
-            document.getElementById('product-search').addEventListener('input', function (e) {
-                renderProducts(e.target.value);
-            });
+            initSearchAutocomplete();
 
             // Category tabs
             document.querySelectorAll('.category-tab').forEach(tab => {
@@ -501,6 +569,128 @@
             document.getElementById('amount-received').addEventListener('input', updateChange);
             document.getElementById('btn-complete-sale').addEventListener('click', completeSale);
         });
+
+        // Search Autocomplete
+        function initSearchAutocomplete() {
+            const searchInput = document.getElementById('product-search');
+            const suggestions = document.getElementById('search-suggestions');
+            let selectedIndex = -1;
+            let currentMatches = [];
+
+            searchInput.addEventListener('input', function () {
+                const query = this.value.trim().toLowerCase();
+                selectedIndex = -1;
+
+                if (query.length < 1) {
+                    suggestions.classList.remove('show');
+                    renderProducts('');
+                    return;
+                }
+
+                // Filter products matching the query
+                currentMatches = PRODUCTS.filter(p => {
+                    const matchCategory = currentCategory === 'all' || p.category === currentCategory;
+                    const matchSearch = p.name.toLowerCase().includes(query) ||
+                        p.sku.toLowerCase().includes(query);
+                    return matchSearch && matchCategory;
+                }).slice(0, 8); // Limit to 8 suggestions
+
+                if (currentMatches.length === 0) {
+                    suggestions.innerHTML = '<div class="suggestion-empty">No products found</div>';
+                } else {
+                    suggestions.innerHTML = currentMatches.map((p, index) => `
+                        <div class="suggestion-item" data-index="${index}" data-product-id="${p.id}">
+                            <div>
+                                <span class="suggestion-name">${highlightMatch(p.name, query)}</span>
+                                <span class="suggestion-sku">${p.sku}</span>
+                            </div>
+                            <span class="suggestion-price">${CURRENCY}${parseFloat(p.price).toFixed(2)}</span>
+                        </div>
+                    `).join('');
+
+                    // Add click handlers
+                    suggestions.querySelectorAll('.suggestion-item').forEach(item => {
+                        item.addEventListener('click', function () {
+                            const productId = parseInt(this.dataset.productId);
+                            addToCart(productId);
+                            searchInput.value = '';
+                            suggestions.classList.remove('show');
+                            renderProducts('');
+                        });
+                    });
+                }
+
+                suggestions.classList.add('show');
+
+                // Also filter the product grid
+                renderProducts(query);
+            });
+
+            // Keyboard navigation
+            searchInput.addEventListener('keydown', function (e) {
+                const items = suggestions.querySelectorAll('.suggestion-item');
+
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    selectedIndex = Math.min(selectedIndex + 1, items.length - 1);
+                    updateSuggestionSelection(items, selectedIndex);
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    selectedIndex = Math.max(selectedIndex - 1, -1);
+                    updateSuggestionSelection(items, selectedIndex);
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (selectedIndex >= 0 && items[selectedIndex]) {
+                        const productId = parseInt(items[selectedIndex].dataset.productId);
+                        addToCart(productId);
+                        searchInput.value = '';
+                        suggestions.classList.remove('show');
+                        renderProducts('');
+                    } else if (currentMatches.length === 1) {
+                        // If only one match, add it directly
+                        addToCart(currentMatches[0].id);
+                        searchInput.value = '';
+                        suggestions.classList.remove('show');
+                        renderProducts('');
+                    }
+                } else if (e.key === 'Escape') {
+                    suggestions.classList.remove('show');
+                    searchInput.blur();
+                }
+            });
+
+            // Hide suggestions when clicking outside
+            document.addEventListener('click', function (e) {
+                if (!searchInput.contains(e.target) && !suggestions.contains(e.target)) {
+                    suggestions.classList.remove('show');
+                }
+            });
+
+            // Focus search on any keypress (for barcode scanners)
+            document.addEventListener('keydown', function (e) {
+                // Only focus if not already in an input and not a special key
+                if (document.activeElement.tagName !== 'INPUT' &&
+                    !e.ctrlKey && !e.altKey && !e.metaKey &&
+                    e.key.length === 1) {
+                    searchInput.focus();
+                }
+            });
+        }
+
+        function updateSuggestionSelection(items, index) {
+            items.forEach((item, i) => {
+                item.classList.toggle('active', i === index);
+            });
+            // Scroll into view if needed
+            if (index >= 0 && items[index]) {
+                items[index].scrollIntoView({ block: 'nearest' });
+            }
+        }
+
+        function highlightMatch(text, query) {
+            const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+            return text.replace(regex, '<strong style="color: var(--pos-success)">$1</strong>');
+        }
 
         function renderProducts(search = '') {
             const grid = document.getElementById('products-grid');

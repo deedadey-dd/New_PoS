@@ -1,0 +1,135 @@
+{% extends 'base.html' %}
+
+{% block title %}Settings - {{ current_tenant.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-gear me-2"></i>Settings</h2>
+        <p class="text-muted mb-0">Configure organization settings and permissions</p>
+    </div>
+</div>
+
+<form method="post">
+    {% csrf_token %}
+
+    <div class="row">
+        <!-- Organization Details -->
+        <div class="col-lg-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="bi bi-building me-2"></i>Organization Details</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label">Organization Name</label>
+                        {{ form.name }}
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Email</label>
+                        {{ form.email }}
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Phone</label>
+                        {{ form.phone }}
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Address</label>
+                        {{ form.address }}
+                    </div>
+                    <div class="mb-0">
+                        <label class="form-label">Currency</label>
+                        {{ form.currency }}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stock & Sales Settings -->
+        <div class="col-lg-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0"><i class="bi bi-box-seam me-2"></i>Stock & Sales Settings</h5>
+                </div>
+                <div class="card-body">
+                    <div class="form-check form-switch mb-3">
+                        {{ form.allow_negative_stock }}
+                        <label class="form-check-label ms-2">Allow Negative Stock</label>
+                        <small class="d-block text-muted mt-1">Allow sales to proceed even if stock quantity goes below
+                            zero</small>
+                    </div>
+                    <div class="form-check form-switch mb-3">
+                        {{ form.require_refund_approval }}
+                        <label class="form-check-label ms-2">Require Refund Approval</label>
+                        <small class="d-block text-muted mt-1">Require manager approval for refunds</small>
+                    </div>
+                    <div class="form-check form-switch mb-3">
+                        {{ form.require_return_approval }}
+                        <label class="form-check-label ms-2">Require Return Approval</label>
+                        <small class="d-block text-muted mt-1">Require manager approval for product returns</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Credit Limit Warning (%)</label>
+                        {{ form.credit_limit_warning_percent }}
+                        <small class="form-text text-muted">Show warning when customer reaches this percent of credit
+                            limit</small>
+                    </div>
+                    <div class="mb-0">
+                        <label class="form-label">Backdating Allowed (Days)</label>
+                        {{ form.backdating_allowed_days }}
+                        <small class="form-text text-muted">Number of days in the past transactions can be dated (0 =
+                            today only)</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Shop Manager Permissions -->
+        <div class="col-lg-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-warning text-dark">
+                    <h5 class="mb-0"><i class="bi bi-person-gear me-2"></i>Shop Manager Permissions</h5>
+                </div>
+                <div class="card-body">
+                    <div class="form-check form-switch mb-3">
+                        {{ form.shop_manager_can_add_products }}
+                        <label class="form-check-label ms-2">Can Add Products</label>
+                        <small class="d-block text-muted mt-1">Allow shop managers to add new products to the
+                            catalog</small>
+                    </div>
+                    <div class="form-check form-switch mb-0">
+                        {{ form.shop_manager_can_receive_stock }}
+                        <label class="form-check-label ms-2">Can Receive Stock</label>
+                        <small class="d-block text-muted mt-1">Allow shop managers to receive stock and create
+                            batches</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cash Transfer Settings -->
+        <div class="col-lg-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0"><i class="bi bi-cash-stack me-2"></i>Cash Transfer Settings</h5>
+                </div>
+                <div class="card-body">
+                    <div class="form-check form-switch mb-0">
+                        {{ form.allow_accountant_to_shop_transfers }}
+                        <label class="form-check-label ms-2">Allow Accountant → Shop Transfers</label>
+                        <small class="d-block text-muted mt-1">Allow accountants to send float/change money to shops. If
+                            disabled, cash only flows from shops to accountants.</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="d-flex justify-content-end gap-2">
+        <a href="{% url 'core:dashboard' %}" class="btn btn-secondary">Cancel</a>
+        <button type="submit" class="btn btn-primary">
+            <i class="bi bi-check-lg me-1"></i>Save Settings
+        </button>
+    </div>
+</form>
+{% endblock %}

@@ -57,8 +57,62 @@
                     </li>
                     {% endif %}
 
+                    <!-- Cash Transfers - Shop Managers and Accountants -->
+                    {% if role_name == 'SHOP_MANAGER' or role_name == 'ACCOUNTANT' or role_name == 'ADMIN' %}
+                    <li class="nav-item">
+                        <a class="nav-link text-white {% if 'cash-transfers' in request.path %}active{% endif %}"
+                            href="{% url 'accounting:cash_transfer_list' %}">
+                            <i class="bi bi-cash-stack me-2"></i> Cash Transfers
+                        </a>
+                    </li>
+                    {% endif %}
+
+                    <!-- Shop Manager Reports -->
+                    {% if role_name == 'SHOP_MANAGER' or role_name == 'ADMIN' %}
+                    <li class="nav-item">
+                        <a class="nav-link text-white {% if 'report' in request.path and 'sales' in request.path %}active{% endif %}"
+                            href="{% url 'sales:shop_sales_report' %}">
+                            <i class="bi bi-graph-up me-2"></i> Sales Report
+                        </a>
+                    </li>
+                    {% endif %}
+
+                    <!-- Accountant Reports -->
+                    {% if role_name == 'ACCOUNTANT' or role_name == 'ADMIN' %}
+                    <li class="nav-item">
+                        <a class="nav-link text-white d-flex justify-content-between align-items-center {% if 'accounting' in request.path %}active{% endif %}"
+                            data-bs-toggle="collapse" href="#accountingMenu" role="button">
+                            <span><i class="bi bi-bank me-2"></i>Financial</span>
+                            <i class="bi bi-chevron-down"></i>
+                        </a>
+
+                        <div class="collapse {% if 'accounting' in request.path %}show{% endif %}" id="accountingMenu">
+                            <ul class="nav flex-column ms-3">
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if 'dashboard' in request.path and 'accounting' in request.path %}active text-white{% endif %}"
+                                        href="{% url 'accounting:accountant_dashboard' %}">
+                                        Dashboard
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if 'sales-report' in request.path %}active text-white{% endif %}"
+                                        href="{% url 'accounting:sales_report' %}">
+                                        <i class="bi bi-bar-chart me-1"></i>Sales Report
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if 'price-history' in request.path %}active text-white{% endif %}"
+                                        href="{% url 'accounting:price_history' %}">
+                                        <i class="bi bi-clock-history me-1"></i>Price History
+                                    </a>
+                                </li>
+                            </ul>
+                        </div>
+                    </li>
+                    {% endif %}
+
                     <!-- Inventory -->
-                    {% if role_name == 'ADMIN' or role_name == 'STORES_MANAGER' or role_name == 'PRODUCTION_MANAGER' %}
+                    {% if role_name == 'ADMIN' or role_name == 'STORES_MANAGER' or role_name == 'PRODUCTION_MANAGER' or role_name == 'SHOP_MANAGER' %}
                     <li class="nav-item">
                         <a class="nav-link text-white d-flex justify-content-between align-items-center {% if 'inventory' in request.path %}active{% endif %}"
                             data-bs-toggle="collapse" href="#inventoryMenu" role="button">
@@ -69,11 +123,19 @@
                         <div class="collapse {% if 'inventory' in request.path %}show{% endif %}" id="inventoryMenu">
                             <ul class="nav flex-column ms-3">
                                 <li class="nav-item">
-                                    <a class="nav-link text-white-50 py-1 {% if 'products' in request.path %}active text-white{% endif %}"
+                                    <a class="nav-link text-white-50 py-1 {% if 'products' in request.path and 'shop-prices' not in request.path %}active text-white{% endif %}"
                                         href="{% url 'inventory:product_list' %}">
                                         Products
                                     </a>
                                 </li>
+                                {% if role_name == 'SHOP_MANAGER' or role_name == 'ADMIN' %}
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if 'shop-prices' in request.path %}active text-white{% endif %}"
+                                        href="{% url 'inventory:shop_price_list' %}">
+                                        <i class="bi bi-tags me-1"></i>Shop Pricing
+                                    </a>
+                                </li>
+                                {% endif %}
                                 <li class="nav-item">
                                     <a class="nav-link text-white-50 py-1 {% if 'categories' in request.path %}active text-white{% endif %}"
                                         href="{% url 'inventory:category_list' %}">
@@ -118,8 +180,37 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link text-white" href="#">
+                        <a class="nav-link text-white {% if 'settings' in request.path %}active{% endif %}"
+                            href="{% url 'core:settings' %}">
                             <i class="bi bi-gear me-2"></i> Settings
+                        </a>
+                    </li>
+                    {% endif %}
+
+                    <!-- Auditor -->
+                    {% if role_name == 'AUDITOR' %}
+                    <li class="nav-item">
+                        <a class="nav-link text-white {% if 'auditor' in request.path %}active{% endif %}"
+                            href="{% url 'core:auditor_dashboard' %}">
+                            <i class="bi bi-clipboard-data me-2"></i> Auditor Dashboard
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link text-white {% if 'ledger' in request.path %}active{% endif %}"
+                            href="{% url 'inventory:inventory_ledger' %}">
+                            <i class="bi bi-journal-text me-2"></i> Inventory Ledger
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link text-white {% if 'sales' in request.path %}active{% endif %}"
+                            href="{% url 'sales:sale_list' %}">
+                            <i class="bi bi-receipt me-2"></i> Sales History
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link text-white {% if 'transfers' in request.path %}active{% endif %}"
+                            href="{% url 'transfers:transfer_list' %}">
+                            <i class="bi bi-arrow-left-right me-2"></i> Transfers
                         </a>
                     </li>
                     {% endif %}
@@ -130,15 +221,110 @@
                 </ul>
             </nav>
         </div>
+        <div class="sidebar-overlay" id="sidebarOverlay"></div>
         {% endif %}
 
         <!-- Main Content -->
         <div class="flex-grow-1 main-content">
             {% if user.is_authenticated %}
             <nav class="navbar navbar-light bg-white shadow-sm px-4">
-                <div class="ms-auto">
-                    {{ user.get_full_name|default:user.email }}
-                    <a href="{% url 'core:logout' %}" class="ms-3">Logout</a>
+                <button class="btn btn-link d-lg-none me-2 p-0" id="sidebarToggle" type="button">
+                    <i class="bi bi-list fs-4"></i>
+                </button>
+                <div class="ms-auto d-flex align-items-center">
+                    <!-- Cash on Hand Badge -->
+                    {% if cash_on_hand is not None %}
+                    <div class="me-3" title="Cash on Hand">
+                        <span class="badge bg-success fs-6">
+                            <i class="bi bi-cash me-1"></i>{{ currency_symbol }}{{ cash_on_hand|floatformat:2 }}
+                        </span>
+                    </div>
+                    {% endif %}
+
+                    <!-- Pending Transfers Badge -->
+                    {% if pending_transfers_count > 0 %}
+                    <a href="{% url 'accounting:cash_transfer_list' %}?status=PENDING" class="me-3 text-decoration-none"
+                        title="Pending Cash Transfers">
+                        <span class="badge bg-danger fs-6 pulse-animation">
+                            <i class="bi bi-cash-stack me-1"></i>{{ pending_transfers_count }} Pending
+                        </span>
+                    </a>
+                    {% endif %}
+
+                    <!-- Notification Bell -->
+                    <div class="dropdown me-3">
+                        <button class="btn btn-link position-relative p-0 text-dark" type="button"
+                            data-bs-toggle="dropdown" aria-expanded="false" id="notificationDropdown">
+                            <i class="bi bi-bell fs-5"></i>
+                            {% if unread_notification_count > 0 %}
+                            <span
+                                class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger notification-badge">
+                                {{ unread_notification_count }}
+                                <span class="visually-hidden">unread notifications</span>
+                            </span>
+                            {% endif %}
+                        </button>
+                        <div class="dropdown-menu dropdown-menu-end shadow notification-dropdown"
+                            style="width: 320px; max-height: 400px; overflow-y: auto;">
+                            <div class="dropdown-header d-flex justify-content-between align-items-center">
+                                <strong>Notifications</strong>
+                                {% if unread_notification_count > 0 %}
+                                <a href="{% url 'notifications:mark_all_read' %}"
+                                    class="btn btn-sm btn-link p-0 text-decoration-none">
+                                    Mark all read
+                                </a>
+                                {% endif %}
+                            </div>
+                            {% if recent_notifications %}
+                            {% for notification in recent_notifications %}
+                            <a class="dropdown-item py-2 {% if not notification.is_read %}bg-light{% endif %}"
+                                href="{% if notification.reference_type == 'Transfer' %}{% url 'transfers:transfer_detail' notification.reference_id %}{% else %}#{% endif %}?mark_read={{ notification.pk }}">
+                                <div class="d-flex align-items-start">
+                                    <div class="notification-icon me-2">
+                                        {% if notification.notification_type == 'TRANSFER_SENT' %}
+                                        <i class="bi bi-box-arrow-right text-primary"></i>
+                                        {% elif notification.notification_type == 'TRANSFER_RECEIVED' %}
+                                        <i class="bi bi-box-arrow-in-left text-success"></i>
+                                        {% elif notification.notification_type == 'TRANSFER_DISPUTED' %}
+                                        <i class="bi bi-exclamation-triangle text-danger"></i>
+                                        {% elif notification.notification_type == 'LOW_STOCK' %}
+                                        <i class="bi bi-exclamation-circle text-warning"></i>
+                                        {% else %}
+                                        <i class="bi bi-info-circle text-info"></i>
+                                        {% endif %}
+                                    </div>
+                                    <div class="flex-grow-1">
+                                        <div class="fw-semibold small">{{ notification.title }}</div>
+                                        <div class="text-muted small text-truncate">
+                                            {{ notification.message|truncatewords:10 }}</div>
+                                        <div class="text-muted small mt-1">
+                                            <i class="bi bi-clock me-1"></i>{{ notification.created_at|timesince }} ago
+                                        </div>
+                                    </div>
+                                    {% if not notification.is_read %}
+                                    <span class="badge bg-primary rounded-pill ms-1">New</span>
+                                    {% endif %}
+                                </div>
+                            </a>
+                            {% endfor %}
+                            <div class="dropdown-divider"></div>
+                            <a class="dropdown-item text-center py-2"
+                                href="{% url 'notifications:notification_list' %}">
+                                View all notifications
+                            </a>
+                            {% else %}
+                            <div class="dropdown-item text-center text-muted py-4">
+                                <i class="bi bi-bell-slash fs-4 d-block mb-2"></i>
+                                No notifications yet
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <span class="text-dark">{{ user.get_full_name|default:user.email }}</span>
+                    <a href="{% url 'core:logout' %}" class="ms-3 text-decoration-none">
+                        <i class="bi bi-box-arrow-right"></i> Logout
+                    </a>
                 </div>
             </nav>
             {% endif %}
@@ -160,6 +346,29 @@
     <script src="{% static 'js/app.js' %}"></script>
 
     {% block extra_js %}{% endblock %}
+
+    <script>
+        // Sidebar toggle for mobile
+        document.addEventListener('DOMContentLoaded', function () {
+            const sidebar = document.getElementById('sidebar');
+            const toggle = document.getElementById('sidebarToggle');
+            const overlay = document.getElementById('sidebarOverlay');
+
+            if (toggle && sidebar) {
+                toggle.addEventListener('click', function () {
+                    sidebar.classList.toggle('show');
+                    overlay.classList.toggle('show');
+                });
+            }
+
+            if (overlay && sidebar) {
+                overlay.addEventListener('click', function () {
+                    sidebar.classList.remove('show');
+                    overlay.classList.remove('show');
+                });
+            }
+        });
+    </script>
 </body>
 
 </html>

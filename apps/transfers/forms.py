@@ -28,29 +28,54 @@ class TransferForm(forms.ModelForm):
         model = Transfer
         fields = ['source_location', 'destination_location', 'notes']
         widgets = {
-            'source_location': forms.Select(attrs={'class': 'form-select'}),
+            'source_location': forms.HiddenInput(),
             'destination_location': forms.Select(attrs={'class': 'form-select'}),
             'notes': forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
         }
+    # Map roles to their default location types
+    ROLE_LOCATION_MAP = {
+        'PRODUCTION_MANAGER': 'PRODUCTION',
+        'STORES_MANAGER': 'STORES',
+        'SHOP_MANAGER': 'SHOP',
+    }
     
     def __init__(self, *args, tenant=None, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.tenant = tenant
         self.user = user
+        self.source_location_display = None
         
         if tenant:
-            # Filter locations by tenant
-            self.fields['source_location'].queryset = Location.objects.filter(
-                tenant=tenant, is_active=True
-            )
+            # Default: filter all locations by tenant
             self.fields['destination_location'].queryset = Location.objects.filter(
                 tenant=tenant, is_active=True
             )
         
-        # Pre-populate and filter based on user's location
-        if user and user.location and not self.instance.pk:
+        if not user or self.instance.pk:
+            return
+        
+        source_location = None
+        
+        # Try to use user's assigned location first
+        if user.location:
             source_location = user.location
+        # Otherwise, find location based on user's role
+        elif user.role and tenant:
+            role_name = user.role.name
+            location_type = self.ROLE_LOCATION_MAP.get(role_name)
+            
+            if location_type:
+                # Find first matching location of the appropriate type for this tenant
+                source_location = Location.objects.filter(
+                    tenant=tenant,
+                    is_active=True,
+                    location_type=location_type
+                ).first()
+        
+        # If we found a source location, set it up
+        if source_location:
             self.initial['source_location'] = source_location.pk
+            self.source_location_display = source_location
             
             # Get allowed destination types based on source location type
             source_type = source_location.location_type
@@ -66,7 +91,7 @@ class TransferForm(forms.ModelForm):
                 
                 self.fields['destination_location'].queryset = valid_destinations
                 
-                # Pre-select first valid destination if only one exists
+                # Auto-select first valid destination if only one exists
                 if valid_destinations.count() == 1:
                     self.initial['destination_location'] = valid_destinations.first().pk
     

@@ -23,18 +23,38 @@ class TransferListView(LoginRequiredMixin, ListView):
     template_name = 'transfers/transfer_list.html'
     context_object_name = 'transfers'
     
-    def get_queryset(self):
-        queryset = Transfer.objects.filter(tenant=self.request.user.tenant)
+    # Active statuses (still in progress)
+    ACTIVE_STATUSES = ['DRAFT', 'SENT']
+    # Completed statuses (finished their cycle)
+    COMPLETED_STATUSES = ['RECEIVED', 'PARTIAL', 'DISPUTED', 'CLOSED', 'CANCELLED']
+    
+    def get_base_queryset(self):
+        """Get base queryset with tenant and permission filtering."""
+        from django.db.models import Q
+        user = self.request.user
+        queryset = Transfer.objects.filter(tenant=user.tenant)
         
-        # Filter by status
-        status = self.request.GET.get('status')
-        if status:
-            queryset = queryset.filter(status=status)
+        # Non-admin users only see transfers they're involved in
+        if not (user.role and user.role.name == 'ADMIN'):
+            role_location_map = {
+                'PRODUCTION_MANAGER': 'PRODUCTION',
+                'STORES_MANAGER': 'STORES',
+                'SHOP_MANAGER': 'SHOP',
+            }
+            user_location_type = role_location_map.get(user.role.name if user.role else None)
+            
+            # Build filter: user's specific location OR matching location type
+            location_filter = Q()
+            if user.location:
+                location_filter |= Q(source_location=user.location) | Q(destination_location=user.location)
+            if user_location_type:
+                location_filter |= Q(source_location__location_type=user_location_type) | Q(destination_location__location_type=user_location_type)
+            
+            queryset = queryset.filter(location_filter)
         
         # Filter by location (either source or destination)
         location = self.request.GET.get('location')
         if location:
-            from django.db.models import Q
             queryset = queryset.filter(
                 Q(source_location_id=location) | Q(destination_location_id=location)
             )
@@ -43,13 +63,47 @@ class TransferListView(LoginRequiredMixin, ListView):
             'source_location', 'destination_location', 'created_by'
         )
     
+    def get_queryset(self):
+        from django.db.models import Q
+        base_queryset = self.get_base_queryset()
+        
+        # Filter by status if specified
+        status = self.request.GET.get('status')
+        if status:
+            return base_queryset.filter(status=status)
+        
+        # By default, show active transfers in main list
+        return base_queryset.filter(status__in=self.ACTIVE_STATUSES)
+    
     def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
+        from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
         from apps.core.models import Location
+        
+        context = super().get_context_data(**kwargs)
         context['locations'] = Location.objects.filter(
             tenant=self.request.user.tenant, is_active=True
         )
         context['status_choices'] = Transfer.STATUS_CHOICES
+        
+        # Get completed transfers (history) with pagination
+        history_queryset = self.get_base_queryset().filter(
+            status__in=self.COMPLETED_STATUSES
+        ).order_by('-received_at', '-created_at')
+        
+        # Pagination for history
+        history_page = self.request.GET.get('history_page', 1)
+        paginator = Paginator(history_queryset, 10)  # 10 items per page
+        
+        try:
+            history_transfers = paginator.page(history_page)
+        except PageNotAnInteger:
+            history_transfers = paginator.page(1)
+        except EmptyPage:
+            history_transfers = paginator.page(paginator.num_pages)
+        
+        context['history_transfers'] = history_transfers
+        context['history_paginator'] = paginator
+        
         return context
 
 
@@ -127,6 +181,26 @@ class TransferDetailView(LoginRequiredMixin, DetailView):
             'source_location', 'destination_location',
             'created_by', 'sent_by', 'received_by'
         ).prefetch_related('items__product', 'items__batch')
+    
+    def get(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        # Check if user can view this transfer
+        if not self.object.user_can_view(request.user):
+            messages.error(request, "You don't have permission to view this transfer.")
+            return redirect('transfers:transfer_list')
+        return super().get(request, *args, **kwargs)
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        user = self.request.user
+        transfer = self.object
+        # Pass permission flags to template
+        context['can_send'] = transfer.user_can_send(user)
+        context['can_receive'] = transfer.user_can_receive(user)
+        context['can_cancel'] = transfer.user_can_cancel(user)
+        context['is_source'] = transfer.user_is_source(user)
+        context['is_destination'] = transfer.user_is_destination(user)
+        return context
 
 
 class TransferSendView(LoginRequiredMixin, View):
@@ -136,6 +210,11 @@ class TransferSendView(LoginRequiredMixin, View):
         transfer = get_object_or_404(
             Transfer, pk=pk, tenant=request.user.tenant
         )
+        
+        # Check permission
+        if not transfer.user_can_send(request.user):
+            messages.error(request, "You don't have permission to send this transfer.")
+            return redirect('transfers:transfer_detail', pk=pk)
         
         try:
             transfer.send(request.user)
@@ -155,14 +234,29 @@ class TransferReceiveView(LoginRequiredMixin, View):
             Transfer, pk=pk, tenant=request.user.tenant
         )
         
+        # Check permission - only destination users can receive
+        if not transfer.user_can_receive(request.user):
+            messages.error(request, "You don't have permission to receive this transfer.")
+            return redirect('transfers:transfer_detail', pk=pk)
+        
         if not transfer.can_receive:
             messages.error(request, f"Cannot receive transfer in {transfer.status} status.")
             return redirect('transfers:transfer_detail', pk=pk)
         
         form = TransferReceiveForm(transfer=transfer)
+        
+        # Attach form fields to items for easy template access
+        items_with_fields = []
+        for item in transfer.items.all():
+            items_with_fields.append({
+                'item': item,
+                'field': form[f'received_{item.pk}']
+            })
+        
         return render(request, self.template_name, {
             'transfer': transfer,
-            'form': form
+            'form': form,
+            'items_with_fields': items_with_fields
         })
     
     def post(self, request, pk):
