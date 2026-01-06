@@ -171,6 +171,31 @@ class DashboardView(LoginRequiredMixin, View):
                 ).filter(disputed_filter).select_related(
                     'source_location', 'destination_location'
                 ).order_by('-created_at')[:5]
+            
+            # Today's sales calculation for dashboard
+            from apps.sales.models import Sale
+            from django.utils import timezone
+            from django.db.models import Sum
+            
+            today = timezone.now().date()
+            sales_filter = {
+                'tenant': user.tenant,
+                'status': 'COMPLETED',
+                'created_at__date': today
+            }
+            
+            # For attendants, show only their own sales
+            if is_attendant:
+                sales_filter['attendant'] = user
+            # For shop managers, show their shop's sales
+            elif role_name == 'SHOP_MANAGER' and user.location:
+                sales_filter['shop'] = user.location
+            
+            today_sales = Sale.objects.filter(**sales_filter).aggregate(
+                total=Sum('total')
+            )['total'] or 0
+            
+            context['today_sales'] = today_sales
         
         return render(request, self.template_name, context)
 

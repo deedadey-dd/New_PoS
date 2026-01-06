@@ -70,7 +70,7 @@ class CashTransferListView(LoginRequiredMixin, ListView):
         ).count()
         
         # Check if user can create transfers
-        context['can_create'] = role_name in ['SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN']
+        context['can_create'] = role_name in ['SHOP_ATTENDANT', 'SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN']
         
         # For accountants: show shop filter
         if role_name in ['ACCOUNTANT', 'ADMIN']:
@@ -102,9 +102,9 @@ class CashTransferCreateView(LoginRequiredMixin, View):
     template_name = 'accounting/cash_transfer_form.html'
     
     def dispatch(self, request, *args, **kwargs):
-        # Only Shop Managers and Accountants can create transfers
+        # Shop Attendants, Shop Managers, Accountants and Admins can create transfers
         role_name = request.user.role.name if request.user.role else None
-        if role_name not in ['SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN']:
+        if role_name not in ['SHOP_ATTENDANT', 'SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN']:
             messages.error(request, 'You do not have permission to create cash transfers.')
             return redirect('accounting:cash_transfer_list')
         return super().dispatch(request, *args, **kwargs)

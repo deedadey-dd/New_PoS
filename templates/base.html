@@ -235,12 +235,14 @@
                 </button>
                 <div class="ms-auto d-flex align-items-center">
                     <!-- Cash on Hand Badge -->
-                    {% if cash_on_hand is not None %}
-                    <div class="me-3" title="Cash on Hand">
+                    {% if role_name == 'SHOP_ATTENDANT' or role_name == 'SHOP_MANAGER' or role_name == 'ACCOUNTANT' %}
+                    <a href="{% url 'accounting:cash_transfer_list' %}" class="me-3 text-decoration-none"
+                        title="Cash on Hand - Click to manage transfers">
                         <span class="badge bg-success fs-6">
-                            <i class="bi bi-cash me-1"></i>{{ currency_symbol }}{{ cash_on_hand|floatformat:2 }}
+                            <i
+                                class="bi bi-cash me-1"></i>{{ currency_symbol }}{{ cash_on_hand|floatformat:2|default:"0.00" }}
                         </span>
-                    </div>
+                    </a>
                     {% endif %}
 
                     <!-- Pending Transfers Badge -->
