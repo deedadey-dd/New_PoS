@@ -228,6 +228,7 @@ class InventoryLedger(TenantModel):
         ('RETURN', 'Return'),
         ('DAMAGE', 'Damage/Write-off'),
         ('PRODUCTION', 'Production'),
+        ('DISPUTE_REVERSAL', 'Dispute Reversal'),
     ]
     
     product = models.ForeignKey(

@@ -1,0 +1,138 @@
+{% extends 'base.html' %}
+
+{% block title %}Customers - {{ current_tenant.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-people me-2"></i>Customers</h2>
+        <p class="text-muted mb-0">Manage customer profiles and credit accounts</p>
+    </div>
+    <a href="{% url 'customers:customer_create' %}" class="btn btn-primary">
+        <i class="bi bi-person-plus me-1"></i>New Customer
+    </a>
+</div>
+
+<!-- Search -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="d-flex gap-2">
+            <input type="text" name="search" class="form-control" placeholder="Search by name, phone or email..."
+                value="{{ request.GET.search }}">
+            <button type="submit" class="btn btn-secondary">Search</button>
+            {% if request.GET.search %}
+            <a href="{% url 'customers:customer_list' %}" class="btn btn-outline-secondary">Clear</a>
+            {% endif %}
+        </form>
+    </div>
+</div>
+
+<!-- Customers Table -->
+<div class="card">
+    <div class="card-body">
+        {% if customers %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Shop</th>
+                        <th>Contact</th>
+                        <th>Balance (Debt)</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for customer in customers %}
+                    <tr>
+                        <td>
+                            <div class="fw-bold">{{ customer.name }}</div>
+                            <small class="text-muted">Created {{ customer.created_at|date:"M d, Y" }}</small>
+                        </td>
+                        <td>
+                            {% if customer.shop %}
+                            <span class="badge bg-info-subtle text-info-emphasis">{{ customer.shop.name }}</span>
+                            {% else %}
+                            <span class="badge bg-secondary-subtle text-secondary">Global</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if customer.phone %}
+                            <div><i class="bi bi-telephone-fill me-1 text-muted"></i>{{ customer.phone }}</div>
+                            {% endif %}
+                            {% if customer.email %}
+                            <div><i class="bi bi-envelope-fill me-1 text-muted"></i>{{ customer.email }}</div>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if customer.current_balance > 0 %}
+                            <span
+                                class="badge bg-danger fs-6">{{ currency_symbol }}{{ customer.current_balance }}</span>
+                            <div class="small text-danger mt-1">Owes Shop</div>
+                            {% elif customer.current_balance < 0 %}
+                            <span
+                                class="badge bg-success fs-6">{{ currency_symbol }}{{ customer.current_balance }}</span>
+                            <div class="small text-success mt-1">Credit Balance</div>
+                            {% else %}
+                            <span class="badge bg-secondary">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if customer.is_active %}
+                            <span class="badge bg-success-subtle text-success">Active</span>
+                            {% else %}
+                            <span class="badge bg-danger-subtle text-danger">Inactive</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="btn-group">
+                                <a href="{% url 'customers:customer_detail' customer.pk %}"
+                                    class="btn btn-sm btn-outline-primary" title="View Ledger">
+                                    <i class="bi bi-journal-text"></i> View
+                                </a>
+                                <a href="{% url 'customers:customer_edit' customer.pk %}"
+                                    class="btn btn-sm btn-outline-secondary" title="Edit">
+                                    <i class="bi bi-pencil"></i>
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if is_paginated %}
+        <nav class="mt-4">
+            <ul class="pagination justify-content-center">
+                {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link"
+                        href="?page={{ page_obj.previous_page_number }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}">Previous</a>
+                </li>
+                {% endif %}
+                <li class="page-item disabled"><span class="page-link">{{ page_obj.number }} of
+                        {{ page_obj.paginator.num_pages }}</span></li>
+                {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link"
+                        href="?page={{ page_obj.next_page_number }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}">Next</a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+        {% endif %}
+
+        {% else %}
+        <div class="text-center py-5">
+            <i class="bi bi-people display-1 text-muted"></i>
+            <h3 class="mt-3 text-muted">No customers found</h3>
+            <p>Get started by adding your first customer.</p>
+            <a href="{% url 'customers:customer_create' %}" class="btn btn-primary mt-2">Add Customer</a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

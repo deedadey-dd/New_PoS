@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Reject Request {{ request_obj.request_number }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-6">
+            <div class="card">
+                <div class="card-header bg-danger text-white">
+                    <h5 class="mb-0">
+                        <i class="bi bi-x-lg me-2"></i>Reject Stock Request
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-warning">
+                        <strong>Request:</strong> {{ request_obj.request_number }}<br>
+                        <strong>From:</strong> {{ request_obj.requesting_location.name }}<br>
+                        <strong>Items:</strong> {{ request_obj.total_items }} item(s)
+                    </div>
+
+                    <form method="post">
+                        {% csrf_token %}
+
+                        <div class="mb-3">
+                            <label class="form-label">Reason for Rejection <span class="text-danger">*</span></label>
+                            {{ form.rejection_reason }}
+                            {% if form.errors.rejection_reason %}
+                            <div class="invalid-feedback d-block">{{ form.errors.rejection_reason.0 }}</div>
+                            {% endif %}
+                            <small class="text-muted">Please provide a clear reason for the rejection.</small>
+                        </div>
+
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-danger">
+                                <i class="bi bi-x-lg me-1"></i>Reject Request
+                            </button>
+                            <a href="{% url 'transfers:stock_request_detail' pk=request_obj.pk %}"
+                                class="btn btn-outline-secondary">
+                                Cancel
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

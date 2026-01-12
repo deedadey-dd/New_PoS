@@ -68,6 +68,15 @@ def tenant_context(request):
                 payment_method='CASH'
             ).aggregate(total=Sum('total'))['total'] or Decimal('0')
             
+            # Add customer cash payments received (even outside shift)
+            from apps.customers.models import CustomerTransaction
+            customer_payments = CustomerTransaction.objects.filter(
+                tenant=tenant,
+                performed_by=user,
+                transaction_type='CREDIT',
+                description__icontains='CASH'
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+            
             # Subtract any pending or confirmed transfers already made
             transferred = CashTransfer.objects.filter(
                 tenant=tenant,
@@ -75,14 +84,19 @@ def tenant_context(request):
                 status__in=['PENDING', 'CONFIRMED']
             ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
             
-            # Total cash on hand = shift cash + shiftless cash - already transferred
-            cash_on_hand += shiftless_cash
+            # Total cash on hand = shift cash + shiftless cash + customer payments - already transferred
+            cash_on_hand += shiftless_cash + customer_payments
             cash_on_hand = max(Decimal('0'), cash_on_hand - transferred)
             
             context['cash_on_hand'] = cash_on_hand
         
         elif role_name == 'SHOP_MANAGER':
             # Cash received from attendants (confirmed) minus sent to accountant
+            # Plus own sales made directly (without shift)
+            # Plus customer payments received in cash
+            from apps.sales.models import Sale
+            from apps.customers.models import CustomerTransaction
+            
             received = CashTransfer.objects.filter(
                 tenant=tenant,
                 to_user=user,
@@ -95,7 +109,24 @@ def tenant_context(request):
                 status='CONFIRMED'
             ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
             
-            context['cash_on_hand'] = received - sent
+            # Add own shiftless cash sales (made directly by manager)
+            own_sales = Sale.objects.filter(
+                tenant=tenant,
+                attendant=user,
+                shift__isnull=True,
+                status='COMPLETED',
+                payment_method='CASH'
+            ).aggregate(total=Sum('total'))['total'] or Decimal('0')
+            
+            # Add customer cash payments received (payments on account)
+            customer_payments = CustomerTransaction.objects.filter(
+                tenant=tenant,
+                performed_by=user,
+                transaction_type='CREDIT',  # CREDIT = payment received
+                description__icontains='CASH'  # Only cash payments
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+            
+            context['cash_on_hand'] = received - sent + own_sales + customer_payments
         
         elif role_name == 'ACCOUNTANT':
             # All deposits received minus any sent out
@@ -113,6 +144,17 @@ def tenant_context(request):
             
             context['cash_on_hand'] = received - sent
         
+        # Add total credit debt for managers/admin
+        if role_name in ['SHOP_MANAGER', 'ADMIN', 'ACCOUNTANT']:
+            from apps.customers.models import Customer
+            # Sum of all positive balances (debt owed to shop)
+            total_debt = Customer.objects.filter(
+                tenant=tenant,
+                is_active=True,
+                current_balance__gt=0
+            ).aggregate(total=Sum('current_balance'))['total'] or Decimal('0')
+            context['total_credit_debt'] = total_debt
+        
         # Pending transfers count (for badge)
         if role_name in ['SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN']:
             context['pending_transfers_count'] = CashTransfer.objects.filter(
@@ -120,5 +162,53 @@ def tenant_context(request):
                 to_user=user,
                 status='PENDING'
             ).count()
+        
+        # E-Cash balance for accountants, managers, and auditors
+        if role_name in ['ACCOUNTANT', 'ADMIN', 'AUDITOR', 'SHOP_MANAGER']:
+            try:
+                from apps.payments.models import ECashLedger
+                ecash_balance = ECashLedger.get_current_balance(tenant)
+                context['ecash_balance'] = ecash_balance
+            except Exception:
+                context['ecash_balance'] = Decimal('0')
+        
+        # Low stock products for the user's location (Stock Alerts)
+        if user.location and role_name in ['SHOP_MANAGER', 'SHOP_ATTENDANT', 'STORES_MANAGER', 'PRODUCTION_MANAGER', 'ADMIN']:
+            from apps.inventory.models import Product, InventoryLedger
+            from django.db.models import Value, Case, When, CharField
+            
+            user_location = user.location
+            
+            # Get products with their stock at user's location
+            products = Product.objects.filter(
+                tenant=tenant,
+                is_active=True,
+                reorder_level__gt=0  # Only products with a reorder level set
+            )
+            
+            low_stock_list = []
+            for product in products:
+                stock_qty = product.get_stock_at_location(user_location)
+                
+                if stock_qty <= product.reorder_level:
+                    # Determine severity
+                    if stock_qty <= 0:
+                        severity = 'critical'  # Out of stock - red
+                    else:
+                        severity = 'warning'  # Low stock - yellow
+                    
+                    low_stock_list.append({
+                        'id': product.pk,
+                        'name': product.name,
+                        'quantity': stock_qty,
+                        'reorder_level': product.reorder_level,
+                        'severity': severity,
+                    })
+            
+            # Sort by severity (critical first) then by quantity
+            low_stock_list.sort(key=lambda x: (0 if x['severity'] == 'critical' else 1, x['quantity']))
+            
+            context['low_stock_products'] = low_stock_list[:10]  # Limit to top 10
+            context['low_stock_count'] = len(low_stock_list)
     
     return context

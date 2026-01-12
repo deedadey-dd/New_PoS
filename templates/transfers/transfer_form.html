@@ -83,7 +83,7 @@
                                     <label class="form-label">Product <span class="text-danger">*</span></label>
                                     {{ item_form.product }}
                                 </div>
-                                <div class="col-md-3 mb-2">
+                                <div class="col-md-3 mb-2 {% if source_type == 'PRODUCTION' %}d-none{% endif %}">
                                     <label class="form-label">Batch (Optional)</label>
                                     {{ item_form.batch }}
                                 </div>
@@ -91,10 +91,25 @@
                                     <label class="form-label">Quantity <span class="text-danger">*</span></label>
                                     {{ item_form.quantity_requested }}
                                 </div>
-                                <div class="col-md-2 mb-2">
-                                    <label class="form-label">Unit Cost <span class="text-danger">*</span></label>
+                                {% if source_type == 'PRODUCTION' %}
+                                <!-- Production: Enter Total Cost -->
+                                <div class="col-md-3 mb-2">
+                                    <label class="form-label">Total Cost <span class="text-danger">*</span></label>
+                                    {{ item_form.total_cost }}
+                                    <small class="text-muted unit-cost-display"></small>
+                                </div>
+                                <!-- Hidden unit_cost that gets calculated -->
+                                <div class="d-none">
                                     {{ item_form.unit_cost }}
                                 </div>
+                                {% else %}
+                                <!-- Stores/Shop: Enter Unit Cost or auto-fill from batch -->
+                                <div class="col-md-2 mb-2">
+                                    <label class="form-label">Unit Cost</label>
+                                    {{ item_form.unit_cost }}
+                                    <small class="text-muted batch-cost-hint"></small>
+                                </div>
+                                {% endif %}
                                 <div class="col-md-1 mb-2 d-flex align-items-end">
                                     <button type="button" class="btn btn-outline-danger btn-sm remove-item">
                                         <i class="bi bi-trash"></i>
@@ -137,10 +152,15 @@
 
 {% block extra_js %}
 <script>
+    const SOURCE_TYPE = '{{ source_type }}';
+
     document.addEventListener('DOMContentLoaded', function () {
         const formsetDiv = document.getElementById('item-formset');
         const addBtn = document.getElementById('add-item');
         const totalForms = document.getElementById('id_items-TOTAL_FORMS');
+
+        // Add cost calculation listeners to existing rows
+        initCostCalculation();
 
         addBtn.addEventListener('click', function () {
             const rows = formsetDiv.querySelectorAll('.item-row');
@@ -156,6 +176,9 @@
             newRow.querySelectorAll('select').forEach(select => {
                 select.selectedIndex = 0;
             });
+            // Clear calculated display
+            const displayEl = newRow.querySelector('.unit-cost-display');
+            if (displayEl) displayEl.textContent = '';
 
             formsetDiv.appendChild(newRow);
             totalForms.value = formCount + 1;
@@ -163,6 +186,9 @@
             newRow.querySelector('.remove-item').addEventListener('click', function () {
                 removeRow(newRow);
             });
+
+            // Add cost calculation to new row
+            addCostCalculationToRow(newRow);
         });
 
         document.querySelectorAll('.remove-item').forEach(btn => {
@@ -179,6 +205,74 @@
             } else {
                 row.remove();
                 totalForms.value = parseInt(totalForms.value) - 1;
+            }
+        }
+
+        // Cost calculation functions
+        function initCostCalculation() {
+            document.querySelectorAll('.item-row').forEach(row => {
+                addCostCalculationToRow(row);
+            });
+        }
+
+        function addCostCalculationToRow(row) {
+            const quantityInput = row.querySelector('.quantity-input');
+            const totalCostInput = row.querySelector('.total-cost-input');
+            const unitCostInput = row.querySelector('.unit-cost-input');
+            const unitCostDisplay = row.querySelector('.unit-cost-display');
+            const batchSelect = row.querySelector('.batch-select');
+            const batchCostHint = row.querySelector('.batch-cost-hint');
+
+            if (SOURCE_TYPE === 'PRODUCTION' && totalCostInput && quantityInput) {
+                // Production: Calculate unit cost from total cost / quantity
+                const calculateUnitCost = () => {
+                    const quantity = parseFloat(quantityInput.value) || 0;
+                    const totalCost = parseFloat(totalCostInput.value) || 0;
+
+                    if (quantity > 0 && totalCost > 0) {
+                        const unitCost = totalCost / quantity;
+                        if (unitCostInput) {
+                            unitCostInput.value = unitCost.toFixed(2);
+                        }
+                        if (unitCostDisplay) {
+                            unitCostDisplay.textContent = `Unit: ${unitCost.toFixed(2)}`;
+                        }
+                    } else {
+                        if (unitCostDisplay) {
+                            unitCostDisplay.textContent = '';
+                        }
+                    }
+                };
+
+                quantityInput.addEventListener('input', calculateUnitCost);
+                totalCostInput.addEventListener('input', calculateUnitCost);
+            } else if (batchSelect && unitCostInput) {
+                // Stores/Shop: Auto-fill unit cost when batch is selected
+                batchSelect.addEventListener('change', function () {
+                    const selectedOption = this.options[this.selectedIndex];
+                    if (selectedOption && selectedOption.value) {
+                        // Get batch cost from data attribute or API
+                        const batchId = selectedOption.value;
+
+                        // Fetch batch details to get unit_cost
+                        fetch(`/transfers/api/batch-details/?batch_id=${batchId}`)
+                            .then(response => response.json())
+                            .then(data => {
+                                if (data.unit_cost) {
+                                    unitCostInput.value = parseFloat(data.unit_cost).toFixed(2);
+                                    if (batchCostHint) {
+                                        batchCostHint.textContent = `From batch`;
+                                    }
+                                }
+                            })
+                            .catch(() => {
+                                // If API fails, user can still manually enter
+                                if (batchCostHint) {
+                                    batchCostHint.textContent = '';
+                                }
+                            });
+                    }
+                });
             }
         }
     });

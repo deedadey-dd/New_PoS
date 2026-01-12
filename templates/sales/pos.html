@@ -7,6 +7,8 @@
     <title>POS - {{ shop.name }}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <!-- Paystack Inline JS for E-Cash payments -->
+    <script src="https://js.paystack.co/v1/inline.js"></script>
     <style>
         :root {
             --pos-primary: #4f46e5;
@@ -32,11 +34,14 @@
         }
 
         .pos-main {
-            flex: 1;
+            height: calc(100vh - 56px);
+            min-height: 0;
             display: flex;
             overflow: hidden;
-            min-height: 0;
-            /* Important for firefox/flexbox nesting */
+        }
+
+        .pos-main.with-banner {
+            height: calc(100vh - 94px);
         }
 
         .products-section {
@@ -199,6 +204,7 @@
             cursor: pointer;
             transition: all 0.2s;
             border: 2px solid transparent;
+            position: relative;
         }
 
         .product-card:hover {
@@ -223,6 +229,35 @@
             font-size: 1rem;
         }
 
+        .product-quantity-badge {
+            position: absolute;
+            top: -6px;
+            right: -6px;
+            min-width: 24px;
+            height: 24px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.7rem;
+            font-weight: 700;
+            color: #fff;
+            padding: 0 6px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .badge-good {
+            background: var(--pos-success);
+        }
+
+        .badge-warning {
+            background: var(--pos-warning);
+        }
+
+        .badge-critical {
+            background: var(--pos-danger);
+        }
+
         /* Cart Styles */
         .cart-header {
             padding: 1rem;
@@ -231,10 +266,10 @@
         }
 
         .cart-items {
-            flex: 1;
+            flex: 1 1 50px;
             overflow-y: auto;
             padding: 0.5rem;
-            min-height: 0;
+            min-height: 50px;
         }
 
         .cart-item {
@@ -289,7 +324,7 @@
 
         .cart-summary {
             border-top: 1px solid #333;
-            padding: 1rem;
+            padding: 0.5rem 1rem;
             flex-shrink: 0;
         }
 
@@ -300,23 +335,47 @@
         }
 
         .summary-total {
-            font-size: 1.5rem;
+            font-size: 1.25rem;
             font-weight: 700;
             color: var(--pos-success);
         }
 
         .cart-actions {
-            padding: 0 1rem 1rem;
+            padding: 0.5rem 1rem;
             display: flex;
             flex-direction: column;
-            gap: 0.5rem;
+            gap: 0.4rem;
             flex-shrink: 0;
         }
 
+        .customer-section {
+            padding: 0 1rem;
+            flex-shrink: 0;
+            position: relative;
+        }
+
+        .customer-suggestions {
+            position: absolute;
+            top: 100%;
+            left: 1rem;
+            right: 1rem;
+            background: #333;
+            border: 1px solid #444;
+            border-radius: 0 0 8px 8px;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+        }
+
+        .customer-suggestions.show {
+            display: block;
+        }
+
         .btn-pay {
-            padding: 1rem;
-            font-size: 1.1rem;
-            border-radius: 10px;
+            padding: 0.6rem 1rem;
+            font-size: 0.95rem;
+            border-radius: 8px;
             border: none;
             cursor: pointer;
             display: flex;
@@ -409,6 +468,209 @@
             text-align: center;
         }
 
+        /* Mobile Cart Toggle Button */
+        .mobile-cart-toggle {
+            display: none;
+            position: fixed;
+            bottom: 1rem;
+            right: 1rem;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: var(--pos-primary);
+            border: none;
+            color: #fff;
+            font-size: 1.5rem;
+            z-index: 900;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+            cursor: pointer;
+        }
+
+        .mobile-cart-toggle .cart-badge {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            background: var(--pos-danger);
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            font-size: 0.75rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Tablet Breakpoint (max-width: 992px) */
+        @media (max-width: 992px) {
+            .pos-main {
+                flex-direction: column;
+                height: auto;
+                min-height: calc(100vh - 56px);
+            }
+
+            .pos-main.with-banner {
+                min-height: calc(100vh - 94px);
+            }
+
+            .products-section {
+                flex: none;
+                height: auto;
+                min-height: 50vh;
+                padding-bottom: 100px;
+            }
+
+            .cart-section {
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                width: 100%;
+                height: 70vh;
+                max-height: 70vh;
+                transform: translateY(calc(100% - 60px));
+                transition: transform 0.3s ease;
+                z-index: 800;
+                border-left: none;
+                border-top: 2px solid var(--pos-primary);
+                border-radius: 20px 20px 0 0;
+            }
+
+            .cart-section.expanded {
+                transform: translateY(0);
+            }
+
+            .cart-section::before {
+                content: '';
+                display: block;
+                width: 40px;
+                height: 4px;
+                background: #555;
+                border-radius: 2px;
+                margin: 8px auto;
+                cursor: pointer;
+            }
+
+            .cart-header {
+                cursor: pointer;
+                padding: 0.5rem 1rem;
+            }
+
+            .mobile-cart-toggle {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            .products-grid {
+                grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+                gap: 0.5rem;
+            }
+
+            .product-card {
+                padding: 0.75rem;
+            }
+
+            .product-name {
+                font-size: 0.8rem;
+            }
+
+            .product-price {
+                font-size: 0.9rem;
+            }
+        }
+
+        /* Phone Breakpoint (max-width: 576px) */
+        @media (max-width: 576px) {
+            .pos-header {
+                padding: 0.5rem;
+                flex-wrap: wrap;
+                gap: 0.5rem;
+            }
+
+            .pos-header h5 {
+                font-size: 0.9rem;
+            }
+
+            .shift-banner {
+                font-size: 0.85rem;
+                padding: 0.4rem 0.5rem;
+            }
+
+            .search-box input.form-control {
+                padding: 0.6rem 1rem 0.6rem 2rem;
+                font-size: 0.9rem;
+            }
+
+            .category-tabs {
+                gap: 0.3rem;
+            }
+
+            .category-tab {
+                padding: 0.4rem 0.75rem;
+                font-size: 0.85rem;
+            }
+
+            .products-grid {
+                grid-template-columns: repeat(3, 1fr);
+                gap: 0.4rem;
+            }
+
+            .product-card {
+                padding: 0.5rem;
+                border-radius: 8px;
+            }
+
+            .product-name {
+                font-size: 0.75rem;
+                -webkit-line-clamp: 1;
+            }
+
+            .product-price {
+                font-size: 0.85rem;
+            }
+
+            .cart-section {
+                height: 80vh;
+                max-height: 80vh;
+            }
+
+            .cart-item {
+                padding: 0.5rem;
+            }
+
+            .cart-item-name {
+                font-size: 0.85rem;
+            }
+
+            .qty-btn {
+                width: 32px;
+                height: 32px;
+            }
+
+            .btn-pay {
+                padding: 0.75rem;
+                font-size: 1rem;
+            }
+
+            .cart-summary {
+                padding: 0.5rem;
+            }
+
+            .summary-total {
+                font-size: 1.1rem;
+            }
+
+            .checkout-dialog {
+                width: 95%;
+                padding: 1.5rem;
+            }
+
+            .checkout-input {
+                font-size: 1.25rem;
+                padding: 0.75rem;
+            }
+        }
+
         @media print {
             body * {
                 visibility: hidden;
@@ -450,7 +712,7 @@
     </div>
     {% endif %}
 
-    <main class="pos-main">
+    <main class="pos-main{% if not shift %} with-banner{% endif %}">
         <!-- Products Section -->
         <div class="products-section">
             <div class="search-box">
@@ -502,9 +764,37 @@
                 </div>
             </div>
 
+            <!-- Customer Selection -->
+            <div class="customer-section">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-dark border-secondary"><i class="bi bi-person"></i></span>
+                    <input type="text" id="customer-search" class="form-control bg-dark text-white border-secondary"
+                        placeholder="Customer (optional)">
+                    <button class="btn btn-outline-secondary" type="button" id="btn-clear-customer"
+                        style="display: none;">
+                        <i class="bi bi-x"></i>
+                    </button>
+                </div>
+                <!-- Customer Info Display -->
+                <div id="selected-customer-info" class="small mt-1 p-2 rounded bg-dark"
+                    style="display: none; border: 1px dashed #555;">
+                    <div class="d-flex justify-content-between">
+                        <span class="fw-bold" id="cust-name"></span>
+                        <span id="cust-balance"></span>
+                    </div>
+                    <div class="text-muted small" id="cust-limit"></div>
+                </div>
+                <!-- Customer Suggestions -->
+                <div class="customer-suggestions" id="customer-suggestions"></div>
+            </div>
+
             <div class="cart-actions">
                 <button class="btn-pay btn-pay-cash" id="btn-pay-cash" disabled>
                     <i class="bi bi-cash"></i> Pay Cash
+                </button>
+                <button class="btn-pay btn-pay-credit" id="btn-pay-credit" disabled
+                    style="background: #e11d48; display: none;">
+                    <i class="bi bi-credit-card-2-front"></i> Sell on Credit
                 </button>
                 {% if shop_settings.enable_ecash_payment %}
                 <button class="btn-pay btn-pay-ecash" id="btn-pay-ecash" disabled>
@@ -526,16 +816,30 @@
     <!-- Checkout Modal -->
     <div class="checkout-modal" id="checkout-modal">
         <div class="checkout-dialog">
-            <h4 class="mb-4 text-center"><i class="bi bi-cash-coin me-2"></i>Cash Payment</h4>
+            <h4 class="mb-4 text-center" id="checkout-title"><i class="bi bi-cash-coin me-2"></i>Cash Payment</h4>
             <div class="mb-3">
                 <label class="form-label">Total Due</label>
                 <div class="h2 text-success" id="modal-total">{{ currency_symbol }}0.00</div>
             </div>
-            <div class="mb-4">
+
+            <!-- Credit Info (Hidden by default) -->
+            <div id="credit-payment-info" class="mb-3 alert alert-warning" style="display: none;">
+                <div class="d-flex justify-content-between">
+                    <span>Current Balance:</span>
+                    <strong id="credit-current-balance">0.00</strong>
+                </div>
+                <div class="d-flex justify-content-between">
+                    <span>New Balance:</span>
+                    <strong id="credit-new-balance">0.00</strong>
+                </div>
+                <div class="small mt-2" id="credit-limit-warning"></div>
+            </div>
+
+            <div class="mb-4" id="amount-received-container">
                 <label class="form-label">Amount Received</label>
                 <input type="number" class="checkout-input" id="amount-received" step="0.01" min="0" autofocus>
             </div>
-            <div class="mb-4">
+            <div class="mb-4" id="change-container">
                 <label class="form-label">Change</label>
                 <div class="h3" id="modal-change">{{ currency_symbol }}0.00</div>
             </div>
@@ -546,21 +850,31 @@
         </div>
     </div>
 
+    <!-- Mobile Cart Toggle Button -->
+    <button class="mobile-cart-toggle" id="mobile-cart-toggle" onclick="toggleMobileCart()">
+        <i class="bi bi-cart3"></i>
+        <span class="cart-badge" id="mobile-cart-badge">0</span>
+    </button>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         const CURRENCY = '{{ currency_symbol }}';
         const PRODUCTS = {{ products| safe }};
+        const CUSTOMERS = {{ customers| safe }};
         const CSRF_TOKEN = '{{ csrf_token }}';
 
         let cart = [];
         let discountAmount = 0;
         let currentCategory = 'all';
+        let selectedCustomer = null;
+        let paymentMode = 'CASH'; // CASH, ECASH, CREDIT
 
         // Initialize
         document.addEventListener('DOMContentLoaded', function () {
             renderProducts();
             loadCartFromStorage();
             initSearchAutocomplete();
+            initCustomerSearch(); // NEW
 
             // Category tabs
             document.querySelectorAll('.category-tab').forEach(tab => {
@@ -573,14 +887,219 @@
             });
 
             // Payment buttons
-            document.getElementById('btn-pay-cash').addEventListener('click', openCashCheckout);
+            document.getElementById('btn-pay-cash').addEventListener('click', () => openCheckout('CASH'));
+            if (document.getElementById('btn-pay-credit')) {
+                document.getElementById('btn-pay-credit').addEventListener('click', () => openCheckout('CREDIT'));
+            }
+            if (document.getElementById('btn-pay-ecash')) {
+                document.getElementById('btn-pay-ecash').addEventListener('click', () => openECashCheckout());
+            }
             document.getElementById('btn-clear-cart').addEventListener('click', clearCart);
             document.getElementById('btn-discount').addEventListener('click', applyDiscount);
 
             // Checkout modal
             document.getElementById('amount-received').addEventListener('input', updateChange);
             document.getElementById('btn-complete-sale').addEventListener('click', completeSale);
+
+            // Mobile: Cart header click to toggle
+            const cartHeader = document.querySelector('.cart-header');
+            if (cartHeader) {
+                cartHeader.addEventListener('click', function () {
+                    if (window.innerWidth <= 992) {
+                        toggleMobileCart();
+                    }
+                });
+            }
         });
+
+        // Mobile Cart Toggle
+        function toggleMobileCart() {
+            const cartSection = document.querySelector('.cart-section');
+            cartSection.classList.toggle('expanded');
+        }
+
+        // Update mobile cart badge
+        function updateMobileCartBadge() {
+            const badge = document.getElementById('mobile-cart-badge');
+            if (badge) {
+                const count = cart.reduce((sum, i) => sum + i.quantity, 0);
+                badge.textContent = count;
+                badge.style.display = count > 0 ? 'flex' : 'none';
+            }
+        }
+
+        // Customer Search Logic
+        function initCustomerSearch() {
+            const searchInput = document.getElementById('customer-search');
+            const suggestions = document.getElementById('customer-suggestions');
+            const clearBtn = document.getElementById('btn-clear-customer');
+
+            searchInput.addEventListener('input', function () {
+                const query = this.value.trim().toLowerCase();
+                suggestions.innerHTML = '';
+
+                if (query.length < 1) {
+                    suggestions.classList.remove('show');
+                    return;
+                }
+
+                const matches = CUSTOMERS.filter(c =>
+                    c.name.toLowerCase().includes(query) ||
+                    c.phone.includes(query)
+                );
+
+                if (matches.length > 0) {
+                    matches.forEach(c => {
+                        const div = document.createElement('div');
+                        div.className = 'suggestion-item';
+                        div.innerHTML = `
+                            <div>
+                                <div>${c.name}</div>
+                                <small class="text-muted">${c.phone}</small>
+                            </div>
+                            <div class="${c.current_balance > 0 ? 'text-danger' : 'text-success'}">
+                                ${CURRENCY}${c.current_balance}
+                            </div>
+                        `;
+                        div.onclick = () => selectCustomer(c);
+                        suggestions.appendChild(div);
+                    });
+                    suggestions.classList.add('show');
+                } else {
+                    suggestions.classList.remove('show');
+                }
+            });
+
+            clearBtn.addEventListener('click', function () {
+                selectedCustomer = null;
+                searchInput.value = '';
+                document.getElementById('selected-customer-info').style.display = 'none';
+                this.style.display = 'none';
+                document.getElementById('btn-pay-credit').style.display = 'none';
+            });
+        }
+
+        function selectCustomer(customer) {
+            selectedCustomer = customer;
+            const searchInput = document.getElementById('customer-search');
+            const suggestions = document.getElementById('customer-suggestions');
+
+            searchInput.value = customer.name;
+            suggestions.classList.remove('show');
+            document.getElementById('btn-clear-customer').style.display = 'block';
+
+            // Show info
+            const infoDiv = document.getElementById('selected-customer-info');
+            document.getElementById('cust-name').textContent = customer.name;
+            document.getElementById('cust-balance').textContent = `${CURRENCY}${customer.current_balance}`;
+            document.getElementById('cust-balance').className = customer.current_balance > 0 ? 'text-danger' : 'text-success';
+
+            if (customer.credit_limit) {
+                const available = parseFloat(customer.credit_limit) - parseFloat(customer.current_balance);
+                document.getElementById('cust-limit').textContent = `Limit: ${CURRENCY}${customer.credit_limit} (Avail: ${CURRENCY}${available.toFixed(2)})`;
+            } else {
+                document.getElementById('cust-limit').textContent = 'No Credit Limit';
+            }
+
+            infoDiv.style.display = 'block';
+
+            // Enable Credit Button and Payment on Account
+            const payCredit = document.getElementById('btn-pay-credit');
+            payCredit.style.display = 'flex';
+            payCredit.disabled = false;
+
+            // Also enable Pay Cash for payment on account (even if cart is empty)
+            document.getElementById('btn-pay-cash').disabled = false;
+
+            // Enable E-Cash button too
+            const ecashBtn = document.getElementById('btn-pay-ecash');
+            if (ecashBtn) ecashBtn.disabled = false;
+        }
+
+        function openCheckout(mode) {
+            // Allow checkout if cart has items OR if it's a payment on account (customer selected with empty cart)
+            const isPaymentOnAccount = cart.length === 0 && selectedCustomer;
+            if (cart.length === 0 && !isPaymentOnAccount) return;
+
+            paymentMode = mode;
+
+            const modal = document.getElementById('checkout-modal');
+            const total = calculateTotal();
+
+            document.getElementById('modal-total').textContent = CURRENCY + total.toFixed(2);
+            document.getElementById('amount-received').value = '';
+            document.getElementById('modal-change').textContent = CURRENCY + '0.00';
+
+            // UI Toggle based on mode
+            const title = document.getElementById('checkout-title');
+            const creditInfo = document.getElementById('credit-payment-info');
+            const amountContainer = document.getElementById('amount-received-container');
+            const changeContainer = document.getElementById('change-container');
+
+            if (isPaymentOnAccount) {
+                // Payment on account mode - paying into customer's account
+                title.innerHTML = '<i class="bi bi-wallet me-2"></i>Payment on Account';
+                creditInfo.style.display = 'block';
+                amountContainer.style.display = 'block';
+                changeContainer.style.display = 'none';
+
+                document.getElementById('credit-current-balance').textContent = CURRENCY + parseFloat(selectedCustomer.current_balance).toFixed(2);
+                document.getElementById('credit-new-balance').textContent = '(Will update based on payment)';
+                document.getElementById('credit-limit-warning').innerHTML =
+                    '<span class="text-info"><i class="bi bi-info-circle"></i> Enter amount to pay into this customer\'s account.</span>';
+                document.getElementById('btn-complete-sale').disabled = false;
+
+            } else if (mode === 'CREDIT') {
+                title.innerHTML = '<i class="bi bi-credit-card-2-front me-2"></i>Pay on Credit';
+                creditInfo.style.display = 'block';
+                amountContainer.style.display = 'none';
+                changeContainer.style.display = 'none';
+
+                // Show balance impact
+                document.getElementById('credit-current-balance').textContent = CURRENCY + parseFloat(selectedCustomer.current_balance).toFixed(2);
+                const newBalance = parseFloat(selectedCustomer.current_balance) + total;
+                document.getElementById('credit-new-balance').textContent = CURRENCY + newBalance.toFixed(2);
+
+                // Check limit
+                if (selectedCustomer.credit_limit && newBalance > parseFloat(selectedCustomer.credit_limit)) {
+                    document.getElementById('credit-limit-warning').innerHTML =
+                        `<span class="text-danger"><i class="bi bi-exclamation-triangle"></i> Credit Limit Exceeded! Cannot proceed.</span>`;
+                    document.getElementById('btn-complete-sale').disabled = true;
+                } else {
+                    document.getElementById('credit-limit-warning').innerHTML = '';
+                    document.getElementById('btn-complete-sale').disabled = false;
+                }
+
+                // Auto-fill amount for backend logic
+                document.getElementById('amount-received').value = 0;
+            } else {
+                // CASH payment mode
+                title.innerHTML = '<i class="bi bi-cash-coin me-2"></i>Cash Payment';
+                amountContainer.style.display = 'block';
+                changeContainer.style.display = 'block';
+                document.getElementById('btn-complete-sale').disabled = false;
+
+                // Show customer info if selected (for partial payments / overpayments)
+                if (selectedCustomer) {
+                    creditInfo.style.display = 'block';
+                    document.getElementById('credit-current-balance').textContent = CURRENCY + parseFloat(selectedCustomer.current_balance).toFixed(2);
+                    document.getElementById('credit-new-balance').textContent = '(Updates with payment)';
+                    document.getElementById('credit-limit-warning').innerHTML =
+                        '<span class="text-muted small"><i class="bi bi-info-circle"></i> Pay less: remaining credited. Pay more: reduces balance or stores credit.</span>';
+                } else {
+                    creditInfo.style.display = 'none';
+                }
+            }
+
+            modal.classList.add('active');
+            if (mode === 'CASH' || isPaymentOnAccount) {
+                document.getElementById('amount-received').focus();
+            }
+        }
+
+        function openCashCheckout() {
+            openCheckout('CASH');
+        }
 
         // Search Autocomplete
         function initSearchAutocomplete() {
@@ -716,12 +1235,28 @@
                 return matchSearch && matchCategory;
             });
 
-            grid.innerHTML = filtered.map(p => `
-                <div class="product-card" onclick="addToCart(${p.id})">
-                    <div class="product-name">${p.name}</div>
-                    <div class="product-price">${CURRENCY}${parseFloat(p.price).toFixed(2)}</div>
-                </div>
-            `).join('');
+            grid.innerHTML = filtered.map(p => {
+                // Determine badge color based on quantity vs threshold
+                const qty = p.quantity || 0;
+                const threshold = p.threshold || 0;
+                let badgeClass = 'badge-good';
+
+                if (threshold > 0) {
+                    if (qty <= threshold) {
+                        badgeClass = 'badge-critical';
+                    } else if (qty < threshold * 2) {
+                        badgeClass = 'badge-warning';
+                    }
+                }
+
+                return `
+                    <div class="product-card" onclick="addToCart(${p.id})">
+                        <div class="product-quantity-badge ${badgeClass}">${Math.floor(qty)}</div>
+                        <div class="product-name">${p.name}</div>
+                        <div class="product-price">${CURRENCY}${parseFloat(p.price).toFixed(2)}</div>
+                    </div>
+                `;
+            }).join('');
         }
 
         function addToCart(productId) {
@@ -811,6 +1346,14 @@
             document.getElementById('btn-pay-cash').disabled = !hasItems;
             const ecashBtn = document.getElementById('btn-pay-ecash');
             if (ecashBtn) ecashBtn.disabled = !hasItems;
+
+            // Update mobile cart badge
+            updateMobileCartBadge();
+        }
+
+        function calculateTotal() {
+            const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+            return subtotal - discountAmount;
         }
 
         function clearCart() {
@@ -843,63 +1386,275 @@
             document.getElementById('checkout-modal').classList.remove('active');
         }
 
-        function updateChange() {
-            const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0) - discountAmount;
-            const received = parseFloat(document.getElementById('amount-received').value) || 0;
-            const change = Math.max(0, received - total);
-            document.getElementById('modal-change').textContent = CURRENCY + change.toFixed(2);
-        }
+        // E-Cash Payment via Paystack
+        async function openECashCheckout() {
+            // Check for payment on account (customer selected with empty cart)
+            const isPaymentOnAccount = cart.length === 0 && selectedCustomer;
 
-        async function completeSale() {
-            const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0) - discountAmount;
-            const received = parseFloat(document.getElementById('amount-received').value) || 0;
-
-            if (received < total) {
-                alert('Amount received is less than total');
+            if (cart.length === 0 && !selectedCustomer) {
+                alert('Cart is empty! Select a customer for payment on account.');
                 return;
             }
 
-            const saleData = {
-                items: cart.map(item => ({
-                    product_id: item.id,
-                    quantity: item.quantity,
-                    unit_price: item.price
-                })),
-                payment_method: 'CASH',
-                amount_paid: received,
-                discount_amount: discountAmount
-            };
+            let total;
 
+            if (isPaymentOnAccount) {
+                // Payment on account - ask for amount
+                const amountStr = prompt(
+                    `E-Cash Payment on Account for ${selectedCustomer.name}\n` +
+                    `Current Balance: ${CURRENCY}${selectedCustomer.current_balance}\n\n` +
+                    'Enter payment amount:'
+                );
+                if (!amountStr) return;  // User cancelled
+
+                total = parseFloat(amountStr);
+                if (isNaN(total) || total <= 0) {
+                    alert('Please enter a valid payment amount.');
+                    return;
+                }
+            } else {
+                // Normal cart sale
+                total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0) - discountAmount;
+            }
+
+            if (total <= 0) {
+                alert('Invalid total amount for payment.');
+                return;
+            }
+
+            // First, create a pending sale to get reference
             try {
-                const response = await fetch('{% url "sales:api_checkout" %}', {
+                const response = await fetch('{% url "sales:initialize_ecash_payment" %}', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'X-CSRFToken': CSRF_TOKEN
                     },
-                    body: JSON.stringify(saleData)
+                    body: JSON.stringify({
+                        items: cart.map(item => ({
+                            product_id: item.id,
+                            quantity: item.quantity,
+                            unit_price: item.price
+                        })),
+                        discount_amount: discountAmount,
+                        customer_id: selectedCustomer ? selectedCustomer.id : null,
+                        total: total,
+                        is_payment_on_account: isPaymentOnAccount
+                    })
                 });
 
-                const result = await response.json();
+                const data = await response.json();
 
-                if (result.success) {
-                    alert(`Sale completed! ${result.sale_number}\nChange: ${CURRENCY}${result.change}`);
-                    cart = [];
-                    discountAmount = 0;
-                    updateCart();
-                    saveCartToStorage();
-                    closeCheckoutModal();
-
-                    // Open receipt in new tab
-                    window.open(`/sales/${result.sale_id}/receipt/`, '_blank');
-                } else {
-                    alert('Error: ' + result.error);
+                if (!data.success) {
+                    alert(data.error || 'Failed to initialize payment.');
+                    return;
                 }
-            } catch (err) {
-                alert('Error completing sale: ' + err);
+
+                // Open Paystack popup
+                const handler = PaystackPop.setup({
+                    key: data.paystack_public_key,
+                    email: data.customer_email || 'customer@example.com',
+                    amount: Math.round(total * 100), // Convert to pesewas
+                    currency: 'GHS',
+                    ref: data.reference,
+                    metadata: {
+                        tenant_id: data.tenant_id,
+                        sale_id: data.sale_id,
+                        custom_fields: [
+                            {
+                                display_name: "Sale Number",
+                                variable_name: "sale_number",
+                                value: data.sale_number
+                            }
+                        ]
+                    },
+                    callback: function (response) {
+                        // Payment successful - verify and complete
+                        verifyECashPayment(response.reference, data.sale_id, data.is_payment_on_account, data.customer_id, total);
+                    },
+                    onClose: function () {
+                        // User closed popup without completing
+                        console.log('Payment popup closed');
+                    }
+                });
+
+                handler.openIframe();
+
+            } catch (error) {
+                console.error('E-Cash error:', error);
+                alert('Failed to initialize e-cash payment. Please try again.');
             }
         }
 
+        // Verify and complete e-cash payment
+        async function verifyECashPayment(reference, saleId, isPaymentOnAccount = false, customerId = null, amount = 0) {
+            try {
+                const response = await fetch('{% url "sales:verify_ecash_payment" %}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': CSRF_TOKEN
+                    },
+                    body: JSON.stringify({
+                        reference: reference,
+                        sale_id: saleId,
+                        is_payment_on_account: isPaymentOnAccount,
+                        customer_id: customerId,
+                        amount: amount
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    // Reset cart
+                    cart = [];
+                    discountAmount = 0;
+                    selectedCustomer = null;
+                    updateCart();
+                    saveCartToStorage();
+
+                    // Reset customer UI
+                    document.getElementById('customer-search').value = '';
+                    document.getElementById('btn-clear-customer').style.display = 'none';
+                    document.getElementById('selected-customer-info').style.display = 'none';
+                    document.getElementById('btn-pay-credit').style.display = 'none';
+
+                    alert('E-Cash payment successful!');
+
+                    // Open appropriate receipt
+                    if (data.is_payment_on_account && data.transaction_id) {
+                        // Payment on account receipt
+                        window.open(`/customers/payment/${data.transaction_id}/receipt/`, '_blank');
+                    } else if (data.sale_id) {
+                        // Sale receipt
+                        window.open(`/sales/${data.sale_id}/receipt/`, '_blank');
+                    }
+                } else {
+                    alert(data.error || 'Payment verification failed. Please contact support.');
+                }
+            } catch (error) {
+                console.error('Verification error:', error);
+                alert('Failed to verify payment. Please check your transaction history.');
+            }
+        }
+
+        function updateChange() {
+            const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0) - discountAmount;
+            const received = parseFloat(document.getElementById('amount-received').value) || 0;
+            const change = Math.max(0, received - total);
+            document.getElementById('modal-change').textContent = CURRENCY + change.toFixed(2);
+
+            // Update new balance display if customer selected
+            if (selectedCustomer) {
+                const currentBalance = parseFloat(selectedCustomer.current_balance);
+                let newBalance;
+
+                if (cart.length === 0) {
+                    // Payment on account - payment reduces balance
+                    newBalance = currentBalance - received;
+                } else {
+                    // Sale with payment
+                    const unpaid = Math.max(0, total - received);
+                    const overpayment = Math.max(0, received - total);
+                    newBalance = currentBalance + unpaid - overpayment;
+                }
+
+                const newBalanceEl = document.getElementById('credit-new-balance');
+                if (newBalanceEl) {
+                    newBalanceEl.textContent = CURRENCY + newBalance.toFixed(2);
+                    newBalanceEl.className = newBalance > 0 ? 'text-danger' : 'text-success';
+                }
+            }
+        }
+
+        async function completeSale() {
+            // Allow if cart has items OR payment on account (customer selected with empty cart)
+            const isPaymentOnAccount = cart.length === 0 && selectedCustomer;
+            if (cart.length === 0 && !isPaymentOnAccount) return;
+
+            const received = parseFloat(document.getElementById('amount-received').value) || 0;
+            const total = calculateTotal();
+
+            // For CASH without customer, require full payment
+            // For CASH with customer, allow partial payment (rest goes to credit)
+            if (paymentMode === 'CASH' && received < total && !selectedCustomer) {
+                alert('Amount received is less than total!');
+                return;
+            }
+
+            // For payment on account, require an amount
+            if (isPaymentOnAccount && received <= 0) {
+                alert('Please enter an amount to pay on account.');
+                return;
+            }
+
+            const btn = document.getElementById('btn-complete-sale');
+            const originalText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Processing...';
+
+            try {
+                const response = await fetch('/sales/api/checkout/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': CSRF_TOKEN
+                    },
+                    body: JSON.stringify({
+                        items: cart.map(item => ({
+                            product_id: item.id,
+                            quantity: item.quantity,
+                            unit_price: item.price
+                        })),
+                        amount_paid: received,
+                        payment_method: isPaymentOnAccount ? 'PAYMENT_ON_ACCOUNT' : paymentMode,
+                        discount_amount: discountAmount,
+                        customer_id: selectedCustomer ? selectedCustomer.id : null,
+                        is_payment_on_account: isPaymentOnAccount
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    // Reset cart data
+                    cart = [];
+                    discountAmount = 0;
+                    selectedCustomer = null;
+                    updateCart();
+                    saveCartToStorage();
+
+                    // Reset customer UI
+                    document.getElementById('customer-search').value = '';
+                    document.getElementById('btn-clear-customer').style.display = 'none';
+                    document.getElementById('selected-customer-info').style.display = 'none';
+                    document.getElementById('btn-pay-credit').style.display = 'none';
+
+                    closeCheckoutModal();
+
+                    // Open receipt for printing
+                    if (isPaymentOnAccount && data.transaction_id) {
+                        // Payment on account receipt
+                        window.open(`/customers/payment/${data.transaction_id}/receipt/`, '_blank');
+                    } else if (data.sale_id) {
+                        // Sale receipt
+                        window.open(`/sales/${data.sale_id}/receipt/`, '_blank');
+                    }
+
+                    // Reload window to update stock
+                    setTimeout(() => location.reload(), 500);
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Failed to process sale');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+        }
         function saveCartToStorage() {
             localStorage.setItem('pos_cart', JSON.stringify({ cart, discountAmount }));
         }

@@ -1,0 +1,173 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Payment Provider Settings{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="fw-bold mb-0">
+                <i class="bi bi-credit-card me-2 text-primary"></i>Payment Provider Settings
+            </h2>
+            <p class="text-muted mb-0">Configure e-cash payment processing</p>
+        </div>
+        <div>
+            <span class="badge bg-info fs-6">
+                <i class="bi bi-phone me-1"></i>E-Cash Balance: {{ currency_symbol }}{{ ecash_balance|floatformat:2 }}
+            </span>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-8">
+            <form method="post">
+                {% csrf_token %}
+
+                <!-- Paystack Settings Card -->
+                <div class="card mb-4">
+                    <div class="card-header bg-primary text-white d-flex align-items-center">
+                        <img src="https://paystack.com/favicon.ico" alt="Paystack" class="me-2" style="height: 24px;">
+                        <h5 class="mb-0">Paystack Configuration</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-check form-switch mb-4">
+                            <input class="form-check-input" type="checkbox" id="is_active" name="is_active"
+                                {% if provider_settings.is_active %}checked{% endif %}>
+                            <label class="form-check-label" for="is_active">
+                                <strong>Enable Paystack Payments</strong>
+                            </label>
+                            <div class="text-muted small">Allow customers to pay via Paystack (cards, mobile money, bank
+                                transfer)</div>
+                        </div>
+
+                        <div class="form-check form-switch mb-4">
+                            <input class="form-check-input" type="checkbox" id="test_mode" name="test_mode"
+                                {% if provider_settings.test_mode %}checked{% endif %}>
+                            <label class="form-check-label" for="test_mode">
+                                <strong>Test Mode</strong>
+                            </label>
+                            <div class="text-muted small">Use test/sandbox credentials (no real transactions)</div>
+                        </div>
+
+                        <hr>
+
+                        <div class="mb-3">
+                            <label for="public_key" class="form-label">Public Key</label>
+                            <input type="text" class="form-control" id="public_key" name="public_key"
+                                value="{{ provider_settings.public_key }}" placeholder="pk_test_... or pk_live_...">
+                            <div class="form-text">Found in your Paystack Dashboard → Settings → API Keys</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="secret_key" class="form-label">Secret Key</label>
+                            <input type="password" class="form-control" id="secret_key" name="secret_key"
+                                placeholder="{% if masked_secret_key %}{{ masked_secret_key }}{% else %}sk_test_... or sk_live_...{% endif %}">
+                            <div class="form-text">Leave blank to keep current key. Never share this key!</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="webhook_secret" class="form-label">Webhook Secret (Optional)</label>
+                            <input type="password" class="form-control" id="webhook_secret" name="webhook_secret"
+                                placeholder="Leave blank to use secret key">
+                            <div class="form-text">For extra webhook security (optional)</div>
+                        </div>
+                    </div>
+                    <div class="card-footer">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-lg me-1"></i>Save Settings
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" id="testConnectionBtn">
+                            <i class="bi bi-lightning me-1"></i>Test Connection
+                        </button>
+                        <span id="testResult" class="ms-3"></span>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <div class="col-lg-4">
+            <!-- Webhook URL Card -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-link-45deg me-2"></i>Webhook Configuration</h5>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small">Add this URL in your Paystack Dashboard under Webhooks:</p>
+                    <div class="input-group">
+                        <input type="text" class="form-control" readonly
+                            value="{{ request.scheme }}://{{ request.get_host }}{% url 'payments:paystack_webhook' %}"
+                            id="webhookUrl">
+                        <button class="btn btn-outline-secondary" type="button" onclick="copyWebhookUrl()">
+                            <i class="bi bi-clipboard"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Links Card -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-box-arrow-up-right me-2"></i>Quick Links</h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-grid gap-2">
+                        <a href="{% url 'payments:withdrawal_list' %}" class="btn btn-outline-primary">
+                            <i class="bi bi-wallet2 me-1"></i>E-Cash Withdrawals
+                        </a>
+                        <a href="{% url 'payments:ecash_ledger' %}" class="btn btn-outline-info">
+                            <i class="bi bi-journal-text me-1"></i>E-Cash Ledger
+                        </a>
+                        <a href="https://dashboard.paystack.com/" target="_blank" class="btn btn-outline-success">
+                            <i class="bi bi-box-arrow-up-right me-1"></i>Paystack Dashboard
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function copyWebhookUrl() {
+        const url = document.getElementById('webhookUrl');
+        url.select();
+        navigator.clipboard.writeText(url.value);
+        alert('Webhook URL copied to clipboard!');
+    }
+
+    document.getElementById('testConnectionBtn').addEventListener('click', function () {
+        const btn = this;
+        const resultSpan = document.getElementById('testResult');
+
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Testing...';
+        resultSpan.innerHTML = '';
+
+        fetch('{% url "payments:test_connection" %}', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+                'Content-Type': 'application/json',
+            }
+        })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    resultSpan.innerHTML = '<span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Connection Successful</span>';
+                } else {
+                    resultSpan.innerHTML = '<span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>' + data.message + '</span>';
+                }
+            })
+            .catch(error => {
+                resultSpan.innerHTML = '<span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>Error</span>';
+            })
+            .finally(() => {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-lightning me-1"></i>Test Connection';
+            });
+    });
+</script>
+{% endblock %}

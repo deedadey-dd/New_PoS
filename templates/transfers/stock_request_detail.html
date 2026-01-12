@@ -1,0 +1,218 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Request {{ request.request_number }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-0">
+                    <li class="breadcrumb-item"><a href="{% url 'transfers:stock_request_list' %}">Stock Requests</a>
+                    </li>
+                    <li class="breadcrumb-item active">{{ request.request_number }}</li>
+                </ol>
+            </nav>
+            <h2 class="fw-bold mt-2">
+                <i class="bi bi-box-arrow-in-down me-2 text-primary"></i>{{ request.request_number }}
+            </h2>
+        </div>
+        <div>
+            {% if request.status == 'PENDING' %}
+            <span class="badge bg-warning text-dark fs-6">Pending</span>
+            {% elif request.status == 'APPROVED' %}
+            <span class="badge bg-success fs-6">Approved</span>
+            {% elif request.status == 'REJECTED' %}
+            <span class="badge bg-danger fs-6">Rejected</span>
+            {% elif request.status == 'CONVERTED' %}
+            <span class="badge bg-primary fs-6">Converted to Transfer</span>
+            {% elif request.status == 'CANCELLED' %}
+            <span class="badge bg-secondary fs-6">Cancelled</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-8">
+            <!-- Request Info Card -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Request Details</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <table class="table table-borderless">
+                                <tr>
+                                    <th class="text-muted">Requesting Location:</th>
+                                    <td><span class="badge bg-info">{{ request.requesting_location.name }}</span></td>
+                                </tr>
+                                <tr>
+                                    <th class="text-muted">Supplying Location:</th>
+                                    <td><span class="badge bg-primary">{{ request.supplying_location.name }}</span></td>
+                                </tr>
+                                <tr>
+                                    <th class="text-muted">Requested By:</th>
+                                    <td>{{ request.requested_by.get_full_name|default:request.requested_by.username }}
+                                    </td>
+                                </tr>
+                            </table>
+                        </div>
+                        <div class="col-md-6">
+                            <table class="table table-borderless">
+                                <tr>
+                                    <th class="text-muted">Created:</th>
+                                    <td>{{ request.created_at|date:"M d, Y H:i" }}</td>
+                                </tr>
+                                {% if request.approved_by %}
+                                <tr>
+                                    <th class="text-muted">Approved By:</th>
+                                    <td>{{ request.approved_by.get_full_name|default:request.approved_by.username }}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th class="text-muted">Approved At:</th>
+                                    <td>{{ request.approved_at|date:"M d, Y H:i" }}</td>
+                                </tr>
+                                {% endif %}
+                                {% if request.resulting_transfer %}
+                                <tr>
+                                    <th class="text-muted">Transfer:</th>
+                                    <td>
+                                        <a
+                                            href="{% url 'transfers:transfer_detail' pk=request.resulting_transfer.pk %}">
+                                            {{ request.resulting_transfer.transfer_number }}
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% endif %}
+                            </table>
+                        </div>
+                    </div>
+
+                    {% if request.notes %}
+                    <div class="mt-3">
+                        <strong>Notes:</strong>
+                        <p class="mb-0">{{ request.notes }}</p>
+                    </div>
+                    {% endif %}
+
+                    {% if request.rejection_reason %}
+                    <div class="alert alert-danger mt-3">
+                        <strong>Rejection Reason:</strong><br>
+                        {{ request.rejection_reason }}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Items Card -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Requested Items</h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Product</th>
+                                    <th>Quantity Requested</th>
+                                    <th>Notes</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in request.items.all %}
+                                <tr>
+                                    <td>{{ item.product.name }}</td>
+                                    <td>
+                                        {% if item.quantity_requested > 0 %}
+                                        {{ item.quantity_requested|floatformat:2 }} {{ item.product.unit_of_measure }}
+                                        {% else %}
+                                        <span class="text-muted">Any quantity</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ item.notes|default:"-" }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <!-- Actions Card -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Actions</h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-grid gap-2">
+                        {% if can_approve %}
+                        <form method="post" action="{% url 'transfers:stock_request_approve' pk=request.pk %}">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-success w-100">
+                                <i class="bi bi-check-lg me-1"></i>Approve Request
+                            </button>
+                        </form>
+                        {% endif %}
+
+                        {% if can_convert %}
+                        <form method="post" action="{% url 'transfers:stock_request_convert' pk=request.pk %}">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-primary w-100">
+                                <i class="bi bi-arrow-repeat me-1"></i>Convert to Transfer
+                            </button>
+                        </form>
+                        <small class="text-muted text-center">Creates a draft transfer for you to edit and send.</small>
+                        {% endif %}
+
+                        {% if can_reject %}
+                        <a href="{% url 'transfers:stock_request_reject' pk=request.pk %}"
+                            class="btn btn-outline-danger">
+                            <i class="bi bi-x-lg me-1"></i>Reject Request
+                        </a>
+                        {% endif %}
+
+                        {% if can_cancel %}
+                        <form method="post" action="{% url 'transfers:stock_request_cancel' pk=request.pk %}"
+                            onsubmit="return confirm('Are you sure you want to cancel this request?');">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-outline-secondary w-100">
+                                <i class="bi bi-x-circle me-1"></i>Cancel Request
+                            </button>
+                        </form>
+                        {% endif %}
+
+                        <hr>
+                        <a href="{% url 'transfers:stock_request_list' %}" class="btn btn-outline-primary">
+                            <i class="bi bi-arrow-left me-1"></i>Back to List
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Info Card for Suppliers -->
+            {% if is_supplier and request.status == 'PENDING' %}
+            <div class="card mt-4">
+                <div class="card-header bg-info text-white">
+                    <h6 class="mb-0"><i class="bi bi-info-circle me-1"></i>Workflow</h6>
+                </div>
+                <div class="card-body">
+                    <ol class="mb-0 ps-3">
+                        <li class="mb-2"><strong>Approve</strong> the request to accept it</li>
+                        <li class="mb-2"><strong>Convert to Transfer</strong> creates a draft transfer</li>
+                        <li class="mb-2"><strong>Edit</strong> the transfer (add batches, adjust quantities)</li>
+                        <li><strong>Send</strong> the transfer to fulfill the request</li>
+                    </ol>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,202 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-0">
+                    <li class="breadcrumb-item"><a href="{% url 'transfers:stock_request_list' %}">Stock Requests</a>
+                    </li>
+                    <li class="breadcrumb-item active">{{ title }}</li>
+                </ol>
+            </nav>
+            <h2 class="fw-bold mt-2">
+                <i class="bi bi-box-arrow-in-down me-2 text-primary"></i>{{ title }}
+            </h2>
+        </div>
+    </div>
+
+    <form method="post" novalidate>
+        {% csrf_token %}
+
+        <div class="row">
+            <div class="col-lg-8">
+                <!-- Request Details Card -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0">Request Details</h5>
+                    </div>
+                    <div class="card-body">
+                        {{ form.requesting_location }}
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Requesting From</label>
+                                {% if form.requesting_location_display %}
+                                <input type="text" class="form-control"
+                                    value="{{ form.requesting_location_display.name }}" disabled>
+                                <small class="text-muted">Your location</small>
+                                {% else %}
+                                <p class="text-danger">Unable to determine your location. Please contact admin.</p>
+                                {% endif %}
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Request Stock From <span class="text-danger">*</span></label>
+                                {{ form.supplying_location }}
+                                {% if form.errors.supplying_location %}
+                                <div class="invalid-feedback d-block">{{ form.errors.supplying_location.0 }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Notes / Reason for Request</label>
+                            {{ form.notes }}
+                        </div>
+
+                        {% if form.non_field_errors %}
+                        <div class="alert alert-danger">
+                            {{ form.non_field_errors }}
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Items Card -->
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">Items to Request</h5>
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="add-item">
+                            <i class="bi bi-plus me-1"></i>Add Item
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        {{ formset.management_form }}
+
+                        {% if preloaded_count and preloaded_count > 0 %}
+                        <div class="alert alert-info d-flex align-items-center mb-3">
+                            <i class="bi bi-info-circle me-2 fs-5"></i>
+                            <div>
+                                <strong>{{ preloaded_count }} low-stock item{{ preloaded_count|pluralize }}
+                                    auto-added!</strong>
+                                <br><small>These products are at or below their reorder level. You can edit or remove
+                                    items as needed.</small>
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        <div id="item-formset">
+                            {% for item_form in formset %}
+                            <div class="item-row border rounded p-3 mb-3 {% if forloop.last %}template-row{% endif %}">
+                                <div class="row">
+                                    <div class="col-md-5 mb-2">
+                                        <label class="form-label">Product <span class="text-danger">*</span></label>
+                                        {{ item_form.product }}
+                                    </div>
+                                    <div class="col-md-3 mb-2">
+                                        <label class="form-label">Quantity</label>
+                                        {{ item_form.quantity_requested }}
+                                        <small class="text-muted">0 = any amount</small>
+                                    </div>
+                                    <div class="col-md-3 mb-2">
+                                        <label class="form-label">Notes</label>
+                                        {{ item_form.notes }}
+                                    </div>
+                                    <div class="col-md-1 mb-2 d-flex align-items-end">
+                                        <button type="button" class="btn btn-outline-danger btn-sm remove-item">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                {{ item_form.id }}
+                                {% if item_form.DELETE %}
+                                <div class="d-none">{{ item_form.DELETE }}</div>
+                                {% endif %}
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-4">
+                <!-- Submit Card -->
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">Submit Request</h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted mb-3">
+                            Your request will be sent to the selected location for approval.
+                        </p>
+
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="bi bi-send me-2"></i>Submit Request
+                            </button>
+                            <a href="{% url 'transfers:stock_request_list' %}" class="btn btn-outline-secondary">
+                                Cancel
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const formsetDiv = document.getElementById('item-formset');
+        const addBtn = document.getElementById('add-item');
+        const totalForms = document.getElementById('id_items-TOTAL_FORMS');
+
+        addBtn.addEventListener('click', function () {
+            const rows = formsetDiv.querySelectorAll('.item-row');
+            const templateRow = rows[rows.length - 1];
+            const newRow = templateRow.cloneNode(true);
+            const formCount = parseInt(totalForms.value);
+
+            newRow.innerHTML = newRow.innerHTML.replace(/-\d+-/g, `-${formCount}-`);
+
+            newRow.querySelectorAll('input').forEach(input => {
+                if (input.type !== 'hidden') input.value = '';
+            });
+            newRow.querySelectorAll('select').forEach(select => {
+                select.selectedIndex = 0;
+            });
+
+            formsetDiv.appendChild(newRow);
+            totalForms.value = formCount + 1;
+
+            newRow.querySelector('.remove-item').addEventListener('click', function () {
+                removeRow(newRow);
+            });
+        });
+
+        document.querySelectorAll('.remove-item').forEach(btn => {
+            btn.addEventListener('click', function () {
+                removeRow(this.closest('.item-row'));
+            });
+        });
+
+        function removeRow(row) {
+            const deleteCheckbox = row.querySelector('input[type="checkbox"][name$="-DELETE"]');
+            if (deleteCheckbox) {
+                deleteCheckbox.checked = true;
+                row.style.display = 'none';
+            } else {
+                row.remove();
+                totalForms.value = parseInt(totalForms.value) - 1;
+            }
+        }
+    });
+</script>
+{% endblock %}

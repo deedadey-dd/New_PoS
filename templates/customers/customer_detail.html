@@ -1,0 +1,144 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ customer.name }} - {{ current_tenant.name }}{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-8">
+        <div class="d-flex align-items-center">
+            <a href="{% url 'customers:customer_list' %}" class="btn btn-outline-secondary me-3">
+                <i class="bi bi-arrow-left"></i>
+            </a>
+            <div>
+                <h2 class="mb-0">{{ customer.name }}</h2>
+                <div class="text-muted">
+                    {% if customer.phone %}<span class="me-3"><i
+                            class="bi bi-telephone me-1"></i>{{ customer.phone }}</span>{% endif %}
+                    {% if customer.email %}<span><i
+                            class="bi bi-envelope me-1"></i>{{ customer.email }}</span>{% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 text-md-end mt-3 mt-md-0">
+        <a href="{% url 'customers:customer_edit' customer.pk %}" class="btn btn-outline-primary">
+            <i class="bi bi-pencil me-1"></i> Edit Profile
+        </a>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Balance Card -->
+    <div class="col-md-4 mb-4">
+        <div class="card h-100">
+            <div class="card-body text-center py-4">
+                <h5 class="text-muted mb-3">Current Balance</h5>
+                {% if customer.current_balance > 0 %}
+                <h1 class="display-4 text-danger fw-bold mb-0">{{ currency_symbol }}{{ customer.current_balance }}</h1>
+                <div class="text-danger fw-bold mt-2">DEBT OWED</div>
+                {% elif customer.current_balance < 0 %}
+                <h1 class="display-4 text-success fw-bold mb-0">{{ currency_symbol }}{{ customer.current_balance }}
+                </h1>
+                <div class="text-success fw-bold mt-2">CREDIT AVAILABLE</div>
+                {% else %}
+                <h1 class="display-4 text-secondary fw-bold mb-0">{{ currency_symbol }}0.00</h1>
+                <div class="text-muted mt-2">NO DEBT</div>
+                {% endif %}
+
+                {% if customer.credit_limit %}
+                <div class="mt-4 pt-3 border-top">
+                    <small class="text-muted">Credit Limit</small>
+                    <div class="fw-bold">{{ currency_symbol }}{{ customer.credit_limit }}</div>
+                </div>
+                {% endif %}
+
+                <hr>
+
+                <!-- Payment Form -->
+                <button class="btn btn-success w-100 py-2" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#paymentForm">
+                    <i class="bi bi-cash-coin me-2"></i>Record Payment
+                </button>
+
+                <div class="collapse mt-3" id="paymentForm">
+                    <div class="card card-body bg-light border-0 text-start">
+                        <h6 class="mb-3">Receive Payment</h6>
+                        <form method="post" action="{% url 'customers:customer_payment' customer.pk %}">
+                            {% csrf_token %}
+                            <div class="mb-2">
+                                <label class="form-label small">Amount</label>
+                                {{ payment_form.amount }}
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label small">Method</label>
+                                {{ payment_form.payment_method }}
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label small">Description</label>
+                                {{ payment_form.description }}
+                            </div>
+                            <button type="submit" class="btn btn-primary w-100 btn-sm">Submit Payment</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Ledger -->
+    <div class="col-md-8 mb-4">
+        <div class="card h-100">
+            <div class="card-header bg-transparent d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Transaction History</h5>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Date</th>
+                            <th>Description</th>
+                            <th>Reference</th>
+                            <th class="text-end">Amount</th>
+                            <th class="text-end">Balance</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for transaction in transactions %}
+                        <tr>
+                            <td>{{ transaction.created_at|date:"M d, Y H:i" }}</td>
+                            <td>
+                                {% if transaction.transaction_type == 'DEBIT' %}
+                                <span class="badge bg-danger-subtle text-danger me-1">DEBT</span>
+                                {% else %}
+                                <span class="badge bg-success-subtle text-success me-1">PAYMENT</span>
+                                {% endif %}
+                                {{ transaction.description }}
+                            </td>
+                            <td>{{ transaction.reference_id }}</td>
+                            <td
+                                class="text-end fw-bold {% if transaction.transaction_type == 'DEBIT' %}text-danger{% else %}text-success{% endif %}">
+                                {{ transaction.amount }}
+                            </td>
+                            <td class="text-end text-muted">
+                                {{ transaction.balance_after }}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="5" class="text-center py-4 text-muted">No transactions found</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% if open_payment_receipt %}
+<script>
+    // Auto-open payment receipt in new tab
+    window.open('/customers/payment/{{ open_payment_receipt }}/receipt/', '_blank');
+</script>
+{% endif %}
+
+{% endblock %}
