@@ -153,7 +153,7 @@
             }
 
             .no-print {
-                display: none;
+                display: none !important;
             }
         }
 
@@ -259,6 +259,24 @@
         {% endif %}
     </div>
 
+    {% if sale.payment_method == 'CREDIT' or sale.payment_method == 'MIXED' %}
+    <div style="border: 2px dashed #000; padding: 10px; margin: 10px 0; text-align: center;">
+        <strong style="font-size: 14px;">⚠️ CREDIT SALE ⚠️</strong>
+        {% if sale.customer %}
+        <p style="margin: 5px 0;">Customer: <strong>{{ sale.customer.name }}</strong></p>
+        <p style="margin: 5px 0;">Sale Total: {{ sale.total }} | Paid: {{ sale.amount_paid }}</p>
+        <p style="margin: 5px 0;">Account Balance: <strong>{{ sale.customer.current_balance }}</strong></p>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% if sale.customer and sale.amount_paid >= sale.total %}
+    <div style="border: 1px solid #000; padding: 5px; margin: 10px 0; text-align: center; font-size: 11px;">
+        Customer: {{ sale.customer.name }}<br>
+        Balance: {{ sale.customer.current_balance }}
+    </div>
+    {% endif %}
+
     <div class="receipt-footer">
         {% if shop_settings.receipt_footer %}
         <p>{{ shop_settings.receipt_footer|linebreaksbr }}</p>
@@ -273,6 +291,27 @@
     <button class="print-btn no-print" onclick="window.print()">
         🖨️ Print Receipt
     </button>
+
+    <script>
+        // Auto-print on page load
+        window.addEventListener('load', function () {
+            // Small delay to ensure page is fully rendered
+            setTimeout(function () {
+                window.print();
+
+                // Close window after print dialog is dismissed
+                // Some browsers fire this event, others don't
+                window.addEventListener('afterprint', function () {
+                    window.close();
+                });
+
+                // Fallback: close after 2 seconds if afterprint doesn't fire
+                setTimeout(function () {
+                    window.close();
+                }, 2000);
+            }, 500);
+        });
+    </script>
 </body>
 
 </html>

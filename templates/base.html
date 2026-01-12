@@ -50,14 +50,23 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link text-white {% if 'sales' in request.path and 'pos' not in request.path %}active{% endif %}"
-                            href="{% url 'sales:sale_list' %}">
-                            <i class="bi bi-receipt me-2"></i> Sales History
+                        <a href="{% url 'sales:sale_list' %}"
+                            class="nav-link {% if '/sales/' in request.path and '/pos/' not in request.path %}active{% endif %}">
+                            <i class="bi bi-receipt"></i>
+                            <span>Sales History</span>
+                        </a>
+                    </li>
+
+                    <li class="nav-item">
+                        <a href="{% url 'customers:customer_list' %}"
+                            class="nav-link {% if '/customers/' in request.path %}active{% endif %}">
+                            <i class="bi bi-people"></i>
+                            <span>Customers</span>
                         </a>
                     </li>
                     {% endif %}
 
-                    <!-- Cash Transfers - Shop Managers and Accountants -->
+                    <!-- Cash Transfers -->
                     {% if role_name == 'SHOP_MANAGER' or role_name == 'ACCOUNTANT' or role_name == 'ADMIN' %}
                     <li class="nav-item">
                         <a class="nav-link text-white {% if 'cash-transfers' in request.path %}active{% endif %}"
@@ -157,11 +166,21 @@
                             </ul>
                         </div>
                     </li>
-                    {% if role_name != 'AUDITOR' %}
+                    {% endif %}
+
+                    <!-- Transfers -->
+                    {% if role_name != 'AUDITOR' and role_name != 'ACCOUNTANT' %}
+                    {% if role_name == 'ADMIN' or role_name == 'STORES_MANAGER' or role_name == 'PRODUCTION_MANAGER' or role_name == 'SHOP_MANAGER' %}
                     <li class="nav-item">
-                        <a class="nav-link text-white {% if 'transfers' in request.path %}active{% endif %}"
+                        <a class="nav-link text-white {% if 'transfers' in request.path and 'requests' not in request.path %}active{% endif %}"
                             href="{% url 'transfers:transfer_list' %}">
                             <i class="bi bi-arrow-left-right me-2"></i> Transfers
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link text-white {% if 'requests' in request.path %}active{% endif %}"
+                            href="{% url 'transfers:stock_request_list' %}">
+                            <i class="bi bi-box-arrow-in-down me-2"></i> Stock Requests
                         </a>
                     </li>
                     {% endif %}
@@ -182,10 +201,29 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link text-white {% if 'settings' in request.path %}active{% endif %}"
-                            href="{% url 'core:settings' %}">
-                            <i class="bi bi-gear me-2"></i> Settings
+                        <a class="nav-link text-white d-flex justify-content-between align-items-center {% if 'settings' in request.path or 'payments' in request.path %}active{% endif %}"
+                            data-bs-toggle="collapse" href="#settingsMenu" role="button"
+                            aria-expanded="{% if 'settings' in request.path or 'payments' in request.path %}true{% else %}false{% endif %}">
+                            <span><i class="bi bi-gear me-2"></i>Settings</span>
+                            <i class="bi bi-chevron-down small"></i>
                         </a>
+                        <div class="collapse {% if 'settings' in request.path or 'payments' in request.path %}show{% endif %}"
+                            id="settingsMenu">
+                            <ul class="nav flex-column ms-3 border-start border-secondary ps-2">
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if request.path == '/settings/' %}text-white{% endif %}"
+                                        href="{% url 'core:settings' %}">
+                                        <i class="bi bi-sliders me-2"></i>General
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if 'payments' in request.path %}text-white{% endif %}"
+                                        href="{% url 'payments:provider_settings' %}">
+                                        <i class="bi bi-credit-card me-2"></i>Payment Provider
+                                    </a>
+                                </li>
+                            </ul>
+                        </div>
                     </li>
                     {% endif %}
 
@@ -219,8 +257,41 @@
 
                     {% endwith %}
                     {% endif %}
-
                 </ul>
+
+                <!-- Stock Alerts Panel -->
+                {% if low_stock_count and low_stock_count > 0 %}
+                <div class="stock-alerts-panel mt-3 border-top border-secondary pt-3">
+                    <a class="nav-link text-white d-flex justify-content-between align-items-center px-2"
+                        data-bs-toggle="collapse" href="#stockAlertsMenu" role="button">
+                        <span>
+                            <i class="bi bi-exclamation-triangle me-2 text-warning"></i>
+                            Stock Alerts
+                        </span>
+                        <span class="badge bg-danger">{{ low_stock_count }}</span>
+                    </a>
+                    <div class="collapse" id="stockAlertsMenu">
+                        <div class="stock-alerts-list px-2 py-2" style="max-height: 200px; overflow-y: auto;">
+                            {% for item in low_stock_products %}
+                            <div
+                                class="d-flex justify-content-between align-items-center py-1 px-2 rounded mb-1 {% if item.severity == 'critical' %}bg-danger bg-opacity-75{% else %}bg-warning bg-opacity-75{% endif %}">
+                                <span
+                                    class="small text-truncate me-2 {% if item.severity == 'critical' %}text-white{% else %}text-dark{% endif %} fw-medium"
+                                    style="max-width: 150px;" title="{{ item.name }}">{{ item.name }}</span>
+                                <span
+                                    class="badge {% if item.severity == 'critical' %}bg-white text-danger{% else %}bg-dark text-white{% endif %}">{{ item.quantity|floatformat:0 }}</span>
+                            </div>
+                            {% endfor %}
+                            {% if low_stock_count > 10 %}
+                            <div class="text-center mt-2">
+                                <a href="{% url 'inventory:product_list' %}?low_stock=1" class="small text-info">View
+                                    all {{ low_stock_count }} alerts</a>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
             </nav>
         </div>
         <div class="sidebar-overlay" id="sidebarOverlay"></div>
@@ -245,12 +316,35 @@
                     </a>
                     {% endif %}
 
+                    <!-- E-Cash Balance Badge -->
+                    {% if ecash_balance is not None and role_name in 'SHOP_MANAGER,ACCOUNTANT,ADMIN,AUDITOR' %}
+                    <a href="{% url 'accounting:accountant_dashboard' %}" class="me-3 text-decoration-none"
+                        title="E-Cash Balance - Click to manage">
+                        <span class="badge bg-info fs-6">
+                            <i
+                                class="bi bi-phone me-1"></i>{{ currency_symbol }}{{ ecash_balance|floatformat:2|default:"0.00" }}
+                        </span>
+                    </a>
+                    {% endif %}
+
                     <!-- Pending Transfers Badge -->
                     {% if pending_transfers_count > 0 %}
                     <a href="{% url 'accounting:cash_transfer_list' %}?status=PENDING" class="me-3 text-decoration-none"
                         title="Pending Cash Transfers">
                         <span class="badge bg-danger fs-6 pulse-animation">
                             <i class="bi bi-cash-stack me-1"></i>{{ pending_transfers_count }} Pending
+                        </span>
+                    </a>
+                    {% endif %}
+
+                    <!-- Credit Debt Badge -->
+                    {% if total_credit_debt and total_credit_debt > 0 %}
+                    <a href="{% url 'customers:customer_list' %}" class="me-3 text-decoration-none"
+                        title="Total Customer Debt">
+                        <span class="badge bg-warning text-dark fs-6">
+                            <i
+                                class="bi bi-person-dash me-1"></i>{{ currency_symbol }}{{ total_credit_debt|floatformat:2 }}
+                            Debt
                         </span>
                     </a>
                     {% endif %}

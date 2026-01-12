@@ -1,0 +1,74 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Withdraw E-Cash{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-6">
+            <nav aria-label="breadcrumb" class="mb-3">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{% url 'payments:withdrawal_list' %}">E-Cash Withdrawals</a>
+                    </li>
+                    <li class="breadcrumb-item active">Withdraw</li>
+                </ol>
+            </nav>
+
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="bi bi-cash-coin me-2"></i>Withdraw E-Cash to Cash</h5>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info d-flex align-items-center mb-4">
+                        <i class="bi bi-info-circle me-2 fs-5"></i>
+                        <div>
+                            <strong>Available E-Cash Balance:</strong>
+                            {{ currency_symbol }}{{ ecash_balance|floatformat:2 }}
+                            <br><small>This amount will be converted to physical cash for your cash count.</small>
+                        </div>
+                    </div>
+
+                    <form method="post">
+                        {% csrf_token %}
+
+                        <div class="mb-3">
+                            <label for="id_amount" class="form-label">Amount to Withdraw <span
+                                    class="text-danger">*</span></label>
+                            <div class="input-group">
+                                <span class="input-group-text">{{ currency_symbol }}</span>
+                                <input type="number" class="form-control form-control-lg" id="id_amount" name="amount"
+                                    step="0.01" min="0.01" max="{{ ecash_balance }}" required
+                                    placeholder="Enter amount">
+                            </div>
+                            {% if form.amount.errors %}
+                            <div class="invalid-feedback d-block">{{ form.amount.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="mb-4">
+                            <label for="id_notes" class="form-label">Notes (Optional)</label>
+                            <textarea class="form-control" id="id_notes" name="notes" rows="2"
+                                placeholder="Reason for withdrawal..."></textarea>
+                        </div>
+
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-success btn-lg">
+                                <i class="bi bi-check-lg me-1"></i>Complete Withdrawal
+                            </button>
+                            <a href="{% url 'payments:withdrawal_list' %}" class="btn btn-outline-secondary">
+                                Cancel
+                            </a>
+                        </div>
+                    </form>
+                </div>
+                <div class="card-footer text-muted">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    Upon completion, this e-cash will be added to your physical cash count. Make sure to keep track of
+                    it!
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

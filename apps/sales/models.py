@@ -182,7 +182,13 @@ class Sale(TenantModel):
         blank=True,
         related_name='sales'
     )
-    # customer = models.ForeignKey('customers.Customer', null=True, blank=True)  # Future: Phase 6
+    customer = models.ForeignKey(
+        'customers.Customer', 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True,
+        related_name='sales'
+    )
     
     payment_method = models.CharField(
         max_length=10,
@@ -289,8 +295,43 @@ class Sale(TenantModel):
             self.change_given = self.amount_paid - self.total
         else:
             # Partial payment - credit sale
-            self.payment_method = 'MIXED' if payment_method == 'CASH' else payment_method
-        
+            if payment_method == 'CASH':
+                self.payment_method = 'MIXED'
+            elif payment_method == 'CREDIT':
+                self.payment_method = 'CREDIT'
+                
+            # If creating debt, validate customer
+            debt_amount = self.total - self.amount_paid
+            if debt_amount > 0:
+                if not self.customer:
+                    # Allow mixed payment without customer? No, debt must be assigned.
+                    # But for now let's assume if debt > 0 requires customer
+                     raise ValidationError("Customer account required for credit/partial payment.")
+                
+                # Check credit limit
+                if self.customer.credit_limit is not None:
+                     if self.customer.current_balance + debt_amount > self.customer.credit_limit:
+                         raise ValidationError(f"Credit limit exceeded. Available credit: {self.customer.credit_limit - self.customer.current_balance}")
+
+                # Update customer balance
+                from apps.customers.models import CustomerTransaction
+                balance_before = self.customer.current_balance
+                self.customer.current_balance += debt_amount
+                self.customer.save()
+                
+                # Create transaction record
+                CustomerTransaction.objects.create(
+                    tenant=self.tenant,
+                    customer=self.customer,
+                    transaction_type='DEBIT', # Debit = Increase Debt
+                    amount=debt_amount,
+                    description=f"Credit Purchase (Sale {self.sale_number})",
+                    reference_id=self.sale_number,
+                    balance_before=balance_before,
+                    balance_after=self.customer.current_balance,
+                    performed_by=self.attendant
+                )
+
         self.status = 'COMPLETED'
         self.completed_at = timezone.now()
         self.save()

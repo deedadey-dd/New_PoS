@@ -8,7 +8,7 @@ from django.views.generic import ListView, DetailView, CreateView, View
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.urls import reverse_lazy, reverse
 from django.http import JsonResponse
-from django.db import transaction
+from django.db import transaction, models
 
 from .models import Transfer, TransferItem
 from .forms import TransferForm, TransferItemFormSet, TransferItemForm, TransferReceiveForm, TransferDisputeForm, TransferCloseForm
@@ -134,10 +134,16 @@ class TransferCreateView(LoginRequiredMixin, View):
                     tenant=request.user.tenant, is_active=True
                 )
         
+        # Determine source type for conditional display
+        source_type = None
+        if form.source_location_display:
+            source_type = form.source_location_display.location_type
+        
         return render(request, self.template_name, {
             'form': form,
             'formset': formset,
-            'title': 'Create Transfer'
+            'title': 'Create Transfer',
+            'source_type': source_type,
         })
     
     def post(self, request):
@@ -164,7 +170,8 @@ class TransferCreateView(LoginRequiredMixin, View):
         return render(request, self.template_name, {
             'form': form,
             'formset': formset,
-            'title': 'Create Transfer'
+            'title': 'Create Transfer',
+            'source_type': form.cleaned_data.get('source_location').location_type if form.cleaned_data.get('source_location') else None,
         })
 
 
@@ -376,3 +383,367 @@ def get_batches_for_transfer(request):
     ).values('id', 'batch_number', 'current_quantity', 'unit_cost', 'expiry_date')
     
     return JsonResponse({'batches': list(batches)})
+
+
+@login_required
+def get_batch_details(request):
+    """API endpoint to get batch details for unit cost auto-fill."""
+    batch_id = request.GET.get('batch_id')
+    
+    if not batch_id:
+        return JsonResponse({'error': 'batch_id required'}, status=400)
+    
+    try:
+        batch = Batch.objects.get(
+            pk=batch_id,
+            tenant=request.user.tenant
+        )
+        return JsonResponse({
+            'id': batch.pk,
+            'batch_number': batch.batch_number,
+            'unit_cost': str(batch.unit_cost) if batch.unit_cost else None,
+            'current_quantity': str(batch.current_quantity),
+        })
+    except Batch.DoesNotExist:
+        return JsonResponse({'error': 'Batch not found'}, status=404)
+
+
+# ==================== Stock Request Views ====================
+
+from .models import StockRequest, StockRequestItem
+from .forms import StockRequestForm, StockRequestItemForm, StockRequestItemFormSet, StockRequestRejectForm
+
+
+class StockRequestListView(LoginRequiredMixin, ListView):
+    """List stock requests for the tenant."""
+    model = StockRequest
+    template_name = 'transfers/stock_request_list.html'
+    context_object_name = 'requests'
+    
+    def get_queryset(self):
+        from django.db.models import Q
+        user = self.request.user
+        queryset = StockRequest.objects.filter(tenant=user.tenant)
+        
+        # Get tab filter
+        tab = self.request.GET.get('tab', 'incoming')
+        
+        # Role-based filtering
+        if user.role and user.role.name != 'ADMIN':
+            role_location_map = {
+                'PRODUCTION_MANAGER': 'PRODUCTION',
+                'STORES_MANAGER': 'STORES',
+                'SHOP_MANAGER': 'SHOP',
+            }
+            user_location_type = role_location_map.get(user.role.name)
+            
+            if tab == 'outgoing':
+                # Requests sent by user's location type
+                if user.location:
+                    queryset = queryset.filter(requesting_location=user.location)
+                elif user_location_type:
+                    queryset = queryset.filter(requesting_location__location_type=user_location_type)
+            else:  # incoming
+                # Requests received by user's location type
+                if user.location:
+                    queryset = queryset.filter(supplying_location=user.location)
+                elif user_location_type:
+                    queryset = queryset.filter(supplying_location__location_type=user_location_type)
+        
+        # Filter by status if specified
+        status = self.request.GET.get('status')
+        if status:
+            queryset = queryset.filter(status=status)
+        
+        return queryset.select_related(
+            'requesting_location', 'supplying_location', 'requested_by'
+        )
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['status_choices'] = StockRequest.STATUS_CHOICES
+        context['current_tab'] = self.request.GET.get('tab', 'incoming')
+        
+        # Count for tabs
+        user = self.request.user
+        base_qs = StockRequest.objects.filter(tenant=user.tenant)
+        
+        if user.role and user.role.name != 'ADMIN':
+            role_location_map = {
+                'PRODUCTION_MANAGER': 'PRODUCTION',
+                'STORES_MANAGER': 'STORES',
+                'SHOP_MANAGER': 'SHOP',
+            }
+            user_location_type = role_location_map.get(user.role.name)
+            
+            if user.location:
+                context['outgoing_count'] = base_qs.filter(requesting_location=user.location).count()
+                context['incoming_count'] = base_qs.filter(supplying_location=user.location, status='PENDING').count()
+            elif user_location_type:
+                context['outgoing_count'] = base_qs.filter(requesting_location__location_type=user_location_type).count()
+                context['incoming_count'] = base_qs.filter(supplying_location__location_type=user_location_type, status='PENDING').count()
+        else:
+            context['outgoing_count'] = base_qs.count()
+            context['incoming_count'] = base_qs.filter(status='PENDING').count()
+        
+        return context
+
+
+class StockRequestCreateView(LoginRequiredMixin, View):
+    """Create a new stock request."""
+    template_name = 'transfers/stock_request_form.html'
+    
+    def get(self, request):
+        form = StockRequestForm(tenant=request.user.tenant, user=request.user)
+        
+        # Get user's location for stock check
+        user_location = request.user.location
+        if not user_location and request.user.role:
+            role_location_map = {
+                'PRODUCTION_MANAGER': 'PRODUCTION',
+                'STORES_MANAGER': 'STORES',
+                'SHOP_MANAGER': 'SHOP',
+            }
+            location_type = role_location_map.get(request.user.role.name)
+            if location_type:
+                from apps.core.models import Location
+                user_location = Location.objects.filter(
+                    tenant=request.user.tenant,
+                    is_active=True,
+                    location_type=location_type
+                ).first()
+        
+        # Get low stock products at user's location (match Stock Alerts logic)
+        low_stock_products = []
+        if user_location:
+            # Get products with reorder level set
+            products = Product.objects.filter(
+                tenant=request.user.tenant,
+                is_active=True,
+                reorder_level__gt=0
+            )
+            
+            for product in products:
+                stock_qty = product.get_stock_at_location(user_location)
+                
+                if stock_qty <= product.reorder_level:
+                    reorder_qty = max(product.reorder_level - stock_qty, 1)
+                    low_stock_products.append({
+                        'product': product.pk,
+                        'quantity_requested': reorder_qty,
+                        'notes': f'Current: {int(stock_qty)}, Reorder: {int(product.reorder_level)}'
+                    })
+            
+            # Sort by stock (lowest first) and limit to 20
+            low_stock_products.sort(key=lambda x: x.get('notes', ''))
+            low_stock_products = low_stock_products[:20]
+        
+        # Create formset with preloaded low stock items
+        num_preloaded = len(low_stock_products)
+        extra_forms = max(1, 1 if num_preloaded == 0 else 0)  # At least 1 empty form if no preloaded
+        
+        RequestItemFormSetWithExtra = inlineformset_factory(
+            StockRequest,
+            StockRequestItem,
+            form=StockRequestItemForm,
+            extra=num_preloaded + extra_forms,
+            can_delete=True,
+            min_num=0,
+            validate_min=False,
+        )
+        
+        # Create initial data for formset
+        initial_data = low_stock_products if low_stock_products else []
+        formset = RequestItemFormSetWithExtra(
+            queryset=StockRequestItem.objects.none(),
+            initial=initial_data
+        )
+        
+        # Filter products for each form
+        for item_form in formset:
+            if hasattr(item_form.fields.get('product'), 'queryset'):
+                item_form.fields['product'].queryset = Product.objects.filter(
+                    tenant=request.user.tenant, is_active=True
+                )
+        
+        return render(request, self.template_name, {
+            'form': form,
+            'formset': formset,
+            'title': 'Create Stock Request',
+            'preloaded_count': num_preloaded,
+        })
+    
+    def post(self, request):
+        form = StockRequestForm(request.POST, tenant=request.user.tenant, user=request.user)
+        formset = StockRequestItemFormSet(request.POST)
+        
+        if form.is_valid() and formset.is_valid():
+            with transaction.atomic():
+                stock_request = form.save(commit=False)
+                stock_request.tenant = request.user.tenant
+                stock_request.requested_by = request.user
+                stock_request.save()
+                
+                for item_form in formset:
+                    if item_form.cleaned_data and not item_form.cleaned_data.get('DELETE', False):
+                        item = item_form.save(commit=False)
+                        item.tenant = request.user.tenant
+                        item.request = stock_request
+                        item.save()
+                
+                # Create notification for supplier
+                stock_request._create_notification(
+                    f"New Stock Request {stock_request.request_number}",
+                    f"{stock_request.requesting_location.name} is requesting stock.",
+                    'REQUEST_NEW',
+                    stock_request.supplying_location
+                )
+                
+                messages.success(request, f"Stock Request {stock_request.request_number} created successfully!")
+                return redirect('transfers:stock_request_detail', pk=stock_request.pk)
+        
+        return render(request, self.template_name, {
+            'form': form,
+            'formset': formset,
+            'title': 'Create Stock Request'
+        })
+
+
+class StockRequestDetailView(LoginRequiredMixin, DetailView):
+    """View stock request details."""
+    model = StockRequest
+    template_name = 'transfers/stock_request_detail.html'
+    context_object_name = 'request'
+    
+    def get_queryset(self):
+        return StockRequest.objects.filter(
+            tenant=self.request.user.tenant
+        ).select_related(
+            'requesting_location', 'supplying_location',
+            'requested_by', 'approved_by', 'resulting_transfer'
+        ).prefetch_related('items__product')
+    
+    def get(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        if not self.object.user_can_view(request.user):
+            messages.error(request, "You don't have permission to view this request.")
+            return redirect('transfers:stock_request_list')
+        return super().get(request, *args, **kwargs)
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        user = self.request.user
+        stock_request = self.object
+        
+        context['can_approve'] = stock_request.user_can_approve(user)
+        context['can_reject'] = stock_request.user_can_reject(user)
+        context['can_convert'] = stock_request.user_can_convert(user)
+        context['can_cancel'] = stock_request.user_can_cancel(user)
+        context['is_requestor'] = stock_request.user_is_requestor(user)
+        context['is_supplier'] = stock_request.user_is_supplier(user)
+        
+        return context
+
+
+class StockRequestApproveView(LoginRequiredMixin, View):
+    """Approve a stock request."""
+    
+    def post(self, request, pk):
+        stock_request = get_object_or_404(
+            StockRequest, pk=pk, tenant=request.user.tenant
+        )
+        
+        if not stock_request.user_can_approve(request.user):
+            messages.error(request, "You don't have permission to approve this request.")
+            return redirect('transfers:stock_request_detail', pk=pk)
+        
+        try:
+            stock_request.approve(request.user)
+            messages.success(request, f"Stock Request {stock_request.request_number} approved!")
+        except Exception as e:
+            messages.error(request, str(e))
+        
+        return redirect('transfers:stock_request_detail', pk=pk)
+
+
+class StockRequestRejectView(LoginRequiredMixin, View):
+    """Reject a stock request."""
+    template_name = 'transfers/stock_request_reject.html'
+    
+    def get(self, request, pk):
+        stock_request = get_object_or_404(
+            StockRequest, pk=pk, tenant=request.user.tenant
+        )
+        
+        if not stock_request.user_can_reject(request.user):
+            messages.error(request, "You don't have permission to reject this request.")
+            return redirect('transfers:stock_request_detail', pk=pk)
+        
+        form = StockRequestRejectForm()
+        return render(request, self.template_name, {
+            'request_obj': stock_request,
+            'form': form
+        })
+    
+    def post(self, request, pk):
+        stock_request = get_object_or_404(
+            StockRequest, pk=pk, tenant=request.user.tenant
+        )
+        
+        form = StockRequestRejectForm(request.POST)
+        
+        if form.is_valid():
+            try:
+                stock_request.reject(request.user, form.cleaned_data['rejection_reason'])
+                messages.warning(request, f"Stock Request {stock_request.request_number} rejected.")
+            except Exception as e:
+                messages.error(request, str(e))
+        
+        return redirect('transfers:stock_request_detail', pk=pk)
+
+
+class StockRequestConvertView(LoginRequiredMixin, View):
+    """Convert an approved stock request to a draft transfer."""
+    
+    def post(self, request, pk):
+        stock_request = get_object_or_404(
+            StockRequest, pk=pk, tenant=request.user.tenant
+        )
+        
+        if not stock_request.user_can_convert(request.user):
+            messages.error(request, "You don't have permission to convert this request.")
+            return redirect('transfers:stock_request_detail', pk=pk)
+        
+        try:
+            with transaction.atomic():
+                transfer = stock_request.convert_to_transfer(request.user)
+            messages.success(
+                request, 
+                f"Stock Request converted to Transfer {transfer.transfer_number}. "
+                f"Please edit and send the transfer."
+            )
+            return redirect('transfers:transfer_detail', pk=transfer.pk)
+        except Exception as e:
+            messages.error(request, str(e))
+            return redirect('transfers:stock_request_detail', pk=pk)
+
+
+class StockRequestCancelView(LoginRequiredMixin, View):
+    """Cancel a pending stock request."""
+    
+    def post(self, request, pk):
+        stock_request = get_object_or_404(
+            StockRequest, pk=pk, tenant=request.user.tenant
+        )
+        
+        if not stock_request.user_can_cancel(request.user):
+            messages.error(request, "You don't have permission to cancel this request.")
+            return redirect('transfers:stock_request_detail', pk=pk)
+        
+        try:
+            stock_request.cancel(request.user)
+            messages.info(request, f"Stock Request {stock_request.request_number} cancelled.")
+        except Exception as e:
+            messages.error(request, str(e))
+        
+        return redirect('transfers:stock_request_list')

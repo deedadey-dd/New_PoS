@@ -1,0 +1,100 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}E-Cash Withdrawals{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="fw-bold mb-0">
+                <i class="bi bi-wallet2 me-2 text-primary"></i>E-Cash Withdrawals
+            </h2>
+            <p class="text-muted mb-0">Convert e-cash to physical cash</p>
+        </div>
+        <div class="d-flex align-items-center gap-3">
+            <span class="badge bg-info fs-6">
+                <i class="bi bi-phone me-1"></i>E-Cash Balance: {{ currency_symbol }}{{ ecash_balance|floatformat:2 }}
+            </span>
+            {% if role_name == 'ACCOUNTANT' or role_name == 'ADMIN' %}
+            <a href="{% url 'payments:withdrawal_create' %}" class="btn btn-primary">
+                <i class="bi bi-cash-coin me-1"></i>Withdraw E-Cash
+            </a>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-body p-0">
+            {% if withdrawals %}
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Withdrawal #</th>
+                            <th>Amount</th>
+                            <th>Status</th>
+                            <th>Withdrawn By</th>
+                            <th>Date</th>
+                            <th>Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for withdrawal in withdrawals %}
+                        <tr>
+                            <td class="fw-semibold">{{ withdrawal.withdrawal_number }}</td>
+                            <td>{{ currency_symbol }}{{ withdrawal.amount|floatformat:2 }}</td>
+                            <td>
+                                {% if withdrawal.status == 'PENDING' %}
+                                <span class="badge bg-warning text-dark">Pending</span>
+                                {% elif withdrawal.status == 'COMPLETED' %}
+                                <span class="badge bg-success">Completed</span>
+                                {% elif withdrawal.status == 'CANCELLED' %}
+                                <span class="badge bg-secondary">Cancelled</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ withdrawal.withdrawn_by.get_full_name|default:withdrawal.withdrawn_by.email }}</td>
+                            <td>{{ withdrawal.created_at|date:"M d, Y H:i" }}</td>
+                            <td>{{ withdrawal.notes|truncatechars:50|default:"-" }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-5">
+                <i class="bi bi-wallet2 display-1 text-muted"></i>
+                <h4 class="mt-3 text-muted">No withdrawals yet</h4>
+                <p class="text-muted">E-cash withdrawals will appear here.</p>
+                {% if ecash_balance > 0 and role_name in 'ACCOUNTANT,ADMIN' %}
+                <a href="{% url 'payments:withdrawal_create' %}" class="btn btn-primary mt-2">
+                    <i class="bi bi-cash-coin me-1"></i>Make First Withdrawal
+                </a>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Pagination -->
+    {% if page_obj.has_other_pages %}
+    <nav class="mt-4">
+        <ul class="pagination justify-content-center">
+            {% if page_obj.has_previous %}
+            <li class="page-item">
+                <a class="page-link" href="?page={{ page_obj.previous_page_number }}">Previous</a>
+            </li>
+            {% endif %}
+            <li class="page-item disabled">
+                <span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+            </li>
+            {% if page_obj.has_next %}
+            <li class="page-item">
+                <a class="page-link" href="?page={{ page_obj.next_page_number }}">Next</a>
+            </li>
+            {% endif %}
+        </ul>
+    </nav>
+    {% endif %}
+</div>
+{% endblock %}

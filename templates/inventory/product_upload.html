@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+
+{% block title %}Bulk Product Upload - {{ current_tenant.name }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header bg-transparent py-3">
+                <h4 class="mb-0"><i class="bi bi-cloud-upload me-2"></i>Bulk Product Upload</h4>
+            </div>
+            <div class="card-body p-4">
+                <div class="alert alert-info mb-4">
+                    <h5><i class="bi bi-info-circle me-2"></i>Instructions</h5>
+                    <ol class="mb-0 ps-3">
+                        <li>Download the Excel template using the button below.</li>
+                        <li>Fill in the product details in the Excel file. Do not change the header row.</li>
+                        <li>The 'Category' column matches existing categories or creates new ones.</li>
+                        <li>'Cost Price' and 'Selling Price' are for your current location.</li>
+                        <li>Upload the completed file to add products.</li>
+                    </ol>
+                </div>
+
+                <div class="text-center mb-4">
+                    <a href="{% url 'inventory:product_template' %}" class="btn btn-outline-primary">
+                        <i class="bi bi-file-earmark-excel me-2"></i>Download Template (.xlsx)
+                    </a>
+                </div>
+
+                <hr class="my-4">
+
+                <form method="post" enctype="multipart/form-data" class="text-center">
+                    {% csrf_token %}
+                    <div class="mb-4">
+                        <label for="id_excel_file" class="form-label h5 mb-3">Upload Completed Template</label>
+                        <input type="file" name="excel_file" id="id_excel_file" class="form-control form-control-lg"
+                            accept=".xlsx" required>
+                        <div class="form-text mt-2">Only .xlsx files are supported.</div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary btn-lg px-5">
+                        <i class="bi bi-upload me-2"></i>Upload Products
+                    </button>
+                    <a href="{% url 'inventory:product_list' %}" class="btn btn-link mt-2 d-block">Cancel</a>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -8,13 +8,16 @@ from django.contrib import messages
 from django.views import View
 from django.views.generic import ListView, CreateView, UpdateView, DeleteView, DetailView
 from django.urls import reverse_lazy
-from django.db.models import Sum, F, Q
-from django.http import JsonResponse
+from django.db.models import Sum, F, Q, Avg
+from django.http import JsonResponse, HttpResponse
 from decimal import Decimal
+import decimal
 
 from .models import Category, Product, Batch, InventoryLedger, ShopPrice
 from .forms import CategoryForm, ProductForm, BatchForm, StockAdjustmentForm, ShopPriceForm
 from apps.core.models import Location
+
+import openpyxl
 
 
 # ============ Category Views ============
@@ -255,6 +258,263 @@ class ProductDeleteView(LoginRequiredMixin, DeleteView):
     
     def get_queryset(self):
         return Product.objects.filter(tenant=self.request.user.tenant)
+
+
+class ProductTemplateDownloadView(LoginRequiredMixin, View):
+    def get(self, request):
+        # Restriction: PRODUCTION_MANAGER, STORES_MANAGER, ADMIN
+        role_name = request.user.role.name if request.user.role else 'ATTENDANT'
+        if role_name not in ['PRODUCTION_MANAGER', 'STORES_MANAGER', 'ADMIN']:
+             messages.error(request, "Permission denied. Restricted to Managers and Admins.")
+             return redirect('inventory:product_list')
+             
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Product Template"
+        
+        # Headers
+        headers = ['Name', 'Category', 'Description', 'Barcode', 'Unit', 'Cost Price', 'Selling Price', 'Alert Threshold']
+        ws.append(headers)
+        
+        response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = 'attachment; filename=product_import_template.xlsx'
+        
+        wb.save(response)
+        return response
+
+class ProductBulkUploadView(LoginRequiredMixin, View):
+    template_name = 'inventory/product_upload.html'
+    
+    def dispatch(self, request, *args, **kwargs):
+        role_name = request.user.role.name if request.user.role else 'ATTENDANT'
+        if role_name not in ['PRODUCTION_MANAGER', 'STORES_MANAGER', 'ADMIN']:
+             messages.error(request, "Permission denied. Restricted to Managers and Admins.")
+             return redirect('inventory:product_list')
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request):
+        return render(request, self.template_name)
+    
+    def post(self, request):
+        excel_file = request.FILES.get('excel_file')
+        if not excel_file:
+            messages.error(request, "Please select a file to upload.")
+            return redirect('inventory:product_upload')
+            
+        try:
+            wb = openpyxl.load_workbook(excel_file)
+            ws = wb.active
+            
+            created_count = 0
+            errors = []
+            
+            # Skip header
+            rows = list(ws.rows)
+            if len(rows) < 2:
+                 messages.warning(request, "File contains no data.")
+                 return redirect('inventory:product_upload')
+                 
+            # Skip header and instructions rows (rows 1 and 2)
+            for index, row in enumerate(rows[2:], start=3):
+                try:
+                    # Read values
+                    name = row[0].value
+                    category_name = row[1].value
+                    description = row[2].value or ""
+                    sku = str(row[3].value).strip() if row[3].value else None
+                    unit = row[4].value
+                    selling_price = row[5].value
+                    alert_threshold = row[6].value
+                    
+                    # Skip completely empty rows
+                    if not any([name, category_name, sku, unit, selling_price]):
+                        continue
+                    
+                    # Validate required fields
+                    if not name:
+                        errors.append(f"Row {index}: Product name is required")
+                        continue
+                    
+                    # Auto-generate SKU if not provided
+                    if not sku:
+                        sku = f"SKU-{request.user.tenant.id}-{index}"
+                    
+                    # Validate and default unit
+                    if not unit:
+                        unit = "UNIT"
+                    else:
+                        unit = unit.upper().strip()
+                        valid_units = [choice[0] for choice in Product.UNIT_CHOICES]
+                        if unit not in valid_units:
+                            errors.append(f"Row {index}: Invalid unit '{unit}'. Valid options: {', '.join(valid_units)}")
+                            continue
+                    
+                    # Check duplicate SKU
+                    if Product.objects.filter(tenant=request.user.tenant, sku=sku).exists():
+                        errors.append(f"Row {index}: Duplicate SKU '{sku}' - this SKU already exists")
+                        continue
+                    
+                    # Handle category
+                    category = None
+                    if category_name:
+                        category_name = str(category_name).strip()
+                        category, _ = Category.objects.get_or_create(
+                            tenant=request.user.tenant,
+                            name__iexact=category_name,
+                            defaults={'name': category_name}
+                        )
+                    
+                    # Validate and convert numeric fields
+                    try:
+                        reorder_level = Decimal(str(alert_threshold)) if alert_threshold else Decimal('0')
+                        if reorder_level < 0:
+                            raise ValueError("Alert threshold cannot be negative")
+                    except (ValueError, decimal.InvalidOperation) as e:
+                        errors.append(f"Row {index}: Invalid alert threshold '{alert_threshold}' - must be a positive number")
+                        continue
+                    
+                    default_price = Decimal('0')
+                    if selling_price:
+                        try:
+                            default_price = Decimal(str(selling_price))
+                            if default_price < 0:
+                                raise ValueError("Price cannot be negative")
+                        except (ValueError, decimal.InvalidOperation):
+                            errors.append(f"Row {index}: Invalid selling price '{selling_price}' - must be a positive number")
+                            continue
+                    
+                    # Create Product
+                    product = Product.objects.create(
+                        tenant=request.user.tenant,
+                        name=name.strip(),
+                        category=category,
+                        description=description.strip() if description else "",
+                        sku=sku,
+                        unit_of_measure=unit,
+                        reorder_level=reorder_level,
+                        default_selling_price=default_price
+                    )
+                    
+                    # Create Shop Price only if selling price is provided and user has shop location
+                    if selling_price and request.user.location and request.user.location.location_type == 'SHOP':
+                        try:
+                            ShopPrice.objects.create(
+                                tenant=request.user.tenant,
+                                location=request.user.location,
+                                product=product,
+                                selling_price=default_price
+                            )
+                        except Exception as e:
+                            # Product created but shop price failed - log but don't fail
+                            errors.append(f"Row {index}: Product created but shop price failed: {str(e)}")
+                    
+                    created_count += 1
+                    
+                except Exception as e:
+                    errors.append(f"Row {index}: Unexpected error - {str(e)}")
+            
+            # Show results
+            if created_count > 0 and not errors:
+                messages.success(request, f"✅ Successfully imported {created_count} product(s)!")
+            elif created_count > 0 and errors:
+                messages.warning(request, f"⚠️ Partially successful: {created_count} product(s) created, {len(errors)} error(s)")
+                # Show first 10 errors
+                for error in errors[:10]:
+                    messages.error(request, error)
+                if len(errors) > 10:
+                    messages.info(request, f"... and {len(errors) - 10} more error(s)")
+            elif errors:
+                messages.error(request, f"❌ Import failed: {len(errors)} error(s) found. No products were created.")
+                for error in errors[:10]:
+                    messages.error(request, error)
+                if len(errors) > 10:
+                    messages.info(request, f"... and {len(errors) - 10} more error(s)")
+            else:
+                messages.warning(request, "No valid data found in the file.")
+                
+            return redirect('inventory:product_list')
+            
+        except Exception as e:
+            messages.error(request, f"Error processing file: {str(e)}")
+            return redirect('inventory:product_upload')
+
+
+class InventoryExportView(LoginRequiredMixin, View):
+    """
+    Export inventory to Excel.
+    Allowed: STORES_MANAGER, SHOP_MANAGER, ADMIN
+    """
+    def get(self, request):
+        role_name = request.user.role.name if request.user.role else ''
+        if role_name not in ['STORES_MANAGER', 'SHOP_MANAGER', 'ADMIN']:
+            messages.error(request, "Permission denied.")
+            return redirect('inventory:product_list')
+            
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Inventory"
+        
+        # Headers
+        headers = ['Name', 'Category', 'SKU', 'Unit', 'Stock Qty', 'Selling Price']
+        # If Admin or Stores Manager, maybe include Cost Price?
+        if role_name in ['ADMIN', 'STORES_MANAGER']:
+            headers.append('Cost Price')
+            
+        ws.append(headers)
+        
+        # Filter products based on location
+        products = Product.objects.filter(tenant=request.user.tenant, is_active=True).select_related('category')
+        
+        location = request.user.location
+        
+        for product in products:
+            qty = 0
+            price = 0
+            cost = 0 
+            
+            # If user has a location, get stock/price for that location
+            if location:
+                # Stock (Need to implement Ledger aggregation later or use existing logic)
+                stock_in = InventoryLedger.objects.filter(product=product, location=location, quantity__gt=0).aggregate(Sum('quantity'))['quantity__sum'] or 0
+                stock_out = InventoryLedger.objects.filter(product=product, location=location, quantity__lt=0).aggregate(Sum('quantity'))['quantity__sum'] or 0
+                qty = stock_in + stock_out
+                
+                # Price
+                shop_price = ShopPrice.objects.filter(product=product, location=location).first()
+                if shop_price:
+                    price = shop_price.selling_price
+                
+                # Cost - get average from available batches
+                avg_cost = Batch.objects.filter(
+                    product=product,
+                    location=location,
+                    status='AVAILABLE',
+                    current_quantity__gt=0
+                ).aggregate(Avg('unit_cost'))['unit_cost__avg']
+                cost = avg_cost if avg_cost else Decimal('0')
+            else:
+                # Admin without location
+                pass
+
+            row = [
+                product.name,
+                product.category.name if product.category else '',
+                product.sku or '',
+                product.unit_of_measure,
+                qty,
+                price
+            ]
+            
+            if role_name in ['ADMIN', 'STORES_MANAGER']:
+                row.append(cost)
+                
+            ws.append(row)
+            
+        response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = 'attachment; filename=inventory_export.xlsx'
+        
+        wb.save(response)
+        return response
 
 
 # ============ Batch Views ============
@@ -728,3 +988,90 @@ class ShopPriceSetView(LoginRequiredMixin, View):
         
         messages.success(request, f'Price for "{product.name}" set to {request.user.tenant.currency_symbol}{selling_price}')
         return redirect('inventory:shop_price_list')
+
+
+class ProductTemplateDownloadView(LoginRequiredMixin, View):
+    """Download Excel template for bulk product upload."""
+    
+    def get(self, request):
+        from openpyxl.worksheet.datavalidation import DataValidation
+        
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Products"
+        
+        # Headers
+        headers = ['Name*', 'Category', 'Description', 'SKU', 'Unit', 'Selling Price', 'Alert Threshold']
+        ws.append(headers)
+        
+        # Instructions row
+        ws.append([
+            'Enter product name (required)',
+            'Select from dropdown or leave blank',
+            'Optional description',
+            'Leave blank to auto-generate',
+            'Select from dropdown',
+            'Optional (can be set later)',
+            'Optional stock alert level'
+        ])
+        
+        # Sample data row
+        ws.append([
+            'Sample Product',
+            '',  # Will be dropdown
+            'This is a sample product',
+            '',  # Auto-generated
+            'UNIT',  # Will be dropdown
+            '100.00',
+            '10'
+        ])
+        
+        # Get categories for dropdown
+        categories = list(Category.objects.filter(
+            tenant=request.user.tenant
+        ).values_list('name', flat=True))
+        
+        # Create dropdown for Category column (B3:B1000)
+        if categories:
+            category_dv = DataValidation(
+                type="list",
+                formula1=f'"{",".join(categories)}"',
+                allow_blank=True
+            )
+            category_dv.error = 'Please select a category from the list or leave blank'
+            category_dv.errorTitle = 'Invalid Category'
+            ws.add_data_validation(category_dv)
+            category_dv.add('B3:B1000')
+        
+        # Create dropdown for Unit column (E3:E1000)
+        units = [choice[0] for choice in Product.UNIT_CHOICES]
+        unit_dv = DataValidation(
+            type="list",
+            formula1=f'"{",".join(units)}"',
+            allow_blank=False
+        )
+        unit_dv.error = 'Please select a valid unit from the list'
+        unit_dv.errorTitle = 'Invalid Unit'
+        unit_dv.prompt = 'Select unit of measure'
+        unit_dv.promptTitle = 'Unit Selection'
+        ws.add_data_validation(unit_dv)
+        unit_dv.add('E3:E1000')
+        
+        # Style the header row
+        for cell in ws[1]:
+            cell.font = openpyxl.styles.Font(bold=True)
+        
+        # Set column widths
+        ws.column_dimensions['A'].width = 25  # Name
+        ws.column_dimensions['B'].width = 20  # Category
+        ws.column_dimensions['C'].width = 30  # Description
+        ws.column_dimensions['D'].width = 15  # SKU
+        ws.column_dimensions['E'].width = 12  # Unit
+        ws.column_dimensions['F'].width = 15  # Selling Price
+        ws.column_dimensions['G'].width = 15  # Alert Threshold
+        
+        response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = 'attachment; filename=product_import_template.xlsx'
+        
+        wb.save(response)
+        return response

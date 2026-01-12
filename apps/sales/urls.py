@@ -23,6 +23,10 @@ urlpatterns = [
     path('api/checkout/', views.api_complete_sale, name='api_checkout'),
     path('api/<int:pk>/void/', views.api_void_sale, name='api_void_sale'),
     
+    # E-Cash Payment
+    path('api/ecash/initialize/', views.initialize_ecash_payment, name='initialize_ecash_payment'),
+    path('api/ecash/verify/', views.verify_ecash_payment, name='verify_ecash_payment'),
+    
     # Reports
     path('report/', views.ShopSalesReportView.as_view(), name='shop_sales_report'),
 ]
