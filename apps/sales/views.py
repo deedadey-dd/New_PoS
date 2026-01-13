@@ -610,7 +610,7 @@ class ShopSalesReportView(LoginRequiredMixin, View):
             sale__created_at__date__gte=start_date
         ).values('product__id', 'product__name').annotate(
             qty_sold=Sum('quantity'),
-            revenue=Sum('subtotal')
+            revenue=Sum('total')
         ).order_by('-revenue')[:5]
         
         # Sales by day (for week/month view)

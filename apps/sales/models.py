@@ -247,6 +247,12 @@ class Sale(TenantModel):
     class Meta:
         ordering = ['-created_at']
         unique_together = ['tenant', 'sale_number']
+        indexes = [
+            models.Index(fields=['tenant', 'status']),
+            models.Index(fields=['tenant', 'created_at']),
+            models.Index(fields=['tenant', 'shop', 'created_at']),
+            models.Index(fields=['tenant', 'payment_method']),
+        ]
     
     def __str__(self):
         return f"Sale {self.sale_number} - {self.total}"

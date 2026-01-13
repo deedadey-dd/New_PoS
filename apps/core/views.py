@@ -279,7 +279,8 @@ class UserCreateView(LoginRequiredMixin, CreateView):
     
     def form_valid(self, form):
         form.instance.tenant = self.request.user.tenant
-        messages.success(self.request, f'User "{form.instance.email}" created successfully!')
+        form.instance.password_reset_required = True  # Force password change on first login
+        messages.success(self.request, f'User "{form.instance.email}" created successfully! They will be required to change their password on first login.')
         return super().form_valid(form)
 
 
@@ -474,3 +475,74 @@ class SettingsView(LoginRequiredMixin, View):
             return redirect('core:settings')
         
         return render(request, self.template_name, {'form': form, 'tenant': tenant})
+
+
+class AdminPasswordResetView(LoginRequiredMixin, View):
+    """Admin view to reset a user's password."""
+    template_name = 'core/admin_password_reset.html'
+    
+    def dispatch(self, request, *args, **kwargs):
+        # Only allow ADMIN role
+        if not request.user.role or request.user.role.name != 'ADMIN':
+            messages.error(request, 'Only administrators can reset passwords.')
+            return redirect('core:dashboard')
+        return super().dispatch(request, *args, **kwargs)
+    
+    def get(self, request, pk):
+        from .forms import AdminPasswordResetForm
+        user = get_object_or_404(User, pk=pk, tenant=request.user.tenant)
+        form = AdminPasswordResetForm()
+        return render(request, self.template_name, {'form': form, 'target_user': user})
+    
+    def post(self, request, pk):
+        from .forms import AdminPasswordResetForm
+        user = get_object_or_404(User, pk=pk, tenant=request.user.tenant)
+        form = AdminPasswordResetForm(request.POST)
+        
+        if form.is_valid():
+            new_password = form.cleaned_data['new_password1']
+            user.set_password(new_password)
+            user.password_reset_required = True  # Force password change on next login
+            user.save()
+            
+            messages.success(request, f'Password for {user.get_full_name() or user.email} has been reset. '
+                                      'They will be required to change it on their next login.')
+            return redirect('core:user_list')
+        
+        return render(request, self.template_name, {'form': form, 'target_user': user})
+
+
+class ForcedPasswordChangeView(LoginRequiredMixin, View):
+    """View for users to change password on first login after admin reset."""
+    template_name = 'core/forced_password_change.html'
+    
+    def get(self, request):
+        from .forms import ForcedPasswordChangeForm
+        # Only show if user needs to change password
+        if not request.user.password_reset_required:
+            return redirect('core:dashboard')
+        
+        form = ForcedPasswordChangeForm()
+        return render(request, self.template_name, {'form': form})
+    
+    def post(self, request):
+        from .forms import ForcedPasswordChangeForm
+        if not request.user.password_reset_required:
+            return redirect('core:dashboard')
+        
+        form = ForcedPasswordChangeForm(request.POST)
+        if form.is_valid():
+            new_password = form.cleaned_data['new_password1']
+            request.user.set_password(new_password)
+            request.user.password_reset_required = False
+            request.user.save()
+            
+            # Update session to prevent logout
+            from django.contrib.auth import update_session_auth_hash
+            update_session_auth_hash(request, request.user)
+            
+            messages.success(request, 'Your password has been changed successfully!')
+            return redirect('core:dashboard')
+        
+        return render(request, self.template_name, {'form': form})
+

@@ -215,8 +215,8 @@
                 <tr>
                     <td class="item-name">{{ item.product.name }}</td>
                     <td class="text-right">{{ item.quantity }}</td>
-                    <td class="text-right">{{ item.unit_price }}</td>
-                    <td class="text-right">{{ item.total }}</td>
+                    <td class="text-right">{{ currency_symbol }}{{ item.unit_price }}</td>
+                    <td class="text-right">{{ currency_symbol }}{{ item.total }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -226,35 +226,35 @@
     <div class="receipt-totals">
         <div class="totals-row">
             <span>Subtotal:</span>
-            <span>{{ sale.subtotal }}</span>
+            <span>{{ currency_symbol }}{{ sale.subtotal }}</span>
         </div>
         {% if sale.discount_amount %}
         <div class="totals-row">
             <span>Discount:</span>
-            <span>-{{ sale.discount_amount }}</span>
+            <span>-{{ currency_symbol }}{{ sale.discount_amount }}</span>
         </div>
         {% endif %}
         {% if sale.tax_amount %}
         <div class="totals-row">
             <span>Tax:</span>
-            <span>{{ sale.tax_amount }}</span>
+            <span>{{ currency_symbol }}{{ sale.tax_amount }}</span>
         </div>
         {% endif %}
         <div class="totals-row total">
             <span>TOTAL:</span>
-            <span>{{ sale.total }}</span>
+            <span>{{ currency_symbol }}{{ sale.total }}</span>
         </div>
     </div>
 
     <div class="receipt-payment">
         <div class="totals-row">
             <span>Amount Paid:</span>
-            <span>{{ sale.amount_paid }}</span>
+            <span>{{ currency_symbol }}{{ sale.amount_paid }}</span>
         </div>
         {% if sale.change_given %}
         <div class="totals-row">
             <span>Change:</span>
-            <span>{{ sale.change_given }}</span>
+            <span>{{ currency_symbol }}{{ sale.change_given }}</span>
         </div>
         {% endif %}
     </div>
@@ -264,8 +264,10 @@
         <strong style="font-size: 14px;">⚠️ CREDIT SALE ⚠️</strong>
         {% if sale.customer %}
         <p style="margin: 5px 0;">Customer: <strong>{{ sale.customer.name }}</strong></p>
-        <p style="margin: 5px 0;">Sale Total: {{ sale.total }} | Paid: {{ sale.amount_paid }}</p>
-        <p style="margin: 5px 0;">Account Balance: <strong>{{ sale.customer.current_balance }}</strong></p>
+        <p style="margin: 5px 0;">Sale Total: {{ currency_symbol }}{{ sale.total }} | Paid:
+            {{ currency_symbol }}{{ sale.amount_paid }}</p>
+        <p style="margin: 5px 0;">Account Balance:
+            <strong>{{ currency_symbol }}{{ sale.customer.current_balance }}</strong></p>
         {% endif %}
     </div>
     {% endif %}
@@ -273,7 +275,7 @@
     {% if sale.customer and sale.amount_paid >= sale.total %}
     <div style="border: 1px solid #000; padding: 5px; margin: 10px 0; text-align: center; font-size: 11px;">
         Customer: {{ sale.customer.name }}<br>
-        Balance: {{ sale.customer.current_balance }}
+        Balance: {{ currency_symbol }}{{ sale.customer.current_balance }}
     </div>
     {% endif %}
 

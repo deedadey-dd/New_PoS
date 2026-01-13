@@ -8,12 +8,16 @@ from django.urls import reverse
 class TenantSetupMiddleware:
     """
     Middleware to redirect Admin users without a tenant to the tenant setup page.
+    Also handles forced password change after admin reset.
     """
     EXEMPT_URLS = [
         '/setup/',
         '/accounts/logout/',
+        '/logout/',
+        '/change-password/',  # Forced password change page
         '/static/',
         '/media/',
+        '/admin/',
     ]
     
     def __init__(self, get_response):
@@ -33,6 +37,12 @@ class TenantSetupMiddleware:
         for exempt_url in self.EXEMPT_URLS:
             if path.startswith(exempt_url):
                 return self.get_response(request)
+        
+        # Check if user needs to change password
+        if hasattr(request.user, 'password_reset_required') and request.user.password_reset_required:
+            change_password_url = reverse('core:forced_password_change')
+            if path != change_password_url:
+                return redirect(change_password_url)
         
         # Check if admin needs to set up tenant
         if hasattr(request.user, 'needs_tenant_setup') and request.user.needs_tenant_setup:

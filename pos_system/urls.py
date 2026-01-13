@@ -16,6 +16,9 @@ urlpatterns = [
     path('accounting/', include('apps.accounting.urls')),
     path('customers/', include('apps.customers.urls')),
     path('payments/', include('apps.payments.urls')),
+    
+    # Email-based password reset (Admin users only - validated in custom view)
+    path('password-reset/', include('django.contrib.auth.urls')),
 ]
 
 # Serve media files during development

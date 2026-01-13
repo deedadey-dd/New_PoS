@@ -75,7 +75,7 @@
                             <span class="badge bg-secondary">{{ sale.get_payment_method_display }}</span>
                             {% endif %}
                         </td>
-                        <td>{{ current_tenant.currency.symbol|default:'$' }}{{ sale.total }}</td>
+                        <td>{{ current_tenant.currency_symbol|default:'$' }} {{ sale.total }}</td>
                         <td>
                             {% if sale.status == 'COMPLETED' %}
                             <span class="badge bg-success">Completed</span>

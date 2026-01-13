@@ -61,7 +61,7 @@ class LocationForm(forms.ModelForm):
     
     class Meta:
         model = Location
-        fields = ['name', 'location_type', 'address', 'phone', 'email']
+        fields = ['name', 'location_type', 'address', 'phone', 'email', 'receipt_copies']
         widgets = {
             'name': forms.TextInput(attrs={
                 'class': 'form-control',
@@ -82,6 +82,11 @@ class LocationForm(forms.ModelForm):
             'email': forms.EmailInput(attrs={
                 'class': 'form-control',
                 'placeholder': 'Email',
+            }),
+            'receipt_copies': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'min': 1,
+                'max': 5,
             }),
         }
 
@@ -195,6 +200,107 @@ class TenantSettingsForm(forms.ModelForm):
             'require_return_approval': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'shop_manager_can_add_products': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'shop_manager_can_receive_stock': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
-            'allow_accountant_to_shop_transfers': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         }
+
+
+class AdminPasswordResetForm(forms.Form):
+    """Form for admins to reset a user's password."""
+    new_password1 = forms.CharField(
+        label="New Password",
+        widget=forms.PasswordInput(attrs={
+            'class': 'form-control',
+            'placeholder': 'New Password',
+        }),
+        min_length=8,
+    )
+    new_password2 = forms.CharField(
+        label="Confirm Password",
+        widget=forms.PasswordInput(attrs={
+            'class': 'form-control',
+            'placeholder': 'Confirm Password',
+        }),
+    )
+    
+    def clean(self):
+        cleaned_data = super().clean()
+        password1 = cleaned_data.get('new_password1')
+        password2 = cleaned_data.get('new_password2')
+        
+        if password1 and password2 and password1 != password2:
+            raise forms.ValidationError("Passwords do not match.")
+        
+        return cleaned_data
+
+
+class ForcedPasswordChangeForm(forms.Form):
+    """Form for users to change password on first login after reset."""
+    new_password1 = forms.CharField(
+        label="New Password",
+        widget=forms.PasswordInput(attrs={
+            'class': 'form-control',
+            'placeholder': 'Enter new password',
+            'autofocus': True,
+        }),
+        min_length=8,
+        help_text="Password must be at least 8 characters."
+    )
+    new_password2 = forms.CharField(
+        label="Confirm Password",
+        widget=forms.PasswordInput(attrs={
+            'class': 'form-control',
+            'placeholder': 'Confirm new password',
+        }),
+    )
+    
+    def clean(self):
+        cleaned_data = super().clean()
+        password1 = cleaned_data.get('new_password1')
+        password2 = cleaned_data.get('new_password2')
+        
+        if password1 and password2 and password1 != password2:
+            raise forms.ValidationError("Passwords do not match.")
+        
+        return cleaned_data
+
+
+class AdminOnlyPasswordResetForm(forms.Form):
+    """
+    Password reset form that only allows Admin-role users to reset via email.
+    Regular tenant users must have their passwords reset by their Admin.
+    """
+    email = forms.EmailField(
+        label="Email Address",
+        max_length=254,
+        widget=forms.EmailInput(attrs={
+            'class': 'form-control',
+            'autocomplete': 'email',
+            'placeholder': 'Enter your email address',
+        })
+    )
+    
+    def clean_email(self):
+        email = self.cleaned_data.get('email')
+        
+        # Check if user exists and is an Admin
+        try:
+            user = User.objects.get(email=email)
+            if not user.role or user.role.name != 'ADMIN':
+                raise forms.ValidationError(
+                    "Email-based password reset is only available for administrators. "
+                    "Please contact your administrator to reset your password."
+                )
+        except User.DoesNotExist:
+            # Don't reveal whether user exists - generic message
+            pass
+        
+        return email
+    
+    def get_users(self, email):
+        """Given an email, return matching Admin user(s) who can reset password."""
+        active_users = User.objects.filter(
+            email__iexact=email,
+            is_active=True,
+            role__name='ADMIN'
+        )
+        return (u for u in active_users if u.has_usable_password())
 

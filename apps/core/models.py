@@ -121,7 +121,13 @@ class Location(TenantModel):
     phone = models.CharField(max_length=20, blank=True)
     email = models.EmailField(blank=True)
     
-    # Shop-specific fields
+    # Shop-specific settings
+    receipt_copies = models.PositiveIntegerField(
+        default=1,
+        help_text="Number of receipt copies to print per sale (for shops)"
+    )
+    
+    # Status fields
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -240,6 +246,12 @@ class User(AbstractUser):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     last_login_ip = models.GenericIPAddressField(null=True, blank=True)
+    
+    # Password reset tracking
+    password_reset_required = models.BooleanField(
+        default=False,
+        help_text="If True, user must change password on next login"
+    )
     
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['first_name', 'last_name']

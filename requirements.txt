@@ -7,3 +7,5 @@ dj-database-url==2.2.0
 sqlparse==0.5.5
 tzdata==2025.3
 openpyxl>=3.1.2
+whitenoise>=6.6.0
+cryptography>=41.0.0

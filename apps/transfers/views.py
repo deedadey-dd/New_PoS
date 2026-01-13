@@ -408,6 +408,116 @@ def get_batch_details(request):
         return JsonResponse({'error': 'Batch not found'}, status=404)
 
 
+class TransferItemHistoryView(LoginRequiredMixin, ListView):
+    """
+    Product-centric view of transfers showing individual items 
+    with their transfer metadata (number, date, locations, status).
+    """
+    model = TransferItem
+    template_name = 'transfers/transfer_item_history.html'
+    context_object_name = 'transfer_items'
+    paginate_by = 25
+    
+    def get_queryset(self):
+        from django.db.models import Q
+        from datetime import datetime, timedelta
+        
+        user = self.request.user
+        queryset = TransferItem.objects.filter(
+            tenant=user.tenant,
+            transfer__status__in=['SENT', 'RECEIVED', 'PARTIAL', 'DISPUTED', 'CLOSED']
+        ).select_related(
+            'product',
+            'product__category',
+            'batch',
+            'transfer',
+            'transfer__source_location',
+            'transfer__destination_location',
+        ).order_by('-transfer__created_at')
+        
+        # Apply role-based filtering (same logic as TransferListView)
+        if not (user.role and user.role.name == 'ADMIN'):
+            role_location_map = {
+                'PRODUCTION_MANAGER': 'PRODUCTION',
+                'STORES_MANAGER': 'STORES',
+                'SHOP_MANAGER': 'SHOP',
+            }
+            user_location_type = role_location_map.get(user.role.name if user.role else None)
+            
+            location_filter = Q()
+            if user.location:
+                location_filter |= Q(transfer__source_location=user.location) | Q(transfer__destination_location=user.location)
+            if user_location_type:
+                location_filter |= Q(transfer__source_location__location_type=user_location_type) | Q(transfer__destination_location__location_type=user_location_type)
+            
+            queryset = queryset.filter(location_filter)
+        
+        # Filter by product search
+        search = self.request.GET.get('search')
+        if search:
+            queryset = queryset.filter(
+                Q(product__name__icontains=search) |
+                Q(product__sku__icontains=search) |
+                Q(transfer__transfer_number__icontains=search)
+            )
+        
+        # Filter by location
+        location = self.request.GET.get('location')
+        if location:
+            queryset = queryset.filter(
+                Q(transfer__source_location_id=location) |
+                Q(transfer__destination_location_id=location)
+            )
+        
+        # Filter by direction (incoming/outgoing relative to user's location)
+        direction = self.request.GET.get('direction')
+        if direction and user.location:
+            if direction == 'incoming':
+                queryset = queryset.filter(transfer__destination_location=user.location)
+            elif direction == 'outgoing':
+                queryset = queryset.filter(transfer__source_location=user.location)
+        
+        # Filter by date range
+        date_from = self.request.GET.get('date_from')
+        date_to = self.request.GET.get('date_to')
+        if date_from:
+            queryset = queryset.filter(transfer__created_at__date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(transfer__created_at__date__lte=date_to)
+        
+        # Filter by status
+        status = self.request.GET.get('status')
+        if status:
+            queryset = queryset.filter(transfer__status=status)
+        
+        return queryset
+    
+    def get_context_data(self, **kwargs):
+        from apps.core.models import Location
+        
+        context = super().get_context_data(**kwargs)
+        context['locations'] = Location.objects.filter(
+            tenant=self.request.user.tenant, is_active=True
+        )
+        context['status_choices'] = [
+            ('SENT', 'Sent'),
+            ('RECEIVED', 'Received'),
+            ('PARTIAL', 'Partial'),
+            ('DISPUTED', 'Disputed'),
+            ('CLOSED', 'Closed'),
+        ]
+        context['user_location'] = self.request.user.location
+        
+        # Preserve filter values for form
+        context['current_search'] = self.request.GET.get('search', '')
+        context['current_location'] = self.request.GET.get('location', '')
+        context['current_direction'] = self.request.GET.get('direction', '')
+        context['current_status'] = self.request.GET.get('status', '')
+        context['current_date_from'] = self.request.GET.get('date_from', '')
+        context['current_date_to'] = self.request.GET.get('date_to', '')
+        
+        return context
+
 # ==================== Stock Request Views ====================
 
 from .models import StockRequest, StockRequestItem

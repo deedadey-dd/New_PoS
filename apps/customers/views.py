@@ -17,7 +17,7 @@ class CustomerListView(LoginRequiredMixin, ListView):
 
     def get_queryset(self):
         user = self.request.user
-        queryset = Customer.objects.filter(tenant=user.tenant)
+        queryset = Customer.objects.filter(tenant=user.tenant).select_related('shop')
         
         # Role config
         role_name = user.role.name if user.role else 'ATTENDANT'
