@@ -1,0 +1,299 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Product Lifecycle Tracking{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Page Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1 class="h3 mb-1">
+                        <i class="bi bi-diagram-3 text-primary me-2"></i>
+                        Product Lifecycle Tracking
+                    </h1>
+                    <p class="text-muted mb-0">Track product flow from entry to exit through the system</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Product Selector -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label fw-semibold">Select Product</label>
+                    <select name="product" class="form-select"
+                        onchange="this.form.action = '/audit/product-lifecycle/' + this.value + '/'; this.form.submit();">
+                        <option value="">-- Select a product --</option>
+                        {% for product in products %}
+                        <option value="{{ product.id }}"
+                            {% if selected_product and selected_product.id == product.id %}selected{% endif %}>
+                            {{ product.name }} ({{ product.sku }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% if selected_product %}
+                <div class="col-md-3">
+                    <label class="form-label fw-semibold">From Date</label>
+                    <input type="date" name="date_from" class="form-control" value="{{ date_from|default:'' }}">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label fw-semibold">To Date</label>
+                    <input type="date" name="date_to" class="form-control" value="{{ date_to|default:'' }}">
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-filter me-1"></i> Filter
+                    </button>
+                </div>
+                {% endif %}
+            </form>
+        </div>
+    </div>
+
+    {% if selected_product %}
+    <!-- Product Info -->
+    <div class="card shadow-sm mb-4 border-primary">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0">
+                <i class="bi bi-box-seam me-2"></i>
+                {{ selected_product.name }}
+                <span class="badge bg-light text-primary ms-2">{{ selected_product.sku }}</span>
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-3">
+                    <div class="text-muted small">Category</div>
+                    <div class="fw-semibold">{{ selected_product.category.name|default:"Uncategorized" }}</div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-muted small">Unit</div>
+                    <div class="fw-semibold">{{ selected_product.get_unit_of_measure_display }}</div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-muted small">Default Price</div>
+                    <div class="fw-semibold">
+                        {{ currency_symbol }}{{ selected_product.default_selling_price|floatformat:2 }}</div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-muted small">Current Total Stock</div>
+                    <div class="fw-bold text-primary fs-4">{{ total_stock|floatformat:2 }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="row mb-4">
+        <!-- Entries -->
+        <div class="col-md-4">
+            <div class="card shadow-sm h-100 border-success">
+                <div class="card-header bg-success text-white">
+                    <i class="bi bi-box-arrow-in-down me-2"></i> Stock Entries
+                </div>
+                <div class="card-body">
+                    <table class="table table-sm mb-0">
+                        <tbody>
+                            <tr>
+                                <td>Stock In (Initial)</td>
+                                <td class="text-end fw-semibold text-success">
+                                    +{{ summary.IN.qty|default:"0"|floatformat:2 }}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>Production</td>
+                                <td class="text-end fw-semibold text-success">
+                                    +{{ summary.PRODUCTION.qty|default:"0"|floatformat:2 }}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>Transfer In</td>
+                                <td class="text-end fw-semibold text-success">
+                                    +{{ summary.TRANSFER_IN.qty|default:"0"|floatformat:2 }}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>Returns</td>
+                                <td class="text-end fw-semibold text-success">
+                                    +{{ summary.RETURN.qty|default:"0"|floatformat:2 }}
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Exits -->
+        <div class="col-md-4">
+            <div class="card shadow-sm h-100 border-danger">
+                <div class="card-header bg-danger text-white">
+                    <i class="bi bi-box-arrow-up me-2"></i> Stock Exits
+                </div>
+                <div class="card-body">
+                    <table class="table table-sm mb-0">
+                        <tbody>
+                            <tr>
+                                <td>Sales</td>
+                                <td class="text-end fw-semibold text-danger">
+                                    {{ summary.SALE.qty|default:"0"|floatformat:2 }}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>Transfer Out</td>
+                                <td class="text-end fw-semibold text-danger">
+                                    {{ summary.TRANSFER_OUT.qty|default:"0"|floatformat:2 }}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>Damage/Write-off</td>
+                                <td class="text-end fw-semibold text-danger">
+                                    {{ summary.DAMAGE.qty|default:"0"|floatformat:2 }}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>Dispute Reversal</td>
+                                <td class="text-end fw-semibold">
+                                    {{ summary.DISPUTE_REVERSAL.qty|default:"0"|floatformat:2 }}
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Location Balances -->
+        <div class="col-md-4">
+            <div class="card shadow-sm h-100 border-info">
+                <div class="card-header bg-info text-white">
+                    <i class="bi bi-geo-alt me-2"></i> Stock by Location
+                </div>
+                <div class="card-body">
+                    <table class="table table-sm mb-0">
+                        <tbody>
+                            {% for loc in location_balances %}
+                            <tr>
+                                <td>
+                                    {{ loc.location__name }}
+                                    <span class="badge bg-secondary ms-1">{{ loc.location__location_type }}</span>
+                                </td>
+                                <td
+                                    class="text-end fw-semibold {% if loc.current_stock >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                    {{ loc.current_stock|floatformat:2 }}
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="2" class="text-muted text-center">No stock data</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Detailed Ledger -->
+    <div class="card shadow-sm">
+        <div class="card-header bg-light">
+            <h5 class="mb-0">
+                <i class="bi bi-journal-text me-2"></i>
+                Inventory Ledger Details
+                <span class="badge bg-primary ms-2">{{ ledger_entries|length }} entries</span>
+            </h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover table-striped mb-0">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Date/Time</th>
+                            <th>Type</th>
+                            <th>Location</th>
+                            <th>Batch</th>
+                            <th class="text-end">Quantity</th>
+                            <th class="text-end">Unit Cost</th>
+                            <th>Reference</th>
+                            <th>By</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for entry in ledger_entries %}
+                        <tr>
+                            <td>
+                                <small>{{ entry.created_at|date:"d M Y" }}</small><br>
+                                <small class="text-muted">{{ entry.created_at|time:"H:i" }}</small>
+                            </td>
+                            <td>
+                                <span class="badge {% if entry.quantity > 0 %}bg-success{% else %}bg-danger{% endif %}">
+                                    {{ entry.get_transaction_type_display }}
+                                </span>
+                            </td>
+                            <td>{{ entry.location.name }}</td>
+                            <td>
+                                {% if entry.batch %}
+                                <small>{{ entry.batch.batch_number }}</small>
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td
+                                class="text-end fw-semibold {% if entry.quantity > 0 %}text-success{% else %}text-danger{% endif %}">
+                                {% if entry.quantity > 0 %}+{% endif %}{{ entry.quantity|floatformat:2 }}
+                            </td>
+                            <td class="text-end">
+                                {% if entry.unit_cost %}
+                                {{ currency_symbol }}{{ entry.unit_cost|floatformat:2 }}
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if entry.reference_type and entry.reference_id %}
+                                <small>{{ entry.reference_type }} #{{ entry.reference_id }}</small>
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if entry.created_by %}
+                                <small>{{ entry.created_by.get_full_name|default:entry.created_by.email }}</small>
+                                {% else %}
+                                <span class="text-muted">System</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="8" class="text-center text-muted py-4">
+                                <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                                No inventory movements found for this product
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    {% else %}
+    <!-- No Product Selected -->
+    <div class="card shadow-sm">
+        <div class="card-body text-center py-5">
+            <i class="bi bi-box-seam text-muted" style="font-size: 4rem;"></i>
+            <h4 class="mt-3 text-muted">Select a Product</h4>
+            <p class="text-muted">Choose a product from the dropdown above to view its lifecycle tracking.</p>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

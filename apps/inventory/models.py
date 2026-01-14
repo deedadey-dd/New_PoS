@@ -101,6 +101,11 @@ class Product(TenantModel):
     class Meta:
         ordering = ['name']
         unique_together = ['tenant', 'sku']
+        indexes = [
+            models.Index(fields=['tenant', 'is_active']),
+            models.Index(fields=['tenant', 'sku']),
+            models.Index(fields=['tenant', 'category']),
+        ]
     
     def __str__(self):
         return f"{self.name} ({self.sku})"

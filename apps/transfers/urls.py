@@ -10,6 +10,7 @@ urlpatterns = [
     # Transfer List and CRUD
     path('', views.TransferListView.as_view(), name='transfer_list'),
     path('create/', views.TransferCreateView.as_view(), name='transfer_create'),
+    path('products/', views.TransferItemHistoryView.as_view(), name='transfer_item_history'),
     path('<int:pk>/', views.TransferDetailView.as_view(), name='transfer_detail'),
     
     # Transfer Actions

@@ -9,13 +9,15 @@
 /* Sidebar Styles */
 .sidebar {
     width: var(--sidebar-width);
-    min-height: 100vh;
+    height: 100vh;
     position: fixed;
     left: 0;
     top: 0;
     z-index: 1000;
     transition: all 0.3s ease;
     background: linear-gradient(180deg, #1a1d21 0%, #2d3339 100%);
+    overflow-y: auto;
+    overflow-x: hidden;
 }
 
 .sidebar.collapsed {

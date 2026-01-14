@@ -247,6 +247,12 @@ class Sale(TenantModel):
     class Meta:
         ordering = ['-created_at']
         unique_together = ['tenant', 'sale_number']
+        indexes = [
+            models.Index(fields=['tenant', 'status']),
+            models.Index(fields=['tenant', 'created_at']),
+            models.Index(fields=['tenant', 'shop', 'created_at']),
+            models.Index(fields=['tenant', 'payment_method']),
+        ]
     
     def __str__(self):
         return f"Sale {self.sale_number} - {self.total}"
@@ -336,8 +342,18 @@ class Sale(TenantModel):
         self.completed_at = timezone.now()
         self.save()
         
-        # Deduct inventory
+        # Deduct inventory and capture cost for profit tracking
         for item in self.items.all():
+            # Get the actual unit cost from batch for profit tracking
+            actual_cost = Decimal('0')
+            if item.batch and item.batch.unit_cost:
+                actual_cost = item.batch.unit_cost
+            
+            # Store the cost on the sale item for profit/loss reporting
+            if item.unit_cost == Decimal('0') and actual_cost > 0:
+                item.unit_cost = actual_cost
+                item.save(update_fields=['unit_cost'])
+            
             InventoryLedger.objects.create(
                 tenant=self.tenant,
                 product=item.product,
@@ -345,7 +361,7 @@ class Sale(TenantModel):
                 location=self.shop,
                 transaction_type='SALE',
                 quantity=-item.quantity,
-                unit_cost=item.unit_price,
+                unit_cost=actual_cost,  # Use actual cost, not selling price
                 reference_type='Sale',
                 reference_id=self.pk,
                 notes=f"Sale {self.sale_number}",
@@ -410,6 +426,12 @@ class SaleItem(TenantModel):
         max_digits=12,
         decimal_places=2,
         validators=[MinValueValidator(Decimal('0'))]
+    )
+    unit_cost = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0'),
+        help_text="Cost price at time of sale (from batch) for profit tracking"
     )
     discount_amount = models.DecimalField(
         max_digits=12,

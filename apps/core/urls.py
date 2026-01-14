@@ -31,4 +31,12 @@ urlpatterns = [
     path('users/create/', views.UserCreateView.as_view(), name='user_create'),
     path('users/<int:pk>/edit/', views.UserUpdateView.as_view(), name='user_edit'),
     path('users/<int:pk>/delete/', views.UserDeleteView.as_view(), name='user_delete'),
+    path('users/<int:pk>/reset-password/', views.AdminPasswordResetView.as_view(), name='admin_password_reset'),
+    
+    # Password change
+    path('change-password/', views.ForcedPasswordChangeView.as_view(), name='forced_password_change'),
+    
+    # Help
+    path('help/', views.HelpView.as_view(), name='help'),
+    path('documentation/', views.DocumentationView.as_view(), name='documentation'),
 ]
