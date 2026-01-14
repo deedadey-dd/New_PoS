@@ -1,0 +1,530 @@
+{% extends 'base.html' %}
+
+{% block title %}Help & Documentation{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Page Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center flex-wrap">
+                <div>
+                    <h1 class="h3 mb-1">
+                        <i class="bi bi-question-circle text-primary me-2"></i>
+                        Help & Documentation
+                    </h1>
+                    <p class="text-muted mb-0">Quick reference guide for using the POS system</p>
+                </div>
+                <a href="{% url 'core:documentation' %}" class="btn btn-primary">
+                    <i class="bi bi-book me-1"></i>Full User Manual
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Links -->
+    <div class="row mb-4">
+        <div class="col-md-3 mb-3">
+            <a href="#getting-started" class="card shadow-sm text-decoration-none h-100">
+                <div class="card-body text-center">
+                    <i class="bi bi-rocket-takeoff fs-1 text-primary mb-2"></i>
+                    <h5 class="text-dark">Getting Started</h5>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-3 mb-3">
+            <a href="#pos" class="card shadow-sm text-decoration-none h-100">
+                <div class="card-body text-center">
+                    <i class="bi bi-cart3 fs-1 text-success mb-2"></i>
+                    <h5 class="text-dark">Point of Sale</h5>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-3 mb-3">
+            <a href="#inventory" class="card shadow-sm text-decoration-none h-100">
+                <div class="card-body text-center">
+                    <i class="bi bi-box-seam fs-1 text-warning mb-2"></i>
+                    <h5 class="text-dark">Inventory</h5>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-3 mb-3">
+            <a href="#transfers" class="card shadow-sm text-decoration-none h-100">
+                <div class="card-body text-center">
+                    <i class="bi bi-arrow-left-right fs-1 text-info mb-2"></i>
+                    <h5 class="text-dark">Transfers</h5>
+                </div>
+            </a>
+        </div>
+    </div>
+
+    <!-- Getting Started -->
+    <div class="card shadow-sm mb-4" id="getting-started">
+        <div class="card-header bg-primary text-white">
+            <h4 class="mb-0"><i class="bi bi-rocket-takeoff me-2"></i>Getting Started</h4>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <h5>Your Role:
+                        {% if user.role %}
+                        <span class="badge bg-info">{{ user.role.get_name_display }}</span>
+                        {% else %}
+                        <span class="badge bg-secondary">Not Assigned</span>
+                        {% endif %}
+                    </h5>
+                    <p>Your location:
+                        {% if user.location %}
+                        <strong>{{ user.location.name }}</strong>
+                        {% else %}
+                        <em>Not assigned</em>
+                        {% endif %}
+                    </p>
+
+                    <h6 class="mt-4">What you can do:</h6>
+                    <ul>
+                        {% if user.role %}
+                        {% with role_name=user.role.name %}
+                        {% if role_name == 'ADMIN' %}
+                        <li>Manage all users, locations, and settings</li>
+                        <li>View all reports and analytics</li>
+                        <li>Access all system features</li>
+                        {% elif role_name == 'SHOP_MANAGER' %}
+                        <li>Process sales using Point of Sale</li>
+                        <li>Manage shop inventory and pricing</li>
+                        <li>Receive stock transfers</li>
+                        <li>Create stock requests</li>
+                        <li>Submit cash transfers</li>
+                        {% elif role_name == 'SHOP_ATTENDANT' %}
+                        <li>Process sales using Point of Sale</li>
+                        <li>View product information</li>
+                        {% elif role_name == 'STORES_MANAGER' %}
+                        <li>Manage store inventory</li>
+                        <li>Create and send transfers</li>
+                        <li>Approve stock requests</li>
+                        {% elif role_name == 'PRODUCTION_MANAGER' %}
+                        <li>Manage production inventory</li>
+                        <li>Create batches</li>
+                        <li>Send transfers to stores</li>
+                        {% elif role_name == 'ACCOUNTANT' %}
+                        <li>View sales reports</li>
+                        <li>Manage cash transfers</li>
+                        <li>Track financial data</li>
+                        {% elif role_name == 'AUDITOR' %}
+                        <li>View all transactions (read-only)</li>
+                        <li>Access audit reports</li>
+                        <li>Track inventory movements</li>
+                        {% endif %}
+                        {% endwith %}
+                        {% endif %}
+                    </ul>
+                </div>
+                <div class="col-md-6">
+                    <div class="alert alert-info">
+                        <h6><i class="bi bi-lightbulb me-2"></i>Quick Tips</h6>
+                        <ul class="mb-0">
+                            <li>Use the <strong>sidebar</strong> on the left to navigate</li>
+                            <li>Check <strong>notifications</strong> (bell icon) for updates</li>
+                            <li>Look for <strong>badges</strong> showing pending actions</li>
+                            <li>Most pages have <strong>filters</strong> to find data quickly</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Point of Sale -->
+    <div class="card shadow-sm mb-4" id="pos">
+        <div class="card-header bg-success text-white">
+            <h4 class="mb-0"><i class="bi bi-cart3 me-2"></i>Point of Sale (POS)</h4>
+        </div>
+        <div class="card-body">
+            <div class="accordion" id="posAccordion">
+                <!-- Opening a Shift -->
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button" type="button" data-bs-toggle="collapse"
+                            data-bs-target="#openShift">
+                            <i class="bi bi-unlock me-2"></i>Opening a Shift
+                        </button>
+                    </h2>
+                    <div id="openShift" class="accordion-collapse collapse show" data-bs-parent="#posAccordion">
+                        <div class="accordion-body">
+                            <ol>
+                                <li>Go to <strong>Point of Sale</strong></li>
+                                <li>Click <strong>Open Shift</strong></li>
+                                <li>Enter the <strong>Opening Cash</strong> (money in the drawer)</li>
+                                <li>Click <strong>Open Shift</strong> to begin</li>
+                            </ol>
+                            <div class="alert alert-warning mb-0">
+                                <i class="bi bi-exclamation-triangle me-2"></i>
+                                You must open a shift before making any sales!
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Making a Sale -->
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                            data-bs-target="#makeSale">
+                            <i class="bi bi-bag-check me-2"></i>Making a Sale
+                        </button>
+                    </h2>
+                    <div id="makeSale" class="accordion-collapse collapse" data-bs-parent="#posAccordion">
+                        <div class="accordion-body">
+                            <ol>
+                                <li><strong>Search for products</strong> using the search bar</li>
+                                <li><strong>Click products</strong> to add them to the cart</li>
+                                <li>Adjust <strong>quantities</strong> using +/- buttons</li>
+                                <li>Click <strong>Checkout</strong> when ready</li>
+                                <li>Enter <strong>amount received</strong> from customer</li>
+                                <li>Select <strong>payment method</strong>:
+                                    <ul>
+                                        <li><strong>Cash</strong> - Physical money</li>
+                                        <li><strong>E-Cash</strong> - Mobile money/Paystack</li>
+                                        <li><strong>Credit</strong> - Customer pays later (select customer first)</li>
+                                    </ul>
+                                </li>
+                                <li>Click <strong>Complete Sale</strong></li>
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Closing a Shift -->
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                            data-bs-target="#closeShift">
+                            <i class="bi bi-lock me-2"></i>Closing a Shift
+                        </button>
+                    </h2>
+                    <div id="closeShift" class="accordion-collapse collapse" data-bs-parent="#posAccordion">
+                        <div class="accordion-body">
+                            <ol>
+                                <li>Click <strong>Close Shift</strong> button</li>
+                                <li>Count the actual cash in your drawer</li>
+                                <li>Enter the <strong>Counted Cash</strong> amount</li>
+                                <li>Review the expected vs. actual comparison</li>
+                                <li>Click <strong>Close Shift</strong></li>
+                            </ol>
+                            <div class="alert alert-info mb-0">
+                                <i class="bi bi-info-circle me-2"></i>
+                                Any difference between expected and counted cash will be recorded for review.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Inventory -->
+    <div class="card shadow-sm mb-4" id="inventory">
+        <div class="card-header bg-warning text-dark">
+            <h4 class="mb-0"><i class="bi bi-box-seam me-2"></i>Inventory Management</h4>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <h5><i class="bi bi-boxes me-2"></i>Products</h5>
+                    <p>Products are the items you sell. Each product has:</p>
+                    <ul>
+                        <li><strong>SKU</strong> - Unique identifier code</li>
+                        <li><strong>Name</strong> - Product description</li>
+                        <li><strong>Category</strong> - Grouping for organization</li>
+                        <li><strong>Default Price</strong> - Standard selling price</li>
+                        <li><strong>Reorder Level</strong> - Low stock warning threshold</li>
+                    </ul>
+                </div>
+                <div class="col-md-6">
+                    <h5><i class="bi bi-collection me-2"></i>Batches</h5>
+                    <p>Batches track specific lots of products:</p>
+                    <ul>
+                        <li><strong>Batch Number</strong> - Lot identifier</li>
+                        <li><strong>Unit Cost</strong> - Cost per item (for profit tracking)</li>
+                        <li><strong>Expiry Date</strong> - For perishables</li>
+                        <li><strong>Location</strong> - Where the batch is stored</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="alert alert-success mt-3 mb-0">
+                <h6><i class="bi bi-tags me-2"></i>Shop Pricing</h6>
+                <p class="mb-0">Each shop can have different prices for products. Go to <strong>Inventory → Shop
+                        Pricing</strong> to set location-specific prices.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Transfers -->
+    <div class="card shadow-sm mb-4" id="transfers">
+        <div class="card-header bg-info text-white">
+            <h4 class="mb-0"><i class="bi bi-arrow-left-right me-2"></i>Stock Transfers</h4>
+        </div>
+        <div class="card-body">
+            <h5>Transfer Workflow</h5>
+            <div class="d-flex align-items-center flex-wrap gap-2 mb-4">
+                <span class="badge bg-secondary fs-6">Draft</span>
+                <i class="bi bi-arrow-right"></i>
+                <span class="badge bg-primary fs-6">Sent</span>
+                <i class="bi bi-arrow-right"></i>
+                <span class="badge bg-success fs-6">Received</span>
+            </div>
+
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="card border-primary h-100">
+                        <div class="card-header bg-primary text-white">
+                            <i class="bi bi-send me-2"></i>Sending Stock
+                        </div>
+                        <div class="card-body">
+                            <ol class="small">
+                                <li>Create new transfer</li>
+                                <li>Select source & destination</li>
+                                <li>Add products & quantities</li>
+                                <li>Click "Send Transfer"</li>
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card border-success h-100">
+                        <div class="card-header bg-success text-white">
+                            <i class="bi bi-inbox me-2"></i>Receiving Stock
+                        </div>
+                        <div class="card-body">
+                            <ol class="small">
+                                <li>Check notifications for incoming</li>
+                                <li>Go to Transfers</li>
+                                <li>Find "Sent" transfers</li>
+                                <li>Verify quantities received</li>
+                                <li>Click "Complete Receipt"</li>
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card border-warning h-100">
+                        <div class="card-header bg-warning text-dark">
+                            <i class="bi bi-exclamation-triangle me-2"></i>Discrepancies
+                        </div>
+                        <div class="card-body">
+                            <p class="small">If received quantity differs from sent:</p>
+                            <ol class="small">
+                                <li>Enter actual quantity received</li>
+                                <li>Add notes explaining difference</li>
+                                <li>Transfer becomes "Disputed"</li>
+                                <li>Sender investigates</li>
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Customers -->
+    <div class="card shadow-sm mb-4" id="customers">
+        <div class="card-header bg-purple text-white" style="background-color: #6f42c1;">
+            <h4 class="mb-0"><i class="bi bi-people me-2"></i>Customer Management</h4>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <h5>Credit Sales</h5>
+                    <p>To sell on credit:</p>
+                    <ol>
+                        <li>In POS, click <strong>Select Customer</strong></li>
+                        <li>Choose or create the customer</li>
+                        <li>Complete sale with <strong>Credit</strong> payment</li>
+                        <li>Amount is added to their debt</li>
+                    </ol>
+                </div>
+                <div class="col-md-6">
+                    <h5>Recording Payments</h5>
+                    <p>When customers pay their debt:</p>
+                    <ol>
+                        <li>Go to <strong>Customers</strong></li>
+                        <li>Find the customer</li>
+                        <li>Click <strong>Record Payment</strong></li>
+                        <li>Enter amount received</li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cash Management -->
+    <div class="card shadow-sm mb-4" id="cash">
+        <div class="card-header bg-success text-white">
+            <h4 class="mb-0"><i class="bi bi-cash-stack me-2"></i>Cash Management</h4>
+        </div>
+        <div class="card-body">
+            <p>Cash transfers move money between users (e.g., Shop Manager to Accountant):</p>
+
+            <div class="row">
+                <div class="col-md-6">
+                    <h5>Sending Cash</h5>
+                    <ol>
+                        <li>Go to <strong>Cash Transfers</strong></li>
+                        <li>Click <strong>New Transfer</strong></li>
+                        <li>Select recipient</li>
+                        <li>Enter amount</li>
+                        <li>Add notes if needed</li>
+                        <li>Submit transfer</li>
+                    </ol>
+                </div>
+                <div class="col-md-6">
+                    <h5>Receiving Cash</h5>
+                    <ol>
+                        <li>You'll see a notification</li>
+                        <li>Go to <strong>Cash Transfers</strong></li>
+                        <li>Find pending transfers to you</li>
+                        <li>Click <strong>Confirm</strong> when received</li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reports -->
+    <div class="card shadow-sm mb-4" id="reports">
+        <div class="card-header bg-dark text-white">
+            <h4 class="mb-0"><i class="bi bi-graph-up me-2"></i>Reports & Analytics</h4>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <div class="card h-100">
+                        <div class="card-body text-center">
+                            <i class="bi bi-diagram-3 fs-1 text-primary"></i>
+                            <h5 class="mt-2">Product Lifecycle</h5>
+                            <p class="small text-muted">Track products from entry to exit</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card h-100">
+                        <div class="card-body text-center">
+                            <i class="bi bi-currency-dollar fs-1 text-success"></i>
+                            <h5 class="mt-2">Profit & Loss</h5>
+                            <p class="small text-muted">By product, location, or manager</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card h-100">
+                        <div class="card-body text-center">
+                            <i class="bi bi-arrow-left-right fs-1 text-info"></i>
+                            <h5 class="mt-2">Inventory Movements</h5>
+                            <p class="small text-muted">All stock transactions</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <p class="mt-3 text-muted">
+                <i class="bi bi-info-circle me-2"></i>
+                Access these from <strong>Tracking & Reports</strong> in the sidebar
+                {% if user.role %}
+                {% if user.role.name != 'AUDITOR' and user.role.name != 'ACCOUNTANT' and user.role.name != 'ADMIN' %}
+                (requires Auditor, Accountant, or Admin role)
+                {% endif %}
+                {% endif %}
+            </p>
+        </div>
+    </div>
+
+    <!-- Troubleshooting -->
+    <div class="card shadow-sm mb-4" id="troubleshooting">
+        <div class="card-header bg-danger text-white">
+            <h4 class="mb-0"><i class="bi bi-tools me-2"></i>Troubleshooting</h4>
+        </div>
+        <div class="card-body">
+            <div class="accordion" id="troubleAccordion">
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                            data-bs-target="#trouble1">
+                            "Cannot complete sale - insufficient stock"
+                        </button>
+                    </h2>
+                    <div id="trouble1" class="accordion-collapse collapse">
+                        <div class="accordion-body">
+                            <ul>
+                                <li>Check if the product has stock at your location</li>
+                                <li>Request a stock transfer from Stores</li>
+                                <li>Verify the batch isn't expired</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                            data-bs-target="#trouble2">
+                            "Shift must be open to make sales"
+                        </button>
+                    </h2>
+                    <div id="trouble2" class="accordion-collapse collapse">
+                        <div class="accordion-body">
+                            <ul>
+                                <li>Click the "Open Shift" button in POS</li>
+                                <li>Enter your opening cash amount</li>
+                                <li>You can now process sales</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                            data-bs-target="#trouble3">
+                            Products not showing in search
+                        </button>
+                    </h2>
+                    <div id="trouble3" class="accordion-collapse collapse">
+                        <div class="accordion-body">
+                            <ul>
+                                <li>The product might be inactive - contact Admin</li>
+                                <li>The product might have zero stock at your location</li>
+                                <li>Specific shop price not set - contact Shop Manager</li>
+                                <li>Try searching by SKU instead of name</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                            data-bs-target="#trouble4">
+                            Transfer stuck in "Sent" status
+                        </button>
+                    </h2>
+                    <div id="trouble4" class="accordion-collapse collapse">
+                        <div class="accordion-body">
+                            <ul>
+                                <li>The destination location hasn't received it yet</li>
+                                <li>Contact the destination manager</li>
+                                <li>They need to complete the receipt</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Contact -->
+    <div class="card shadow-sm">
+        <div class="card-body text-center">
+            <h5><i class="bi bi-headset me-2"></i>Need More Help?</h5>
+            <p class="text-muted">Contact your system administrator for assistance</p>
+        </div>
+    </div>
+</div>
+{% endblock %}

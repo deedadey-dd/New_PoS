@@ -227,10 +227,56 @@
                     </li>
                     {% endif %}
 
-                    <!-- Auditor -->
+                    <!-- Auditor/Accountant Tracking & Reports -->
+                    {% if role_name == 'AUDITOR' or role_name == 'ACCOUNTANT' or role_name == 'ADMIN' %}
+                    <li class="nav-item mt-3 border-top border-secondary pt-3">
+                        <a class="nav-link text-white d-flex justify-content-between align-items-center {% if 'audit' in request.path %}active{% endif %}"
+                            data-bs-toggle="collapse" href="#auditMenu" role="button"
+                            aria-expanded="{% if 'audit' in request.path %}true{% else %}false{% endif %}">
+                            <span><i class="bi bi-graph-up-arrow me-2"></i>Tracking & Reports</span>
+                            <i class="bi bi-chevron-down small"></i>
+                        </a>
+                        <div class="collapse {% if 'audit' in request.path %}show{% endif %}" id="auditMenu">
+                            <ul class="nav flex-column ms-3 border-start border-secondary ps-2">
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if 'product-lifecycle' in request.path %}text-white{% endif %}"
+                                        href="{% url 'audit:product_lifecycle' %}">
+                                        <i class="bi bi-diagram-3 me-2"></i>Product Lifecycle
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if 'profit-loss/products' in request.path %}text-white{% endif %}"
+                                        href="{% url 'audit:product_profit_loss' %}">
+                                        <i class="bi bi-box-seam me-2"></i>P&L by Product
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if 'profit-loss/locations' in request.path %}text-white{% endif %}"
+                                        href="{% url 'audit:location_profit_loss' %}">
+                                        <i class="bi bi-shop me-2"></i>P&L by Location
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if 'profit-loss/managers' in request.path %}text-white{% endif %}"
+                                        href="{% url 'audit:manager_profit_loss' %}">
+                                        <i class="bi bi-people me-2"></i>P&L by Manager
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if 'inventory-movements' in request.path %}text-white{% endif %}"
+                                        href="{% url 'audit:inventory_movements' %}">
+                                        <i class="bi bi-arrow-left-right me-2"></i>Inventory Movements
+                                    </a>
+                                </li>
+                            </ul>
+                        </div>
+                    </li>
+                    {% endif %}
+
+                    <!-- Auditor-specific quick links -->
                     {% if role_name == 'AUDITOR' %}
                     <li class="nav-item">
-                        <a class="nav-link text-white {% if 'auditor' in request.path %}active{% endif %}"
+                        <a class="nav-link text-white {% if request.path == '/auditor/' %}active{% endif %}"
                             href="{% url 'core:auditor_dashboard' %}">
                             <i class="bi bi-clipboard-data me-2"></i> Auditor Dashboard
                         </a>
@@ -242,7 +288,7 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link text-white {% if 'sales' in request.path %}active{% endif %}"
+                        <a class="nav-link text-white {% if 'sales' in request.path and 'audit' not in request.path %}active{% endif %}"
                             href="{% url 'sales:sale_list' %}">
                             <i class="bi bi-receipt me-2"></i> Sales History
                         </a>
@@ -420,7 +466,10 @@
                     </div>
 
                     <span class="text-dark">{{ user.get_full_name|default:user.email }}</span>
-                    <a href="{% url 'core:logout' %}" class="ms-3 text-decoration-none">
+                    <a href="{% url 'core:help' %}" class="ms-3 text-decoration-none" title="Help & Documentation">
+                        <i class="bi bi-question-circle"></i>
+                    </a>
+                    <a href="{% url 'core:logout' %}" class="ms-2 text-decoration-none">
                         <i class="bi bi-box-arrow-right"></i> Logout
                     </a>
                 </div>

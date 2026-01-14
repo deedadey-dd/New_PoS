@@ -35,4 +35,8 @@ urlpatterns = [
     
     # Password change
     path('change-password/', views.ForcedPasswordChangeView.as_view(), name='forced_password_change'),
+    
+    # Help
+    path('help/', views.HelpView.as_view(), name='help'),
+    path('documentation/', views.DocumentationView.as_view(), name='documentation'),
 ]

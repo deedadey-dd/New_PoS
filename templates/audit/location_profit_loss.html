@@ -1,0 +1,203 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Location Profit & Loss{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Page Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center flex-wrap">
+                <div>
+                    <h1 class="h3 mb-1">
+                        <i class="bi bi-shop text-primary me-2"></i>
+                        Location Profit & Loss
+                    </h1>
+                    <p class="text-muted mb-0">Analyze profitability by shop/location</p>
+                </div>
+                <div class="d-flex gap-2 mt-2 mt-md-0">
+                    <a href="{% url 'audit:product_profit_loss' %}?range={{ date_range }}"
+                        class="btn btn-outline-primary">
+                        <i class="bi bi-box-seam me-1"></i> By Product
+                    </a>
+                    <a href="{% url 'audit:manager_profit_loss' %}?range={{ date_range }}"
+                        class="btn btn-outline-primary">
+                        <i class="bi bi-people me-1"></i> By Manager
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Date Range Filter -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <span class="fw-semibold me-2">Period:</span>
+                <a href="?range=week"
+                    class="btn btn-sm {% if date_range == 'week' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                    Last 7 Days
+                </a>
+                <a href="?range=month"
+                    class="btn btn-sm {% if date_range == 'month' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                    Last 30 Days
+                </a>
+                <a href="?range=quarter"
+                    class="btn btn-sm {% if date_range == 'quarter' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                    Last 90 Days
+                </a>
+                <a href="?range=year"
+                    class="btn btn-sm {% if date_range == 'year' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                    Last Year
+                </a>
+                <a href="?range=all"
+                    class="btn btn-sm {% if date_range == 'all' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                    All Time
+                </a>
+                <span class="ms-auto text-muted">
+                    <i class="bi bi-calendar3 me-1"></i> {{ date_label }}
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card shadow-sm h-100 border-secondary">
+                <div class="card-body text-center">
+                    <div class="text-muted small mb-1">Total Transactions</div>
+                    <div class="fs-3 fw-bold">{{ totals.sale_count|intcomma }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card shadow-sm h-100 border-primary">
+                <div class="card-body text-center">
+                    <div class="text-muted small mb-1">Total Revenue</div>
+                    <div class="fs-3 fw-bold text-primary">
+                        {{ currency_symbol }}{{ totals.revenue|floatformat:2|intcomma }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div
+                class="card shadow-sm h-100 {% if totals.profit >= 0 %}border-success{% else %}border-warning{% endif %}">
+                <div class="card-body text-center">
+                    <div class="text-muted small mb-1">Total Profit</div>
+                    <div class="fs-3 fw-bold {% if totals.profit >= 0 %}text-success{% else %}text-warning{% endif %}">
+                        {{ currency_symbol }}{{ totals.profit|floatformat:2|intcomma }}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card shadow-sm h-100 border-info">
+                <div class="card-body text-center">
+                    <div class="text-muted small mb-1">Avg Margin</div>
+                    <div class="fs-3 fw-bold text-info">{{ totals.margin }}%</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Locations Table -->
+    <div class="card shadow-sm">
+        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">
+                <i class="bi bi-building me-2"></i>
+                Shop Performance
+                <span class="badge bg-primary ms-2">{{ locations|length }} locations</span>
+            </h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover table-striped mb-0">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>#</th>
+                            <th>Shop Name</th>
+                            <th class="text-end">Transactions</th>
+                            <th class="text-end">Revenue</th>
+                            <th class="text-end">Cost</th>
+                            <th class="text-end">Profit</th>
+                            <th class="text-end">Margin</th>
+                            <th class="text-end">Avg Sale</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for loc in locations %}
+                        <tr>
+                            <td>
+                                {% if forloop.counter == 1 %}
+                                <span class="badge bg-warning text-dark"><i class="bi bi-trophy"></i> 1</span>
+                                {% elif forloop.counter == 2 %}
+                                <span class="badge bg-secondary">2</span>
+                                {% elif forloop.counter == 3 %}
+                                <span class="badge bg-dark">3</span>
+                                {% else %}
+                                <span class="text-muted">{{ forloop.counter }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <strong>{{ loc.shop.name }}</strong>
+                                {% if loc.shop.address %}
+                                <br><small class="text-muted">{{ loc.shop.address|truncatechars:40 }}</small>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">{{ loc.sale_count|intcomma }}</td>
+                            <td class="text-end">{{ currency_symbol }}{{ loc.revenue|floatformat:2|intcomma }}</td>
+                            <td class="text-end text-danger">{{ currency_symbol }}{{ loc.cost|floatformat:2|intcomma }}
+                            </td>
+                            <td
+                                class="text-end fw-semibold {% if loc.profit >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                {{ currency_symbol }}{{ loc.profit|floatformat:2|intcomma }}
+                            </td>
+                            <td class="text-end">
+                                <span
+                                    class="badge {% if loc.margin >= 20 %}bg-success{% elif loc.margin >= 10 %}bg-warning text-dark{% else %}bg-danger{% endif %}">
+                                    {{ loc.margin }}%
+                                </span>
+                            </td>
+                            <td class="text-end">{{ currency_symbol }}{{ loc.avg_sale|floatformat:2 }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="8" class="text-center text-muted py-4">
+                                <i class="bi bi-shop fs-1 d-block mb-2"></i>
+                                No sales data found for the selected period
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    {% if locations %}
+                    <tfoot class="table-secondary">
+                        <tr class="fw-bold">
+                            <td colspan="2">TOTALS</td>
+                            <td class="text-end">{{ totals.sale_count|intcomma }}</td>
+                            <td class="text-end">{{ currency_symbol }}{{ totals.revenue|floatformat:2|intcomma }}</td>
+                            <td class="text-end text-danger">
+                                {{ currency_symbol }}{{ totals.cost|floatformat:2|intcomma }}</td>
+                            <td
+                                class="text-end {% if totals.profit >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                {{ currency_symbol }}{{ totals.profit|floatformat:2|intcomma }}
+                            </td>
+                            <td class="text-end">{{ totals.margin }}%</td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                    {% endif %}
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Info Note -->
+    <div class="alert alert-info mt-4">
+        <i class="bi bi-info-circle me-2"></i>
+        <strong>Ranking:</strong> Locations are sorted by total profit.
+        Higher profit locations indicate better performance.
+    </div>
+</div>
+{% endblock %}

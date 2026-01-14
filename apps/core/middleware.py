@@ -1,7 +1,7 @@
 """
 Middleware for the core app.
 """
-from django.shortcuts import redirect
+from django.shortcuts import redirect, render
 from django.urls import reverse
 
 
@@ -9,6 +9,7 @@ class TenantSetupMiddleware:
     """
     Middleware to redirect Admin users without a tenant to the tenant setup page.
     Also handles forced password change after admin reset.
+    Also checks tenant subscription status.
     """
     EXEMPT_URLS = [
         '/setup/',
@@ -17,7 +18,9 @@ class TenantSetupMiddleware:
         '/change-password/',  # Forced password change page
         '/static/',
         '/media/',
-        '/admin/',
+        '/super_office/',  # Updated from /admin/
+        '/superadmin/',
+        '/subscription-expired/',
     ]
     
     def __init__(self, get_response):
@@ -49,5 +52,15 @@ class TenantSetupMiddleware:
             setup_url = reverse('core:tenant_setup')
             if path != setup_url:
                 return redirect(setup_url)
+        
+        # Check tenant subscription status
+        if hasattr(request.user, 'tenant') and request.user.tenant:
+            tenant = request.user.tenant
+            if not tenant.is_active or tenant.subscription_status in ['EXPIRED', 'SUSPENDED']:
+                # Show subscription expired page
+                return render(request, 'core/subscription_expired.html', {
+                    'tenant': tenant,
+                    'status': tenant.subscription_status,
+                })
         
         return self.get_response(request)

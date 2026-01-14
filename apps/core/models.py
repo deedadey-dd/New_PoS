@@ -64,6 +64,39 @@ class Tenant(models.Model):
         help_text="Allow accountants to send cash (float/change) to shops"
     )
     
+    # Subscription Management
+    SUBSCRIPTION_STATUS_CHOICES = [
+        ('TRIAL', 'Trial'),
+        ('ACTIVE', 'Active'),
+        ('EXPIRED', 'Expired'),
+        ('SUSPENDED', 'Suspended'),
+    ]
+    
+    subscription_status = models.CharField(
+        max_length=20,
+        choices=SUBSCRIPTION_STATUS_CHOICES,
+        default='TRIAL',
+        help_text="Current subscription status"
+    )
+    subscription_start_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text="When subscription started"
+    )
+    subscription_end_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text="When subscription expires"
+    )
+    auto_renew = models.BooleanField(
+        default=False,
+        help_text="If True, subscription won't auto-expire"
+    )
+    admin_notes = models.TextField(
+        blank=True,
+        help_text="Internal notes for superuser (not visible to tenant)"
+    )
+    
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -83,11 +116,46 @@ class Tenant(models.Model):
             while Tenant.objects.filter(slug=self.slug).exists():
                 self.slug = f"{original_slug}-{counter}"
                 counter += 1
+        
+        # Set default subscription dates if not set
+        if not self.subscription_start_date:
+            self.subscription_start_date = timezone.now().date()
+        if not self.subscription_end_date:
+            # Default to 1 year from start
+            from datetime import timedelta
+            self.subscription_end_date = self.subscription_start_date + timedelta(days=365)
+        
         super().save(*args, **kwargs)
     
     @property
     def currency_symbol(self):
         return self.CURRENCY_SYMBOLS.get(self.currency, self.currency)
+    
+    @property
+    def is_subscription_valid(self):
+        """Check if subscription is currently valid."""
+        if self.subscription_status in ['EXPIRED', 'SUSPENDED']:
+            return False
+        if self.subscription_end_date and self.subscription_end_date < timezone.now().date():
+            return False
+        return True
+    
+    @property
+    def days_until_expiry(self):
+        """Get days until subscription expires."""
+        if self.subscription_end_date:
+            delta = self.subscription_end_date - timezone.now().date()
+            return delta.days
+        return None
+    
+    @property
+    def subscription_status_display(self):
+        """Return a display-friendly status with warning for expiring soon."""
+        if self.subscription_status in ['EXPIRED', 'SUSPENDED']:
+            return self.get_subscription_status_display()
+        if self.days_until_expiry is not None and self.days_until_expiry <= 30:
+            return f"{self.get_subscription_status_display()} (Expires in {self.days_until_expiry} days)"
+        return self.get_subscription_status_display()
 
 
 class TenantModel(models.Model):

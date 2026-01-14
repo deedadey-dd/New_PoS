@@ -1,0 +1,1295 @@
+{% extends 'base.html' %}
+
+{% block title %}User Manual - Complete Documentation{% endblock %}
+
+{% block extra_css %}
+<style>
+    .docs-sidebar {
+        position: sticky;
+        top: 20px;
+        max-height: calc(100vh - 100px);
+        overflow-y: auto;
+    }
+
+    .docs-sidebar .nav-link {
+        padding: 0.35rem 0.75rem;
+        font-size: 0.875rem;
+        color: #6c757d;
+    }
+
+    .docs-sidebar .nav-link:hover,
+    .docs-sidebar .nav-link.active {
+        color: #0d6efd;
+        background-color: rgba(13, 110, 253, 0.1);
+        border-radius: 0.25rem;
+    }
+
+    .docs-sidebar .nav-link.sub-link {
+        padding-left: 1.5rem;
+        font-size: 0.8rem;
+    }
+
+    .docs-content section {
+        padding-top: 1rem;
+        margin-bottom: 3rem;
+    }
+
+    .docs-content h2 {
+        padding-top: 1rem;
+        border-bottom: 2px solid #dee2e6;
+        padding-bottom: 0.5rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .docs-content h3 {
+        color: #495057;
+        margin-top: 2rem;
+        margin-bottom: 1rem;
+    }
+
+    .docs-content h4 {
+        color: #6c757d;
+        margin-top: 1.5rem;
+    }
+
+    .docs-content table {
+        width: 100%;
+        margin-bottom: 1rem;
+    }
+
+    .docs-content .alert {
+        margin: 1rem 0;
+    }
+
+    .workflow-diagram {
+        background: #f8f9fa;
+        border-radius: 0.5rem;
+        padding: 1.5rem;
+        font-family: monospace;
+        overflow-x: auto;
+    }
+
+    .kbd {
+        background: #212529;
+        color: #fff;
+        padding: 0.2rem 0.4rem;
+        border-radius: 0.25rem;
+        font-size: 0.875rem;
+    }
+
+    @media print {
+
+        .docs-sidebar,
+        .navbar,
+        .sidebar {
+            display: none !important;
+        }
+
+        .docs-content {
+            width: 100% !important;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row">
+        <!-- Sidebar Navigation -->
+        <div class="col-lg-3 d-none d-lg-block">
+            <div class="docs-sidebar">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-primary text-white">
+                        <i class="bi bi-book me-2"></i>User Manual
+                    </div>
+                    <div class="card-body p-2">
+                        <nav class="nav flex-column">
+                            <a class="nav-link" href="#introduction">Introduction</a>
+                            <a class="nav-link" href="#getting-started">Getting Started</a>
+                            <a class="nav-link" href="#roles">User Roles & Permissions</a>
+                            <a class="nav-link" href="#dashboard">Dashboard</a>
+                            <a class="nav-link" href="#pos">Point of Sale</a>
+                            <a class="nav-link sub-link" href="#pos-shift">Opening/Closing Shifts</a>
+                            <a class="nav-link sub-link" href="#pos-sale">Making a Sale</a>
+                            <a class="nav-link sub-link" href="#pos-payments">Payment Methods</a>
+                            <a class="nav-link" href="#inventory">Inventory Management</a>
+                            <a class="nav-link sub-link" href="#products">Products</a>
+                            <a class="nav-link sub-link" href="#batches">Batches</a>
+                            <a class="nav-link sub-link" href="#shop-pricing">Shop Pricing</a>
+                            <a class="nav-link" href="#transfers">Stock Transfers</a>
+                            <a class="nav-link" href="#stock-requests">Stock Requests</a>
+                            <a class="nav-link" href="#customers">Customer Management</a>
+                            <a class="nav-link" href="#cash">Cash Management</a>
+                            <a class="nav-link" href="#reports">Reports & Analytics</a>
+                            <a class="nav-link" href="#tracking">Tracking & Audit</a>
+                            <a class="nav-link" href="#settings">Settings & Admin</a>
+                            <a class="nav-link" href="#troubleshooting">Troubleshooting</a>
+                            <a class="nav-link" href="#glossary">Glossary</a>
+                        </nav>
+                    </div>
+                    <div class="card-footer">
+                        <button onclick="window.print()" class="btn btn-sm btn-outline-secondary w-100">
+                            <i class="bi bi-printer me-1"></i>Print Manual
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="col-lg-9">
+            <div class="docs-content">
+                <!-- Header -->
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <div>
+                        <h1 class="h2 mb-1">
+                            <i class="bi bi-book text-primary me-2"></i>
+                            POS System User Manual
+                        </h1>
+                        <p class="text-muted mb-0">Complete documentation for all system features</p>
+                    </div>
+                    <a href="{% url 'core:help' %}" class="btn btn-outline-primary">
+                        <i class="bi bi-arrow-left me-1"></i>Quick Help
+                    </a>
+                </div>
+
+                <!-- Introduction -->
+                <section id="introduction">
+                    <h2><i class="bi bi-info-circle me-2"></i>Introduction</h2>
+
+                    <p class="lead">Welcome to the POS (Point of Sale) System! This comprehensive system helps you
+                        manage your retail operations efficiently.</p>
+
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-4">
+                            <div class="card h-100 border-primary">
+                                <div class="card-body text-center">
+                                    <i class="bi bi-cart3 fs-1 text-primary"></i>
+                                    <h5 class="mt-2">Point of Sale</h5>
+                                    <p class="small text-muted mb-0">Process sales, manage payments, issue receipts</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card h-100 border-success">
+                                <div class="card-body text-center">
+                                    <i class="bi bi-box-seam fs-1 text-success"></i>
+                                    <h5 class="mt-2">Inventory</h5>
+                                    <p class="small text-muted mb-0">Track products, batches, stock levels</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card h-100 border-info">
+                                <div class="card-body text-center">
+                                    <i class="bi bi-graph-up fs-1 text-info"></i>
+                                    <h5 class="mt-2">Analytics</h5>
+                                    <p class="small text-muted mb-0">Reports, profit tracking, audit trails</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <h4>System Overview</h4>
+                    <div class="workflow-diagram">
+                        <pre class="mb-0">
+┌─────────────────────────────────────────────────────────────────┐
+│                          ADMIN                                   │
+│                    (Full system control)                         │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+    ┌────────────────────────┼────────────────────────────────┐
+    │                        │                                │
+    ▼                        ▼                                ▼
+┌──────────────┐    ┌──────────────┐    ┌──────────────────────┐
+│  PRODUCTION  │───►│    STORES    │───►│        SHOPS          │
+│   MANAGER    │    │    MANAGER   │    │  Manager + Attendants │
+└──────────────┘    └──────────────┘    └──────────────────────┘
+        │                   │                       │
+        └───────────────────┴───────────────────────┘
+                            │
+              ┌─────────────┴─────────────┐
+              │                           │
+              ▼                           ▼
+        ┌───────────┐              ┌───────────┐
+        │ ACCOUNTANT│              │  AUDITOR  │
+        │(Financial)│              │(Read-only)│
+        └───────────┘              └───────────┘
+</pre>
+                    </div>
+                </section>
+
+                <!-- Getting Started -->
+                <section id="getting-started">
+                    <h2><i class="bi bi-rocket-takeoff me-2"></i>Getting Started</h2>
+
+                    <h3>Logging In</h3>
+                    <ol>
+                        <li>Navigate to your POS system URL</li>
+                        <li>Enter your <strong>email</strong> and <strong>password</strong></li>
+                        <li>Click <strong>Login</strong></li>
+                    </ol>
+
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        <strong>Note:</strong> If this is your first login after password reset, you'll be prompted to
+                        change your password.
+                    </div>
+
+                    <h3>First-Time Setup (Admin Only)</h3>
+                    <p>If you're the first admin user:</p>
+                    <ol>
+                        <li>Login with your admin credentials</li>
+                        <li>You'll be redirected to <strong>Tenant Setup</strong></li>
+                        <li>Enter your organization details:
+                            <ul>
+                                <li>Organization Name</li>
+                                <li>Currency Symbol (e.g., GH₵, $, £)</li>
+                                <li>Address and contact information</li>
+                            </ul>
+                        </li>
+                        <li>Click <strong>Complete Setup</strong></li>
+                    </ol>
+                </section>
+
+                <!-- User Roles -->
+                <section id="roles">
+                    <h2><i class="bi bi-people me-2"></i>User Roles & Permissions</h2>
+
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-hover">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>Role</th>
+                                    <th>Description</th>
+                                    <th>Key Permissions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><span class="badge bg-danger">Admin</span></td>
+                                    <td>Full system administrator</td>
+                                    <td>All permissions + user management</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge bg-warning text-dark">Production Manager</span></td>
+                                    <td>Manages production location</td>
+                                    <td>Inventory, transfers, batch creation</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge bg-info">Stores Manager</span></td>
+                                    <td>Manages central stores</td>
+                                    <td>Inventory, transfers in/out</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge bg-primary">Shop Manager</span></td>
+                                    <td>Manages retail shop</td>
+                                    <td>POS, sales, local inventory, cash transfers</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge bg-secondary">Shop Attendant</span></td>
+                                    <td>Front-line sales staff</td>
+                                    <td>POS, basic sales only</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge bg-success">Accountant</span></td>
+                                    <td>Financial management</td>
+                                    <td>Cash transfers, sales reports, price history</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge bg-dark">Auditor</span></td>
+                                    <td>Read-only auditing</td>
+                                    <td>View all data, no modifications</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Dashboard -->
+                <section id="dashboard">
+                    <h2><i class="bi bi-speedometer2 me-2"></i>Dashboard</h2>
+
+                    <p>The dashboard provides an at-a-glance view of your business:</p>
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">For Shop Staff</div>
+                                <div class="card-body">
+                                    <ul class="mb-0">
+                                        <li><strong>Today's Sales</strong> - Total sales amount for the day</li>
+                                        <li><strong>Pending Transfers</strong> - Incoming stock awaiting receipt</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">For Managers & Admin</div>
+                                <div class="card-body">
+                                    <ul class="mb-0">
+                                        <li><strong>Total Locations</strong> - Number of locations</li>
+                                        <li><strong>Total Users</strong> - Staff count</li>
+                                        <li><strong>Pending Transfers</strong> - Awaiting receipt</li>
+                                        <li><strong>Disputed Transfers</strong> - Quantity discrepancies</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Point of Sale -->
+                <section id="pos">
+                    <h2><i class="bi bi-cart3 me-2"></i>Point of Sale (POS)</h2>
+
+                    <h3 id="pos-shift">Opening a Shift</h3>
+                    <div class="card border-primary mb-4">
+                        <div class="card-body">
+                            <p><strong>Before making sales, you must open a shift:</strong></p>
+                            <ol class="mb-0">
+                                <li>Click <strong>Point of Sale</strong> in the sidebar</li>
+                                <li>If no shift is open, you'll see "Open Shift" prompt</li>
+                                <li>Enter the <strong>Opening Cash</strong> amount (cash in the drawer)</li>
+                                <li>Click <strong>Open Shift</strong></li>
+                            </ol>
+                        </div>
+                    </div>
+
+                    <h3 id="pos-sale">Making a Sale</h3>
+                    <ol>
+                        <li><strong>Search for products:</strong>
+                            <ul>
+                                <li>Type in the search bar (supports product name or SKU)</li>
+                                <li>Click a product to add it to the cart</li>
+                            </ul>
+                        </li>
+                        <li><strong>Adjust quantities:</strong>
+                            <ul>
+                                <li>Use <strong>+</strong> / <strong>-</strong> buttons to change quantity</li>
+                                <li>Click the <strong>trash icon</strong> to remove an item</li>
+                            </ul>
+                        </li>
+                        <li><strong>Apply discounts</strong> (if permitted):
+                            <ul>
+                                <li>Enter discount percentage or amount</li>
+                            </ul>
+                        </li>
+                        <li><strong>Complete the sale:</strong>
+                            <ul>
+                                <li>Click <strong>Checkout</strong></li>
+                                <li>Enter the <strong>amount received</strong></li>
+                                <li>Select <strong>payment method</strong></li>
+                                <li>Click <strong>Complete Sale</strong></li>
+                            </ul>
+                        </li>
+                        <li><strong>Print receipt:</strong>
+                            <ul>
+                                <li>A receipt will be generated automatically</li>
+                                <li>Click <strong>Print</strong> or share via WhatsApp</li>
+                            </ul>
+                        </li>
+                    </ol>
+
+                    <h3 id="pos-payments">Payment Methods</h3>
+                    <div class="table-responsive">
+                        <table class="table table-bordered">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Method</th>
+                                    <th>Description</th>
+                                    <th>Requirements</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><i class="bi bi-cash text-success me-2"></i><strong>Cash</strong></td>
+                                    <td>Physical cash payment</td>
+                                    <td>None</td>
+                                </tr>
+                                <tr>
+                                    <td><i class="bi bi-phone text-info me-2"></i><strong>E-Cash</strong></td>
+                                    <td>Mobile money (Paystack)</td>
+                                    <td>Paystack integration enabled</td>
+                                </tr>
+                                <tr>
+                                    <td><i class="bi bi-credit-card text-warning me-2"></i><strong>Credit</strong></td>
+                                    <td>Customer owes the amount</td>
+                                    <td>Customer must be selected</td>
+                                </tr>
+                                <tr>
+                                    <td><i class="bi bi-wallet2 text-secondary me-2"></i><strong>Mixed</strong></td>
+                                    <td>Partial cash + credit</td>
+                                    <td>Customer must be selected</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <h3>Voiding a Sale</h3>
+                    <p>If a sale was made in error:</p>
+                    <ol>
+                        <li>Go to <strong>Sales History</strong></li>
+                        <li>Find the sale</li>
+                        <li>Click <strong>View Details</strong></li>
+                        <li>Click <strong>Void Sale</strong> (if permitted)</li>
+                        <li>Confirm the action</li>
+                    </ol>
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        <strong>Warning:</strong> Voiding returns stock to inventory automatically.
+                    </div>
+
+                    <h3>Closing a Shift</h3>
+                    <ol>
+                        <li>Click <strong>Close Shift</strong> button</li>
+                        <li>Enter the <strong>Counted Cash</strong> (actual cash in drawer)</li>
+                        <li>The system will compare with expected cash</li>
+                        <li>Any discrepancy will be highlighted</li>
+                        <li>Click <strong>Close Shift</strong></li>
+                    </ol>
+                </section>
+
+                <!-- Inventory Management -->
+                <section id="inventory">
+                    <h2><i class="bi bi-box-seam me-2"></i>Inventory Management</h2>
+
+                    <h3 id="products">Products</h3>
+
+                    <h4>Viewing Products</h4>
+                    <ol>
+                        <li>Go to <strong>Inventory → Products</strong></li>
+                        <li>Use filters to find products:
+                            <ul>
+                                <li>Search by name or SKU</li>
+                                <li>Filter by category</li>
+                                <li>Filter by low stock</li>
+                            </ul>
+                        </li>
+                    </ol>
+
+                    <h4>Creating a Product</h4>
+                    <ol>
+                        <li>Click <strong>Add Product</strong></li>
+                        <li>Fill in details:
+                            <ul>
+                                <li><strong>SKU</strong> - Unique product code</li>
+                                <li><strong>Name</strong> - Product name</li>
+                                <li><strong>Category</strong> - Product category</li>
+                                <li><strong>Unit of Measure</strong> - Pieces, Kg, Liters, etc.</li>
+                                <li><strong>Default Selling Price</strong> - Standard retail price</li>
+                                <li><strong>Reorder Level</strong> - Alert threshold for low stock</li>
+                            </ul>
+                        </li>
+                        <li>Click <strong>Save</strong></li>
+                    </ol>
+
+                    <h3>Categories</h3>
+                    <p>Organize products into categories:</p>
+                    <ol>
+                        <li>Go to <strong>Inventory → Categories</strong></li>
+                        <li>Click <strong>Add Category</strong></li>
+                        <li>Enter category name</li>
+                        <li>Click <strong>Save</strong></li>
+                    </ol>
+
+                    <h3 id="batches">Batches</h3>
+                    <p>Batches track specific lots of products with:</p>
+                    <ul>
+                        <li><strong>Batch Number</strong> - Unique identifier</li>
+                        <li><strong>Unit Cost</strong> - Cost per item (for profit tracking)</li>
+                        <li><strong>Expiry Date</strong> - For perishable goods</li>
+                        <li><strong>Quantity</strong> - Amount in this batch</li>
+                    </ul>
+
+                    <h4>Creating a Batch (Stock In)</h4>
+                    <ol>
+                        <li>Go to <strong>Inventory → Batches</strong></li>
+                        <li>Click <strong>Add Batch</strong></li>
+                        <li>Select product and location</li>
+                        <li>Enter batch details</li>
+                        <li>Click <strong>Save</strong></li>
+                    </ol>
+
+                    <div class="alert alert-info">
+                        <i class="bi bi-lightbulb me-2"></i>
+                        <strong>Tip:</strong> Batches are created at Production or Stores and transferred to Shops.
+                    </div>
+
+                    <h3>Stock Overview</h3>
+                    <p>View stock levels across all locations:</p>
+                    <ol>
+                        <li>Go to <strong>Inventory → Stock Overview</strong></li>
+                        <li>See quantities per product per location</li>
+                        <li>Identify which locations need restocking</li>
+                    </ol>
+
+                    <h3 id="shop-pricing">Shop Pricing</h3>
+                    <p>Set location-specific prices (different from default):</p>
+                    <ol>
+                        <li>Go to <strong>Inventory → Shop Pricing</strong></li>
+                        <li>Click <strong>Add Price</strong></li>
+                        <li>Select product, location, and price</li>
+                        <li>Click <strong>Save</strong></li>
+                    </ol>
+                </section>
+
+                <!-- Stock Transfers -->
+                <section id="transfers">
+                    <h2><i class="bi bi-arrow-left-right me-2"></i>Stock Transfers</h2>
+
+                    <p>Transfers move stock between locations (e.g., Stores → Shop).</p>
+
+                    <h3>Transfer Workflow</h3>
+                    <div class="d-flex align-items-center flex-wrap gap-2 mb-4">
+                        <span class="badge bg-secondary fs-6 py-2 px-3">DRAFT</span>
+                        <i class="bi bi-arrow-right fs-4"></i>
+                        <span class="badge bg-primary fs-6 py-2 px-3">SENT</span>
+                        <i class="bi bi-arrow-right fs-4"></i>
+                        <span class="badge bg-success fs-6 py-2 px-3">RECEIVED</span>
+                    </div>
+                    <p class="text-muted small">Alternative: PARTIAL → DISPUTED → CLOSED</p>
+
+                    <h3>Creating a Transfer</h3>
+                    <ol>
+                        <li>Go to <strong>Transfers</strong></li>
+                        <li>Click <strong>New Transfer</strong></li>
+                        <li>Select:
+                            <ul>
+                                <li><strong>Source Location</strong> - Where stock is coming from</li>
+                                <li><strong>Destination Location</strong> - Where stock is going</li>
+                            </ul>
+                        </li>
+                        <li>Add items:
+                            <ul>
+                                <li>Search for products</li>
+                                <li>Enter quantities to send</li>
+                            </ul>
+                        </li>
+                        <li>Click <strong>Save as Draft</strong> or <strong>Send Transfer</strong></li>
+                    </ol>
+
+                    <h3>Sending a Transfer</h3>
+                    <ol>
+                        <li>Open a draft transfer</li>
+                        <li>For each item, enter <strong>Quantity Sent</strong></li>
+                        <li>Click <strong>Send Transfer</strong></li>
+                        <li>The destination will be notified</li>
+                    </ol>
+
+                    <h3>Receiving a Transfer</h3>
+                    <p>When stock arrives at your location:</p>
+                    <ol>
+                        <li>You'll see a notification badge</li>
+                        <li>Go to <strong>Transfers</strong></li>
+                        <li>Find transfers with status <span class="badge bg-primary">SENT</span></li>
+                        <li>Click <strong>Receive</strong></li>
+                        <li>For each item:
+                            <ul>
+                                <li>Verify actual quantity received</li>
+                                <li>Enter <strong>Quantity Received</strong></li>
+                            </ul>
+                        </li>
+                        <li>Click <strong>Complete Receipt</strong></li>
+                    </ol>
+
+                    <h3>Handling Discrepancies</h3>
+                    <p>If received quantity doesn't match sent quantity:</p>
+                    <ol>
+                        <li>Enter the actual quantity received</li>
+                        <li>The transfer status becomes <span class="badge bg-warning text-dark">PARTIAL</span> or <span
+                                class="badge bg-danger">DISPUTED</span></li>
+                        <li>Add notes explaining the discrepancy</li>
+                        <li>The sender can investigate</li>
+                    </ol>
+
+                    <h3>Transfer Statuses</h3>
+                    <div class="table-responsive">
+                        <table class="table table-bordered">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Status</th>
+                                    <th>Meaning</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><span class="badge bg-secondary">Draft</span></td>
+                                    <td>Not yet sent, can be edited</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge bg-primary">Sent</span></td>
+                                    <td>In transit to destination</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge bg-success">Received</span></td>
+                                    <td>Fully received, quantities match</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge bg-warning text-dark">Partial</span></td>
+                                    <td>Some items received, others pending</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge bg-danger">Disputed</span></td>
+                                    <td>Quantity discrepancy reported</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge bg-dark">Closed</span></td>
+                                    <td>Dispute resolved</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge bg-light text-dark">Cancelled</span></td>
+                                    <td>Transfer voided</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Stock Requests -->
+                <section id="stock-requests">
+                    <h2><i class="bi bi-box-arrow-in-down me-2"></i>Stock Requests</h2>
+
+                    <p>Shops can request stock from Stores:</p>
+
+                    <h3>Creating a Request</h3>
+                    <ol>
+                        <li>Go to <strong>Stock Requests</strong></li>
+                        <li>Click <strong>New Request</strong></li>
+                        <li>Select requesting location</li>
+                        <li>Add products and quantities needed</li>
+                        <li>Add justification notes</li>
+                        <li>Click <strong>Submit Request</strong></li>
+                    </ol>
+
+                    <h3>Approving Requests (Stores Manager)</h3>
+                    <ol>
+                        <li>View pending requests</li>
+                        <li>Review requested items</li>
+                        <li>Click <strong>Approve</strong> or <strong>Reject</strong></li>
+                        <li>If approved, a transfer is automatically created</li>
+                    </ol>
+                </section>
+
+                <!-- Customer Management -->
+                <section id="customers">
+                    <h2><i class="bi bi-people me-2"></i>Customer Management</h2>
+
+                    <h3>Adding Customers</h3>
+                    <ol>
+                        <li>Go to <strong>Customers</strong></li>
+                        <li>Click <strong>Add Customer</strong></li>
+                        <li>Enter details:
+                            <ul>
+                                <li>Name</li>
+                                <li>Phone number</li>
+                                <li>Email (optional)</li>
+                                <li>Address (optional)</li>
+                            </ul>
+                        </li>
+                        <li>Click <strong>Save</strong></li>
+                    </ol>
+
+                    <h3>Credit Sales</h3>
+                    <p>To sell on credit:</p>
+                    <ol>
+                        <li>In POS, select the customer</li>
+                        <li>Complete the sale with <strong>Credit</strong> payment method</li>
+                        <li>The amount is added to customer's debt</li>
+                    </ol>
+
+                    <h3>Recording Payments</h3>
+                    <p>When a customer pays their debt:</p>
+                    <ol>
+                        <li>Go to <strong>Customers</strong></li>
+                        <li>Find the customer</li>
+                        <li>Click <strong>Record Payment</strong></li>
+                        <li>Enter amount paid</li>
+                        <li>Click <strong>Save</strong></li>
+                    </ol>
+
+                    <h3>Viewing Customer History</h3>
+                    <ul>
+                        <li>See all purchases made by a customer</li>
+                        <li>View outstanding debt</li>
+                        <li>Track payment history</li>
+                    </ul>
+                </section>
+
+                <!-- Cash Management -->
+                <section id="cash">
+                    <h2><i class="bi bi-cash-stack me-2"></i>Cash Management</h2>
+
+                    <h3>Cash on Hand</h3>
+                    <p>Your current cash is shown in the top navigation bar:</p>
+                    <ul>
+                        <li><span class="badge bg-success">Green badge</span> shows available cash</li>
+                        <li>Click to manage transfers</li>
+                    </ul>
+
+                    <h3>Creating a Cash Transfer</h3>
+                    <p>When handing over cash (e.g., Shop Manager → Accountant):</p>
+                    <ol>
+                        <li>Go to <strong>Cash Transfers</strong></li>
+                        <li>Click <strong>New Transfer</strong></li>
+                        <li>Select recipient (Accountant)</li>
+                        <li>Enter amount</li>
+                        <li>Add notes if needed</li>
+                        <li>Click <strong>Submit</strong></li>
+                    </ol>
+
+                    <h3>Confirming Cash Received</h3>
+                    <ol>
+                        <li>View pending transfers to you</li>
+                        <li>Click <strong>Confirm</strong> when cash is received</li>
+                        <li>The transfer is completed</li>
+                    </ol>
+
+                    <h3>Cash Transfer Statuses</h3>
+                    <div class="table-responsive">
+                        <table class="table table-bordered">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Status</th>
+                                    <th>Meaning</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><span class="badge bg-warning text-dark">Pending</span></td>
+                                    <td>Awaiting confirmation from recipient</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge bg-success">Confirmed</span></td>
+                                    <td>Successfully transferred</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge bg-secondary">Cancelled</span></td>
+                                    <td>Transfer voided</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Reports & Analytics -->
+                <section id="reports">
+                    <h2><i class="bi bi-graph-up me-2"></i>Reports & Analytics</h2>
+
+                    <h3>Sales Report (Shop Manager)</h3>
+                    <p>View sales performance for your shop:</p>
+                    <ol>
+                        <li>Go to <strong>Sales Report</strong></li>
+                        <li>Select date range</li>
+                        <li>View:
+                            <ul>
+                                <li>Total sales</li>
+                                <li>Sales breakdown by product</li>
+                                <li>Sales by hour</li>
+                            </ul>
+                        </li>
+                    </ol>
+
+                    <h3>Accountant Reports</h3>
+                    <p>The Accountant Dashboard shows:</p>
+                    <ul>
+                        <li><strong>Revenue by period</strong></li>
+                        <li><strong>Sales by payment method</strong></li>
+                        <li><strong>Cash vs E-Cash breakdown</strong></li>
+                        <li><strong>Outstanding credit</strong></li>
+                    </ul>
+
+                    <h3>Price History</h3>
+                    <p>Track product price changes:</p>
+                    <ol>
+                        <li>Go to <strong>Financial → Price History</strong></li>
+                        <li>Search for a product</li>
+                        <li>View all price changes with dates and who made them</li>
+                    </ol>
+                </section>
+
+                <!-- Tracking & Audit Features -->
+                <section id="tracking">
+                    <h2><i class="bi bi-search me-2"></i>Tracking & Audit Features</h2>
+
+                    <div class="alert alert-info">
+                        <i class="bi bi-shield-check me-2"></i>
+                        <strong>Available to:</strong> AUDITOR, ACCOUNTANT, ADMIN
+                    </div>
+
+                    <h3>Product Lifecycle</h3>
+                    <p>Track a product's journey through the system:</p>
+                    <ol>
+                        <li>Go to <strong>Tracking & Reports → Product Lifecycle</strong></li>
+                        <li>Select a product</li>
+                        <li>View:
+                            <ul>
+                                <li><strong>Entries</strong> - Stock In, Production, Transfers In, Returns</li>
+                                <li><strong>Exits</strong> - Sales, Transfers Out, Damage/Write-offs</li>
+                                <li><strong>Stock by Location</strong> - Current quantities per location</li>
+                                <li><strong>Detailed Ledger</strong> - Every movement with timestamps</li>
+                            </ul>
+                        </li>
+                    </ol>
+
+                    <h3>Profit & Loss by Product</h3>
+                    <p>Analyze profitability per product:</p>
+                    <ol>
+                        <li>Go to <strong>Tracking & Reports → P&L by Product</strong></li>
+                        <li>Select time period (Week/Month/Quarter/Year/All)</li>
+                        <li>View for each product:
+                            <ul>
+                                <li>Quantity Sold</li>
+                                <li>Revenue</li>
+                                <li>Cost</li>
+                                <li>Gross Profit</li>
+                                <li>Margin %</li>
+                            </ul>
+                        </li>
+                    </ol>
+
+                    <div class="alert alert-success">
+                        <i class="bi bi-lightbulb me-2"></i>
+                        <strong>Tip:</strong> Products with low margins may need price adjustments.
+                    </div>
+
+                    <h3>Profit & Loss by Location</h3>
+                    <p>Compare shop performance:</p>
+                    <ol>
+                        <li>Go to <strong>Tracking & Reports → P&L by Location</strong></li>
+                        <li>View for each shop:
+                            <ul>
+                                <li>Transaction count</li>
+                                <li>Revenue</li>
+                                <li>Cost</li>
+                                <li>Profit</li>
+                                <li>Average sale value</li>
+                            </ul>
+                        </li>
+                    </ol>
+
+                    <h3>Profit & Loss by Manager</h3>
+                    <p>Evaluate staff performance:</p>
+                    <ol>
+                        <li>Go to <strong>Tracking & Reports → P&L by Manager</strong></li>
+                        <li>View for each staff member:
+                            <ul>
+                                <li>Number of sales</li>
+                                <li>Total revenue generated</li>
+                                <li>Profit contribution</li>
+                                <li>Average sale value</li>
+                            </ul>
+                        </li>
+                    </ol>
+
+                    <h3>Inventory Movement Report</h3>
+                    <p>View all stock movements with filters:</p>
+                    <ol>
+                        <li>Go to <strong>Tracking & Reports → Inventory Movements</strong></li>
+                        <li>Filter by:
+                            <ul>
+                                <li>Transaction type (Sale, Transfer, Damage, etc.)</li>
+                                <li>Location</li>
+                                <li>Date range</li>
+                                <li>Product name/SKU</li>
+                            </ul>
+                        </li>
+                        <li>View summary by transaction type</li>
+                        <li>See detailed ledger entries</li>
+                    </ol>
+                </section>
+
+                <!-- Settings & Administration -->
+                <section id="settings">
+                    <h2><i class="bi bi-gear me-2"></i>Settings & Administration</h2>
+
+                    <div class="alert alert-warning">
+                        <i class="bi bi-lock me-2"></i>
+                        <strong>Admin Only:</strong> These features are restricted to administrators.
+                    </div>
+
+                    <h3>General Settings</h3>
+                    <ol>
+                        <li>Go to <strong>Settings → General</strong></li>
+                        <li>Update organization details:
+                            <ul>
+                                <li>Organization name</li>
+                                <li>Currency symbol</li>
+                                <li>Contact information</li>
+                            </ul>
+                        </li>
+                    </ol>
+
+                    <h3>Payment Provider</h3>
+                    <p>Configure Paystack for E-Cash payments:</p>
+                    <ol>
+                        <li>Go to <strong>Settings → Payment Provider</strong></li>
+                        <li>Enter Paystack API keys</li>
+                        <li>Enable/disable E-Cash payments</li>
+                    </ol>
+
+                    <h3>User Management</h3>
+
+                    <h4>Creating Users</h4>
+                    <ol>
+                        <li>Go to <strong>Users</strong></li>
+                        <li>Click <strong>Add User</strong></li>
+                        <li>Enter:
+                            <ul>
+                                <li>Email</li>
+                                <li>Name</li>
+                                <li>Role</li>
+                                <li>Assigned Location</li>
+                            </ul>
+                        </li>
+                        <li>Set initial password</li>
+                        <li>Click <strong>Save</strong></li>
+                    </ol>
+
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        <strong>Note:</strong> Users must change their password on first login.
+                    </div>
+
+                    <h4>Resetting Passwords</h4>
+                    <ol>
+                        <li>Go to <strong>Users</strong></li>
+                        <li>Find the user</li>
+                        <li>Click <strong>Reset Password</strong></li>
+                        <li>Enter new password</li>
+                        <li>User will be prompted to change it on next login</li>
+                    </ol>
+
+                    <h3>Location Management</h3>
+
+                    <h4>Creating Locations</h4>
+                    <ol>
+                        <li>Go to <strong>Locations</strong></li>
+                        <li>Click <strong>Add Location</strong></li>
+                        <li>Enter:
+                            <ul>
+                                <li>Name</li>
+                                <li>Type (Production, Stores, Shop)</li>
+                                <li>Address</li>
+                            </ul>
+                        </li>
+                        <li>Click <strong>Save</strong></li>
+                    </ol>
+                </section>
+
+                <!-- Troubleshooting -->
+                <section id="troubleshooting">
+                    <h2><i class="bi bi-tools me-2"></i>Troubleshooting</h2>
+
+                    <h3>Common Issues</h3>
+
+                    <div class="accordion" id="troubleshootingAccordion">
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                                    data-bs-target="#issue1">
+                                    "Cannot complete sale - insufficient stock"
+                                </button>
+                            </h2>
+                            <div id="issue1" class="accordion-collapse collapse"
+                                data-bs-parent="#troubleshootingAccordion">
+                                <div class="accordion-body">
+                                    <ul>
+                                        <li>Check stock levels for the product</li>
+                                        <li>Create a transfer to bring more stock</li>
+                                        <li>Verify the correct batch is selected</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                                    data-bs-target="#issue2">
+                                    "Shift must be open to make sales"
+                                </button>
+                            </h2>
+                            <div id="issue2" class="accordion-collapse collapse"
+                                data-bs-parent="#troubleshootingAccordion">
+                                <div class="accordion-body">
+                                    <ul>
+                                        <li>Click <strong>Open Shift</strong> button</li>
+                                        <li>Enter opening cash amount</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                                    data-bs-target="#issue3">
+                                    "Cannot void sale - status not allowed"
+                                </button>
+                            </h2>
+                            <div id="issue3" class="accordion-collapse collapse"
+                                data-bs-parent="#troubleshootingAccordion">
+                                <div class="accordion-body">
+                                    <ul>
+                                        <li>Only completed sales can be voided</li>
+                                        <li>Sales older than 24 hours may not be voidable</li>
+                                        <li>Check with Admin for override</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                                    data-bs-target="#issue4">
+                                    "Transfer stuck in SENT status"
+                                </button>
+                            </h2>
+                            <div id="issue4" class="accordion-collapse collapse"
+                                data-bs-parent="#troubleshootingAccordion">
+                                <div class="accordion-body">
+                                    <ul>
+                                        <li>The destination hasn't received it yet</li>
+                                        <li>Contact the destination location</li>
+                                        <li>Check if they've logged in</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                                    data-bs-target="#issue5">
+                                    Products not showing in POS
+                                </button>
+                            </h2>
+                            <div id="issue5" class="accordion-collapse collapse"
+                                data-bs-parent="#troubleshootingAccordion">
+                                <div class="accordion-body">
+                                    <ul>
+                                        <li>Verify product is marked as <strong>Active</strong></li>
+                                        <li>Check if product has stock in your location</li>
+                                        <li>Verify batch isn't expired</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <h3 class="mt-4">Getting Help</h3>
+                    <p>If you encounter issues:</p>
+                    <ol>
+                        <li>Check this manual first</li>
+                        <li>Contact your Administrator</li>
+                        <li>Note any error messages for troubleshooting</li>
+                    </ol>
+                </section>
+
+                <!-- Keyboard Shortcuts -->
+                <section id="keyboard">
+                    <h2><i class="bi bi-keyboard me-2"></i>Keyboard Shortcuts (POS)</h2>
+
+                    <div class="table-responsive">
+                        <table class="table table-bordered">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Shortcut</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><span class="kbd">Enter</span></td>
+                                    <td>Complete sale / Confirm action</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="kbd">Escape</span></td>
+                                    <td>Cancel / Close modal</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="kbd">/</span></td>
+                                    <td>Focus search bar</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Glossary -->
+                <section id="glossary">
+                    <h2><i class="bi bi-book me-2"></i>Glossary</h2>
+
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-hover">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>Term</th>
+                                    <th>Definition</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><strong>Batch</strong></td>
+                                    <td>A lot of products with shared characteristics (cost, expiry)</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>SKU</strong></td>
+                                    <td>Stock Keeping Unit - unique product identifier</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Tenant</strong></td>
+                                    <td>Your organization within the system</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Ledger</strong></td>
+                                    <td>Historical record of all inventory movements</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>COGS</strong></td>
+                                    <td>Cost of Goods Sold - the cost value of items sold</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Margin</strong></td>
+                                    <td>Profit as a percentage of revenue</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Shift</strong></td>
+                                    <td>A working period for a sales attendant</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Quick Reference -->
+                <section id="quick-reference">
+                    <h2><i class="bi bi-card-checklist me-2"></i>Quick Reference Cards</h2>
+
+                    <div class="row g-4">
+                        <div class="col-md-6">
+                            <div class="card border-primary">
+                                <div class="card-header bg-primary text-white">
+                                    <i class="bi bi-person me-2"></i>Daily Tasks - Shop Attendant
+                                </div>
+                                <div class="card-body">
+                                    <ul class="list-unstyled mb-0">
+                                        <li><i class="bi bi-square text-muted me-2"></i>Open shift (enter opening cash)
+                                        </li>
+                                        <li><i class="bi bi-square text-muted me-2"></i>Process sales throughout the day
+                                        </li>
+                                        <li><i class="bi bi-square text-muted me-2"></i>Receive any pending transfers
+                                        </li>
+                                        <li><i class="bi bi-square text-muted me-2"></i>Close shift (count cash,
+                                            reconcile)</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card border-success">
+                                <div class="card-header bg-success text-white">
+                                    <i class="bi bi-person-badge me-2"></i>Daily Tasks - Shop Manager
+                                </div>
+                                <div class="card-body">
+                                    <ul class="list-unstyled mb-0">
+                                        <li><i class="bi bi-square text-muted me-2"></i>Review shift reports</li>
+                                        <li><i class="bi bi-square text-muted me-2"></i>Check low stock alerts</li>
+                                        <li><i class="bi bi-square text-muted me-2"></i>Create stock requests if needed
+                                        </li>
+                                        <li><i class="bi bi-square text-muted me-2"></i>Submit cash transfers to
+                                            Accountant</li>
+                                        <li><i class="bi bi-square text-muted me-2"></i>Review shop sales report</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card border-info">
+                                <div class="card-header bg-info text-white">
+                                    <i class="bi bi-calendar-week me-2"></i>Weekly Tasks - Accountant
+                                </div>
+                                <div class="card-body">
+                                    <ul class="list-unstyled mb-0">
+                                        <li><i class="bi bi-square text-muted me-2"></i>Confirm all pending cash
+                                            transfers</li>
+                                        <li><i class="bi bi-square text-muted me-2"></i>Review sales reports across
+                                            shops</li>
+                                        <li><i class="bi bi-square text-muted me-2"></i>Check customer credit balances
+                                        </li>
+                                        <li><i class="bi bi-square text-muted me-2"></i>Generate profit/loss reports
+                                        </li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card border-warning">
+                                <div class="card-header bg-warning text-dark">
+                                    <i class="bi bi-calendar-month me-2"></i>Monthly Tasks - Admin
+                                </div>
+                                <div class="card-body">
+                                    <ul class="list-unstyled mb-0">
+                                        <li><i class="bi bi-square text-muted me-2"></i>Review P&L by product</li>
+                                        <li><i class="bi bi-square text-muted me-2"></i>Review P&L by location</li>
+                                        <li><i class="bi bi-square text-muted me-2"></i>Review P&L by manager</li>
+                                        <li><i class="bi bi-square text-muted me-2"></i>Adjust pricing if needed</li>
+                                        <li><i class="bi bi-square text-muted me-2"></i>Review user access and roles
+                                        </li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Footer -->
+                <div class="border-top pt-4 mt-5 text-center text-muted">
+                    <p class="mb-0">
+                        <i class="bi bi-book me-2"></i>
+                        POS System User Manual | Version 1.0 | Last Updated: January 2026
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Smooth scrolling for sidebar links
+    document.querySelectorAll('.docs-sidebar a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener('click', function (e) {
+            e.preventDefault();
+            const target = document.querySelector(this.getAttribute('href'));
+            if (target) {
+                target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                // Update active state
+                document.querySelectorAll('.docs-sidebar .nav-link').forEach(link => link.classList.remove('active'));
+                this.classList.add('active');
+            }
+        });
+    });
+
+    // Highlight current section on scroll
+    window.addEventListener('scroll', function () {
+        const sections = document.querySelectorAll('.docs-content section');
+        const navLinks = document.querySelectorAll('.docs-sidebar .nav-link');
+
+        let current = '';
+        sections.forEach(section => {
+            const sectionTop = section.offsetTop - 100;
+            if (pageYOffset >= sectionTop) {
+                current = section.getAttribute('id');
+            }
+        });
+
+        navLinks.forEach(link => {
+            link.classList.remove('active');
+            if (link.getAttribute('href') === '#' + current) {
+                link.classList.add('active');
+            }
+        });
+    });
+</script>
+{% endblock %}

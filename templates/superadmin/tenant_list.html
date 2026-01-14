@@ -1,0 +1,169 @@
+{% extends 'superadmin/base.html' %}
+
+{% block title %}Tenants{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1">
+            <i class="bi bi-buildings me-2"></i>All Tenants
+        </h1>
+        <p class="text-muted mb-0">Manage all organizations in the platform</p>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="sa-card p-3 mb-4">
+    <form method="get" class="row g-3 align-items-end">
+        <div class="col-md-4">
+            <label class="form-label small text-muted">Search</label>
+            <input type="text" name="q" class="form-control bg-dark border-secondary text-white"
+                placeholder="Search by name..." value="{{ search_query }}">
+        </div>
+        <div class="col-md-3">
+            <label class="form-label small text-muted">Status</label>
+            <select name="status" class="form-select bg-dark border-secondary text-white">
+                <option value="">All Statuses</option>
+                {% for value, label in status_choices %}
+                <option value="{{ value }}" {% if current_status == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2">
+            <label class="form-label small text-muted">Active</label>
+            <select name="active" class="form-select bg-dark border-secondary text-white">
+                <option value="">All</option>
+                <option value="1" {% if current_active == '1' %}selected{% endif %}>Active Only</option>
+                <option value="0" {% if current_active == '0' %}selected{% endif %}>Inactive Only</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <button type="submit" class="btn btn-primary me-2">
+                <i class="bi bi-search me-1"></i> Filter
+            </button>
+            <a href="{% url 'superadmin:tenant_list' %}" class="btn btn-outline-secondary">Reset</a>
+        </div>
+    </form>
+</div>
+
+<!-- Tenant List -->
+<div class="sa-card">
+    <div class="table-responsive">
+        <table class="table table-dark-custom table-hover mb-0">
+            <thead>
+                <tr>
+                    <th>Organization</th>
+                    <th>Status</th>
+                    <th>Subscription</th>
+                    <th>Users</th>
+                    <th>Locations</th>
+                    <th>Created</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for tenant in tenants %}
+                <tr>
+                    <td>
+                        <div class="d-flex align-items-center">
+                            {% if tenant.logo %}
+                            <img src="{{ tenant.logo.url }}" alt="" class="rounded me-2"
+                                style="width: 32px; height: 32px; object-fit: cover;">
+                            {% else %}
+                            <div class="rounded me-2 d-flex align-items-center justify-content-center bg-secondary"
+                                style="width: 32px; height: 32px;">
+                                <i class="bi bi-building"></i>
+                            </div>
+                            {% endif %}
+                            <div>
+                                <div class="fw-bold">{{ tenant.name }}</div>
+                                <small class="text-muted">{{ tenant.email }}</small>
+                            </div>
+                        </div>
+                    </td>
+                    <td>
+                        <span class="badge badge-status-{{ tenant.subscription_status|lower }}">
+                            {{ tenant.get_subscription_status_display }}
+                        </span>
+                        {% if not tenant.is_active %}
+                        <span class="badge bg-dark ms-1">Inactive</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if tenant.subscription_end_date %}
+                        <span
+                            class="{% if tenant.days_until_expiry <= 0 %}text-danger{% elif tenant.days_until_expiry <= 30 %}text-warning{% else %}text-muted{% endif %}">
+                            {{ tenant.subscription_end_date|date:"M d, Y" }}
+                        </span>
+                        {% if tenant.days_until_expiry is not None %}
+                        <br>
+                        <small
+                            class="{% if tenant.days_until_expiry <= 0 %}text-danger{% elif tenant.days_until_expiry <= 7 %}text-warning{% else %}text-muted{% endif %}">
+                            {% if tenant.days_until_expiry > 0 %}
+                            {{ tenant.days_until_expiry }} days left
+                            {% elif tenant.days_until_expiry == 0 %}
+                            Expires today
+                            {% else %}
+                            Expired
+                            {% endif %}
+                        </small>
+                        {% endif %}
+                        {% else %}
+                        <span class="text-muted">Not set</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ tenant.user_count }}</td>
+                    <td>{{ tenant.location_count }}</td>
+                    <td class="text-muted small">{{ tenant.created_at|date:"M d, Y" }}</td>
+                    <td>
+                        <a href="{% url 'superadmin:tenant_detail' tenant.pk %}" class="btn btn-sm btn-outline-light">
+                            <i class="bi bi-eye"></i> View
+                        </a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="7" class="text-center text-muted py-4">
+                        <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                        No tenants found
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    {% if is_paginated %}
+    <div class="p-3 border-top border-secondary">
+        <nav aria-label="Page navigation">
+            <ul class="pagination justify-content-center mb-0">
+                {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link bg-dark border-secondary"
+                        href="?page={{ page_obj.previous_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}{% if current_status %}&status={{ current_status }}{% endif %}{% if current_active %}&active={{ current_active }}{% endif %}">
+                        Previous
+                    </a>
+                </li>
+                {% endif %}
+
+                <li class="page-item disabled">
+                    <span class="page-link bg-dark border-secondary">
+                        Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+                    </span>
+                </li>
+
+                {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link bg-dark border-secondary"
+                        href="?page={{ page_obj.next_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}{% if current_status %}&status={{ current_status }}{% endif %}{% if current_active %}&active={{ current_active }}{% endif %}">
+                        Next
+                    </a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

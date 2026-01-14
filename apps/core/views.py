@@ -546,3 +546,18 @@ class ForcedPasswordChangeView(LoginRequiredMixin, View):
         
         return render(request, self.template_name, {'form': form})
 
+
+class HelpView(LoginRequiredMixin, View):
+    """Display help and documentation page."""
+    template_name = 'core/help.html'
+    
+    def get(self, request):
+        return render(request, self.template_name)
+
+
+class DocumentationView(LoginRequiredMixin, View):
+    """Display full documentation/user manual page."""
+    template_name = 'core/documentation.html'
+    
+    def get(self, request):
+        return render(request, self.template_name)

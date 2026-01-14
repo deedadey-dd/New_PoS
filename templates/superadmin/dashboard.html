@@ -1,0 +1,181 @@
+{% extends 'superadmin/base.html' %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <h1 class="h3 mb-1">
+        <i class="bi bi-speedometer2 me-2"></i>Platform Dashboard
+    </h1>
+    <p class="text-muted mb-0">Overview of all tenants and platform status</p>
+</div>
+
+<!-- Stats Cards -->
+<div class="row g-4 mb-4">
+    <div class="col-md-3">
+        <div class="sa-stat-card">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-buildings fs-1 me-3 text-white opacity-75"></i>
+                <div>
+                    <div class="text-muted small">Total Tenants</div>
+                    <div class="fs-2 fw-bold">{{ total_tenants }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="sa-stat-card success">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-check-circle fs-1 me-3 text-success"></i>
+                <div>
+                    <div class="text-muted small">Active</div>
+                    <div class="fs-2 fw-bold text-success">{{ active_tenants }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="sa-stat-card info">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-hourglass-split fs-1 me-3 text-info"></i>
+                <div>
+                    <div class="text-muted small">On Trial</div>
+                    <div class="fs-2 fw-bold text-info">{{ trial_tenants }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="sa-stat-card danger">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-x-circle fs-1 me-3 text-danger"></i>
+                <div>
+                    <div class="text-muted small">Expired / Suspended</div>
+                    <div class="fs-2 fw-bold text-danger">{{ expired_tenants|add:suspended_tenants }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Expiring Soon -->
+    <div class="col-lg-6">
+        <div class="sa-card p-4">
+            <h5 class="mb-3">
+                <i class="bi bi-exclamation-triangle text-warning me-2"></i>
+                Expiring Soon
+            </h5>
+            {% if expiring_soon %}
+            <div class="table-responsive">
+                <table class="table table-dark-custom table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>Tenant</th>
+                            <th>Expires</th>
+                            <th>Days Left</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for tenant in expiring_soon %}
+                        <tr>
+                            <td>{{ tenant.name }}</td>
+                            <td>{{ tenant.subscription_end_date|date:"M d, Y" }}</td>
+                            <td>
+                                <span
+                                    class="badge {% if tenant.days_until_expiry <= 7 %}bg-danger{% elif tenant.days_until_expiry <= 14 %}bg-warning text-dark{% else %}bg-info{% endif %}">
+                                    {{ tenant.days_until_expiry }} days
+                                </span>
+                            </td>
+                            <td>
+                                <a href="{% url 'superadmin:tenant_detail' tenant.pk %}"
+                                    class="btn btn-sm btn-outline-light">
+                                    View
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="text-muted mb-0">
+                <i class="bi bi-check-circle me-2"></i>
+                No tenants expiring in the next 30 days.
+            </p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Recent Tenants -->
+    <div class="col-lg-6">
+        <div class="sa-card p-4">
+            <h5 class="mb-3">
+                <i class="bi bi-clock-history me-2"></i>
+                Recently Created
+            </h5>
+            {% if recent_tenants %}
+            <div class="table-responsive">
+                <table class="table table-dark-custom table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>Tenant</th>
+                            <th>Status</th>
+                            <th>Created</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for tenant in recent_tenants %}
+                        <tr>
+                            <td>
+                                <a href="{% url 'superadmin:tenant_detail' tenant.pk %}"
+                                    class="text-white text-decoration-none">
+                                    {{ tenant.name }}
+                                </a>
+                            </td>
+                            <td>
+                                <span class="badge badge-status-{{ tenant.subscription_status|lower }}">
+                                    {{ tenant.get_subscription_status_display }}
+                                </span>
+                            </td>
+                            <td class="text-muted">{{ tenant.created_at|date:"M d, Y" }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="text-muted mb-0">No tenants created yet.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Quick Stats -->
+<div class="row g-4 mt-2">
+    <div class="col-md-4">
+        <div class="sa-card p-4 text-center">
+            <i class="bi bi-people fs-1 text-muted mb-2"></i>
+            <div class="fs-3 fw-bold">{{ total_users }}</div>
+            <div class="text-muted">Total Users</div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="sa-card p-4 text-center">
+            <i class="bi bi-geo-alt fs-1 text-muted mb-2"></i>
+            <div class="fs-3 fw-bold">{{ total_locations }}</div>
+            <div class="text-muted">Total Locations</div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="sa-card p-4 text-center">
+            <a href="{% url 'superadmin:tenant_list' %}" class="text-decoration-none">
+                <i class="bi bi-arrow-right-circle fs-1 mb-2" style="color: var(--sa-primary);"></i>
+                <div class="fs-5 fw-bold text-white">Manage Tenants</div>
+                <div class="text-muted">View all tenants →</div>
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

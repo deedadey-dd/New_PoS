@@ -1,0 +1,86 @@
+{% extends 'superadmin/base.html' %}
+
+{% block title %}Edit Subscription - {{ tenant.name }}{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{% url 'superadmin:dashboard' %}" class="text-muted">Dashboard</a></li>
+            <li class="breadcrumb-item"><a href="{% url 'superadmin:tenant_list' %}" class="text-muted">Tenants</a></li>
+            <li class="breadcrumb-item"><a href="{% url 'superadmin:tenant_detail' tenant.pk %}"
+                    class="text-muted">{{ tenant.name }}</a></li>
+            <li class="breadcrumb-item active text-white">Edit Subscription</li>
+        </ol>
+    </nav>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="sa-card p-4">
+            <h4 class="mb-4">
+                <i class="bi bi-credit-card me-2"></i>Edit Subscription
+            </h4>
+
+            <form method="post">
+                {% csrf_token %}
+
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Subscription Status</label>
+                        <select name="subscription_status" class="form-select bg-dark border-secondary text-white">
+                            {% for value, label in tenant.SUBSCRIPTION_STATUS_CHOICES %}
+                            <option value="{{ value }}" {% if tenant.subscription_status == value %}selected{% endif %}>
+                                {{ label }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label">Auto Renew</label>
+                        <div class="form-check form-switch mt-2">
+                            <input class="form-check-input" type="checkbox" name="auto_renew" id="autoRenew"
+                                {% if tenant.auto_renew %}checked{% endif %}>
+                            <label class="form-check-label" for="autoRenew">
+                                Prevent auto-expiration
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label">Start Date</label>
+                        <input type="date" name="subscription_start_date"
+                            class="form-control bg-dark border-secondary text-white"
+                            value="{{ tenant.subscription_start_date|date:'Y-m-d' }}">
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label">End Date</label>
+                        <input type="date" name="subscription_end_date"
+                            class="form-control bg-dark border-secondary text-white"
+                            value="{{ tenant.subscription_end_date|date:'Y-m-d' }}">
+                    </div>
+
+                    <div class="col-12">
+                        <label class="form-label">Admin Notes</label>
+                        <textarea name="admin_notes" class="form-control bg-dark border-secondary text-white" rows="4"
+                            placeholder="Internal notes (not visible to tenant)">{{ tenant.admin_notes }}</textarea>
+                    </div>
+                </div>
+
+                <hr class="my-4 border-secondary">
+
+                <div class="d-flex justify-content-between">
+                    <a href="{% url 'superadmin:tenant_detail' tenant.pk %}" class="btn btn-outline-secondary">
+                        <i class="bi bi-arrow-left me-1"></i> Cancel
+                    </a>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-lg me-1"></i> Save Changes
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
