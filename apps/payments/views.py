@@ -3,6 +3,7 @@ Views for the payments app.
 Handles payment provider configuration, e-cash withdrawals, and webhooks.
 """
 import json
+import logging
 from decimal import Decimal
 
 from django.shortcuts import render, redirect, get_object_or_404
@@ -19,6 +20,8 @@ from django.utils import timezone
 from .models import PaymentProviderSettings, ECashLedger, ECashWithdrawal
 from .services.paystack import get_payment_provider, PaystackProvider
 from apps.core.decorators import role_required
+
+logger = logging.getLogger(__name__)
 
 
 class PaymentProviderSettingsView(LoginRequiredMixin, TemplateView):
@@ -309,5 +312,5 @@ def paystack_webhook(request):
         return HttpResponse(status=400)
     except Exception as e:
         # Log error but return 200 to prevent retries
-        print(f"Webhook error: {e}")
+        logger.error(f"Paystack webhook error: {e}")
         return HttpResponse(status=200)
