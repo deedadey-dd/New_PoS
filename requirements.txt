@@ -1,11 +1,37 @@
-asgiref==3.8.1
+# Core Django
 Django==5.1.4
-pillow==10.4.0
-psycopg2-binary==2.9.11
-python-dotenv==1.2.1
-dj-database-url==2.2.0
+asgiref==3.8.1
 sqlparse==0.5.5
 tzdata==2025.3
-openpyxl>=3.1.2
-whitenoise>=6.6.0
-cryptography>=41.0.0
+
+# Database
+psycopg2-binary==2.9.11
+dj-database-url==2.2.0
+
+# Environment
+python-dotenv==1.2.1
+
+# Static files
+whitenoise==6.11.0
+
+# Image handling
+pillow==10.4.0
+
+# Excel export
+openpyxl==3.1.5
+et_xmlfile==2.0.0
+
+# Security
+cryptography==46.0.3
+cffi==2.0.0
+pycparser==2.23
+
+# HTTP requests (for Paystack integration)
+requests==2.32.5
+certifi==2026.1.4
+charset-normalizer==3.4.4
+idna==3.11
+urllib3==2.6.3
+
+# Type hints
+typing_extensions==4.15.0
