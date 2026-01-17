@@ -1,0 +1,137 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}E-Cash History - {{ shop.name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="fw-bold mb-0">
+                <i class="bi bi-clock-history me-2 text-primary"></i>E-Cash History
+            </h2>
+            {% if shop %}
+            <p class="text-muted mb-0">
+                <i class="bi bi-shop me-1"></i>{{ shop.name }}
+            </p>
+            {% endif %}
+        </div>
+        <div class="d-flex align-items-center gap-3">
+            {% if shop %}
+            <span class="badge bg-info fs-6">
+                <i class="bi bi-phone me-1"></i>Balance: {{ currency_symbol }}{{ shop_balance|floatformat:2 }}
+            </span>
+            {% endif %}
+
+            {% if all_shops %}
+            <!-- Shop selector for accountants/auditors -->
+            <select class="form-select" style="width: auto;" onchange="window.location.href='?shop='+this.value">
+                {% for s in all_shops %}
+                <option value="{{ s.pk }}" {% if shop and s.pk == shop.pk %}selected{% endif %}>
+                    {{ s.name }}
+                </option>
+                {% endfor %}
+            </select>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-body p-0">
+            {% if transactions %}
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Date</th>
+                            <th>Type</th>
+                            <th>Amount</th>
+                            <th>Reference</th>
+                            <th>By</th>
+                            <th>Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for tx in transactions %}
+                        <tr>
+                            <td>{{ tx.created_at|date:"M d, Y H:i" }}</td>
+                            <td>
+                                {% if tx.transaction_type == 'PAYMENT' %}
+                                <span class="badge bg-success"><i
+                                        class="bi bi-arrow-down-circle me-1"></i>Payment</span>
+                                {% elif tx.transaction_type == 'WITHDRAWAL' %}
+                                <span class="badge bg-warning text-dark"><i
+                                        class="bi bi-arrow-up-circle me-1"></i>Withdrawal</span>
+                                {% elif tx.transaction_type == 'REFUND' %}
+                                <span class="badge bg-danger"><i
+                                        class="bi bi-arrow-counterclockwise me-1"></i>Refund</span>
+                                {% else %}
+                                <span class="badge bg-secondary">{{ tx.get_transaction_type_display }}</span>
+                                {% endif %}
+                            </td>
+                            <td class="{% if tx.amount >= 0 %}text-success{% else %}text-danger{% endif %} fw-semibold">
+                                {% if tx.amount >= 0 %}+{% endif %}{{ currency_symbol }}{{ tx.amount|floatformat:2 }}
+                            </td>
+                            <td>
+                                {% if tx.reference_type and tx.reference_id %}
+                                <small class="text-muted">{{ tx.reference_type }} #{{ tx.reference_id }}</small>
+                                {% elif tx.paystack_reference %}
+                                <small
+                                    class="text-muted font-monospace">{{ tx.paystack_reference|truncatechars:20 }}</small>
+                                {% else %}
+                                -
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if tx.created_by %}
+                                {{ tx.created_by.get_full_name|default:tx.created_by.email }}
+                                {% else %}
+                                <span class="text-muted">System</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-muted">{{ tx.notes|truncatechars:40|default:"-" }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-5">
+                <i class="bi bi-clock-history display-1 text-muted"></i>
+                <h4 class="mt-3 text-muted">No E-Cash Transactions</h4>
+                <p class="text-muted">
+                    {% if shop %}
+                    No e-cash transactions have been recorded for {{ shop.name }} yet.
+                    {% else %}
+                    Please select a shop to view its e-cash history.
+                    {% endif %}
+                </p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Pagination -->
+    {% if page_obj.has_other_pages %}
+    <nav class="mt-4">
+        <ul class="pagination justify-content-center">
+            {% if page_obj.has_previous %}
+            <li class="page-item">
+                <a class="page-link"
+                    href="?{% if shop %}shop={{ shop.pk }}&{% endif %}page={{ page_obj.previous_page_number }}">Previous</a>
+            </li>
+            {% endif %}
+            <li class="page-item disabled">
+                <span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+            </li>
+            {% if page_obj.has_next %}
+            <li class="page-item">
+                <a class="page-link"
+                    href="?{% if shop %}shop={{ shop.pk }}&{% endif %}page={{ page_obj.next_page_number }}">Next</a>
+            </li>
+            {% endif %}
+        </ul>
+    </nav>
+    {% endif %}
+</div>
+{% endblock %}

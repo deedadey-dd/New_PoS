@@ -850,6 +850,29 @@
         </div>
     </div>
 
+    <!-- Shift Prompt Modal -->
+    <div class="checkout-modal" id="shift-prompt-modal">
+        <div class="checkout-dialog">
+            <h4 class="mb-4 text-center text-warning">
+                <i class="bi bi-exclamation-triangle me-2"></i>No Shift Open
+            </h4>
+            <p class="text-center mb-4">
+                You don't have an open shift. Sales made without a shift won't be tracked for cash balancing.
+            </p>
+            <div class="d-flex flex-column gap-2">
+                <button class="btn btn-success btn-lg" onclick="openShiftAndReturn()">
+                    <i class="bi bi-clock me-2"></i>Open Shift First
+                </button>
+                <button class="btn btn-outline-warning" onclick="continueWithoutShift()">
+                    <i class="bi bi-cash-coin me-2"></i>Continue Without Shift
+                </button>
+                <button class="btn btn-outline-secondary" onclick="closeShiftPromptModal()">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Mobile Cart Toggle Button -->
     <button class="mobile-cart-toggle" id="mobile-cart-toggle" onclick="toggleMobileCart()">
         <i class="bi bi-cart3"></i>
@@ -862,12 +885,14 @@
         const PRODUCTS = {{ products| safe }};
         const CUSTOMERS = {{ customers| safe }};
         const CSRF_TOKEN = '{{ csrf_token }}';
+        const HAS_SHIFT = {% if shift %}true{% else %} false{% endif %};
 
         let cart = [];
         let discountAmount = 0;
         let currentCategory = 'all';
         let selectedCustomer = null;
         let paymentMode = 'CASH'; // CASH, ECASH, CREDIT
+        let pendingPaymentMode = null; // For shift check continuation
 
         // Initialize
         document.addEventListener('DOMContentLoaded', function () {
@@ -886,13 +911,19 @@
                 });
             });
 
-            // Payment buttons
-            document.getElementById('btn-pay-cash').addEventListener('click', () => openCheckout('CASH'));
+            // Payment buttons - check for open shift first
+            document.getElementById('btn-pay-cash').addEventListener('click', () => {
+                if (checkShiftBeforePayment('CASH')) openCheckout('CASH');
+            });
             if (document.getElementById('btn-pay-credit')) {
-                document.getElementById('btn-pay-credit').addEventListener('click', () => openCheckout('CREDIT'));
+                document.getElementById('btn-pay-credit').addEventListener('click', () => {
+                    if (checkShiftBeforePayment('CREDIT')) openCheckout('CREDIT');
+                });
             }
             if (document.getElementById('btn-pay-ecash')) {
-                document.getElementById('btn-pay-ecash').addEventListener('click', () => openECashCheckout());
+                document.getElementById('btn-pay-ecash').addEventListener('click', () => {
+                    if (checkShiftBeforePayment('ECASH')) openECashCheckout();
+                });
             }
             document.getElementById('btn-clear-cart').addEventListener('click', clearCart);
             document.getElementById('btn-discount').addEventListener('click', applyDiscount);
@@ -1386,6 +1417,67 @@
             document.getElementById('checkout-modal').classList.remove('active');
         }
 
+        // Shift prompt modal functions
+        function openShiftPromptModal(mode) {
+            pendingPaymentMode = mode;
+            document.getElementById('shift-prompt-modal').classList.add('active');
+        }
+
+        function closeShiftPromptModal() {
+            document.getElementById('shift-prompt-modal').classList.remove('active');
+            pendingPaymentMode = null;
+        }
+
+        function openShiftAndReturn() {
+            // Cart is already saved to localStorage, just navigate
+            window.location.href = '{% url "sales:shift_open" %}';
+        }
+
+        function continueWithoutShift() {
+            closeShiftPromptModal();
+            if (pendingPaymentMode === 'ECASH') {
+                openECashCheckout();
+            } else {
+                openCheckout(pendingPaymentMode);
+            }
+        }
+
+        // Check shift before allowing payment - called by payment buttons
+        function checkShiftBeforePayment(mode) {
+            if (!HAS_SHIFT) {
+                openShiftPromptModal(mode);
+                return false;
+            }
+            return true;
+        }
+
+        // Enter key handler for checkout modal
+        document.addEventListener('keydown', function (e) {
+            const checkoutModal = document.getElementById('checkout-modal');
+            const shiftModal = document.getElementById('shift-prompt-modal');
+
+            if (e.key === 'Enter') {
+                // Complete sale if checkout modal is open
+                if (checkoutModal.classList.contains('active')) {
+                    e.preventDefault();
+                    document.getElementById('btn-complete-sale').click();
+                }
+                // Default action (Open Shift) if shift prompt is open
+                if (shiftModal.classList.contains('active')) {
+                    e.preventDefault();
+                    openShiftAndReturn();
+                }
+            }
+            // Escape key to close modals
+            if (e.key === 'Escape') {
+                if (checkoutModal.classList.contains('active')) {
+                    closeCheckoutModal();
+                }
+                if (shiftModal.classList.contains('active')) {
+                    closeShiftPromptModal();
+                }
+            }
+        });
         // E-Cash Payment via Paystack
         async function openECashCheckout() {
             // Check for payment on account (customer selected with empty cart)

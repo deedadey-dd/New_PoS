@@ -351,7 +351,7 @@
                     <i class="bi bi-list fs-4"></i>
                 </button>
                 <div class="ms-auto d-flex align-items-center">
-                    <!-- Cash on Hand Badge -->
+                    <!-- Cash on Hand Badge (exclude ADMIN) -->
                     {% if role_name == 'SHOP_ATTENDANT' or role_name == 'SHOP_MANAGER' or role_name == 'ACCOUNTANT' %}
                     <a href="{% url 'accounting:cash_transfer_list' %}" class="me-3 text-decoration-none"
                         title="Cash on Hand - Click to manage transfers">
@@ -362,10 +362,11 @@
                     </a>
                     {% endif %}
 
-                    <!-- E-Cash Balance Badge -->
-                    {% if ecash_balance is not None and role_name in 'SHOP_MANAGER,ACCOUNTANT,ADMIN,AUDITOR' %}
-                    <a href="{% url 'accounting:accountant_dashboard' %}" class="me-3 text-decoration-none"
-                        title="E-Cash Balance - Click to manage">
+                    <!-- E-Cash Balance Badge (exclude ADMIN) -->
+                    {% if ecash_balance is not None and role_name in 'SHOP_MANAGER,ACCOUNTANT,AUDITOR' %}
+                    <a href="{% if role_name == 'SHOP_MANAGER' %}{% url 'payments:shop_ecash_history' %}{% elif role_name == 'ACCOUNTANT' %}{% url 'payments:shop_ecash_list' %}{% else %}{% url 'payments:ecash_ledger' %}{% endif %}"
+                        class="me-3 text-decoration-none"
+                        title="E-Cash Balance - Click to {% if role_name == 'ACCOUNTANT' %}withdraw{% else %}view history{% endif %}">
                         <span class="badge bg-info fs-6">
                             <i
                                 class="bi bi-phone me-1"></i>{{ currency_symbol }}{{ ecash_balance|floatformat:2|default:"0.00" }}
@@ -383,8 +384,8 @@
                     </a>
                     {% endif %}
 
-                    <!-- Credit Debt Badge -->
-                    {% if total_credit_debt and total_credit_debt > 0 %}
+                    <!-- Credit Debt Badge (exclude ADMIN) -->
+                    {% if total_credit_debt and total_credit_debt > 0 and role_name != 'ADMIN' %}
                     <a href="{% url 'customers:customer_list' %}" class="me-3 text-decoration-none"
                         title="Total Customer Debt">
                         <span class="badge bg-warning text-dark fs-6">

@@ -12,7 +12,7 @@ from decimal import Decimal
 import base64
 import hashlib
 
-from apps.core.models import TenantModel, User
+from apps.core.models import TenantModel, User, Location
 
 # Simple encryption for API keys (in production, use django-fernet-fields or similar)
 try:
@@ -205,6 +205,16 @@ class ECashLedger(TenantModel):
         help_text="Payment provider used"
     )
     
+    # Shop-level tracking (added for shop-specific e-cash withdrawals)
+    shop = models.ForeignKey(
+        Location,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ecash_transactions',
+        help_text="Shop where this e-cash transaction occurred"
+    )
+    
     # Audit
     created_by = models.ForeignKey(
         User,
@@ -243,13 +253,25 @@ class ECashLedger(TenantModel):
         return last_entry.balance_after if last_entry else Decimal('0')
     
     @classmethod
-    def record_payment(cls, tenant, amount, sale=None, paystack_ref='', user=None, notes=''):
+    def get_shop_balance(cls, tenant, shop):
+        """Get the current e-cash balance for a specific shop."""
+        result = cls.objects.filter(
+            tenant=tenant,
+            shop=shop
+        ).aggregate(total=Sum('amount'))
+        return result['total'] or Decimal('0')
+    
+    @classmethod
+    def record_payment(cls, tenant, amount, sale=None, paystack_ref='', user=None, notes='', shop=None):
         """Record an e-cash payment from a sale or payment on account."""
         # Determine reference info based on sale presence
         if sale:
             reference_type = 'Sale'
             reference_id = sale.pk
             auto_notes = f"E-Cash payment for Sale {sale.sale_number}"
+            # Use sale's shop if not explicitly provided
+            if not shop and hasattr(sale, 'shop'):
+                shop = sale.shop
         else:
             reference_type = 'Payment'
             reference_id = None
@@ -263,11 +285,12 @@ class ECashLedger(TenantModel):
             reference_id=reference_id,
             paystack_reference=paystack_ref,
             created_by=user,
-            notes=notes if notes else auto_notes
+            notes=notes if notes else auto_notes,
+            shop=shop
         )
     
     @classmethod
-    def record_withdrawal(cls, tenant, amount, withdrawal, user):
+    def record_withdrawal(cls, tenant, amount, withdrawal, user, shop=None):
         """Record an e-cash withdrawal to cash."""
         return cls.objects.create(
             tenant=tenant,
@@ -276,7 +299,8 @@ class ECashLedger(TenantModel):
             reference_type='ECashWithdrawal',
             reference_id=withdrawal.pk,
             created_by=user,
-            notes=f"Withdrawal to cash by {user.get_full_name() or user.email}"
+            notes=f"Withdrawal from {shop.name if shop else 'all shops'} by {user.get_full_name() or user.email}",
+            shop=shop
         )
 
 
@@ -317,6 +341,16 @@ class ECashWithdrawal(TenantModel):
     # Reference number (auto-generated)
     withdrawal_number = models.CharField(max_length=50, blank=True)
     
+    # Shop this withdrawal is from (null = tenant-wide withdrawal)
+    shop = models.ForeignKey(
+        Location,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ecash_withdrawals',
+        help_text="Shop to withdraw e-cash from (leave blank for tenant-wide)"
+    )
+    
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     
@@ -354,8 +388,12 @@ class ECashWithdrawal(TenantModel):
         if self.status != 'PENDING':
             raise ValidationError("Only pending withdrawals can be completed.")
         
-        # Check if sufficient e-cash balance
-        current_balance = ECashLedger.get_current_balance(self.tenant)
+        # Check if sufficient e-cash balance (shop-specific or tenant-wide)
+        if self.shop:
+            current_balance = ECashLedger.get_shop_balance(self.tenant, self.shop)
+        else:
+            current_balance = ECashLedger.get_current_balance(self.tenant)
+            
         if current_balance < self.amount:
             raise ValidationError(
                 f"Insufficient e-cash balance. Available: {current_balance}, Requested: {self.amount}"
@@ -366,7 +404,8 @@ class ECashWithdrawal(TenantModel):
             tenant=self.tenant,
             amount=self.amount,
             withdrawal=self,
-            user=user or self.withdrawn_by
+            user=user or self.withdrawn_by,
+            shop=self.shop
         )
         
         # Update status
@@ -376,11 +415,12 @@ class ECashWithdrawal(TenantModel):
         
         # Create notification
         from apps.notifications.models import Notification
+        shop_name = self.shop.name if self.shop else 'all shops'
         Notification.objects.create(
             tenant=self.tenant,
             user=self.withdrawn_by,
             title="E-Cash Withdrawal Completed",
-            message=f"Your e-cash withdrawal of {self.amount} has been completed. "
+            message=f"E-cash withdrawal of {self.amount} from {shop_name} has been completed. "
                     f"Please add this to your physical cash count.",
             notification_type='SYSTEM',
             reference_type='ECashWithdrawal',

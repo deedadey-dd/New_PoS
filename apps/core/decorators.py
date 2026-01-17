@@ -70,3 +70,10 @@ class AdminOrManagerRequiredMixin(RoleRequiredMixin):
     """
     allowed_roles = ['ADMIN', 'PRODUCTION_MANAGER', 'STORES_MANAGER', 'SHOP_MANAGER']
 
+
+class AdminRequiredMixin(RoleRequiredMixin):
+    """
+    Mixin that restricts access to ADMIN role only.
+    """
+    allowed_roles = ['ADMIN']
+    permission_denied_message = 'Only administrators can access this page.'

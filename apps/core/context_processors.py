@@ -69,12 +69,15 @@ def tenant_context(request):
             ).aggregate(total=Sum('total'))['total'] or Decimal('0')
             
             # Add customer cash payments received (even outside shift)
+            # Only count explicit (CASH) payments, not (ECASH)
             from apps.customers.models import CustomerTransaction
             customer_payments = CustomerTransaction.objects.filter(
                 tenant=tenant,
                 performed_by=user,
                 transaction_type='CREDIT',
-                description__icontains='CASH'
+                description__icontains='(CASH)'
+            ).exclude(
+                description__icontains='ECASH'
             ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
             
             # Subtract any pending or confirmed transfers already made
@@ -119,11 +122,14 @@ def tenant_context(request):
             ).aggregate(total=Sum('total'))['total'] or Decimal('0')
             
             # Add customer cash payments received (payments on account)
+            # Only count explicit (CASH) payments, not (ECASH)
             customer_payments = CustomerTransaction.objects.filter(
                 tenant=tenant,
                 performed_by=user,
                 transaction_type='CREDIT',  # CREDIT = payment received
-                description__icontains='CASH'  # Only cash payments
+                description__icontains='(CASH)'  # Only cash payments
+            ).exclude(
+                description__icontains='ECASH'
             ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
             
             context['cash_on_hand'] = received - sent + own_sales + customer_payments
@@ -164,10 +170,17 @@ def tenant_context(request):
             ).count()
         
         # E-Cash balance for accountants, managers, and auditors
-        if role_name in ['ACCOUNTANT', 'ADMIN', 'AUDITOR', 'SHOP_MANAGER']:
+        if role_name in ['ACCOUNTANT', 'AUDITOR', 'SHOP_MANAGER']:
             try:
                 from apps.payments.models import ECashLedger
-                ecash_balance = ECashLedger.get_current_balance(tenant)
+                
+                # Shop managers see their shop's e-cash balance
+                if role_name == 'SHOP_MANAGER' and user.location and user.location.location_type == 'SHOP':
+                    ecash_balance = ECashLedger.get_shop_balance(tenant, user.location)
+                else:
+                    # Accountants and auditors see tenant total
+                    ecash_balance = ECashLedger.get_current_balance(tenant)
+                    
                 context['ecash_balance'] = ecash_balance
             except Exception:
                 context['ecash_balance'] = Decimal('0')

@@ -11,6 +11,7 @@ from django.db.models import Q, Sum, Count
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 from datetime import timedelta
+from decimal import Decimal
 
 from .models import CashTransfer
 from .forms import CashTransferForm
@@ -380,13 +381,29 @@ class SalesReportView(LoginRequiredMixin, View):
             count=Count('id')
         ).order_by('-revenue')
         
-        # Top products (from sale items)
+        # Top products (from sale items) - top 10 for quick insight
         top_products = SaleItem.objects.filter(
             sale__in=sales
         ).values('product__id', 'product__name').annotate(
             qty_sold=Sum('quantity'),
             revenue=Sum('total')
         ).order_by('-revenue')[:10]
+        
+        # Full product breakdown (all products sold in period)
+        all_products = SaleItem.objects.filter(
+            sale__in=sales
+        ).values('product__id', 'product__name').annotate(
+            qty_sold=Sum('quantity'),
+            revenue=Sum('total')
+        ).order_by('product__name')  # Alphabetical for easier scanning
+        
+        # Calculate totals for full product table
+        all_products_totals = SaleItem.objects.filter(
+            sale__in=sales
+        ).aggregate(
+            total_qty=Sum('quantity'),
+            total_revenue=Sum('total')
+        )
         
         # Get filter options
         from apps.core.models import Location, User as CoreUser
@@ -399,6 +416,9 @@ class SalesReportView(LoginRequiredMixin, View):
             'sales_by_shop': sales_by_shop,
             'sales_by_attendant': sales_by_attendant,
             'top_products': top_products,
+            'all_products': all_products,
+            'all_products_total_qty': all_products_totals['total_qty'] or 0,
+            'all_products_total_revenue': all_products_totals['total_revenue'] or Decimal('0'),
             'sales_count': sales.count(),
             # Filter options
             'shops': Location.objects.filter(tenant=tenant, location_type='SHOP', is_active=True),
