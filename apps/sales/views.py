@@ -171,10 +171,29 @@ class ShiftCloseView(LoginRequiredMixin, View):
             is_active=True
         ).first()
         
+        # Calculate sales breakdown
+        from django.db.models import Sum, Q
+        sales_qs = shift.sales.filter(status='COMPLETED')
+        
+        cash_sales = sales_qs.filter(payment_method='CASH').aggregate(
+            total=Sum('total'))['total'] or Decimal('0')
+        ecash_sales = sales_qs.filter(payment_method='ECASH').aggregate(
+            total=Sum('total'))['total'] or Decimal('0')
+        credit_sales = sales_qs.filter(payment_method='CREDIT').aggregate(
+            total=Sum('total'))['total'] or Decimal('0')
+        mixed_sales = sales_qs.filter(payment_method='MIXED').aggregate(
+            total=Sum('amount_paid'))['total'] or Decimal('0')  # Only cash portion
+        
+        all_sales = sales_qs.aggregate(total=Sum('total'))['total'] or Decimal('0')
+        total_cash = shift.opening_cash + cash_sales + mixed_sales
+        
         return render(request, self.template_name, {
             'shift': shift,
-            'expected_cash': shift.expected_cash,
-            'total_sales': shift.total_sales,
+            'expected_cash': total_cash,  # Opening + Cash Sales portion
+            'total_sales': all_sales,  # All sales
+            'cash_sales': cash_sales + mixed_sales,  # Cash portion only
+            'ecash_sales': ecash_sales,
+            'credit_sales': credit_sales,
             'shop_manager': shop_manager,
         })
     
@@ -212,40 +231,63 @@ class ShiftCloseView(LoginRequiredMixin, View):
             from apps.accounting.models import CashTransfer
             from apps.notifications.models import Notification
             
-            shop_manager = User.objects.filter(
-                tenant=request.user.tenant,
-                location=shift.shop,
-                role__name='SHOP_MANAGER',
-                is_active=True
-            ).first()
+            user_role = request.user.role.name if request.user.role else None
             
-            if shop_manager:
-                # Create pending transfer
+            # Check if the user closing shift IS the shop manager
+            if user_role == 'SHOP_MANAGER':
+                # Shop manager's shift - no transfer needed, cash goes directly to their balance
+                # Create a confirmed transfer to self for record-keeping
                 transfer = CashTransfer.objects.create(
                     tenant=request.user.tenant,
                     amount=closing_cash,
                     transfer_type='DEPOSIT',
                     from_user=request.user,
                     from_location=shift.shop,
-                    to_user=shop_manager,
+                    to_user=request.user,
                     to_location=shift.shop,
-                    notes=f"Shift closing deposit - {shift.sale_number if hasattr(shift, 'sale_number') else f'Shift #{shift.pk}'}"
+                    notes=f"Shop Manager shift closing - Shift #{shift.pk}",
+                    status='CONFIRMED'  # Auto-confirmed
                 )
+                transfer.confirmed_at = timezone.now()
+                transfer.save()
                 
-                # Notify shop manager
-                Notification.objects.create(
-                    tenant=request.user.tenant,
-                    user=shop_manager,
-                    title="Cash Deposit from Attendant",
-                    message=f"{request.user.get_full_name() or request.user.email} has deposited {request.user.tenant.currency_symbol}{closing_cash} from their shift. Please confirm receipt.",
-                    notification_type='SYSTEM',
-                    reference_type='CashTransfer',
-                    reference_id=transfer.pk
-                )
-                
-                messages.info(request, f"Cash transfer of {closing_cash} sent to {shop_manager.get_full_name()} for confirmation.")
+                messages.info(request, f"Shift cash of {closing_cash} added to your cash on hand.")
             else:
-                messages.warning(request, "No shop manager found. Please manually transfer your cash.")
+                # Attendant shift - create pending transfer to shop manager
+                shop_manager = User.objects.filter(
+                    tenant=request.user.tenant,
+                    location=shift.shop,
+                    role__name='SHOP_MANAGER',
+                    is_active=True
+                ).first()
+                
+                if shop_manager:
+                    # Create pending transfer
+                    transfer = CashTransfer.objects.create(
+                        tenant=request.user.tenant,
+                        amount=closing_cash,
+                        transfer_type='DEPOSIT',
+                        from_user=request.user,
+                        from_location=shift.shop,
+                        to_user=shop_manager,
+                        to_location=shift.shop,
+                        notes=f"Shift closing deposit - Shift #{shift.pk}"
+                    )
+                    
+                    # Notify shop manager
+                    Notification.objects.create(
+                        tenant=request.user.tenant,
+                        user=shop_manager,
+                        title="Cash Deposit from Attendant",
+                        message=f"{request.user.get_full_name() or request.user.email} has deposited {request.user.tenant.currency_symbol}{closing_cash} from their shift. Please confirm receipt.",
+                        notification_type='SYSTEM',
+                        reference_type='CashTransfer',
+                        reference_id=transfer.pk
+                    )
+                    
+                    messages.info(request, f"Cash transfer of {closing_cash} sent to {shop_manager.get_full_name()} for confirmation.")
+                else:
+                    messages.warning(request, "No shop manager found. Please manually transfer your cash.")
         
         return redirect('core:dashboard')
 

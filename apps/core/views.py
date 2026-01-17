@@ -14,7 +14,7 @@ from django.db.models import Count
 
 from .models import Tenant, Location, Role, User
 from .forms import LoginForm, TenantSetupForm, LocationForm, UserCreateForm, UserEditForm, TenantSettingsForm
-from .decorators import admin_required, AdminOrManagerRequiredMixin
+from .decorators import admin_required, AdminOrManagerRequiredMixin, AdminRequiredMixin
 
 
 class LoginView(View):
@@ -224,8 +224,8 @@ class LocationCreateView(LoginRequiredMixin, AdminOrManagerRequiredMixin, Create
         return super().form_valid(form)
 
 
-class LocationUpdateView(LoginRequiredMixin, AdminOrManagerRequiredMixin, UpdateView):
-    """Update an existing location. Restricted to admins and managers."""
+class LocationUpdateView(LoginRequiredMixin, AdminRequiredMixin, UpdateView):
+    """Update an existing location. Restricted to admins only."""
     model = Location
     form_class = LocationForm
     template_name = 'core/location_form.html'
@@ -239,8 +239,8 @@ class LocationUpdateView(LoginRequiredMixin, AdminOrManagerRequiredMixin, Update
         return super().form_valid(form)
 
 
-class LocationDeleteView(LoginRequiredMixin, AdminOrManagerRequiredMixin, DeleteView):
-    """Delete a location. Restricted to admins and managers."""
+class LocationDeleteView(LoginRequiredMixin, AdminRequiredMixin, DeleteView):
+    """Delete a location. Restricted to admins only."""
     model = Location
     template_name = 'core/location_confirm_delete.html'
     success_url = reverse_lazy('core:location_list')

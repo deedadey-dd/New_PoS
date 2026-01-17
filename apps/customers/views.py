@@ -40,6 +40,14 @@ class CustomerCreateView(LoginRequiredMixin, CreateView):
     template_name = 'customers/customer_form.html'
     success_url = reverse_lazy('customers:customer_list')
 
+    def dispatch(self, request, *args, **kwargs):
+        # Only Shop Managers and Admins can create customers
+        role = request.user.role.name if request.user.role else None
+        if role not in ['SHOP_MANAGER', 'ADMIN']:
+            messages.error(request, "Only shop managers can add customers.")
+            return redirect('customers:customer_list')
+        return super().dispatch(request, *args, **kwargs)
+    
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
         user = self.request.user
@@ -77,6 +85,14 @@ class CustomerUpdateView(LoginRequiredMixin, UpdateView):
     form_class = CustomerForm
     template_name = 'customers/customer_form.html'
     success_url = reverse_lazy('customers:customer_list')
+
+    def dispatch(self, request, *args, **kwargs):
+        # Only Shop Managers and Admins can edit customers
+        role = request.user.role.name if request.user.role else None
+        if role not in ['SHOP_MANAGER', 'ADMIN']:
+            messages.error(request, "Only shop managers can edit customers.")
+            return redirect('customers:customer_list')
+        return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
         qs = Customer.objects.filter(tenant=self.request.user.tenant)
@@ -124,6 +140,15 @@ class CustomerDetailView(LoginRequiredMixin, DetailView):
         # Pass payment receipt to context and then clear from session
         context['open_payment_receipt'] = self.request.session.pop('open_payment_receipt', None)
         
+        # Check if Paystack E-Cash is enabled for this tenant
+        from apps.payments.models import PaymentProviderSettings
+        paystack_settings = PaymentProviderSettings.objects.filter(
+            tenant=self.request.user.tenant,
+            provider='PAYSTACK',
+            is_active=True
+        ).first()
+        context['paystack_enabled'] = paystack_settings is not None
+        
         return context
 
 class CustomerPaymentView(LoginRequiredMixin, View):
@@ -170,8 +195,18 @@ class CustomerPaymentView(LoginRequiredMixin, View):
                     performed_by=request.user
                 )
                 
-                # Note: Cash payments are tracked via CustomerTransaction records
-                # Shift totals are computed from Sale records, not directly updated
+                # Record E-Cash payments in the E-Cash Ledger
+                # This ensures they go to ecash_balance, not cash_on_hand
+                if method == 'ECASH':
+                    from apps.payments.models import ECashLedger
+                    ECashLedger.record_payment(
+                        tenant=request.user.tenant,
+                        amount=amount,
+                        sale=None,  # No sale, this is a payment on account
+                        paystack_ref='',
+                        user=request.user,
+                        notes=f"E-Cash payment from customer: {customer.name}"
+                    )
             
             # Success message with receipt link
             messages.success(

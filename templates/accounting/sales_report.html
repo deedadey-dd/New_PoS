@@ -98,14 +98,19 @@
     </div>
 </div>
 
-<div class="row g-4">
+<!-- Collapsible Report Sections -->
+<div class="accordion" id="salesReportAccordion">
+
     <!-- Sales by Day -->
-    <div class="col-lg-6">
-        <div class="card h-100">
-            <div class="card-header bg-white">
-                <h5 class="mb-0"><i class="bi bi-calendar3 me-2"></i>Sales by Day</h5>
-            </div>
-            <div class="card-body" style="max-height: 300px; overflow-y: auto;">
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#salesByDay"
+                aria-expanded="true">
+                <i class="bi bi-calendar3 me-2"></i>Sales by Day
+            </button>
+        </h2>
+        <div id="salesByDay" class="accordion-collapse collapse show" data-bs-parent="#salesReportAccordion">
+            <div class="accordion-body" style="max-height: 300px; overflow-y: auto;">
                 {% if sales_by_day %}
                 <table class="table table-sm">
                     <thead class="table-light sticky-top">
@@ -134,12 +139,15 @@
     </div>
 
     <!-- Sales by Shop -->
-    <div class="col-lg-6">
-        <div class="card h-100">
-            <div class="card-header bg-white">
-                <h5 class="mb-0"><i class="bi bi-shop me-2"></i>Sales by Shop</h5>
-            </div>
-            <div class="card-body">
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                data-bs-target="#salesByShop">
+                <i class="bi bi-shop me-2"></i>Sales by Shop
+            </button>
+        </h2>
+        <div id="salesByShop" class="accordion-collapse collapse" data-bs-parent="#salesReportAccordion">
+            <div class="accordion-body">
                 {% if sales_by_shop %}
                 <table class="table table-sm">
                     <thead class="table-light">
@@ -168,12 +176,15 @@
     </div>
 
     <!-- Sales by Attendant -->
-    <div class="col-lg-6">
-        <div class="card h-100">
-            <div class="card-header bg-white">
-                <h5 class="mb-0"><i class="bi bi-people me-2"></i>Sales by Attendant</h5>
-            </div>
-            <div class="card-body">
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                data-bs-target="#salesByAttendant">
+                <i class="bi bi-people me-2"></i>Sales by Attendant
+            </button>
+        </h2>
+        <div id="salesByAttendant" class="accordion-collapse collapse" data-bs-parent="#salesReportAccordion">
+            <div class="accordion-body">
                 {% if sales_by_attendant %}
                 <table class="table table-sm">
                     <thead class="table-light">
@@ -208,13 +219,16 @@
         </div>
     </div>
 
-    <!-- Top Products -->
-    <div class="col-lg-6">
-        <div class="card h-100">
-            <div class="card-header bg-white">
-                <h5 class="mb-0"><i class="bi bi-trophy me-2"></i>Top Selling Products</h5>
-            </div>
-            <div class="card-body">
+    <!-- Top Selling Products (Top 10) -->
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                data-bs-target="#topProducts">
+                <i class="bi bi-trophy me-2"></i>Top 10 Selling Products
+            </button>
+        </h2>
+        <div id="topProducts" class="accordion-collapse collapse" data-bs-parent="#salesReportAccordion">
+            <div class="accordion-body">
                 {% if top_products %}
                 <table class="table table-sm">
                     <thead class="table-light">
@@ -242,5 +256,51 @@
             </div>
         </div>
     </div>
+
+    <!-- Full Product Sales Breakdown -->
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                data-bs-target="#allProducts">
+                <i class="bi bi-box-seam me-2"></i>Full Product Sales Breakdown
+                <span class="badge bg-primary ms-2">{{ all_products|length }} products</span>
+            </button>
+        </h2>
+        <div id="allProducts" class="accordion-collapse collapse" data-bs-parent="#salesReportAccordion">
+            <div class="accordion-body" style="max-height: 500px; overflow-y: auto;">
+                {% if all_products %}
+                <table class="table table-sm table-hover">
+                    <thead class="table-light sticky-top">
+                        <tr>
+                            <th>Product</th>
+                            <th class="text-center">Quantity</th>
+                            <th class="text-end">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for p in all_products %}
+                        <tr>
+                            <td>{{ p.product__name }}</td>
+                            <td class="text-center">{{ p.qty_sold|floatformat:0 }}</td>
+                            <td class="text-end">{{ currency_symbol }}{{ p.revenue|floatformat:2 }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot class="table-dark">
+                        <tr class="fw-bold">
+                            <td>TOTAL</td>
+                            <td class="text-center">{{ all_products_total_qty|floatformat:0 }}</td>
+                            <td class="text-end">{{ currency_symbol }}{{ all_products_total_revenue|floatformat:2 }}
+                            </td>
+                        </tr>
+                    </tfoot>
+                </table>
+                {% else %}
+                <p class="text-muted text-center py-4">No product data for this period</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
 </div>
 {% endblock %}

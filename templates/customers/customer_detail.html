@@ -63,7 +63,8 @@
                 <div class="collapse mt-3" id="paymentForm">
                     <div class="card card-body bg-light border-0 text-start">
                         <h6 class="mb-3">Receive Payment</h6>
-                        <form method="post" action="{% url 'customers:customer_payment' customer.pk %}">
+                        <form id="payment-form" method="post"
+                            action="{% url 'customers:customer_payment' customer.pk %}">
                             {% csrf_token %}
                             <div class="mb-2">
                                 <label class="form-label small">Amount</label>
@@ -77,7 +78,9 @@
                                 <label class="form-label small">Description</label>
                                 {{ payment_form.description }}
                             </div>
-                            <button type="submit" class="btn btn-primary w-100 btn-sm">Submit Payment</button>
+                            <button type="submit" class="btn btn-primary w-100 btn-sm" id="submit-payment-btn">
+                                Submit Payment
+                            </button>
                         </form>
                     </div>
                 </div>
@@ -134,11 +137,169 @@
         </div>
     </div>
 </div>
+
 {% if open_payment_receipt %}
 <script>
     // Auto-open payment receipt in new tab
     window.open('/customers/payment/{{ open_payment_receipt }}/receipt/', '_blank');
 </script>
 {% endif %}
+
+<!-- Paystack Inline JS for E-Cash payments -->
+<script src="https://js.paystack.co/v1/inline.js"></script>
+
+<script id="payment-config" data-currency="{{ currency_symbol }}" data-customer-id="{{ customer.pk }}"
+    data-customer-name="{{ customer.name|escapejs }}" data-customer-email="{{ customer.email|default:""|escapejs }}"
+    data-paystack-enabled="{{ paystack_enabled|yesno:"true,false" }}">
+        const configEl = document.getElementById('payment-config');
+        const CURRENCY = configEl.dataset.currency;
+        const CSRF_TOKEN = '{{ csrf_token }}';
+        const CUSTOMER_ID = configEl.dataset.customerId;
+        const CUSTOMER_NAME = configEl.dataset.customerName;
+        const CUSTOMER_EMAIL = configEl.dataset.customerEmail;
+        const PAYSTACK_ENABLED = configEl.dataset.paystackEnabled === 'true';
+
+        document.addEventListener('DOMContentLoaded', function () {
+            const form = document.getElementById('payment-form');
+            const paymentMethodSelect = document.getElementById('id_payment_method');
+            const submitBtn = document.getElementById('submit-payment-btn');
+
+            form.addEventListener('submit', async function (e) {
+                const paymentMethod = paymentMethodSelect.value;
+
+                // Only intercept ECASH payments if Paystack is enabled
+                if (paymentMethod !== 'ECASH' || !PAYSTACK_ENABLED) {
+                    return true;  // Let form submit normally for CASH/BANK or if Paystack not configured
+                }
+
+                e.preventDefault();  // Stop form submission for ECASH
+
+                const amountInput = document.getElementById('id_amount');
+                const amount = parseFloat(amountInput.value);
+
+                if (!amount || amount <= 0) {
+                    alert('Please enter a valid payment amount.');
+                    return;
+                }
+
+                // Disable button while processing
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Processing...';
+
+                try {
+                    // Initialize Paystack payment
+                    const response = await fetch('{% url "sales:initialize_ecash_payment" %}', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': CSRF_TOKEN
+                        },
+                        body: JSON.stringify({
+                            items: [],  // Empty cart - payment on account
+                            discount_amount: 0,
+                            customer_id: parseInt(CUSTOMER_ID),
+                            total: amount,
+                            is_payment_on_account: true
+                        })
+                    });
+
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        console.error('Server error:', response.status, errorText);
+                        alert(`Server error (${response.status}): ${errorText.substring(0, 200)}`);
+                        submitBtn.disabled = false;
+                        submitBtn.innerHTML = 'Submit Payment';
+                        return;
+                    }
+
+                    const data = await response.json();
+
+                    if (!data.success) {
+                        alert(data.error || 'Failed to initialize payment.');
+                        submitBtn.disabled = false;
+                        submitBtn.innerHTML = 'Submit Payment';
+                        return;
+                    }
+
+                    // Open Paystack popup
+                    const handler = PaystackPop.setup({
+                        key: data.paystack_public_key,
+                        email: CUSTOMER_EMAIL || 'customer@example.com',
+                        amount: Math.round(amount * 100),  // Convert to pesewas
+                        currency: 'GHS',
+                        ref: data.reference,
+                        metadata: {
+                            tenant_id: data.tenant_id,
+                            customer_id: CUSTOMER_ID,
+                            payment_type: 'customer_payment_on_account',
+                            custom_fields: [
+                                {
+                                    display_name: "Customer Name",
+                                    variable_name: "customer_name",
+                                    value: CUSTOMER_NAME
+                                }
+                            ]
+                        },
+                        callback: function (response) {
+                            // Payment successful - verify and complete
+                            verifyPayment(response.reference, amount);
+                        },
+                        onClose: function () {
+                            // User closed popup without completing
+                            submitBtn.disabled = false;
+                            submitBtn.innerHTML = 'Submit Payment';
+                        }
+                    });
+
+                    handler.openIframe();
+
+                } catch (error) {
+                    console.error('E-Cash error:', error);
+                    alert('Failed to initialize e-cash payment. Please try again.');
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = 'Submit Payment';
+                }
+            });
+        });
+
+        async function verifyPayment(reference, amount) {
+            const submitBtn = document.getElementById('submit-payment-btn');
+            const descriptionInput = document.getElementById('id_description');
+
+            try {
+                const response = await fetch('{% url "sales:verify_ecash_payment" %}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': CSRF_TOKEN
+                    },
+                    body: JSON.stringify({
+                        reference: reference,
+                        sale_id: null,  // No sale for payment on account
+                        is_payment_on_account: true,
+                        customer_id: CUSTOMER_ID,
+                        amount: amount,
+                        description: descriptionInput ? descriptionInput.value : 'Debt Repayment'
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    // Reload page to show updated balance and transaction
+                    window.location.reload();
+                } else {
+                    alert(data.error || 'Payment verification failed.');
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = 'Submit Payment';
+                }
+            } catch (error) {
+                console.error('Verification error:', error);
+                alert('Payment verification failed. Please contact support.');
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = 'Submit Payment';
+            }
+        }
+    </script>
 
 {% endblock %}

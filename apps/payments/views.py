@@ -223,11 +223,199 @@ class ECashLedgerView(LoginRequiredMixin, ListView):
     def get_queryset(self):
         return ECashLedger.objects.filter(
             tenant=self.request.user.tenant
-        ).select_related('created_by').order_by('-created_at')
+        ).select_related('created_by', 'shop').order_by('-created_at')
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['ecash_balance'] = ECashLedger.get_current_balance(self.request.user.tenant)
+        return context
+
+
+class ShopECashListView(LoginRequiredMixin, TemplateView):
+    """
+    Accountant view: List all shops with their E-Cash balances.
+    Allows withdrawing e-cash from specific shops.
+    """
+    template_name = 'payments/shop_ecash_list.html'
+    
+    def dispatch(self, request, *args, **kwargs):
+        # Only Accountant and Admin can access
+        if request.user.role and request.user.role.name not in ['ACCOUNTANT', 'ADMIN']:
+            messages.error(request, "Only accountants can access shop e-cash balances.")
+            return redirect('core:dashboard')
+        return super().dispatch(request, *args, **kwargs)
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        tenant = self.request.user.tenant
+        
+        # Get all shops
+        from apps.core.models import Location
+        shops = Location.objects.filter(
+            tenant=tenant,
+            location_type='SHOP',
+            is_active=True
+        ).order_by('name')
+        
+        # Calculate e-cash balance for each shop
+        shop_balances = []
+        total_ecash = Decimal('0')
+        for shop in shops:
+            balance = ECashLedger.get_shop_balance(tenant, shop)
+            shop_balances.append({
+                'shop': shop,
+                'balance': balance
+            })
+            total_ecash += balance
+        
+        context['shop_balances'] = shop_balances
+        context['total_ecash'] = total_ecash
+        context['tenant_ecash'] = ECashLedger.get_current_balance(tenant)
+        return context
+
+
+class ShopECashWithdrawView(LoginRequiredMixin, TemplateView):
+    """
+    Accountant view: Withdraw all e-cash from a specific shop.
+    """
+    template_name = 'payments/shop_ecash_withdraw.html'
+    
+    def dispatch(self, request, *args, **kwargs):
+        # Only Accountant and Admin can access
+        if request.user.role and request.user.role.name not in ['ACCOUNTANT', 'ADMIN']:
+            messages.error(request, "Only accountants can withdraw e-cash.")
+            return redirect('core:dashboard')
+        return super().dispatch(request, *args, **kwargs)
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        tenant = self.request.user.tenant
+        shop_id = self.kwargs.get('shop_id')
+        
+        from apps.core.models import Location
+        shop = get_object_or_404(Location, pk=shop_id, tenant=tenant, location_type='SHOP')
+        
+        context['shop'] = shop
+        context['balance'] = ECashLedger.get_shop_balance(tenant, shop)
+        return context
+    
+    def post(self, request, shop_id):
+        tenant = request.user.tenant
+        
+        from apps.core.models import Location
+        shop = get_object_or_404(Location, pk=shop_id, tenant=tenant, location_type='SHOP')
+        
+        balance = ECashLedger.get_shop_balance(tenant, shop)
+        
+        if balance <= 0:
+            messages.warning(request, f"No e-cash to withdraw from {shop.name}.")
+            return redirect('payments:shop_ecash_list')
+        
+        # Create and complete withdrawal
+        with transaction.atomic():
+            withdrawal = ECashWithdrawal.objects.create(
+                tenant=tenant,
+                amount=balance,
+                withdrawn_by=request.user,
+                shop=shop,
+                notes=f"E-Cash withdrawal from {shop.name}"
+            )
+            withdrawal.complete(request.user)
+            
+            # Notify shop manager if any
+            from apps.notifications.models import Notification
+            shop_managers = shop.users.filter(role__name='SHOP_MANAGER')
+            for manager in shop_managers:
+                Notification.objects.create(
+                    tenant=tenant,
+                    user=manager,
+                    title="E-Cash Withdrawn",
+                    message=f"E-cash balance of {balance} was withdrawn from {shop.name} by {request.user.get_full_name() or request.user.email}.",
+                    notification_type='SYSTEM',
+                    reference_type='ECashWithdrawal',
+                    reference_id=withdrawal.pk
+                )
+        
+        messages.success(
+            request, 
+            f"Successfully withdrawn {balance} e-cash from {shop.name}. "
+            f"The shop's e-cash balance is now 0."
+        )
+        return redirect('payments:shop_ecash_list')
+
+
+class ShopECashHistoryView(LoginRequiredMixin, ListView):
+    """
+    Shop Manager view: View e-cash transaction history for their shop.
+    """
+    model = ECashLedger
+    template_name = 'payments/shop_ecash_history.html'
+    context_object_name = 'transactions'
+    paginate_by = 30
+    
+    def dispatch(self, request, *args, **kwargs):
+        # Shop managers, accountants, auditors, and admins can access
+        allowed_roles = ['SHOP_MANAGER', 'ACCOUNTANT', 'AUDITOR', 'ADMIN']
+        if request.user.role and request.user.role.name not in allowed_roles:
+            messages.error(request, "You don't have permission to view e-cash history.")
+            return redirect('core:dashboard')
+        return super().dispatch(request, *args, **kwargs)
+    
+    def get_queryset(self):
+        user = self.request.user
+        tenant = user.tenant
+        
+        # Get the shop to filter by
+        shop = self._get_shop()
+        if not shop:
+            return ECashLedger.objects.none()
+        
+        return ECashLedger.objects.filter(
+            tenant=tenant,
+            shop=shop
+        ).select_related('created_by').order_by('-created_at')
+    
+    def _get_shop(self):
+        """Get the shop to show history for."""
+        user = self.request.user
+        tenant = user.tenant
+        shop_id = self.request.GET.get('shop')
+        
+        from apps.core.models import Location
+        
+        # Accountants/Auditors/Admins can view any shop
+        if user.role and user.role.name in ['ACCOUNTANT', 'AUDITOR', 'ADMIN']:
+            if shop_id:
+                return Location.objects.filter(
+                    pk=shop_id, tenant=tenant, location_type='SHOP'
+                ).first()
+            # Default to first shop if none specified
+            return Location.objects.filter(
+                tenant=tenant, location_type='SHOP', is_active=True
+            ).first()
+        
+        # Shop managers see their assigned shop
+        if user.location and user.location.location_type == 'SHOP':
+            return user.location
+        
+        return None
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        user = self.request.user
+        tenant = user.tenant
+        shop = self._get_shop()
+        
+        context['shop'] = shop
+        context['shop_balance'] = ECashLedger.get_shop_balance(tenant, shop) if shop else Decimal('0')
+        
+        # For accountants/auditors, provide shop selector
+        if user.role and user.role.name in ['ACCOUNTANT', 'AUDITOR', 'ADMIN']:
+            from apps.core.models import Location
+            context['all_shops'] = Location.objects.filter(
+                tenant=tenant, location_type='SHOP', is_active=True
+            ).order_by('name')
+        
         return context
 
 
