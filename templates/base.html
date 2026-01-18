@@ -362,8 +362,8 @@
                     </a>
                     {% endif %}
 
-                    <!-- E-Cash Balance Badge (exclude ADMIN) -->
-                    {% if ecash_balance is not None and role_name in 'SHOP_MANAGER,ACCOUNTANT,AUDITOR' %}
+                    <!-- E-Cash Balance Badge (exclude ADMIN and AUDITOR) -->
+                    {% if ecash_balance is not None and role_name in 'SHOP_MANAGER,ACCOUNTANT' %}
                     <a href="{% if role_name == 'SHOP_MANAGER' %}{% url 'payments:shop_ecash_history' %}{% elif role_name == 'ACCOUNTANT' %}{% url 'payments:shop_ecash_list' %}{% else %}{% url 'payments:ecash_ledger' %}{% endif %}"
                         class="me-3 text-decoration-none"
                         title="E-Cash Balance - Click to {% if role_name == 'ACCOUNTANT' %}withdraw{% else %}view history{% endif %}">

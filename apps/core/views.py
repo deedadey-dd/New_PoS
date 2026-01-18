@@ -11,11 +11,42 @@ from django.views import View
 from django.views.generic import ListView, CreateView, UpdateView, DeleteView
 from django.urls import reverse_lazy
 from django.db.models import Count
+from django.http import JsonResponse
+from django.core.mail import send_mail
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
+from django.conf import settings
 
 from .models import Tenant, Location, Role, User
 from .forms import LoginForm, TenantSetupForm, LocationForm, UserCreateForm, UserEditForm, TenantSettingsForm
 from .decorators import admin_required, AdminOrManagerRequiredMixin, AdminRequiredMixin
 
+
+class HomePageView(View):
+    """Display the home/landing page with features and login form."""
+    template_name = 'core/home.html'
+    
+    def get(self, request):
+        if request.user.is_authenticated:
+            return redirect('core:dashboard')
+        form = LoginForm()
+        return render(request, self.template_name, {'form': form})
+    
+    def post(self, request):
+        """Handle login form submission from home page."""
+        form = LoginForm(request, data=request.POST)
+        if form.is_valid():
+            user = form.get_user()
+            login(request, user)
+            
+            # Check if admin needs tenant setup
+            if user.is_admin and not user.tenant:
+                return redirect('core:tenant_setup')
+            
+            messages.success(request, f'Welcome back, {user.get_full_name() or user.email}!')
+            return redirect('core:dashboard')
+        
+        return render(request, self.template_name, {'form': form})
 
 class LoginView(View):
     """Handle user login."""
@@ -321,18 +352,21 @@ class UserDeleteView(LoginRequiredMixin, DeleteView):
 
 class AuditorDashboardView(LoginRequiredMixin, View):
     """
-    Auditor dashboard with financial reports and product movement tracking.
-    Read-only view for auditors to monitor financials and inventory movements.
+    Auditor dashboard with financial reports, product movement tracking,
+    cash transfers, e-cash transactions, shifts, and comprehensive sales reporting.
     """
     template_name = 'core/auditor_dashboard.html'
     
     def get(self, request):
-        from django.db.models import Sum, Count, Q
+        from django.db.models import Sum, Count, Q, F
         from django.utils import timezone
-        from datetime import timedelta
-        from apps.sales.models import Sale
+        from datetime import timedelta, datetime
+        from apps.sales.models import Sale, SaleItem, Shift
         from apps.inventory.models import InventoryLedger
         from apps.transfers.models import Transfer
+        from apps.accounting.models import CashTransfer
+        from apps.payments.models import ECashLedger
+        from apps.customers.models import Customer
         
         user = request.user
         role_name = user.role.name if user.role else None
@@ -348,29 +382,56 @@ class AuditorDashboardView(LoginRequiredMixin, View):
         if not tenant:
             return render(request, self.template_name, context)
         
-        # Get date range from query params
-        date_range = request.GET.get('range', 'today')
         today = timezone.now().date()
         
-        if date_range == 'week':
-            start_date = today - timedelta(days=7)
-            context['date_range_label'] = 'Last 7 Days'
-        elif date_range == 'month':
-            start_date = today - timedelta(days=30)
-            context['date_range_label'] = 'Last 30 Days'
-        elif date_range == 'all':
-            start_date = None
-            context['date_range_label'] = 'All Time'
-        else:
-            start_date = today
-            context['date_range_label'] = 'Today'
+        # ============ DATE RANGE HANDLING ============
+        # Support both preset ranges and custom dates
+        date_range = request.GET.get('range', 'today')
+        date_from = request.GET.get('date_from')
+        date_to = request.GET.get('date_to')
         
-        context['current_range'] = date_range
+        # Custom date range takes priority
+        if date_from and date_to:
+            try:
+                start_date = datetime.strptime(date_from, '%Y-%m-%d').date()
+                end_date = datetime.strptime(date_to, '%Y-%m-%d').date()
+                context['date_range_label'] = f'{start_date.strftime("%b %d")} - {end_date.strftime("%b %d, %Y")}'
+                context['current_range'] = 'custom'
+                context['date_from'] = start_date
+                context['date_to'] = end_date
+            except ValueError:
+                start_date = today
+                end_date = today
+                context['date_range_label'] = 'Today'
+                context['current_range'] = 'today'
+        else:
+            end_date = today
+            if date_range == 'week':
+                start_date = today - timedelta(days=7)
+                context['date_range_label'] = 'Last 7 Days'
+            elif date_range == 'month':
+                start_date = today - timedelta(days=30)
+                context['date_range_label'] = 'Last 30 Days'
+            elif date_range == 'all':
+                start_date = None
+                end_date = None
+                context['date_range_label'] = 'All Time'
+            else:
+                start_date = today
+                context['date_range_label'] = 'Today'
+            context['current_range'] = date_range
+        
+        # Build date filter for queries
+        def get_date_filter(field_name='created_at__date'):
+            q = Q()
+            if start_date:
+                q &= Q(**{f'{field_name}__gte': start_date})
+            if end_date:
+                q &= Q(**{f'{field_name}__lte': end_date})
+            return q
         
         # ============ FINANCIAL SUMMARY ============
-        sales_filter = Q(tenant=tenant, status='COMPLETED')
-        if start_date:
-            sales_filter &= Q(created_at__date__gte=start_date)
+        sales_filter = Q(tenant=tenant, status='COMPLETED') & get_date_filter()
         
         sales_data = Sale.objects.filter(sales_filter).aggregate(
             total_revenue=Sum('total'),
@@ -395,9 +456,7 @@ class AuditorDashboardView(LoginRequiredMixin, View):
             context['financial']['avg_sale'] = 0
         
         # ============ PRODUCT MOVEMENT SUMMARY ============
-        ledger_filter = Q(tenant=tenant)
-        if start_date:
-            ledger_filter &= Q(created_at__date__gte=start_date)
+        ledger_filter = Q(tenant=tenant) & get_date_filter()
         
         movement_data = InventoryLedger.objects.filter(ledger_filter).values(
             'transaction_type'
@@ -406,27 +465,24 @@ class AuditorDashboardView(LoginRequiredMixin, View):
             total_qty=Sum('quantity')
         )
         
-        # Convert to dict for easy template access
         movements = {}
         for item in movement_data:
             movements[item['transaction_type']] = {
                 'count': item['count'],
                 'quantity': abs(item['total_qty'] or 0)
             }
-        
         context['movements'] = movements
         
         # ============ RECENT LEDGER ENTRIES ============
+        recent_ledger_filter = Q(tenant=tenant) & get_date_filter()
         context['recent_ledger'] = InventoryLedger.objects.filter(
-            tenant=tenant
+            recent_ledger_filter
         ).select_related(
             'product', 'location', 'created_by', 'batch'
-        ).order_by('-created_at')[:15]
+        ).order_by('-created_at')[:20]
         
         # ============ TRANSFER SUMMARY ============
-        transfer_filter = Q(tenant=tenant)
-        if start_date:
-            transfer_filter &= Q(created_at__date__gte=start_date)
+        transfer_filter = Q(tenant=tenant) & get_date_filter()
         
         transfer_data = Transfer.objects.filter(transfer_filter).values(
             'status'
@@ -436,6 +492,102 @@ class AuditorDashboardView(LoginRequiredMixin, View):
         for item in transfer_data:
             transfers[item['status']] = item['count']
         context['transfers'] = transfers
+        
+        # ============ CASH TRANSFERS ============
+        cash_transfer_filter = Q(tenant=tenant) & get_date_filter()
+        context['cash_transfers'] = CashTransfer.objects.filter(
+            cash_transfer_filter
+        ).select_related(
+            'from_user', 'to_user', 'from_location', 'to_location'
+        ).order_by('-created_at')[:20]
+        
+        # Cash transfer summary
+        cash_transfer_summary = CashTransfer.objects.filter(
+            cash_transfer_filter
+        ).aggregate(
+            total_deposits=Sum('amount', filter=Q(transfer_type='DEPOSIT', status='CONFIRMED')),
+            total_floats=Sum('amount', filter=Q(transfer_type='FLOAT', status='CONFIRMED')),
+            pending_count=Count('id', filter=Q(status='PENDING'))
+        )
+        context['cash_transfer_summary'] = cash_transfer_summary
+        
+        # ============ E-CASH TRANSACTIONS ============
+        ecash_filter = Q(tenant=tenant) & get_date_filter()
+        context['ecash_ledger'] = ECashLedger.objects.filter(
+            ecash_filter
+        ).select_related('created_by', 'shop').order_by('-created_at')[:20]
+        
+        # E-cash summary
+        ecash_summary = ECashLedger.objects.filter(ecash_filter).aggregate(
+            total_payments=Sum('amount', filter=Q(transaction_type='PAYMENT')),
+            total_withdrawals=Sum('amount', filter=Q(transaction_type='WITHDRAWAL'))
+        )
+        context['ecash_summary'] = ecash_summary
+        
+        # ============ SHIFT HISTORY ============
+        shift_filter = Q(shop__tenant=tenant) & get_date_filter('start_time__date')
+        context['shifts'] = Shift.objects.filter(
+            shift_filter
+        ).select_related('shop', 'attendant').order_by('-start_time')[:20]
+        
+        # Shift summary
+        shift_summary = Shift.objects.filter(shift_filter).aggregate(
+            total_shifts=Count('id'),
+            open_shifts=Count('id', filter=Q(status='OPEN')),
+            closed_shifts=Count('id', filter=Q(status='CLOSED'))
+        )
+        context['shift_summary'] = shift_summary
+        
+        # ============ SALES BY DAY ============
+        context['sales_by_day'] = Sale.objects.filter(sales_filter).values(
+            'created_at__date'
+        ).annotate(
+            count=Count('id'),
+            revenue=Sum('total')
+        ).order_by('-created_at__date')[:30]
+        
+        # ============ SALES BY SHOP ============
+        context['sales_by_shop'] = Sale.objects.filter(sales_filter).values(
+            'shop__name'
+        ).annotate(
+            count=Count('id'),
+            revenue=Sum('total')
+        ).order_by('-revenue')
+        
+        # ============ SALES BY ATTENDANT ============
+        context['sales_by_attendant'] = Sale.objects.filter(sales_filter).values(
+            'attendant__first_name', 'attendant__last_name', 'attendant__email'
+        ).annotate(
+            count=Count('id'),
+            revenue=Sum('total')
+        ).order_by('-revenue')
+        
+        # ============ TOP PRODUCTS ============
+        product_sales_filter = Q(sale__tenant=tenant, sale__status='COMPLETED') & get_date_filter('sale__created_at__date')
+        context['top_products'] = SaleItem.objects.filter(
+            product_sales_filter
+        ).values('product__name').annotate(
+            qty_sold=Sum('quantity'),
+            revenue=Sum('total')
+        ).order_by('-revenue')[:10]
+        
+        # ============ ALL PRODUCTS BREAKDOWN ============
+        all_products = SaleItem.objects.filter(
+            product_sales_filter
+        ).values('product__name').annotate(
+            qty_sold=Sum('quantity'),
+            revenue=Sum('total')
+        ).order_by('product__name')
+        context['all_products'] = all_products
+        
+        # Calculate totals for footer
+        context['all_products_total_qty'] = sum(p['qty_sold'] or 0 for p in all_products)
+        context['all_products_total_revenue'] = sum(p['revenue'] or 0 for p in all_products)
+        
+        # ============ CREDIT SALES SUMMARY ============
+        context['total_credit_outstanding'] = Customer.objects.filter(
+            tenant=tenant
+        ).aggregate(total=Sum('current_balance'))['total'] or 0
         
         return render(request, self.template_name, context)
 
@@ -561,3 +713,64 @@ class DocumentationView(LoginRequiredMixin, View):
     
     def get(self, request):
         return render(request, self.template_name)
+
+
+class ContactSubmitView(View):
+    """Handle contact form submission from home page."""
+    
+    def post(self, request):
+        try:
+            name = request.POST.get('name', '').strip()
+            phone = request.POST.get('phone', '').strip()
+            email = request.POST.get('email', '').strip()
+            message = request.POST.get('message', '').strip()
+            whatsapp_contact = request.POST.get('whatsapp_contact') == 'on'
+            
+            # Validate required fields
+            if not name or not phone:
+                return JsonResponse({
+                    'success': False, 
+                    'error': 'Name and phone number are required.'
+                }, status=400)
+            
+            # Compose email content
+            email_subject = f"POS System Inquiry from {name}"
+            email_body = f"""
+New inquiry from POS System website:
+
+Name: {name}
+Phone: {phone}
+Email: {email or 'Not provided'}
+WhatsApp Contact: {'Yes' if whatsapp_contact else 'No'}
+
+Message:
+{message or 'No message provided'}
+
+---
+This message was sent from the POS System landing page contact form.
+"""
+            
+            # Send email
+            try:
+                send_mail(
+                    subject=email_subject,
+                    message=email_body,
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    recipient_list=['hendaxis@gmail.com'],
+                    fail_silently=False,
+                )
+            except Exception as e:
+                # Log the error but still return success to user
+                # In production, you might want to log this properly
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Failed to send contact email: {e}")
+                # Still return success - we can follow up manually
+            
+            return JsonResponse({'success': True})
+            
+        except Exception as e:
+            return JsonResponse({
+                'success': False, 
+                'error': 'An error occurred. Please try again.'
+            }, status=500)

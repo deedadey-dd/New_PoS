@@ -55,12 +55,43 @@
                     class="btn btn-sm {% if date_range == 'all' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
                     All Time
                 </a>
+                <button type="button"
+                    class="btn btn-sm {% if date_range == 'custom' %}btn-success{% else %}btn-outline-success{% endif %}"
+                    data-bs-toggle="collapse" data-bs-target="#customDatePicker">
+                    <i class="bi bi-calendar-range me-1"></i>Custom
+                </button>
                 <span class="ms-auto text-muted">
                     <i class="bi bi-calendar3 me-1"></i> {{ date_label }}
                 </span>
             </div>
+            <!-- Custom Date Picker (Collapsible) -->
+            <div class="collapse {% if date_range == 'custom' %}show{% endif %} mt-3" id="customDatePicker">
+                <form method="get" class="row g-2 align-items-end">
+                    <div class="col-auto">
+                        <label class="form-label small mb-1">From Date</label>
+                        <input type="date" name="date_from" class="form-control form-control-sm"
+                            value="{{ date_from|date:'Y-m-d' }}">
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small mb-1">To Date</label>
+                        <input type="date" name="date_to" class="form-control form-control-sm"
+                            value="{{ date_to|date:'Y-m-d' }}">
+                    </div>
+                    <div class="col-auto">
+                        <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
+
+    <!-- Date Warning Alert -->
+    {% if date_warning %}
+    <div class="alert alert-warning alert-dismissible fade show mt-2" role="alert">
+        <i class="bi bi-exclamation-triangle me-2"></i>{{ date_warning }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    {% endif %}
 
     <!-- Summary Cards -->
     <div class="row mb-4">

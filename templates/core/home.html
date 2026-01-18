@@ -1,0 +1,1024 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- SEO Meta Tags -->
+    <title>Modern POS System - Inventory Management, Sales & Reporting Platform</title>
+    <meta name="description"
+        content="Complete Point of Sale system with inventory management, stock tracking, multi-payment methods, shift management, and comprehensive reporting. Perfect for retail businesses with multiple locations.">
+    <meta name="keywords"
+        content="POS, Point of Sale, Inventory Management, Stock Tracking, Sales, Retail, Ghana, Africa">
+    <meta name="author" content="POS System">
+
+    <!-- Open Graph / Social Media -->
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Modern POS System - Complete Retail Management Platform">
+    <meta property="og:description"
+        content="Streamline your retail operations with inventory management, multi-location support, and real-time reporting.">
+    <meta property="og:image" content="{% static 'images/og-image.png' %}">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="{% static 'images/favicon.ico' %}">
+
+    <!-- Styles -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+
+    <style>
+        :root {
+            --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --secondary-gradient: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            --dark-gradient: linear-gradient(135deg, #0c1445 0%, #1a1a2e 50%, #16213e 100%);
+            --glass-bg: rgba(255, 255, 255, 0.1);
+            --glass-border: rgba(255, 255, 255, 0.2);
+        }
+
+        * {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+
+        body {
+            overflow-x: hidden;
+        }
+
+        /* Hero Section */
+        .hero-section {
+            min-height: 100vh;
+            background: var(--dark-gradient);
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+        }
+
+        .hero-section::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background:
+                radial-gradient(circle at 20% 80%, rgba(102, 126, 234, 0.3) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(118, 75, 162, 0.3) 0%, transparent 50%),
+                radial-gradient(circle at 40% 40%, rgba(240, 147, 251, 0.2) 0%, transparent 40%);
+            animation: pulse 15s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                transform: scale(1) rotate(0deg);
+            }
+
+            50% {
+                transform: scale(1.1) rotate(5deg);
+            }
+        }
+
+        /* Floating shapes */
+        .floating-shape {
+            position: absolute;
+            border-radius: 50%;
+            opacity: 0.1;
+            animation: float 20s ease-in-out infinite;
+        }
+
+        .shape-1 {
+            width: 400px;
+            height: 400px;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            top: -100px;
+            right: -100px;
+            animation-delay: 0s;
+        }
+
+        .shape-2 {
+            width: 300px;
+            height: 300px;
+            background: linear-gradient(45deg, #f093fb, #f5576c);
+            bottom: -50px;
+            left: -50px;
+            animation-delay: -5s;
+        }
+
+        .shape-3 {
+            width: 200px;
+            height: 200px;
+            background: linear-gradient(45deg, #4facfe, #00f2fe);
+            top: 50%;
+            left: 30%;
+            animation-delay: -10s;
+        }
+
+        @keyframes float {
+
+            0%,
+            100% {
+                transform: translateY(0) rotate(0deg);
+            }
+
+            33% {
+                transform: translateY(-30px) rotate(5deg);
+            }
+
+            66% {
+                transform: translateY(20px) rotate(-5deg);
+            }
+        }
+
+        .hero-content {
+            position: relative;
+            z-index: 10;
+        }
+
+        .hero-title {
+            font-size: 3.5rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #fff 0%, #e0e0e0 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 1.5rem;
+            line-height: 1.2;
+        }
+
+        .hero-subtitle {
+            font-size: 1.25rem;
+            color: rgba(255, 255, 255, 0.8);
+            max-width: 500px;
+            line-height: 1.7;
+        }
+
+        /* Glass Card */
+        .glass-card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            padding: 2.5rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+        }
+
+        .login-card {
+            max-width: 400px;
+            margin-left: auto;
+        }
+
+        .login-card h3 {
+            color: white;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .login-card .subtitle {
+            color: rgba(255, 255, 255, 0.7);
+            margin-bottom: 2rem;
+        }
+
+        .form-control-glass {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            padding: 0.875rem 1rem;
+            border-radius: 12px;
+            transition: all 0.3s ease;
+        }
+
+        .form-control-glass::placeholder {
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .form-control-glass:focus {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: rgba(102, 126, 234, 0.8);
+            box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.2);
+            color: white;
+        }
+
+        .btn-gradient {
+            background: var(--primary-gradient);
+            border: none;
+            padding: 0.875rem 2rem;
+            border-radius: 12px;
+            font-weight: 600;
+            color: white;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-gradient::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: 0.5s;
+        }
+
+        .btn-gradient:hover::before {
+            left: 100%;
+        }
+
+        .btn-gradient:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 40px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-outline-light-custom {
+            border: 2px solid rgba(255, 255, 255, 0.5);
+            color: white;
+            background: transparent;
+            padding: 0.875rem 2rem;
+            border-radius: 12px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .btn-outline-light-custom:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: white;
+            color: white;
+            transform: translateY(-2px);
+        }
+
+        /* Contact Modal */
+        .modal-content-dark {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 24px;
+        }
+
+        .modal-header-dark {
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .modal-footer-dark {
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .whatsapp-link {
+            color: #25D366;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.3s ease;
+        }
+
+        .whatsapp-link:hover {
+            color: #128C7E;
+            text-decoration: underline;
+        }
+
+        .btn-whatsapp {
+            background: linear-gradient(135deg, #25D366 0%, #128C7E 100%);
+            border: none;
+            color: white;
+            font-weight: 600;
+            border-radius: 12px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(37, 211, 102, 0.3);
+        }
+
+        .btn-whatsapp:hover {
+            background: linear-gradient(135deg, #128C7E 0%, #075E54 100%);
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(37, 211, 102, 0.4);
+        }
+
+        .btn-whatsapp:active {
+            transform: translateY(0);
+        }
+
+        .form-check-input-glass {
+            background-color: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+
+        .form-check-input-glass:checked {
+            background-color: #25D366;
+            border-color: #25D366;
+        }
+
+        /* Currency Selector */
+        .currency-selector {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            border-radius: 8px;
+            padding: 0.5rem 1rem;
+            cursor: pointer;
+        }
+
+        .currency-selector option {
+            background: #1a1a2e;
+            color: white;
+        }
+
+        /* Features Section */
+        .features-section {
+            padding: 100px 0;
+            background: linear-gradient(180deg, #f8f9fa 0%, #ffffff 100%);
+        }
+
+        .section-badge {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+            border-radius: 50px;
+            color: #667eea;
+            font-weight: 600;
+            font-size: 0.875rem;
+            margin-bottom: 1rem;
+        }
+
+        .section-title {
+            font-size: 2.5rem;
+            font-weight: 800;
+            color: #1a1a2e;
+            margin-bottom: 1rem;
+        }
+
+        .section-subtitle {
+            color: #6c757d;
+            font-size: 1.125rem;
+            max-width: 600px;
+            margin: 0 auto 3rem;
+        }
+
+        /* Feature Cards */
+        .feature-card {
+            background: white;
+            border-radius: 20px;
+            padding: 2rem;
+            height: 100%;
+            border: 1px solid rgba(0, 0, 0, 0.05);
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .feature-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: var(--primary-gradient);
+            transform: scaleX(0);
+            transition: transform 0.3s ease;
+        }
+
+        .feature-card:hover::before {
+            transform: scaleX(1);
+        }
+
+        .feature-card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.1);
+        }
+
+        .feature-icon {
+            width: 64px;
+            height: 64px;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.75rem;
+            margin-bottom: 1.25rem;
+        }
+
+        .feature-icon.inventory {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .feature-icon.alerts {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+        }
+
+        .feature-icon.transfers {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+        }
+
+        .feature-icon.metrics {
+            background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+            color: white;
+        }
+
+        .feature-icon.payments {
+            background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+            color: white;
+        }
+
+        .feature-icon.accountant {
+            background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+            color: #333;
+        }
+
+        .feature-icon.shops {
+            background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);
+            color: #333;
+        }
+
+        .feature-icon.auditor {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .feature-icon.shifts {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+        }
+
+        .feature-card h4 {
+            font-weight: 700;
+            color: #1a1a2e;
+            margin-bottom: 0.75rem;
+        }
+
+        .feature-card p {
+            color: #6c757d;
+            font-size: 0.95rem;
+            line-height: 1.6;
+            margin-bottom: 0;
+        }
+
+        /* CTA Section */
+        .cta-section {
+            padding: 100px 0;
+            background: var(--dark-gradient);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .cta-section::before {
+            content: '';
+            position: absolute;
+            width: 500px;
+            height: 500px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(102, 126, 234, 0.3) 0%, transparent 70%);
+            top: -200px;
+            right: -200px;
+        }
+
+        .cta-title {
+            font-size: 2.5rem;
+            font-weight: 800;
+            color: white;
+            margin-bottom: 1rem;
+        }
+
+        .cta-subtitle {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 1.125rem;
+            margin-bottom: 2rem;
+        }
+
+        /* Footer */
+        .footer {
+            background: #0c1445;
+            padding: 3rem 0 2rem;
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .footer-logo {
+            color: white;
+            font-weight: 700;
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .footer-links a {
+            color: rgba(255, 255, 255, 0.7);
+            text-decoration: none;
+            transition: color 0.3s ease;
+        }
+
+        .footer-links a:hover {
+            color: white;
+        }
+
+        /* Responsive */
+        @media (max-width: 992px) {
+            .hero-title {
+                font-size: 2.5rem;
+            }
+
+            .login-card {
+                margin: 3rem auto 0;
+            }
+        }
+
+        @media (max-width: 576px) {
+            .hero-title {
+                font-size: 2rem;
+            }
+
+            .section-title {
+                font-size: 1.75rem;
+            }
+
+            .glass-card {
+                padding: 1.5rem;
+            }
+        }
+
+        /* Scroll Animations */
+        .fade-up {
+            opacity: 0;
+            transform: translateY(30px);
+            transition: all 0.6s ease;
+        }
+
+        .fade-up.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Hero Section -->
+    <section class="hero-section" id="hero">
+        <div class="floating-shape shape-1"></div>
+        <div class="floating-shape shape-2"></div>
+        <div class="floating-shape shape-3"></div>
+
+        <div class="container hero-content">
+            <div class="row align-items-center">
+                <div class="col-lg-6 mb-5 mb-lg-0">
+                    <!-- Currency Selector -->
+                    <div class="mb-4">
+                        <select class="currency-selector" id="currencySelect" title="Select Currency">
+                            <option value="GHS">🇬🇭 GHS - Ghana Cedi</option>
+                            <option value="USD">🇺🇸 USD - US Dollar</option>
+                            <option value="EUR">🇪🇺 EUR - Euro</option>
+                            <option value="CFA">🇸🇳 CFA - CFA Franc</option>
+                            <option value="GBP">🇬🇧 GBP - British Pound</option>
+                            <option value="NGN">🇳🇬 NGN - Nigerian Naira</option>
+                        </select>
+                    </div>
+
+                    <h1 class="hero-title">
+                        Modern Point of Sale System for Your Business
+                    </h1>
+                    <p class="hero-subtitle">
+                        Streamline your retail operations with powerful inventory management,
+                        multi-location support, real-time analytics, and seamless payment processing.
+                        Everything you need to run your business efficiently.
+                    </p>
+                    <div class="d-flex flex-wrap gap-3 mt-4">
+                        <a href="#features" class="btn btn-gradient btn-lg">
+                            <i class="bi bi-arrow-down-circle me-2"></i>Explore Features
+                        </a>
+                        <button type="button" class="btn btn-outline-light-custom btn-lg" data-bs-toggle="modal"
+                            data-bs-target="#contactModal">
+                            <i class="bi bi-rocket-takeoff me-2"></i>Get Started Now
+                        </button>
+                    </div>
+                </div>
+
+                <div class="col-lg-6">
+                    <div class="glass-card login-card">
+                        <h3><i class="bi bi-box-arrow-in-right me-2"></i>Welcome Back</h3>
+                        <p class="subtitle">Sign in to access your dashboard</p>
+
+                        {% if form.non_field_errors %}
+                        <div class="alert alert-danger py-2">
+                            {% for error in form.non_field_errors %}
+                            {{ error }}
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+
+                        <form method="post" action="{% url 'core:login' %}" id="loginForm">
+                            {% csrf_token %}
+
+                            <div class="mb-3">
+                                <label for="id_username" class="form-label text-white-50 small">Email Address</label>
+                                <input type="email"
+                                    class="form-control form-control-glass {% if form.username.errors %}is-invalid{% endif %}"
+                                    name="username" id="id_username" placeholder="Enter your email"
+                                    value="{{ form.username.value|default:'' }}" required>
+                                {% if form.username.errors %}
+                                <div class="invalid-feedback">
+                                    {% for error in form.username.errors %}{{ error }}{% endfor %}
+                                </div>
+                                {% endif %}
+                            </div>
+
+                            <div class="mb-4">
+                                <label for="id_password" class="form-label text-white-50 small">Password</label>
+                                <input type="password"
+                                    class="form-control form-control-glass {% if form.password.errors %}is-invalid{% endif %}"
+                                    name="password" id="id_password" placeholder="Enter your password" required>
+                                {% if form.password.errors %}
+                                <div class="invalid-feedback">
+                                    {% for error in form.password.errors %}{{ error }}{% endfor %}
+                                </div>
+                                {% endif %}
+                            </div>
+
+                            <button type="submit" class="btn btn-gradient w-100 py-3">
+                                <i class="bi bi-unlock me-2"></i>Sign In
+                            </button>
+
+                            <div class="text-center mt-3">
+                                <a href="{% url 'password_reset' %}" class="text-white-50 small text-decoration-none">
+                                    <i class="bi bi-key me-1"></i>Forgot Password? (Admins only)
+                                </a>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="features-section" id="features">
+        <div class="container">
+            <div class="text-center mb-5">
+                <span class="section-badge">
+                    <i class="bi bi-stars me-1"></i>Powerful Features
+                </span>
+                <h2 class="section-title">Everything You Need to Succeed</h2>
+                <p class="section-subtitle">
+                    A comprehensive suite of tools designed to help you manage your retail business
+                    from production to sales.
+                </p>
+            </div>
+
+            <div class="row g-4">
+                <!-- Inventory Management -->
+                <div class="col-lg-4 col-md-6 fade-up">
+                    <div class="feature-card">
+                        <div class="feature-icon inventory">
+                            <i class="bi bi-box-seam"></i>
+                        </div>
+                        <h4>Inventory Management</h4>
+                        <p>Complete control over your inventory across production, stores, and retail shops. Track stock
+                            levels, manage batches, and set custom pricing per location.</p>
+                    </div>
+                </div>
+
+                <!-- Low Stock Alerts -->
+                <div class="col-lg-4 col-md-6 fade-up">
+                    <div class="feature-card">
+                        <div class="feature-icon alerts">
+                            <i class="bi bi-exclamation-triangle"></i>
+                        </div>
+                        <h4>Low Stock Alerts</h4>
+                        <p>Never run out of stock again. Automatic notifications when inventory drops below reorder
+                            levels, keeping your shelves stocked and customers happy.</p>
+                    </div>
+                </div>
+
+                <!-- Product Transfers -->
+                <div class="col-lg-4 col-md-6 fade-up">
+                    <div class="feature-card">
+                        <div class="feature-icon transfers">
+                            <i class="bi bi-arrow-left-right"></i>
+                        </div>
+                        <h4>Product Transfer & Tracking</h4>
+                        <p>Seamlessly move products from production to stores to shops. Full traceability with dispute
+                            handling for quantity discrepancies.</p>
+                    </div>
+                </div>
+
+                <!-- Metrics & Reporting -->
+                <div class="col-lg-4 col-md-6 fade-up">
+                    <div class="feature-card">
+                        <div class="feature-icon metrics">
+                            <i class="bi bi-graph-up-arrow"></i>
+                        </div>
+                        <h4>Metrics & Reporting</h4>
+                        <p>Gain insights with top 10 product reports, periodic sales analysis, profit/loss tracking by
+                            product, location, or manager.</p>
+                    </div>
+                </div>
+
+                <!-- Multi-Payment -->
+                <div class="col-lg-4 col-md-6 fade-up">
+                    <div class="feature-card">
+                        <div class="feature-icon payments">
+                            <i class="bi bi-credit-card-2-front"></i>
+                        </div>
+                        <h4>Multi-Payment Methods</h4>
+                        <p>Accept Cash, E-Cash (Mobile Money via Paystack), and Credit Sales on customer accounts.
+                            Flexible payment options for any customer.</p>
+                    </div>
+                </div>
+
+                <!-- Accountant View -->
+                <div class="col-lg-4 col-md-6 fade-up">
+                    <div class="feature-card">
+                        <div class="feature-icon accountant">
+                            <i class="bi bi-cash-stack"></i>
+                        </div>
+                        <h4>Accountant View</h4>
+                        <p>Dedicated dashboard for accountants to track cash flows, manage cash transfers, view price
+                            history, and monitor financial health.</p>
+                    </div>
+                </div>
+
+                <!-- Multiple Shops -->
+                <div class="col-lg-4 col-md-6 fade-up">
+                    <div class="feature-card">
+                        <div class="feature-icon shops">
+                            <i class="bi bi-shop-window"></i>
+                        </div>
+                        <h4>Multiple Shops Support</h4>
+                        <p>Manage multiple retail locations with the same or different stores. Each shop can have custom
+                            pricing and independent inventory.</p>
+                    </div>
+                </div>
+
+                <!-- Auditor View -->
+                <div class="col-lg-4 col-md-6 fade-up">
+                    <div class="feature-card">
+                        <div class="feature-icon auditor">
+                            <i class="bi bi-search"></i>
+                        </div>
+                        <h4>Auditor View</h4>
+                        <p>Read-only access for auditors to review all transactions, inventory movements, transfers, and
+                            sales. Complete transparency and accountability.</p>
+                    </div>
+                </div>
+
+                <!-- Shift System -->
+                <div class="col-lg-4 col-md-6 fade-up">
+                    <div class="feature-card">
+                        <div class="feature-icon shifts">
+                            <i class="bi bi-clock-history"></i>
+                        </div>
+                        <h4>Shift System</h4>
+                        <p>Manage multiple attendants per store with shift tracking. Open/close shifts with cash
+                            reconciliation and accountability per user.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="cta-section">
+        <div class="container text-center position-relative" style="z-index: 10;">
+            <h2 class="cta-title">Ready to Transform Your Business?</h2>
+            <p class="cta-subtitle">Join businesses across Africa using our modern POS solution</p>
+            <button type="button" class="btn btn-gradient btn-lg" data-bs-toggle="modal" data-bs-target="#contactModal">
+                <i class="bi bi-rocket-takeoff me-2"></i>Get Started Now
+            </button>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-md-6 mb-3 mb-md-0">
+                    <div class="footer-logo">
+                        <i class="bi bi-shop"></i>
+                        <span>POS System</span>
+                    </div>
+                    <p class="small mt-2 mb-0">Complete retail management solution</p>
+                </div>
+                <div class="col-md-6">
+                    <div class="footer-links d-flex justify-content-md-end gap-4">
+                        <a href="{% url 'core:help' %}"><i class="bi bi-question-circle me-1"></i>Help</a>
+                        <a href="{% url 'core:documentation' %}"><i class="bi bi-book me-1"></i>Documentation</a>
+                    </div>
+                </div>
+            </div>
+            <hr class="my-4" style="border-color: rgba(255,255,255,0.1);">
+            <div class="text-center small">
+                &copy; {% now "Y" %} POS System. All rights reserved.
+            </div>
+        </div>
+    </footer>
+
+    <!-- Contact Modal -->
+    <div class="modal fade" id="contactModal" tabindex="-1" aria-labelledby="contactModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content modal-content-dark">
+                <div class="modal-header modal-header-dark border-0 pb-0">
+                    <h4 class="modal-title text-white" id="contactModalLabel">
+                        <i class="bi bi-rocket-takeoff me-2 text-primary"></i>Get Started
+                    </h4>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                        aria-label="Close"></button>
+                </div>
+                <div class="modal-body pt-2">
+                    <p class="text-white-50 mb-4">Ready to transform your business? Let's chat!</p>
+
+                    <!-- WhatsApp Primary CTA -->
+                    <div class="text-center mb-4">
+                        <a href="https://wa.me/233XXXXXXXXX?text=Hi!%20I'm%20interested%20in%20the%20POS%20System.%20Please%20tell%20me%20more."
+                            target="_blank" class="btn btn-whatsapp btn-lg w-100 py-3">
+                            <i class="bi bi-whatsapp me-2 fs-5"></i>Chat with us on WhatsApp
+                        </a>
+                        <p class="text-white-50 small mt-2 mb-0">
+                            <i class="bi bi-lightning-charge me-1"></i>Fastest response time
+                        </p>
+                    </div>
+
+                    <!-- Divider -->
+                    <div class="d-flex align-items-center my-4">
+                        <hr class="flex-grow-1" style="border-color: rgba(255,255,255,0.2);">
+                        <span class="px-3 text-white-50 small">or leave your details</span>
+                        <hr class="flex-grow-1" style="border-color: rgba(255,255,255,0.2);">
+                    </div>
+
+                    <!-- Collapsible Form -->
+                    <div class="text-center mb-3">
+                        <button class="btn btn-outline-light-custom w-100" type="button" data-bs-toggle="collapse"
+                            data-bs-target="#contactFormCollapse">
+                            <i class="bi bi-envelope me-2"></i>Request a callback instead
+                        </button>
+                    </div>
+
+                    <div class="collapse" id="contactFormCollapse">
+                        <form id="contactForm" class="pt-3">
+                            <div class="mb-3">
+                                <label for="contactName" class="form-label text-white-50 small">Your Name</label>
+                                <input type="text" class="form-control form-control-glass" id="contactName" name="name"
+                                    placeholder="Enter your name" required>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="contactPhone" class="form-label text-white-50 small">Phone Number</label>
+                                <input type="tel" class="form-control form-control-glass" id="contactPhone" name="phone"
+                                    placeholder="e.g. +233 XX XXX XXXX" required>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="contactEmail" class="form-label text-white-50 small">Email Address
+                                    (Optional)</label>
+                                <input type="email" class="form-control form-control-glass" id="contactEmail"
+                                    name="email" placeholder="your@email.com">
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="contactMessage" class="form-label text-white-50 small">Message
+                                    (Optional)</label>
+                                <textarea class="form-control form-control-glass" id="contactMessage" name="message"
+                                    rows="2" placeholder="Tell us about your business..."></textarea>
+                            </div>
+
+                            <div class="mb-3">
+                                <div class="form-check">
+                                    <input class="form-check-input form-check-input-glass" type="checkbox"
+                                        id="whatsappContact" name="whatsapp_contact" checked>
+                                    <label class="form-check-label text-white-50" for="whatsappContact">
+                                        <i class="bi bi-whatsapp text-success me-1"></i>You can contact me via WhatsApp
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div class="d-grid">
+                                <button type="submit" class="btn btn-gradient py-3" id="submitContactBtn">
+                                    <i class="bi bi-send me-2"></i>Send Message
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Success Message -->
+                    <div id="contactSuccess" class="text-center py-4" style="display: none;">
+                        <div class="mb-3">
+                            <i class="bi bi-check-circle-fill text-success" style="font-size: 4rem;"></i>
+                        </div>
+                        <h5 class="text-white">Thank You!</h5>
+                        <p class="text-white-50">We've received your message and will call you back soon.</p>
+                        <button type="button" class="btn btn-gradient mt-2" data-bs-dismiss="modal">Close</button>
+                    </div>
+
+                    <!-- Error Message -->
+                    <div id="contactError" class="alert alert-danger mt-3" style="display: none;">
+                        <i class="bi bi-exclamation-circle me-2"></i>
+                        <span id="contactErrorMessage">Something went wrong. Please try again.</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Scroll animations
+        document.addEventListener('DOMContentLoaded', function () {
+            const fadeElements = document.querySelectorAll('.fade-up');
+
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        entry.target.classList.add('visible');
+                    }
+                });
+            }, {
+                threshold: 0.1,
+                rootMargin: '0px 0px -50px 0px'
+            });
+
+            fadeElements.forEach(el => observer.observe(el));
+
+            // Smooth scroll for anchor links
+            document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+                anchor.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    const target = document.querySelector(this.getAttribute('href'));
+                    if (target) {
+                        target.scrollIntoView({
+                            behavior: 'smooth',
+                            block: 'start'
+                        });
+                    }
+                });
+            });
+
+            // Currency selector - store preference
+            const currencySelect = document.getElementById('currencySelect');
+            const savedCurrency = localStorage.getItem('preferredCurrency');
+            if (savedCurrency) {
+                currencySelect.value = savedCurrency;
+            }
+
+            currencySelect.addEventListener('change', function () {
+                localStorage.setItem('preferredCurrency', this.value);
+            });
+
+            // Contact Form Submission
+            const contactForm = document.getElementById('contactForm');
+            const submitBtn = document.getElementById('submitContactBtn');
+            const successDiv = document.getElementById('contactSuccess');
+            const errorDiv = document.getElementById('contactError');
+            const errorMessage = document.getElementById('contactErrorMessage');
+
+            contactForm.addEventListener('submit', async function (e) {
+                e.preventDefault();
+
+                // Disable button and show loading
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Sending...';
+                errorDiv.style.display = 'none';
+
+                try {
+                    const formData = new FormData(contactForm);
+                    const response = await fetch('{% url "core:contact_submit" %}', {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': '{{ csrf_token }}'
+                        },
+                        body: formData
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success) {
+                        contactForm.style.display = 'none';
+                        successDiv.style.display = 'block';
+                    } else {
+                        throw new Error(data.error || 'Failed to send message');
+                    }
+                } catch (error) {
+                    errorMessage.textContent = error.message || 'Something went wrong. Please try again.';
+                    errorDiv.style.display = 'block';
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '<i class="bi bi-send me-2"></i>Send Message';
+                }
+            });
+
+            // Reset form when modal is closed
+            document.getElementById('contactModal').addEventListener('hidden.bs.modal', function () {
+                contactForm.reset();
+                contactForm.style.display = 'block';
+                successDiv.style.display = 'none';
+                errorDiv.style.display = 'none';
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="bi bi-send me-2"></i>Send Message';
+            });
+        });
+    </script>
+</body>
+
+</html>
