@@ -3,25 +3,50 @@
 {% block title %}Auditor Dashboard - {{ current_tenant.name }}{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
     <div>
         <h2 class="mb-1"><i class="bi bi-clipboard-data me-2"></i>Auditor Dashboard</h2>
-        <p class="text-muted mb-0">Financial reports and inventory movement tracking</p>
+        <p class="text-muted mb-0">Financial reports, transactions, and movement tracking</p>
     </div>
-    <!-- Date Range Filter -->
-    <div class="btn-group" role="group">
-        <a href="?range=today" class="btn btn-outline-primary {% if current_range == 'today' %}active{% endif %}">
-            Today
-        </a>
-        <a href="?range=week" class="btn btn-outline-primary {% if current_range == 'week' %}active{% endif %}">
-            7 Days
-        </a>
-        <a href="?range=month" class="btn btn-outline-primary {% if current_range == 'month' %}active{% endif %}">
-            30 Days
-        </a>
-        <a href="?range=all" class="btn btn-outline-primary {% if current_range == 'all' %}active{% endif %}">
-            All Time
-        </a>
+    <!-- Date Range Filters -->
+    <div class="d-flex flex-wrap gap-2 align-items-center">
+        <div class="btn-group" role="group">
+            <a href="?range=today"
+                class="btn btn-outline-primary btn-sm {% if current_range == 'today' %}active{% endif %}">Today</a>
+            <a href="?range=week"
+                class="btn btn-outline-primary btn-sm {% if current_range == 'week' %}active{% endif %}">7 Days</a>
+            <a href="?range=month"
+                class="btn btn-outline-primary btn-sm {% if current_range == 'month' %}active{% endif %}">30 Days</a>
+            <a href="?range=all"
+                class="btn btn-outline-primary btn-sm {% if current_range == 'all' %}active{% endif %}">All Time</a>
+        </div>
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="collapse"
+            data-bs-target="#customDateRange">
+            <i class="bi bi-calendar-range me-1"></i>Custom
+        </button>
+    </div>
+</div>
+
+<!-- Custom Date Range Picker -->
+<div class="collapse {% if current_range == 'custom' %}show{% endif %} mb-3" id="customDateRange">
+    <div class="card">
+        <div class="card-body py-2">
+            <form method="get" class="row g-2 align-items-end">
+                <div class="col-auto">
+                    <label class="form-label small mb-1">From Date</label>
+                    <input type="date" name="date_from" class="form-control form-control-sm"
+                        value="{{ date_from|date:'Y-m-d' }}">
+                </div>
+                <div class="col-auto">
+                    <label class="form-label small mb-1">To Date</label>
+                    <input type="date" name="date_to" class="form-control form-control-sm"
+                        value="{{ date_to|date:'Y-m-d' }}">
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+                </div>
+            </form>
+        </div>
     </div>
 </div>
 
@@ -30,6 +55,12 @@
     <span class="badge bg-info fs-6">
         <i class="bi bi-calendar-range me-1"></i>{{ date_range_label }}
     </span>
+    {% if total_credit_outstanding > 0 %}
+    <span class="badge bg-warning text-dark fs-6 ms-2">
+        <i class="bi bi-exclamation-triangle me-1"></i>Outstanding Credit:
+        {{ currency_symbol }}{{ total_credit_outstanding|floatformat:2 }}
+    </span>
+    {% endif %}
 </div>
 
 <!-- Financial Summary Cards -->
@@ -87,228 +118,613 @@
                         <h6 class="card-subtitle mb-2 opacity-75">E-Cash Sales</h6>
                         <h3 class="card-title mb-0">{{ currency_symbol }}{{ financial.ecash_sales|floatformat:2 }}</h3>
                     </div>
-                    <i class="bi bi-credit-card fs-1 opacity-50"></i>
+                    <i class="bi bi-phone fs-1 opacity-50"></i>
                 </div>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Product Movement Summary -->
-<div class="row g-4 mb-4">
-    <div class="col-lg-6">
-        <div class="card h-100">
-            <div class="card-header bg-white">
-                <h5 class="mb-0"><i class="bi bi-arrow-left-right me-2 text-primary"></i>Product Movements</h5>
+<!-- Main Accordion for All Reports -->
+<div class="accordion" id="auditorAccordion">
+
+    <!-- Sales Reports Section -->
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#salesReports">
+                <i class="bi bi-bar-chart-line me-2 text-success"></i>Sales Reports
+            </button>
+        </h2>
+        <div id="salesReports" class="accordion-collapse collapse show" data-bs-parent="#auditorAccordion">
+            <div class="accordion-body p-0">
+                <!-- Nested Accordion for Sales -->
+                <div class="accordion accordion-flush" id="salesSubAccordion">
+
+                    <!-- Sales by Day -->
+                    <div class="accordion-item">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                                data-bs-target="#salesByDay">
+                                <i class="bi bi-calendar3 me-2"></i>Sales by Day
+                            </button>
+                        </h2>
+                        <div id="salesByDay" class="accordion-collapse collapse">
+                            <div class="accordion-body" style="max-height: 300px; overflow-y: auto;">
+                                {% if sales_by_day %}
+                                <table class="table table-sm table-hover">
+                                    <thead class="table-light sticky-top">
+                                        <tr>
+                                            <th>Date</th>
+                                            <th class="text-center"># Sales</th>
+                                            <th class="text-end">Revenue</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for day in sales_by_day %}
+                                        <tr>
+                                            <td>{{ day.created_at__date|date:"D, M d" }}</td>
+                                            <td class="text-center"><span
+                                                    class="badge bg-secondary">{{ day.count }}</span></td>
+                                            <td class="text-end fw-bold text-success">
+                                                {{ currency_symbol }}{{ day.revenue|floatformat:2 }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                                {% else %}
+                                <p class="text-muted text-center py-3 mb-0">No sales data</p>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sales by Shop -->
+                    <div class="accordion-item">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                                data-bs-target="#salesByShop">
+                                <i class="bi bi-shop me-2"></i>Sales by Shop
+                            </button>
+                        </h2>
+                        <div id="salesByShop" class="accordion-collapse collapse">
+                            <div class="accordion-body">
+                                {% if sales_by_shop %}
+                                <table class="table table-sm table-hover">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Shop</th>
+                                            <th class="text-center"># Sales</th>
+                                            <th class="text-end">Revenue</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for shop in sales_by_shop %}
+                                        <tr>
+                                            <td><i class="bi bi-shop me-1 text-muted"></i>{{ shop.shop__name }}</td>
+                                            <td class="text-center"><span
+                                                    class="badge bg-secondary">{{ shop.count }}</span></td>
+                                            <td class="text-end fw-bold text-success">
+                                                {{ currency_symbol }}{{ shop.revenue|floatformat:2 }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                                {% else %}
+                                <p class="text-muted text-center py-3 mb-0">No sales data</p>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sales by Attendant -->
+                    <div class="accordion-item">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                                data-bs-target="#salesByAttendant">
+                                <i class="bi bi-people me-2"></i>Sales by Attendant
+                            </button>
+                        </h2>
+                        <div id="salesByAttendant" class="accordion-collapse collapse">
+                            <div class="accordion-body">
+                                {% if sales_by_attendant %}
+                                <table class="table table-sm table-hover">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Attendant</th>
+                                            <th class="text-center"># Sales</th>
+                                            <th class="text-end">Revenue</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for att in sales_by_attendant %}
+                                        <tr>
+                                            <td><i class="bi bi-person me-1 text-muted"></i>
+                                                {% if att.attendant__first_name %}{{ att.attendant__first_name }}
+                                                {{ att.attendant__last_name }}{% else %}{{ att.attendant__email }}{% endif %}
+                                            </td>
+                                            <td class="text-center"><span
+                                                    class="badge bg-secondary">{{ att.count }}</span></td>
+                                            <td class="text-end fw-bold text-success">
+                                                {{ currency_symbol }}{{ att.revenue|floatformat:2 }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                                {% else %}
+                                <p class="text-muted text-center py-3 mb-0">No sales data</p>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Top 10 Products -->
+                    <div class="accordion-item">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                                data-bs-target="#topProducts">
+                                <i class="bi bi-trophy me-2"></i>Top 10 Products
+                            </button>
+                        </h2>
+                        <div id="topProducts" class="accordion-collapse collapse">
+                            <div class="accordion-body">
+                                {% if top_products %}
+                                <table class="table table-sm table-hover">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Product</th>
+                                            <th class="text-center">Qty Sold</th>
+                                            <th class="text-end">Revenue</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for p in top_products %}
+                                        <tr>
+                                            <td>{{ p.product__name }}</td>
+                                            <td class="text-center"><span
+                                                    class="badge bg-secondary">{{ p.qty_sold|floatformat:0 }}</span>
+                                            </td>
+                                            <td class="text-end fw-bold text-success">
+                                                {{ currency_symbol }}{{ p.revenue|floatformat:2 }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                                {% else %}
+                                <p class="text-muted text-center py-3 mb-0">No product data</p>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- All Products Breakdown -->
+                    <div class="accordion-item">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                                data-bs-target="#allProducts">
+                                <i class="bi bi-box-seam me-2"></i>Full Product Breakdown
+                                <span class="badge bg-primary ms-2">{{ all_products|length }} products</span>
+                            </button>
+                        </h2>
+                        <div id="allProducts" class="accordion-collapse collapse">
+                            <div class="accordion-body" style="max-height: 400px; overflow-y: auto;">
+                                {% if all_products %}
+                                <table class="table table-sm table-hover">
+                                    <thead class="table-light sticky-top">
+                                        <tr>
+                                            <th>Product</th>
+                                            <th class="text-center">Quantity</th>
+                                            <th class="text-end">Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for p in all_products %}
+                                        <tr>
+                                            <td>{{ p.product__name }}</td>
+                                            <td class="text-center">{{ p.qty_sold|floatformat:0 }}</td>
+                                            <td class="text-end">{{ currency_symbol }}{{ p.revenue|floatformat:2 }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                    <tfoot class="table-dark">
+                                        <tr class="fw-bold">
+                                            <td>TOTAL</td>
+                                            <td class="text-center">{{ all_products_total_qty|floatformat:0 }}</td>
+                                            <td class="text-end">
+                                                {{ currency_symbol }}{{ all_products_total_revenue|floatformat:2 }}</td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                                {% else %}
+                                <p class="text-muted text-center py-3 mb-0">No product data</p>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div class="card-body">
-                <div class="table-responsive">
-                    <table class="table table-sm">
-                        <thead>
+        </div>
+    </div>
+
+    <!-- Financial Transactions Section -->
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                data-bs-target="#financialTransactions">
+                <i class="bi bi-cash-stack me-2 text-warning"></i>Financial Transactions
+                {% if cash_transfer_summary.pending_count %}<span
+                    class="badge bg-danger ms-2">{{ cash_transfer_summary.pending_count }} pending</span>{% endif %}
+            </button>
+        </h2>
+        <div id="financialTransactions" class="accordion-collapse collapse" data-bs-parent="#auditorAccordion">
+            <div class="accordion-body p-0">
+                <div class="accordion accordion-flush" id="financialSubAccordion">
+
+                    <!-- Cash Transfers -->
+                    <div class="accordion-item">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                                data-bs-target="#cashTransfers">
+                                <i class="bi bi-arrow-left-right me-2"></i>Cash Transfers
+                                <small class="ms-auto text-muted">
+                                    Deposits:
+                                    {{ currency_symbol }}{{ cash_transfer_summary.total_deposits|default:0|floatformat:2 }}
+                                    |
+                                    Floats:
+                                    {{ currency_symbol }}{{ cash_transfer_summary.total_floats|default:0|floatformat:2 }}
+                                </small>
+                            </button>
+                        </h2>
+                        <div id="cashTransfers" class="accordion-collapse collapse">
+                            <div class="accordion-body" style="max-height: 300px; overflow-y: auto;">
+                                {% if cash_transfers %}
+                                <table class="table table-sm table-hover">
+                                    <thead class="table-light sticky-top">
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>Type</th>
+                                            <th>From</th>
+                                            <th>To</th>
+                                            <th class="text-end">Amount</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for ct in cash_transfers %}
+                                        <tr>
+                                            <td><small>{{ ct.created_at|date:"M d, H:i" }}</small></td>
+                                            <td><span
+                                                    class="badge {% if ct.transfer_type == 'DEPOSIT' %}bg-success{% else %}bg-info{% endif %}">{{ ct.get_transfer_type_display }}</span>
+                                            </td>
+                                            <td><small>{{ ct.from_user.get_full_name|default:ct.from_user.email }}</small>
+                                            </td>
+                                            <td><small>{{ ct.to_user.get_full_name|default:ct.to_user.email }}</small>
+                                            </td>
+                                            <td class="text-end fw-bold">
+                                                {{ currency_symbol }}{{ ct.amount|floatformat:2 }}</td>
+                                            <td><span
+                                                    class="badge {% if ct.status == 'CONFIRMED' %}bg-success{% elif ct.status == 'PENDING' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">{{ ct.get_status_display }}</span>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                                {% else %}
+                                <p class="text-muted text-center py-3 mb-0">No cash transfers</p>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- E-Cash Transactions -->
+                    <div class="accordion-item">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                                data-bs-target="#ecashTrans">
+                                <i class="bi bi-phone me-2"></i>E-Cash Transactions
+                                <small class="ms-auto text-muted">
+                                    In: {{ currency_symbol }}{{ ecash_summary.total_payments|default:0|floatformat:2 }}
+                                    |
+                                    Out:
+                                    {{ currency_symbol }}{{ ecash_summary.total_withdrawals|default:0|floatformat:2 }}
+                                </small>
+                            </button>
+                        </h2>
+                        <div id="ecashTrans" class="accordion-collapse collapse">
+                            <div class="accordion-body" style="max-height: 300px; overflow-y: auto;">
+                                {% if ecash_ledger %}
+                                <table class="table table-sm table-hover">
+                                    <thead class="table-light sticky-top">
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>Type</th>
+                                            <th>Shop</th>
+                                            <th class="text-end">Amount</th>
+                                            <th>Reference</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for entry in ecash_ledger %}
+                                        <tr>
+                                            <td><small>{{ entry.created_at|date:"M d, H:i" }}</small></td>
+                                            <td><span
+                                                    class="badge {% if entry.transaction_type == 'PAYMENT' %}bg-success{% else %}bg-danger{% endif %}">{{ entry.get_transaction_type_display }}</span>
+                                            </td>
+                                            <td><small>{{ entry.shop.name|default:"-" }}</small></td>
+                                            <td
+                                                class="text-end fw-bold {% if entry.transaction_type == 'PAYMENT' %}text-success{% else %}text-danger{% endif %}">
+                                                {% if entry.transaction_type == 'PAYMENT' %}+{% else %}-{% endif %}{{ currency_symbol }}{{ entry.amount|floatformat:2 }}
+                                            </td>
+                                            <td><small
+                                                    class="text-muted">{{ entry.paystack_reference|default:"-"|truncatechars:15 }}</small>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                                {% else %}
+                                <p class="text-muted text-center py-3 mb-0">No e-cash transactions</p>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Shift History Section -->
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                data-bs-target="#shiftHistory">
+                <i class="bi bi-clock-history me-2 text-info"></i>Shift History
+                <span class="badge bg-secondary ms-2">{{ shift_summary.total_shifts|default:0 }} shifts</span>
+                {% if shift_summary.open_shifts %}<span class="badge bg-success ms-1">{{ shift_summary.open_shifts }}
+                    open</span>{% endif %}
+            </button>
+        </h2>
+        <div id="shiftHistory" class="accordion-collapse collapse" data-bs-parent="#auditorAccordion">
+            <div class="accordion-body" style="max-height: 400px; overflow-y: auto;">
+                {% if shifts %}
+                <table class="table table-sm table-hover">
+                    <thead class="table-light sticky-top">
+                        <tr>
+                            <th>Shop</th>
+                            <th>Attendant</th>
+                            <th>Start</th>
+                            <th>End</th>
+                            <th class="text-end">Opening</th>
+                            <th class="text-end">Closing</th>
+                            <th class="text-end">Variance</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for shift in shifts %}
+                        <tr>
+                            <td><small>{{ shift.shop.name }}</small></td>
+                            <td><small>{{ shift.attendant.get_full_name|default:shift.attendant.email }}</small></td>
+                            <td><small>{{ shift.start_time|date:"M d, H:i" }}</small></td>
+                            <td><small>{{ shift.end_time|date:"H:i"|default:"-" }}</small></td>
+                            <td class="text-end">{{ currency_symbol }}{{ shift.opening_cash|floatformat:2 }}</td>
+                            <td class="text-end">{{ shift.closing_cash|floatformat:2|default:"-" }}</td>
+                            <td
+                                class="text-end {% if shift.cash_variance and shift.cash_variance < 0 %}text-danger{% elif shift.cash_variance and shift.cash_variance > 0 %}text-success{% endif %}">
+                                {% if shift.status == 'CLOSED' %}{{ currency_symbol }}{{ shift.cash_variance|floatformat:2 }}{% else %}-{% endif %}
+                            </td>
+                            <td><span
+                                    class="badge {% if shift.status == 'OPEN' %}bg-success{% else %}bg-secondary{% endif %}">{{ shift.get_status_display }}</span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p class="text-muted text-center py-3 mb-0">No shift records</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Product Movements Section -->
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                data-bs-target="#productMovements">
+                <i class="bi bi-arrow-left-right me-2 text-primary"></i>Product Movements & Transfers
+            </button>
+        </h2>
+        <div id="productMovements" class="accordion-collapse collapse" data-bs-parent="#auditorAccordion">
+            <div class="accordion-body">
+                <div class="row g-4">
+                    <!-- Movement Summary -->
+                    <div class="col-lg-6">
+                        <div class="card h-100">
+                            <div class="card-header bg-white py-2">
+                                <h6 class="mb-0"><i class="bi bi-arrow-left-right me-2 text-primary"></i>Movement
+                                    Summary</h6>
+                            </div>
+                            <div class="card-body py-2">
+                                <table class="table table-sm mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Type</th>
+                                            <th class="text-center">Count</th>
+                                            <th class="text-end">Qty</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td><span class="badge bg-success me-2">IN</span>Stock In</td>
+                                            <td class="text-center">{{ movements.IN.count|default:0 }}</td>
+                                            <td class="text-end text-success">
+                                                +{{ movements.IN.quantity|default:0|floatformat:0 }}</td>
+                                        </tr>
+                                        <tr>
+                                            <td><span class="badge bg-info me-2">→</span>Transfer Out</td>
+                                            <td class="text-center">{{ movements.TRANSFER_OUT.count|default:0 }}</td>
+                                            <td class="text-end text-danger">
+                                                {{ movements.TRANSFER_OUT.quantity|default:0|floatformat:0 }}</td>
+                                        </tr>
+                                        <tr>
+                                            <td><span class="badge bg-info me-2">←</span>Transfer In</td>
+                                            <td class="text-center">{{ movements.TRANSFER_IN.count|default:0 }}</td>
+                                            <td class="text-end text-success">
+                                                +{{ movements.TRANSFER_IN.quantity|default:0|floatformat:0 }}</td>
+                                        </tr>
+                                        <tr>
+                                            <td><span class="badge bg-primary me-2">$</span>Sales</td>
+                                            <td class="text-center">{{ movements.SALE.count|default:0 }}</td>
+                                            <td class="text-end text-danger">
+                                                {{ movements.SALE.quantity|default:0|floatformat:0 }}</td>
+                                        </tr>
+                                        <tr>
+                                            <td><span class="badge bg-warning text-dark me-2">↩</span>Returns</td>
+                                            <td class="text-center">{{ movements.RETURN.count|default:0 }}</td>
+                                            <td class="text-end text-success">
+                                                +{{ movements.RETURN.quantity|default:0|floatformat:0 }}</td>
+                                        </tr>
+                                        <tr>
+                                            <td><span class="badge bg-danger me-2">✗</span>Damage</td>
+                                            <td class="text-center">{{ movements.DAMAGE.count|default:0 }}</td>
+                                            <td class="text-end text-danger">
+                                                {{ movements.DAMAGE.quantity|default:0|floatformat:0 }}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Transfer Status -->
+                    <div class="col-lg-6">
+                        <div class="card h-100">
+                            <div class="card-header bg-white py-2">
+                                <h6 class="mb-0"><i class="bi bi-truck me-2 text-info"></i>Transfer Status</h6>
+                            </div>
+                            <div class="card-body py-2">
+                                <div class="row g-2">
+                                    <div class="col-4">
+                                        <div class="p-2 bg-light rounded text-center">
+                                            <div class="h5 mb-0 text-secondary">{{ transfers.DRAFT|default:0 }}</div>
+                                            <small class="text-muted">Draft</small>
+                                        </div>
+                                    </div>
+                                    <div class="col-4">
+                                        <div class="p-2 bg-light rounded text-center">
+                                            <div class="h5 mb-0 text-primary">{{ transfers.SENT|default:0 }}</div><small
+                                                class="text-muted">In Transit</small>
+                                        </div>
+                                    </div>
+                                    <div class="col-4">
+                                        <div class="p-2 bg-light rounded text-center">
+                                            <div class="h5 mb-0 text-success">{{ transfers.RECEIVED|default:0 }}</div>
+                                            <small class="text-muted">Received</small>
+                                        </div>
+                                    </div>
+                                    <div class="col-4">
+                                        <div class="p-2 bg-light rounded text-center">
+                                            <div class="h5 mb-0 text-warning">{{ transfers.PARTIAL|default:0 }}</div>
+                                            <small class="text-muted">Partial</small>
+                                        </div>
+                                    </div>
+                                    <div class="col-4">
+                                        <div class="p-2 bg-light rounded text-center">
+                                            <div class="h5 mb-0 text-danger">{{ transfers.DISPUTED|default:0 }}</div>
+                                            <small class="text-muted">Disputed</small>
+                                        </div>
+                                    </div>
+                                    <div class="col-4">
+                                        <div class="p-2 bg-light rounded text-center">
+                                            <div class="h5 mb-0 text-dark">{{ transfers.CLOSED|default:0 }}</div><small
+                                                class="text-muted">Closed</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Inventory Ledger -->
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                data-bs-target="#recentLedger">
+                <i class="bi bi-journal-text me-2 text-secondary"></i>Recent Inventory Movements
+            </button>
+        </h2>
+        <div id="recentLedger" class="accordion-collapse collapse" data-bs-parent="#auditorAccordion">
+            <div class="accordion-body">
+                <div class="d-flex justify-content-end mb-2">
+                    <a href="{% url 'inventory:inventory_ledger' %}" class="btn btn-sm btn-primary">View Full Ledger <i
+                            class="bi bi-arrow-right ms-1"></i></a>
+                </div>
+                {% if recent_ledger %}
+                <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                    <table class="table table-hover table-sm">
+                        <thead class="table-light sticky-top">
                             <tr>
-                                <th>Movement Type</th>
-                                <th class="text-center">Transactions</th>
-                                <th class="text-end">Total Qty</th>
+                                <th>Timestamp</th>
+                                <th>Type</th>
+                                <th>Product</th>
+                                <th>Location</th>
+                                <th class="text-end">Qty</th>
+                                <th>User</th>
+                                <th>Reference</th>
                             </tr>
                         </thead>
                         <tbody>
+                            {% for entry in recent_ledger %}
                             <tr>
+                                <td class="text-nowrap"><small>{{ entry.created_at|date:"M d, H:i" }}</small></td>
                                 <td>
-                                    <span class="badge bg-success me-2">IN</span>
-                                    Stock In (Production)
+                                    {% if entry.transaction_type == 'IN' %}<span class="badge bg-success">Stock
+                                        In</span>
+                                    {% elif entry.transaction_type == 'OUT' %}<span class="badge bg-danger">Stock
+                                        Out</span>
+                                    {% elif entry.transaction_type == 'TRANSFER_OUT' %}<span
+                                        class="badge bg-info">Transfer Out</span>
+                                    {% elif entry.transaction_type == 'TRANSFER_IN' %}<span
+                                        class="badge bg-info">Transfer In</span>
+                                    {% elif entry.transaction_type == 'SALE' %}<span
+                                        class="badge bg-primary">Sale</span>
+                                    {% elif entry.transaction_type == 'RETURN' %}<span
+                                        class="badge bg-warning text-dark">Return</span>
+                                    {% elif entry.transaction_type == 'ADJUST' %}<span
+                                        class="badge bg-secondary">Adjustment</span>
+                                    {% elif entry.transaction_type == 'DAMAGE' %}<span
+                                        class="badge bg-danger">Damage</span>
+                                    {% else %}<span
+                                        class="badge bg-secondary">{{ entry.get_transaction_type_display }}</span>{% endif %}
                                 </td>
-                                <td class="text-center">{{ movements.IN.count|default:0 }}</td>
-                                <td class="text-end text-success fw-bold">
-                                    +{{ movements.IN.quantity|default:0|floatformat:0 }}</td>
+                                <td>{{ entry.product.name }}</td>
+                                <td>{{ entry.location.name }}</td>
+                                <td
+                                    class="text-end fw-bold {% if entry.quantity > 0 %}text-success{% else %}text-danger{% endif %}">
+                                    {% if entry.quantity > 0 %}+{% endif %}{{ entry.quantity|floatformat:0 }}
+                                </td>
+                                <td><small>{{ entry.created_by.get_full_name|default:entry.created_by.email|default:"-" }}</small>
+                                </td>
+                                <td>{% if entry.reference_type %}<small class="text-muted">{{ entry.reference_type }}
+                                        #{{ entry.reference_id }}</small>{% else %}<small
+                                        class="text-muted">-</small>{% endif %}</td>
                             </tr>
-                            <tr>
-                                <td>
-                                    <span class="badge bg-info me-2">→</span>
-                                    Transfer Out
-                                </td>
-                                <td class="text-center">{{ movements.TRANSFER_OUT.count|default:0 }}</td>
-                                <td class="text-end text-danger">
-                                    {{ movements.TRANSFER_OUT.quantity|default:0|floatformat:0 }}</td>
-                            </tr>
-                            <tr>
-                                <td>
-                                    <span class="badge bg-info me-2">←</span>
-                                    Transfer In
-                                </td>
-                                <td class="text-center">{{ movements.TRANSFER_IN.count|default:0 }}</td>
-                                <td class="text-end text-success">
-                                    +{{ movements.TRANSFER_IN.quantity|default:0|floatformat:0 }}</td>
-                            </tr>
-                            <tr>
-                                <td>
-                                    <span class="badge bg-primary me-2">$</span>
-                                    Sales
-                                </td>
-                                <td class="text-center">{{ movements.SALE.count|default:0 }}</td>
-                                <td class="text-end text-danger">{{ movements.SALE.quantity|default:0|floatformat:0 }}
-                                </td>
-                            </tr>
-                            <tr>
-                                <td>
-                                    <span class="badge bg-warning text-dark me-2">↩</span>
-                                    Returns
-                                </td>
-                                <td class="text-center">{{ movements.RETURN.count|default:0 }}</td>
-                                <td class="text-end text-success">
-                                    +{{ movements.RETURN.quantity|default:0|floatformat:0 }}</td>
-                            </tr>
-                            <tr>
-                                <td>
-                                    <span class="badge bg-secondary me-2">±</span>
-                                    Adjustments
-                                </td>
-                                <td class="text-center">{{ movements.ADJUST.count|default:0 }}</td>
-                                <td class="text-end">{{ movements.ADJUST.quantity|default:0|floatformat:0 }}</td>
-                            </tr>
-                            <tr>
-                                <td>
-                                    <span class="badge bg-danger me-2">✗</span>
-                                    Damage/Write-off
-                                </td>
-                                <td class="text-center">{{ movements.DAMAGE.count|default:0 }}</td>
-                                <td class="text-end text-danger">{{ movements.DAMAGE.quantity|default:0|floatformat:0 }}
-                                </td>
-                            </tr>
+                            {% endfor %}
                         </tbody>
                     </table>
                 </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-lg-6">
-        <div class="card h-100">
-            <div class="card-header bg-white">
-                <h5 class="mb-0"><i class="bi bi-truck me-2 text-info"></i>Transfer Status</h5>
-            </div>
-            <div class="card-body">
-                <div class="row g-3">
-                    <div class="col-6">
-                        <div class="p-3 bg-light rounded text-center">
-                            <div class="h3 mb-0 text-secondary">{{ transfers.DRAFT|default:0 }}</div>
-                            <small class="text-muted">Draft</small>
-                        </div>
-                    </div>
-                    <div class="col-6">
-                        <div class="p-3 bg-light rounded text-center">
-                            <div class="h3 mb-0 text-primary">{{ transfers.SENT|default:0 }}</div>
-                            <small class="text-muted">In Transit</small>
-                        </div>
-                    </div>
-                    <div class="col-6">
-                        <div class="p-3 bg-light rounded text-center">
-                            <div class="h3 mb-0 text-success">{{ transfers.RECEIVED|default:0 }}</div>
-                            <small class="text-muted">Received</small>
-                        </div>
-                    </div>
-                    <div class="col-6">
-                        <div class="p-3 bg-light rounded text-center">
-                            <div class="h3 mb-0 text-warning">{{ transfers.PARTIAL|default:0 }}</div>
-                            <small class="text-muted">Partial</small>
-                        </div>
-                    </div>
-                    <div class="col-6">
-                        <div class="p-3 bg-light rounded text-center">
-                            <div class="h3 mb-0 text-danger">{{ transfers.DISPUTED|default:0 }}</div>
-                            <small class="text-muted">Disputed</small>
-                        </div>
-                    </div>
-                    <div class="col-6">
-                        <div class="p-3 bg-light rounded text-center">
-                            <div class="h3 mb-0 text-dark">{{ transfers.CLOSED|default:0 }}</div>
-                            <small class="text-muted">Closed</small>
-                        </div>
-                    </div>
+                {% else %}
+                <div class="text-center py-4 text-muted">
+                    <i class="bi bi-inbox display-4"></i>
+                    <p class="mt-2">No inventory movements recorded yet.</p>
                 </div>
+                {% endif %}
             </div>
         </div>
     </div>
-</div>
 
-<!-- Recent Inventory Movements -->
-<div class="card">
-    <div class="card-header bg-white d-flex justify-content-between align-items-center">
-        <h5 class="mb-0"><i class="bi bi-journal-text me-2 text-secondary"></i>Recent Inventory Movements</h5>
-        <a href="{% url 'inventory:inventory_ledger' %}" class="btn btn-sm btn-primary">
-            View Full Ledger <i class="bi bi-arrow-right ms-1"></i>
-        </a>
-    </div>
-    <div class="card-body">
-        {% if recent_ledger %}
-        <div class="table-responsive">
-            <table class="table table-hover table-sm">
-                <thead class="table-light">
-                    <tr>
-                        <th>Timestamp</th>
-                        <th>Type</th>
-                        <th>Product</th>
-                        <th>Location</th>
-                        <th class="text-end">Quantity</th>
-                        <th>User</th>
-                        <th>Reference</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for entry in recent_ledger %}
-                    <tr>
-                        <td class="text-nowrap">
-                            <small>{{ entry.created_at|date:"M d, H:i" }}</small>
-                        </td>
-                        <td>
-                            {% if entry.transaction_type == 'IN' %}
-                            <span class="badge bg-success">Stock In</span>
-                            {% elif entry.transaction_type == 'OUT' %}
-                            <span class="badge bg-danger">Stock Out</span>
-                            {% elif entry.transaction_type == 'TRANSFER_OUT' %}
-                            <span class="badge bg-info">Transfer Out</span>
-                            {% elif entry.transaction_type == 'TRANSFER_IN' %}
-                            <span class="badge bg-info">Transfer In</span>
-                            {% elif entry.transaction_type == 'SALE' %}
-                            <span class="badge bg-primary">Sale</span>
-                            {% elif entry.transaction_type == 'RETURN' %}
-                            <span class="badge bg-warning text-dark">Return</span>
-                            {% elif entry.transaction_type == 'ADJUST' %}
-                            <span class="badge bg-secondary">Adjustment</span>
-                            {% elif entry.transaction_type == 'DAMAGE' %}
-                            <span class="badge bg-danger">Damage</span>
-                            {% elif entry.transaction_type == 'PRODUCTION' %}
-                            <span class="badge bg-success">Production</span>
-                            {% else %}
-                            <span class="badge bg-secondary">{{ entry.get_transaction_type_display }}</span>
-                            {% endif %}
-                        </td>
-                        <td>{{ entry.product.name }}</td>
-                        <td>{{ entry.location.name }}</td>
-                        <td
-                            class="text-end fw-bold {% if entry.quantity > 0 %}text-success{% else %}text-danger{% endif %}">
-                            {% if entry.quantity > 0 %}+{% endif %}{{ entry.quantity|floatformat:0 }}
-                        </td>
-                        <td>
-                            <small>{{ entry.created_by.get_full_name|default:entry.created_by.email|default:"-" }}</small>
-                        </td>
-                        <td>
-                            {% if entry.reference_type %}
-                            <small class="text-muted">{{ entry.reference_type }} #{{ entry.reference_id }}</small>
-                            {% else %}
-                            <small class="text-muted">-</small>
-                            {% endif %}
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        {% else %}
-        <div class="text-center py-4 text-muted">
-            <i class="bi bi-inbox display-4"></i>
-            <p class="mt-2">No inventory movements recorded yet.</p>
-        </div>
-        {% endif %}
-    </div>
 </div>
 {% endblock %}

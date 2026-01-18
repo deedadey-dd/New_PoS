@@ -103,32 +103,74 @@ class ProductProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
     template_name = 'audit/product_profit_loss.html'
     
     def get(self, request):
+        from datetime import datetime
         tenant = request.user.tenant
         
-        # Parse date range
+        # Parse date range - support both preset and custom
         date_range = request.GET.get('range', 'month')
+        custom_from = request.GET.get('date_from')
+        custom_to = request.GET.get('date_to')
         today = timezone.now().date()
+        date_warning = None
         
-        if date_range == 'week':
-            date_from = today - timedelta(days=7)
-            date_label = 'Last 7 Days'
-        elif date_range == 'quarter':
-            date_from = today - timedelta(days=90)
-            date_label = 'Last 90 Days'
-        elif date_range == 'year':
-            date_from = today - timedelta(days=365)
-            date_label = 'Last 365 Days'
-        elif date_range == 'all':
-            date_from = None
-            date_label = 'All Time'
-        else:  # month (default)
+        # Custom dates take priority
+        if custom_from and custom_to:
+            try:
+                date_from = datetime.strptime(custom_from, '%Y-%m-%d').date()
+                date_to = datetime.strptime(custom_to, '%Y-%m-%d').date()
+                
+                # Validate: from date should not be after to date
+                if date_from > date_to:
+                    date_warning = 'From date was after To date - dates have been swapped.'
+                    date_from, date_to = date_to, date_from
+                
+                # Validate: dates should not be in the future
+                if date_to > today:
+                    date_warning = 'To date was in the future - adjusted to today.'
+                    date_to = today
+                
+                # Validate: date range shouldn't be too large (over 2 years)
+                if date_from and date_to and (date_to - date_from).days > 730:
+                    date_warning = 'Date range exceeds 2 years. Consider using a shorter range for better performance.'
+                
+                date_label = f'{date_from.strftime("%b %d")} - {date_to.strftime("%b %d, %Y")}'
+                date_range = 'custom'
+            except ValueError:
+                date_warning = 'Invalid date format. Using default 30-day range.'
+                date_from = today - timedelta(days=30)
+                date_to = today
+                date_label = 'Last 30 Days'
+        elif custom_from or custom_to:
+            # Only one date provided
+            date_warning = 'Both From and To dates are required for custom range. Using default.'
+            date_to = today
             date_from = today - timedelta(days=30)
             date_label = 'Last 30 Days'
+        else:
+            date_to = today
+            if date_range == 'week':
+                date_from = today - timedelta(days=7)
+                date_label = 'Last 7 Days'
+            elif date_range == 'quarter':
+                date_from = today - timedelta(days=90)
+                date_label = 'Last 90 Days'
+            elif date_range == 'year':
+                date_from = today - timedelta(days=365)
+                date_label = 'Last 365 Days'
+            elif date_range == 'all':
+                date_from = None
+                date_to = None
+                date_label = 'All Time'
+            else:  # month (default)
+                date_from = today - timedelta(days=30)
+                date_label = 'Last 30 Days'
         
         # Build query
         filters = Q(sale__tenant=tenant, sale__status='COMPLETED')
         if date_from:
             filters &= Q(sale__created_at__date__gte=date_from)
+        if date_to:
+            filters &= Q(sale__created_at__date__lte=date_to)
         
         product_data = list(SaleItem.objects.filter(filters).values(
             'product__id', 'product__name', 'product__sku', 'product__category__name'
@@ -170,6 +212,8 @@ class ProductProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
             'date_range': date_range,
             'date_label': date_label,
             'date_from': date_from,
+            'date_to': date_to,
+            'date_warning': date_warning,
         }
         
         return render(request, self.template_name, context)
@@ -182,27 +226,67 @@ class LocationProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
     template_name = 'audit/location_profit_loss.html'
     
     def get(self, request):
+        from datetime import datetime
         tenant = request.user.tenant
         
-        # Parse date range
+        # Parse date range - support both preset and custom
         date_range = request.GET.get('range', 'month')
+        custom_from = request.GET.get('date_from')
+        custom_to = request.GET.get('date_to')
         today = timezone.now().date()
+        date_warning = None
         
-        if date_range == 'week':
-            date_from = today - timedelta(days=7)
-            date_label = 'Last 7 Days'
-        elif date_range == 'quarter':
-            date_from = today - timedelta(days=90)
-            date_label = 'Last 90 Days'
-        elif date_range == 'year':
-            date_from = today - timedelta(days=365)
-            date_label = 'Last 365 Days'
-        elif date_range == 'all':
-            date_from = None
-            date_label = 'All Time'
-        else:
+        # Custom dates take priority
+        if custom_from and custom_to:
+            try:
+                date_from = datetime.strptime(custom_from, '%Y-%m-%d').date()
+                date_to = datetime.strptime(custom_to, '%Y-%m-%d').date()
+                
+                # Validate: from date should not be after to date
+                if date_from > date_to:
+                    date_warning = 'From date was after To date - dates have been swapped.'
+                    date_from, date_to = date_to, date_from
+                
+                # Validate: dates should not be in the future
+                if date_to > today:
+                    date_warning = 'To date was in the future - adjusted to today.'
+                    date_to = today
+                
+                # Validate: date range shouldn't be too large (over 2 years)
+                if date_from and date_to and (date_to - date_from).days > 730:
+                    date_warning = 'Date range exceeds 2 years. Consider using a shorter range for better performance.'
+                
+                date_label = f'{date_from.strftime("%b %d")} - {date_to.strftime("%b %d, %Y")}'
+                date_range = 'custom'
+            except ValueError:
+                date_warning = 'Invalid date format. Using default 30-day range.'
+                date_from = today - timedelta(days=30)
+                date_to = today
+                date_label = 'Last 30 Days'
+        elif custom_from or custom_to:
+            # Only one date provided
+            date_warning = 'Both From and To dates are required for custom range. Using default.'
+            date_to = today
             date_from = today - timedelta(days=30)
             date_label = 'Last 30 Days'
+        else:
+            date_to = today
+            if date_range == 'week':
+                date_from = today - timedelta(days=7)
+                date_label = 'Last 7 Days'
+            elif date_range == 'quarter':
+                date_from = today - timedelta(days=90)
+                date_label = 'Last 90 Days'
+            elif date_range == 'year':
+                date_from = today - timedelta(days=365)
+                date_label = 'Last 365 Days'
+            elif date_range == 'all':
+                date_from = None
+                date_to = None
+                date_label = 'All Time'
+            else:
+                date_from = today - timedelta(days=30)
+                date_label = 'Last 30 Days'
         
         # Shop-level aggregation
         location_data = []
@@ -214,6 +298,8 @@ class LocationProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
             )
             if date_from:
                 shop_sales = shop_sales.filter(created_at__date__gte=date_from)
+            if date_to:
+                shop_sales = shop_sales.filter(created_at__date__lte=date_to)
             
             # Get items for these sales
             sale_items = SaleItem.objects.filter(sale__in=shop_sales)
@@ -256,6 +342,8 @@ class LocationProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
             'date_range': date_range,
             'date_label': date_label,
             'date_from': date_from,
+            'date_to': date_to,
+            'date_warning': date_warning,
         }
         
         return render(request, self.template_name, context)
@@ -268,27 +356,67 @@ class ManagerProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
     template_name = 'audit/manager_profit_loss.html'
     
     def get(self, request):
+        from datetime import datetime
         tenant = request.user.tenant
         
-        # Parse date range
+        # Parse date range - support both preset and custom
         date_range = request.GET.get('range', 'month')
+        custom_from = request.GET.get('date_from')
+        custom_to = request.GET.get('date_to')
         today = timezone.now().date()
+        date_warning = None
         
-        if date_range == 'week':
-            date_from = today - timedelta(days=7)
-            date_label = 'Last 7 Days'
-        elif date_range == 'quarter':
-            date_from = today - timedelta(days=90)
-            date_label = 'Last 90 Days'
-        elif date_range == 'year':
-            date_from = today - timedelta(days=365)
-            date_label = 'Last 365 Days'
-        elif date_range == 'all':
-            date_from = None
-            date_label = 'All Time'
-        else:
+        # Custom dates take priority
+        if custom_from and custom_to:
+            try:
+                date_from = datetime.strptime(custom_from, '%Y-%m-%d').date()
+                date_to = datetime.strptime(custom_to, '%Y-%m-%d').date()
+                
+                # Validate: from date should not be after to date
+                if date_from > date_to:
+                    date_warning = 'From date was after To date - dates have been swapped.'
+                    date_from, date_to = date_to, date_from
+                
+                # Validate: dates should not be in the future
+                if date_to > today:
+                    date_warning = 'To date was in the future - adjusted to today.'
+                    date_to = today
+                
+                # Validate: date range shouldn't be too large (over 2 years)
+                if date_from and date_to and (date_to - date_from).days > 730:
+                    date_warning = 'Date range exceeds 2 years. Consider using a shorter range for better performance.'
+                
+                date_label = f'{date_from.strftime("%b %d")} - {date_to.strftime("%b %d, %Y")}'
+                date_range = 'custom'
+            except ValueError:
+                date_warning = 'Invalid date format. Using default 30-day range.'
+                date_from = today - timedelta(days=30)
+                date_to = today
+                date_label = 'Last 30 Days'
+        elif custom_from or custom_to:
+            # Only one date provided
+            date_warning = 'Both From and To dates are required for custom range. Using default.'
+            date_to = today
             date_from = today - timedelta(days=30)
             date_label = 'Last 30 Days'
+        else:
+            date_to = today
+            if date_range == 'week':
+                date_from = today - timedelta(days=7)
+                date_label = 'Last 7 Days'
+            elif date_range == 'quarter':
+                date_from = today - timedelta(days=90)
+                date_label = 'Last 90 Days'
+            elif date_range == 'year':
+                date_from = today - timedelta(days=365)
+                date_label = 'Last 365 Days'
+            elif date_range == 'all':
+                date_from = None
+                date_to = None
+                date_label = 'All Time'
+            else:
+                date_from = today - timedelta(days=30)
+                date_label = 'Last 30 Days'
         
         # Manager-level aggregation
         manager_data = []
@@ -297,6 +425,8 @@ class ManagerProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
         base_sales_filter = Q(tenant=tenant, status='COMPLETED')
         if date_from:
             base_sales_filter &= Q(created_at__date__gte=date_from)
+        if date_to:
+            base_sales_filter &= Q(created_at__date__lte=date_to)
         
         attendants = User.objects.filter(tenant=tenant).filter(
             sales__in=Sale.objects.filter(base_sales_filter)
@@ -347,6 +477,8 @@ class ManagerProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
             'date_range': date_range,
             'date_label': date_label,
             'date_from': date_from,
+            'date_to': date_to,
+            'date_warning': date_warning,
         }
         
         return render(request, self.template_name, context)
