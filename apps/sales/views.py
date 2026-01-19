@@ -299,20 +299,92 @@ class SaleListView(LoginRequiredMixin, ListView):
     context_object_name = 'sales'
     
     def get_queryset(self):
+        from datetime import datetime
+        
+        user = self.request.user
+        role_name = user.role.name if user.role else None
+        
         queryset = Sale.objects.filter(
-            tenant=self.request.user.tenant
-        ).select_related('shop', 'attendant')
+            tenant=user.tenant
+        ).select_related('shop', 'attendant').order_by('-created_at')
         
-        # Filter by shop if user is shop-based
-        if self.request.user.location and self.request.user.location.location_type == 'SHOP':
-            queryset = queryset.filter(shop=self.request.user.location)
+        # For shop-based users (Shop Manager, Attendant), filter by their shop
+        # Auditors, Accountants, and Admins see all shops by default
+        if role_name not in ['AUDITOR', 'ACCOUNTANT', 'ADMIN']:
+            if user.location and user.location.location_type == 'SHOP':
+                queryset = queryset.filter(shop=user.location)
+        else:
+            # Shop filter for Auditor/Accountant/Admin
+            shop_id = self.request.GET.get('shop')
+            if shop_id:
+                queryset = queryset.filter(shop_id=shop_id)
+            
+            # Attendant filter
+            attendant_id = self.request.GET.get('attendant')
+            if attendant_id:
+                queryset = queryset.filter(attendant_id=attendant_id)
         
-        # Filter by status
+        # Date range filter (for all roles)
+        date_from = self.request.GET.get('date_from')
+        date_to = self.request.GET.get('date_to')
+        
+        if date_from:
+            try:
+                date_from_parsed = datetime.strptime(date_from, '%Y-%m-%d').date()
+                queryset = queryset.filter(created_at__date__gte=date_from_parsed)
+            except ValueError:
+                pass
+        
+        if date_to:
+            try:
+                date_to_parsed = datetime.strptime(date_to, '%Y-%m-%d').date()
+                queryset = queryset.filter(created_at__date__lte=date_to_parsed)
+            except ValueError:
+                pass
+        
+        # Status filter
         status = self.request.GET.get('status')
         if status:
             queryset = queryset.filter(status=status)
         
+        # Payment method filter
+        payment = self.request.GET.get('payment')
+        if payment:
+            queryset = queryset.filter(payment_method=payment)
+        
         return queryset[:100]  # Limit to last 100
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        user = self.request.user
+        role_name = user.role.name if user.role else None
+        
+        # Check if full view (Auditor/Accountant/Admin)
+        context['is_full_view'] = role_name in ['AUDITOR', 'ACCOUNTANT', 'ADMIN']
+        
+        if context['is_full_view']:
+            # Shops for filter
+            context['shops'] = Location.objects.filter(
+                tenant=user.tenant,
+                location_type='SHOP',
+                is_active=True
+            )
+            # Attendants for filter
+            from apps.core.models import User as TenantUser
+            context['attendants'] = TenantUser.objects.filter(
+                tenant=user.tenant,
+                is_active=True
+            ).exclude(role__name__in=['AUDITOR', 'ACCOUNTANT']).order_by('first_name', 'email')
+        
+        # Preserve filter values
+        context['date_from'] = self.request.GET.get('date_from', '')
+        context['date_to'] = self.request.GET.get('date_to', '')
+        context['selected_shop'] = self.request.GET.get('shop', '')
+        context['selected_attendant'] = self.request.GET.get('attendant', '')
+        context['selected_status'] = self.request.GET.get('status', '')
+        context['selected_payment'] = self.request.GET.get('payment', '')
+        
+        return context
 
 
 class SaleDetailView(LoginRequiredMixin, DetailView):
@@ -394,6 +466,10 @@ def api_complete_sale(request):
     
     cart_items = data.get('items', [])
     payment_method = data.get('payment_method', 'CASH')
+    # Ensure payment_method is valid - handle empty string or invalid values
+    valid_payment_methods = ['CASH', 'CREDIT', 'ECASH', 'MIXED', 'PAYMENT_ON_ACCOUNT']
+    if not payment_method or payment_method not in valid_payment_methods:
+        payment_method = 'CASH'
     amount_paid = Decimal(str(data.get('amount_paid', 0)))
     discount_amount = Decimal(str(data.get('discount_amount', 0)))
     discount_reason = data.get('discount_reason', '')
@@ -481,6 +557,7 @@ def api_complete_sale(request):
                 attendant=request.user,
                 shift=shift,
                 customer=customer,
+                payment_method=payment_method,
                 discount_amount=discount_amount,
                 discount_reason=discount_reason,
             )
@@ -570,20 +647,20 @@ class ShopSalesReportView(LoginRequiredMixin, View):
     def get(self, request):
         from django.db.models import Sum, Count, Q
         from django.utils import timezone
-        from datetime import timedelta
+        from datetime import timedelta, datetime
         
         user = request.user
         role_name = user.role.name if user.role else None
         
-        # Only shop managers and admin can access
-        if role_name not in ['SHOP_MANAGER', 'ADMIN']:
+        # Allow shop managers, accountants, auditors, and admin to access
+        if role_name not in ['SHOP_MANAGER', 'ACCOUNTANT', 'AUDITOR', 'ADMIN']:
             messages.error(request, 'You do not have permission to view this report.')
             return redirect('core:dashboard')
         
         # Get the shop
         shop = user.location
-        if not shop and role_name == 'ADMIN':
-            # Admin can select a shop
+        if not shop and role_name in ['ADMIN', 'ACCOUNTANT', 'AUDITOR']:
+            # Admin/Accountant/Auditor can select any shop
             shop_id = request.GET.get('shop')
             if shop_id:
                 shop = Location.objects.filter(
@@ -598,30 +675,87 @@ class ShopSalesReportView(LoginRequiredMixin, View):
             )
             return render(request, self.template_name, context)
         
-        # Date range filter
-        date_range = request.GET.get('range', 'today')
-        today = timezone.now().date()
+        # Get attendants for this shop (for filter dropdown)
+        from apps.core.models import User as TenantUser
+        context['attendants'] = TenantUser.objects.filter(
+            tenant=user.tenant,
+            location=shop,
+            is_active=True
+        ).order_by('first_name', 'email')
         
-        if date_range == 'week':
-            start_date = today - timedelta(days=7)
-            context['date_range_label'] = 'Last 7 Days'
-        elif date_range == 'month':
-            start_date = today - timedelta(days=30)
-            context['date_range_label'] = 'Last 30 Days'
-        else:
-            start_date = today
+        # Date range filter - support custom dates or presets
+        today = timezone.now().date()
+        date_from_str = request.GET.get('date_from')
+        date_to_str = request.GET.get('date_to')
+        date_range = request.GET.get('range', 'month')  # Default to month for better visibility
+        
+        # Parse custom dates if provided
+        if date_from_str and date_to_str:
+            try:
+                date_from = datetime.strptime(date_from_str, '%Y-%m-%d').date()
+                date_to = datetime.strptime(date_to_str, '%Y-%m-%d').date()
+                context['date_range_label'] = f'{date_from.strftime("%b %d")} - {date_to.strftime("%b %d, %Y")}'
+                date_range = 'custom'
+            except ValueError:
+                date_from = today - timedelta(days=30)
+                date_to = today
+                context['date_range_label'] = 'Last 30 Days'
+        elif date_range == 'today':
+            date_from = today
+            date_to = today
             context['date_range_label'] = 'Today'
+        elif date_range == 'week':
+            date_from = today - timedelta(days=7)
+            date_to = today
+            context['date_range_label'] = 'Last 7 Days'
+        else:  # month (default)
+            date_from = today - timedelta(days=30)
+            date_to = today
+            context['date_range_label'] = 'Last 30 Days'
         
         context['current_range'] = date_range
+        context['date_from'] = date_from
+        context['date_to'] = date_to
         
-        # Get sales by attendant
+        # Attendant filter
+        attendant_id = request.GET.get('attendant')
+        context['selected_attendant'] = attendant_id
+        
+        # Payment method filter
+        payment_filter = request.GET.get('payment')
+        context['selected_payment'] = payment_filter
+        
+        # Build base sales filter
         sales_filter = Q(
             tenant=user.tenant,
             shop=shop,
             status='COMPLETED',
-            created_at__date__gte=start_date
+            created_at__date__gte=date_from,
+            created_at__date__lte=date_to
         )
         
+        # Apply attendant filter if selected
+        if attendant_id:
+            sales_filter &= Q(attendant_id=attendant_id)
+        
+        # Apply payment method filter if selected
+        if payment_filter:
+            sales_filter &= Q(payment_method=payment_filter)
+        
+        # Build sale items filter (for products)
+        items_filter = {
+            'sale__tenant': user.tenant,
+            'sale__shop': shop,
+            'sale__status': 'COMPLETED',
+            'sale__created_at__date__gte': date_from,
+            'sale__created_at__date__lte': date_to,
+        }
+        if attendant_id:
+            items_filter['sale__attendant_id'] = attendant_id
+        if payment_filter:
+            items_filter['sale__payment_method'] = payment_filter
+        
+        # Get sales by attendant
         attendant_stats = Sale.objects.filter(sales_filter).values(
             'attendant__id',
             'attendant__first_name',
@@ -644,32 +778,40 @@ class ShopSalesReportView(LoginRequiredMixin, View):
             ecash_total=Sum('total', filter=Q(payment_method='ECASH')),
         )
         
-        # Top products sold
+        # Top 10 products sold
         context['top_products'] = SaleItem.objects.filter(
-            sale__tenant=user.tenant,
-            sale__shop=shop,
-            sale__status='COMPLETED',
-            sale__created_at__date__gte=start_date
+            **items_filter
         ).values('product__id', 'product__name').annotate(
             qty_sold=Sum('quantity'),
             revenue=Sum('total')
-        ).order_by('-revenue')[:5]
+        ).order_by('-revenue')[:10]
         
-        # Sales by day (for week/month view)
-        if date_range != 'today':
-            context['sales_by_day'] = Sale.objects.filter(sales_filter).values(
-                'created_at__date'
-            ).annotate(
-                revenue=Sum('total'),
-                count=Count('id')
-            ).order_by('-created_at__date')[:7]
+        # Full product sales breakdown (all products)
+        all_products = SaleItem.objects.filter(
+            **items_filter
+        ).values('product__id', 'product__name').annotate(
+            qty_sold=Sum('quantity'),
+            revenue=Sum('total')
+        ).order_by('product__name')
         
-        # Recent price changes for this shop
+        context['all_products'] = all_products
+        context['all_products_total_qty'] = sum(p['qty_sold'] or 0 for p in all_products)
+        context['all_products_total_revenue'] = sum(p['revenue'] or 0 for p in all_products)
+        
+        # Sales by day - always show
+        context['sales_by_day'] = Sale.objects.filter(sales_filter).values(
+            'created_at__date'
+        ).annotate(
+            revenue=Sum('total'),
+            count=Count('id')
+        ).order_by('-created_at__date')[:30]
+        
+        # Price history for this shop
         from apps.inventory.models import ShopPrice
-        context['recent_price_changes'] = ShopPrice.objects.filter(
+        context['price_history'] = ShopPrice.objects.filter(
             tenant=user.tenant,
             location=shop
-        ).select_related('product').order_by('-created_at')[:10]
+        ).select_related('product').order_by('-created_at')[:20]
         
         return render(request, self.template_name, context)
 

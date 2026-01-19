@@ -6,17 +6,21 @@
     <title>Receipt - {{ sale.sale_number }}</title>
     <style>
         /* Thermal receipt styles (80mm width = ~300px at 96dpi) */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
         @page {
             size: 80mm auto;
-            margin: 5mm;
+            margin: 0 !important;
         }
 
         body {
             font-family: 'Courier New', monospace;
             font-size: 12px;
             line-height: 1.4;
-            margin: 0;
-            padding: 10px;
 
                 {
                 % if shop_settings.receipt_printer_type=='THERMAL_80MM' %
@@ -45,9 +49,11 @@
 
         .receipt-header {
             text-align: center;
-            margin-bottom: 15px;
+            margin-top: 0;
+            margin-bottom: 8px;
             border-bottom: 1px dashed #000;
-            padding-bottom: 10px;
+            padding-top: 0;
+            padding-bottom: 5px;
         }
 
         .receipt-header h1 {
@@ -87,13 +93,29 @@
         .receipt-items th {
             text-align: left;
             border-bottom: 1px solid #000;
-            padding-bottom: 3px;
+            padding: 2px 3px 2px 3px;
             font-size: 11px;
         }
 
+        .receipt-items th:first-child {
+            padding-left: 0;
+        }
+
+        .receipt-items th:last-child {
+            padding-right: 0;
+        }
+
         .receipt-items td {
-            padding: 3px 0;
+            padding: 2px 3px;
             vertical-align: top;
+        }
+
+        .receipt-items td:first-child {
+            padding-left: 0;
+        }
+
+        .receipt-items td:last-child {
+            padding-right: 0;
         }
 
         .item-name {
@@ -141,9 +163,9 @@
 
         .barcode {
             text-align: center;
-            margin: 15px 0;
+            margin: 10px 0;
             font-family: 'Libre Barcode 39', monospace;
-            font-size: 36px;
+            font-size: 16px;
         }
 
         @media print {
@@ -180,23 +202,15 @@
     <div class="receipt-info">
         <table>
             <tr>
-                <td>Receipt #:</td>
+                <td>{{ sale.created_at|date:"d/m/Y H:i" }}</td>
                 <td class="text-right"><strong>{{ sale.sale_number }}</strong></td>
             </tr>
             <tr>
-                <td>Date:</td>
-                <td class="text-right">{{ sale.created_at|date:"d/m/Y H:i" }}</td>
+                <td>By: {{ sale.attendant.first_name|default:sale.attendant.email }}</td>
+                {% if sale.payment_method %}
+                <td class="text-right">| {{ sale.get_payment_method_display }} |</td>
+                {% endif %}
             </tr>
-            <tr>
-                <td>Cashier:</td>
-                <td class="text-right">{{ sale.attendant.get_full_name|default:sale.attendant.email }}</td>
-            </tr>
-            {% if sale.payment_method %}
-            <tr>
-                <td>Payment:</td>
-                <td class="text-right">{{ sale.get_payment_method_display }}</td>
-            </tr>
-            {% endif %}
         </table>
     </div>
 
@@ -204,8 +218,8 @@
         <table>
             <thead>
                 <tr>
-                    <th>Item</th>
                     <th class="text-right">Qty</th>
+                    <th>Item</th>
                     <th class="text-right">Price</th>
                     <th class="text-right">Total</th>
                 </tr>
@@ -213,9 +227,9 @@
             <tbody>
                 {% for item in sale.items.all %}
                 <tr>
-                    <td class="item-name">{{ item.product.name }}</td>
                     <td class="text-right">{{ item.quantity }}</td>
-                    <td class="text-right">{{ currency_symbol }}{{ item.unit_price }}</td>
+                    <td class="item-name">{{ item.product.name }}</td>
+                    <td class="text-right">{{ item.unit_price }}</td>
                     <td class="text-right">{{ currency_symbol }}{{ item.total }}</td>
                 </tr>
                 {% endfor %}
@@ -267,7 +281,8 @@
         <p style="margin: 5px 0;">Sale Total: {{ currency_symbol }}{{ sale.total }} | Paid:
             {{ currency_symbol }}{{ sale.amount_paid }}</p>
         <p style="margin: 5px 0;">Account Balance:
-            <strong>{{ currency_symbol }}{{ sale.customer.current_balance }}</strong></p>
+            <strong>{{ currency_symbol }}{{ sale.customer.current_balance }}</strong>
+        </p>
         {% endif %}
     </div>
     {% endif %}

@@ -26,11 +26,13 @@ class CashTransferListView(LoginRequiredMixin, ListView):
     paginate_by = 20
     
     def get_queryset(self):
+        from datetime import datetime
+        
         user = self.request.user
         role_name = user.role.name if user.role else None
         
-        # Accountants and Admin see ALL transfers
-        if role_name in ['ACCOUNTANT', 'ADMIN']:
+        # Accountants, Auditors, and Admin see ALL transfers
+        if role_name in ['ACCOUNTANT', 'AUDITOR', 'ADMIN']:
             queryset = CashTransfer.objects.filter(
                 tenant=user.tenant
             ).select_related(
@@ -46,15 +48,35 @@ class CashTransferListView(LoginRequiredMixin, ListView):
                 'from_user', 'to_user', 'from_location', 'to_location'
             ).order_by('-created_at')
         
+        # Date range filter
+        date_from = self.request.GET.get('date_from')
+        date_to = self.request.GET.get('date_to')
+        
+        if date_from:
+            try:
+                date_from_parsed = datetime.strptime(date_from, '%Y-%m-%d').date()
+                queryset = queryset.filter(created_at__date__gte=date_from_parsed)
+            except ValueError:
+                pass
+        
+        if date_to:
+            try:
+                date_to_parsed = datetime.strptime(date_to, '%Y-%m-%d').date()
+                queryset = queryset.filter(created_at__date__lte=date_to_parsed)
+            except ValueError:
+                pass
+        
         # Status filter
         status = self.request.GET.get('status')
         if status:
             queryset = queryset.filter(status=status)
         
-        # Shop filter (for accountants)
+        # Shop filter (for accountants/auditors)
         shop = self.request.GET.get('shop')
         if shop:
-            queryset = queryset.filter(from_location_id=shop)
+            queryset = queryset.filter(
+                Q(from_location_id=shop) | Q(to_location_id=shop)
+            )
         
         return queryset
     
@@ -70,11 +92,11 @@ class CashTransferListView(LoginRequiredMixin, ListView):
             status='PENDING'
         ).count()
         
-        # Check if user can create transfers
+        # Check if user can create transfers (Auditor cannot create)
         context['can_create'] = role_name in ['SHOP_ATTENDANT', 'SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN']
         
-        # For accountants: show shop filter
-        if role_name in ['ACCOUNTANT', 'ADMIN']:
+        # For accountants/auditors/admin: show filters
+        if role_name in ['ACCOUNTANT', 'AUDITOR', 'ADMIN']:
             context['is_full_view'] = True
             context['shops'] = Location.objects.filter(
                 tenant=user.tenant,
@@ -82,6 +104,12 @@ class CashTransferListView(LoginRequiredMixin, ListView):
                 is_active=True
             )
             context['can_send_to_shops'] = user.tenant.allow_accountant_to_shop_transfers if user.tenant else False
+            
+            # Preserve filter values
+            context['date_from'] = self.request.GET.get('date_from', '')
+            context['date_to'] = self.request.GET.get('date_to', '')
+            context['selected_shop'] = self.request.GET.get('shop', '')
+            context['selected_status'] = self.request.GET.get('status', '')
             
             # Cash deposit summary
             today = timezone.now().date()
@@ -436,8 +464,8 @@ class PriceHistoryView(LoginRequiredMixin, View):
     
     def dispatch(self, request, *args, **kwargs):
         role_name = request.user.role.name if request.user.role else None
-        if role_name not in ['ACCOUNTANT', 'ADMIN']:
-            messages.error(request, 'Only accountants can access price history.')
+        if role_name not in ['ACCOUNTANT', 'AUDITOR', 'ADMIN']:
+            messages.error(request, 'Only accountants and auditors can access price history.')
             return redirect('core:dashboard')
         return super().dispatch(request, *args, **kwargs)
     
