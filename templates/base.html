@@ -50,14 +50,6 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a href="{% url 'sales:sale_list' %}"
-                            class="nav-link {% if '/sales/' in request.path and '/pos/' not in request.path %}active{% endif %}">
-                            <i class="bi bi-receipt"></i>
-                            <span>Sales History</span>
-                        </a>
-                    </li>
-
-                    <li class="nav-item">
                         <a href="{% url 'customers:customer_list' %}"
                             class="nav-link {% if '/customers/' in request.path %}active{% endif %}">
                             <i class="bi bi-people"></i>
@@ -66,53 +58,36 @@
                     </li>
                     {% endif %}
 
-                    <!-- Cash Transfers -->
-                    {% if role_name == 'SHOP_MANAGER' or role_name == 'ACCOUNTANT' or role_name == 'ADMIN' %}
+                    <!-- Sales Menu (Shop Manager, Accountant, Auditor, Admin) -->
+                    {% if role_name == 'SHOP_MANAGER' or role_name == 'ACCOUNTANT' or role_name == 'AUDITOR' or role_name == 'ADMIN' %}
                     <li class="nav-item">
-                        <a class="nav-link text-white {% if 'cash-transfers' in request.path %}active{% endif %}"
-                            href="{% url 'accounting:cash_transfer_list' %}">
-                            <i class="bi bi-cash-stack me-2"></i> Cash Transfers
+                        <a class="nav-link text-white d-flex justify-content-between align-items-center {% if 'sales' in request.path or 'price-history' in request.path %}active{% endif %}"
+                            data-bs-toggle="collapse" href="#salesMenu" role="button"
+                            aria-expanded="{% if 'sales' in request.path or 'price-history' in request.path %}true{% else %}false{% endif %}">
+                            <span><i class="bi bi-receipt me-2"></i>Sales</span>
+                            <i class="bi bi-chevron-down small"></i>
                         </a>
-                    </li>
-                    {% endif %}
-
-                    <!-- Shop Manager Reports -->
-                    {% if role_name == 'SHOP_MANAGER' or role_name == 'ADMIN' %}
-                    <li class="nav-item">
-                        <a class="nav-link text-white {% if 'report' in request.path and 'sales' in request.path %}active{% endif %}"
-                            href="{% url 'sales:shop_sales_report' %}">
-                            <i class="bi bi-graph-up me-2"></i> Sales Report
-                        </a>
-                    </li>
-                    {% endif %}
-
-                    <!-- Accountant Reports -->
-                    {% if role_name == 'ACCOUNTANT' or role_name == 'ADMIN' %}
-                    <li class="nav-item">
-                        <a class="nav-link text-white d-flex justify-content-between align-items-center {% if 'accounting' in request.path %}active{% endif %}"
-                            data-bs-toggle="collapse" href="#accountingMenu" role="button">
-                            <span><i class="bi bi-bank me-2"></i>Financial</span>
-                            <i class="bi bi-chevron-down"></i>
-                        </a>
-
-                        <div class="collapse {% if 'accounting' in request.path %}show{% endif %}" id="accountingMenu">
-                            <ul class="nav flex-column ms-3">
+                        <div class="collapse {% if 'sales' in request.path or 'price-history' in request.path %}show{% endif %}"
+                            id="salesMenu">
+                            <ul class="nav flex-column ms-3 border-start border-secondary ps-2">
                                 <li class="nav-item">
-                                    <a class="nav-link text-white-50 py-1 {% if 'dashboard' in request.path and 'accounting' in request.path %}active text-white{% endif %}"
-                                        href="{% url 'accounting:accountant_dashboard' %}">
-                                        Dashboard
+                                    <a class="nav-link text-white-50 py-1 {% if 'report' in request.path and 'sales' in request.path %}text-white{% endif %}"
+                                        href="{% url 'sales:shop_sales_report' %}">
+                                        <i class="bi bi-graph-up me-1"></i>Sales Report
                                     </a>
                                 </li>
+                                {% if role_name == 'SHOP_MANAGER' or role_name == 'ACCOUNTANT' or role_name == 'AUDITOR' or role_name == 'ADMIN' %}
                                 <li class="nav-item">
-                                    <a class="nav-link text-white-50 py-1 {% if 'sales-report' in request.path %}active text-white{% endif %}"
-                                        href="{% url 'accounting:sales_report' %}">
-                                        <i class="bi bi-bar-chart me-1"></i>Sales Report
+                                    <a class="nav-link text-white-50 py-1 {% if '/sales/' in request.path and '/pos/' not in request.path and 'report' not in request.path %}text-white{% endif %}"
+                                        href="{% url 'sales:sale_list' %}">
+                                        <i class="bi bi-clock-history me-1"></i>Sales History
                                     </a>
                                 </li>
+                                {% endif %}
                                 <li class="nav-item">
-                                    <a class="nav-link text-white-50 py-1 {% if 'price-history' in request.path %}active text-white{% endif %}"
+                                    <a class="nav-link text-white-50 py-1 {% if 'price-history' in request.path %}text-white{% endif %}"
                                         href="{% url 'accounting:price_history' %}">
-                                        <i class="bi bi-clock-history me-1"></i>Price History
+                                        <i class="bi bi-tags me-1"></i>Price History
                                     </a>
                                 </li>
                             </ul>
@@ -120,16 +95,56 @@
                     </li>
                     {% endif %}
 
+                    <!-- Accountant/Auditor/Admin Financial Menu -->
+                    {% if role_name == 'ACCOUNTANT' or role_name == 'AUDITOR' or role_name == 'ADMIN' %}
+                    <li class="nav-item">
+                        <a class="nav-link text-white d-flex justify-content-between align-items-center {% if 'accounting' in request.path and 'price-history' not in request.path %}active{% endif %}"
+                            data-bs-toggle="collapse" href="#accountingMenu" role="button">
+                            <span><i class="bi bi-bank me-2"></i>Financial</span>
+                            <i class="bi bi-chevron-down"></i>
+                        </a>
+
+                        <div class="collapse {% if 'accounting' in request.path and 'price-history' not in request.path %}show{% endif %}"
+                            id="accountingMenu">
+                            <ul class="nav flex-column ms-3">
+                                {% if role_name == 'ACCOUNTANT' or role_name == 'ADMIN' %}
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if 'sales-report' in request.path %}active text-white{% endif %}"
+                                        href="{% url 'accounting:sales_report' %}">
+                                        <i class="bi bi-bar-chart me-1"></i>Accountant Sales Report
+                                    </a>
+                                </li>
+                                {% endif %}
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if 'cash-transfers' in request.path %}active text-white{% endif %}"
+                                        href="{% url 'accounting:cash_transfer_list' %}">
+                                        <i class="bi bi-cash-stack me-1"></i>Cash Transfers
+                                    </a>
+                                </li>
+                            </ul>
+                        </div>
+                    </li>
+                    {% elif role_name == 'SHOP_MANAGER' %}
+                    <!-- Shop Manager Cash Transfers (standalone) -->
+                    <li class="nav-item">
+                        <a class="nav-link text-white {% if 'cash-transfers' in request.path %}active{% endif %}"
+                            href="{% url 'accounting:cash_transfer_list' %}">
+                            <i class="bi bi-cash-stack me-2"></i>Cash Transfers
+                        </a>
+                    </li>
+                    {% endif %}
+
                     <!-- Inventory -->
                     {% if role_name == 'ADMIN' or role_name == 'STORES_MANAGER' or role_name == 'PRODUCTION_MANAGER' or role_name == 'SHOP_MANAGER' %}
                     <li class="nav-item">
-                        <a class="nav-link text-white d-flex justify-content-between align-items-center {% if 'inventory' in request.path %}active{% endif %}"
+                        <a class="nav-link text-white d-flex justify-content-between align-items-center {% if 'inventory' in request.path or 'transfers' in request.path %}active{% endif %}"
                             data-bs-toggle="collapse" href="#inventoryMenu" role="button">
                             <span><i class="bi bi-box-seam me-2"></i> Inventory</span>
                             <i class="bi bi-chevron-down"></i>
                         </a>
 
-                        <div class="collapse {% if 'inventory' in request.path %}show{% endif %}" id="inventoryMenu">
+                        <div class="collapse {% if 'inventory' in request.path or 'transfers' in request.path %}show{% endif %}"
+                            id="inventoryMenu">
                             <ul class="nav flex-column ms-3">
                                 <li class="nav-item">
                                     <a class="nav-link text-white-50 py-1 {% if 'products' in request.path and 'shop-prices' not in request.path %}active text-white{% endif %}"
@@ -163,27 +178,22 @@
                                         Stock Overview
                                     </a>
                                 </li>
+                                <!-- Transfers (under Inventory) -->
+                                <li class="nav-item border-top border-secondary mt-2 pt-2">
+                                    <a class="nav-link text-white-50 py-1 {% if 'transfers' in request.path and 'requests' not in request.path and 'cash' not in request.path %}text-white{% endif %}"
+                                        href="{% url 'transfers:transfer_list' %}">
+                                        <i class="bi bi-arrow-left-right me-1"></i>Transfers
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if 'requests' in request.path %}text-white{% endif %}"
+                                        href="{% url 'transfers:stock_request_list' %}">
+                                        <i class="bi bi-box-arrow-in-down me-1"></i>Stock Requests
+                                    </a>
+                                </li>
                             </ul>
                         </div>
                     </li>
-                    {% endif %}
-
-                    <!-- Transfers -->
-                    {% if role_name != 'AUDITOR' and role_name != 'ACCOUNTANT' %}
-                    {% if role_name == 'ADMIN' or role_name == 'STORES_MANAGER' or role_name == 'PRODUCTION_MANAGER' or role_name == 'SHOP_MANAGER' %}
-                    <li class="nav-item">
-                        <a class="nav-link text-white {% if 'transfers' in request.path and 'requests' not in request.path %}active{% endif %}"
-                            href="{% url 'transfers:transfer_list' %}">
-                            <i class="bi bi-arrow-left-right me-2"></i> Transfers
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link text-white {% if 'requests' in request.path %}active{% endif %}"
-                            href="{% url 'transfers:stock_request_list' %}">
-                            <i class="bi bi-box-arrow-in-down me-2"></i> Stock Requests
-                        </a>
-                    </li>
-                    {% endif %}
                     {% endif %}
 
                     <!-- Admin -->
@@ -273,7 +283,7 @@
                     </li>
                     {% endif %}
 
-                    <!-- Auditor-specific quick links -->
+                    <!-- Auditor-specific menus -->
                     {% if role_name == 'AUDITOR' %}
                     <li class="nav-item">
                         <a class="nav-link text-white {% if request.path == '/auditor/' %}active{% endif %}"
@@ -281,23 +291,31 @@
                             <i class="bi bi-clipboard-data me-2"></i> Auditor Dashboard
                         </a>
                     </li>
+                    <!-- Auditor Inventory Menu -->
                     <li class="nav-item">
-                        <a class="nav-link text-white {% if 'ledger' in request.path %}active{% endif %}"
-                            href="{% url 'inventory:inventory_ledger' %}">
-                            <i class="bi bi-journal-text me-2"></i> Inventory Ledger
+                        <a class="nav-link text-white d-flex justify-content-between align-items-center {% if 'ledger' in request.path or 'transfers' in request.path %}active{% endif %}"
+                            data-bs-toggle="collapse" href="#auditorInventoryMenu" role="button"
+                            aria-expanded="{% if 'ledger' in request.path or 'transfers' in request.path %}true{% else %}false{% endif %}">
+                            <span><i class="bi bi-box-seam me-2"></i>Inventory</span>
+                            <i class="bi bi-chevron-down small"></i>
                         </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link text-white {% if 'sales' in request.path and 'audit' not in request.path %}active{% endif %}"
-                            href="{% url 'sales:sale_list' %}">
-                            <i class="bi bi-receipt me-2"></i> Sales History
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link text-white {% if 'transfers' in request.path %}active{% endif %}"
-                            href="{% url 'transfers:transfer_list' %}">
-                            <i class="bi bi-arrow-left-right me-2"></i> Transfers
-                        </a>
+                        <div class="collapse {% if 'ledger' in request.path or 'transfers' in request.path %}show{% endif %}"
+                            id="auditorInventoryMenu">
+                            <ul class="nav flex-column ms-3 border-start border-secondary ps-2">
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if 'ledger' in request.path %}text-white{% endif %}"
+                                        href="{% url 'inventory:inventory_ledger' %}">
+                                        <i class="bi bi-journal-text me-1"></i>Inventory Ledger
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if 'transfers' in request.path and 'cash' not in request.path %}text-white{% endif %}"
+                                        href="{% url 'transfers:transfer_list' %}">
+                                        <i class="bi bi-arrow-left-right me-1"></i>Transfers
+                                    </a>
+                                </li>
+                            </ul>
+                        </div>
                     </li>
                     {% endif %}
 

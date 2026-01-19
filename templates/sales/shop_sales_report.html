@@ -6,19 +6,8 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
         <h2 class="mb-1"><i class="bi bi-graph-up me-2"></i>Sales Report</h2>
-        <p class="text-muted mb-0">Sales breakdown by attendant{% if shop %} - {{ shop.name }}{% endif %}</p>
+        <p class="text-muted mb-0">Sales breakdown{% if shop %} - {{ shop.name }}{% endif %}</p>
     </div>
-    <!-- Date Range Filter -->
-    {% if shop %}
-    <div class="btn-group" role="group">
-        <a href="?range=today"
-            class="btn btn-outline-primary {% if current_range == 'today' %}active{% endif %}">Today</a>
-        <a href="?range=week" class="btn btn-outline-primary {% if current_range == 'week' %}active{% endif %}">7
-            Days</a>
-        <a href="?range=month" class="btn btn-outline-primary {% if current_range == 'month' %}active{% endif %}">30
-            Days</a>
-    </div>
-    {% endif %}
 </div>
 
 {% if not shop %}
@@ -40,6 +29,51 @@
     </div>
 </div>
 {% else %}
+
+<!-- Filters -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-2">
+                <label class="form-label">From Date</label>
+                <input type="date" name="date_from" class="form-control" value="{{ date_from|date:'Y-m-d' }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">To Date</label>
+                <input type="date" name="date_to" class="form-control" value="{{ date_to|date:'Y-m-d' }}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Attendant</label>
+                <select name="attendant" class="form-select">
+                    <option value="">All Attendants</option>
+                    {% for att in attendants %}
+                    <option value="{{ att.pk }}"
+                        {% if selected_attendant == att.pk|stringformat:"i" %}selected{% endif %}>
+                        {{ att.get_full_name|default:att.email }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Payment</label>
+                <select name="payment" class="form-select">
+                    <option value="">All</option>
+                    <option value="CASH" {% if selected_payment == 'CASH' %}selected{% endif %}>Cash</option>
+                    <option value="ECASH" {% if selected_payment == 'ECASH' %}selected{% endif %}>E-Cash</option>
+                    <option value="CREDIT" {% if selected_payment == 'CREDIT' %}selected{% endif %}>Credit</option>
+                    <option value="MIXED" {% if selected_payment == 'MIXED' %}selected{% endif %}>Mixed</option>
+                </select>
+            </div>
+            <div class="col-md-3 d-flex align-items-end gap-2">
+                <button type="submit" class="btn btn-primary flex-grow-1">
+                    <i class="bi bi-filter me-1"></i>Apply Filters
+                </button>
+                <a href="?" class="btn btn-outline-secondary">
+                    <i class="bi bi-x-lg"></i>
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
 
 <!-- Period Badge -->
 <div class="mb-3">
@@ -84,106 +118,22 @@
     </div>
 </div>
 
-<!-- Attendant Breakdown -->
-<div class="card">
-    <div class="card-header bg-white">
-        <h5 class="mb-0"><i class="bi bi-people me-2"></i>Sales by Attendant</h5>
-    </div>
-    <div class="card-body">
-        {% if attendant_stats %}
-        <div class="table-responsive">
-            <table class="table table-hover">
-                <thead class="table-light">
-                    <tr>
-                        <th>Attendant</th>
-                        <th class="text-center"># Sales</th>
-                        <th class="text-end">Total Revenue</th>
-                        <th class="text-end">Cash</th>
-                        <th class="text-end">E-Cash</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for stat in attendant_stats %}
-                    <tr>
-                        <td>
-                            <i class="bi bi-person-circle me-2 text-muted"></i>
-                            {% if stat.attendant__first_name %}
-                            {{ stat.attendant__first_name }} {{ stat.attendant__last_name }}
-                            {% else %}
-                            {{ stat.attendant__email }}
-                            {% endif %}
-                        </td>
-                        <td class="text-center">
-                            <span class="badge bg-secondary">{{ stat.total_sales }}</span>
-                        </td>
-                        <td class="text-end fw-bold text-success">
-                            {{ currency_symbol }}{{ stat.total_revenue|default:0|floatformat:2 }}
-                        </td>
-                        <td class="text-end">
-                            {{ currency_symbol }}{{ stat.cash_amount|default:0|floatformat:2 }}
-                        </td>
-                        <td class="text-end">
-                            {{ currency_symbol }}{{ stat.ecash_amount|default:0|floatformat:2 }}
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        {% else %}
-        <div class="text-center py-5 text-muted">
-            <i class="bi bi-inbox display-1"></i>
-            <h4 class="mt-3">No Sales</h4>
-            <p>No completed sales for this period.</p>
-        </div>
-        {% endif %}
-    </div>
-</div>
-
-<div class="row g-4 mt-4">
-    <!-- Top Products -->
-    {% if top_products %}
-    <div class="col-lg-6">
-        <div class="card h-100">
-            <div class="card-header bg-white">
-                <h5 class="mb-0"><i class="bi bi-trophy me-2"></i>Top Selling Products</h5>
-            </div>
-            <div class="card-body">
-                <table class="table table-sm">
-                    <thead class="table-light">
-                        <tr>
-                            <th>Product</th>
-                            <th class="text-center">Qty</th>
-                            <th class="text-end">Revenue</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for p in top_products %}
-                        <tr>
-                            <td>{{ p.product__name }}</td>
-                            <td class="text-center"><span
-                                    class="badge bg-secondary">{{ p.qty_sold|floatformat:0 }}</span></td>
-                            <td class="text-end fw-bold text-success">{{ currency_symbol }}{{ p.revenue|floatformat:2 }}
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-    {% endif %}
+<!-- Collapsible Report Sections -->
+<div class="accordion" id="shopReportAccordion">
 
     <!-- Sales by Day -->
-    {% if sales_by_day %}
-    <div class="col-lg-6">
-        <div class="card h-100">
-            <div class="card-header bg-white">
-                <h5 class="mb-0"><i class="bi bi-calendar3 me-2"></i>Sales by Day</h5>
-            </div>
-            <div class="card-body">
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#salesByDay"
+                aria-expanded="true">
+                <i class="bi bi-calendar3 me-2"></i>Sales by Day
+            </button>
+        </h2>
+        <div id="salesByDay" class="accordion-collapse collapse show" data-bs-parent="#shopReportAccordion">
+            <div class="accordion-body" style="max-height: 300px; overflow-y: auto;">
+                {% if sales_by_day %}
                 <table class="table table-sm">
-                    <thead class="table-light">
+                    <thead class="table-light sticky-top">
                         <tr>
                             <th>Date</th>
                             <th class="text-center"># Sales</th>
@@ -201,49 +151,202 @@
                         {% endfor %}
                     </tbody>
                 </table>
+                {% else %}
+                <p class="text-muted text-center py-4">No sales data for this period</p>
+                {% endif %}
             </div>
         </div>
     </div>
-    {% endif %}
-</div>
 
-<!-- Recent Price Changes -->
-{% if recent_price_changes %}
-<div class="card mt-4">
-    <div class="card-header bg-white d-flex justify-content-between align-items-center">
-        <h5 class="mb-0"><i class="bi bi-clock-history me-2"></i>Recent Price Changes</h5>
-        <a href="{% url 'inventory:shop_price_list' %}" class="btn btn-sm btn-outline-primary">Manage Prices</a>
+    <!-- Sales by Attendant -->
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                data-bs-target="#salesByAttendant">
+                <i class="bi bi-people me-2"></i>Sales by Attendant
+            </button>
+        </h2>
+        <div id="salesByAttendant" class="accordion-collapse collapse" data-bs-parent="#shopReportAccordion">
+            <div class="accordion-body">
+                {% if attendant_stats %}
+                <table class="table table-sm">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Attendant</th>
+                            <th class="text-center"># Sales</th>
+                            <th class="text-end">Revenue</th>
+                            <th class="text-end">Cash</th>
+                            <th class="text-end">E-Cash</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for stat in attendant_stats %}
+                        <tr>
+                            <td>
+                                <i class="bi bi-person-circle me-2 text-muted"></i>
+                                {% if stat.attendant__first_name %}
+                                {{ stat.attendant__first_name }} {{ stat.attendant__last_name }}
+                                {% else %}
+                                {{ stat.attendant__email }}
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <span class="badge bg-secondary">{{ stat.total_sales }}</span>
+                            </td>
+                            <td class="text-end fw-bold text-success">
+                                {{ currency_symbol }}{{ stat.total_revenue|default:0|floatformat:2 }}
+                            </td>
+                            <td class="text-end">
+                                {{ currency_symbol }}{{ stat.cash_amount|default:0|floatformat:2 }}
+                            </td>
+                            <td class="text-end">
+                                {{ currency_symbol }}{{ stat.ecash_amount|default:0|floatformat:2 }}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p class="text-muted text-center py-4">No sales data for this period</p>
+                {% endif %}
+            </div>
+        </div>
     </div>
-    <div class="card-body">
-        <table class="table table-sm">
-            <thead class="table-light">
-                <tr>
-                    <th>Date</th>
-                    <th>Product</th>
-                    <th class="text-end">Price</th>
-                    <th>Status</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for price in recent_price_changes %}
-                <tr{% if not price.is_active %} class="text-muted" {% endif %}>
-                    <td><small>{{ price.created_at|date:"M d, H:i" }}</small></td>
-                    <td>{{ price.product.name }}</td>
-                    <td class="text-end"><strong>{{ currency_symbol }}{{ price.selling_price|floatformat:2 }}</strong>
-                    </td>
-                    <td>
-                        {% if price.is_active %}
-                        <span class="badge bg-success">Active</span>
-                        {% else %}
-                        <span class="badge bg-secondary">Old</span>
-                        {% endif %}
-                    </td>
-                    </tr>
-                    {% endfor %}
-            </tbody>
-        </table>
+
+    <!-- Top 10 Selling Products -->
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                data-bs-target="#topProducts">
+                <i class="bi bi-trophy me-2"></i>Top 10 Selling Products
+            </button>
+        </h2>
+        <div id="topProducts" class="accordion-collapse collapse" data-bs-parent="#shopReportAccordion">
+            <div class="accordion-body">
+                {% if top_products %}
+                <table class="table table-sm">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Product</th>
+                            <th class="text-center">Qty Sold</th>
+                            <th class="text-end">Revenue</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for p in top_products %}
+                        <tr>
+                            <td>{{ p.product__name }}</td>
+                            <td class="text-center"><span
+                                    class="badge bg-secondary">{{ p.qty_sold|floatformat:0 }}</span></td>
+                            <td class="text-end fw-bold text-success">{{ currency_symbol }}{{ p.revenue|floatformat:2 }}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p class="text-muted text-center py-4">No product data</p>
+                {% endif %}
+            </div>
+        </div>
     </div>
+
+    <!-- Full Product Sales Breakdown -->
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                data-bs-target="#allProducts">
+                <i class="bi bi-box-seam me-2"></i>Full Product Sales Breakdown
+                <span class="badge bg-primary ms-2">{{ all_products|length }} products</span>
+            </button>
+        </h2>
+        <div id="allProducts" class="accordion-collapse collapse" data-bs-parent="#shopReportAccordion">
+            <div class="accordion-body" style="max-height: 500px; overflow-y: auto;">
+                {% if all_products %}
+                <table class="table table-sm table-hover">
+                    <thead class="table-light sticky-top">
+                        <tr>
+                            <th>Product</th>
+                            <th class="text-center">Quantity</th>
+                            <th class="text-end">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for p in all_products %}
+                        <tr>
+                            <td>{{ p.product__name }}</td>
+                            <td class="text-center">{{ p.qty_sold|floatformat:0 }}</td>
+                            <td class="text-end">{{ currency_symbol }}{{ p.revenue|floatformat:2 }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot class="table-dark">
+                        <tr class="fw-bold">
+                            <td>TOTAL</td>
+                            <td class="text-center">{{ all_products_total_qty|floatformat:0 }}</td>
+                            <td class="text-end">{{ currency_symbol }}{{ all_products_total_revenue|floatformat:2 }}
+                            </td>
+                        </tr>
+                    </tfoot>
+                </table>
+                {% else %}
+                <p class="text-muted text-center py-4">No product data for this period</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Price History -->
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                data-bs-target="#priceHistory">
+                <i class="bi bi-clock-history me-2"></i>Price History
+            </button>
+        </h2>
+        <div id="priceHistory" class="accordion-collapse collapse" data-bs-parent="#shopReportAccordion">
+            <div class="accordion-body">
+                <div class="d-flex justify-content-end mb-2">
+                    <a href="{% url 'inventory:shop_price_list' %}" class="btn btn-sm btn-outline-primary">
+                        <i class="bi bi-gear me-1"></i>Manage Prices
+                    </a>
+                </div>
+                {% if price_history %}
+                <table class="table table-sm">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Date</th>
+                            <th>Product</th>
+                            <th class="text-end">Price</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for price in price_history %}
+                        <tr{% if not price.is_active %} class="text-muted" {% endif %}>
+                            <td><small>{{ price.created_at|date:"M d, H:i" }}</small></td>
+                            <td>{{ price.product.name }}</td>
+                            <td class="text-end">
+                                <strong>{{ currency_symbol }}{{ price.selling_price|floatformat:2 }}</strong>
+                            </td>
+                            <td>
+                                {% if price.is_active %}
+                                <span class="badge bg-success">Active</span>
+                                {% else %}
+                                <span class="badge bg-secondary">Old</span>
+                                {% endif %}
+                            </td>
+                            </tr>
+                            {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p class="text-muted text-center py-4">No price history</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
 </div>
-{% endif %}
 {% endif %}
 {% endblock %}

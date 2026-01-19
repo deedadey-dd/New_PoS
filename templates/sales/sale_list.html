@@ -19,18 +19,56 @@
 <div class="card mb-4">
     <div class="card-body">
         <form method="get" class="row g-3">
-            <div class="col-md-4">
-                <select name="status" class="form-select">
-                    <option value="">All Statuses</option>
-                    <option value="COMPLETED" {% if request.GET.status == 'COMPLETED' %}selected{% endif %}>Completed
+            <div class="col-md-2">
+                <label class="form-label">From Date</label>
+                <input type="date" name="date_from" class="form-control" value="{{ date_from }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">To Date</label>
+                <input type="date" name="date_to" class="form-control" value="{{ date_to }}">
+            </div>
+            {% if is_full_view %}
+            <div class="col-md-2">
+                <label class="form-label">Shop</label>
+                <select name="shop" class="form-select">
+                    <option value="">All Shops</option>
+                    {% for s in shops %}
+                    <option value="{{ s.pk }}" {% if selected_shop == s.pk|stringformat:"i" %}selected{% endif %}>
+                        {{ s.name }}
                     </option>
-                    <option value="VOIDED" {% if request.GET.status == 'VOIDED' %}selected{% endif %}>Voided</option>
-                    <option value="PENDING" {% if request.GET.status == 'PENDING' %}selected{% endif %}>Pending</option>
+                    {% endfor %}
                 </select>
             </div>
-            <div class="col-md-4">
-                <button type="submit" class="btn btn-outline-primary">Filter</button>
-                <a href="{% url 'sales:sale_list' %}" class="btn btn-outline-secondary">Clear</a>
+            <div class="col-md-2">
+                <label class="form-label">Attendant</label>
+                <select name="attendant" class="form-select">
+                    <option value="">All</option>
+                    {% for att in attendants %}
+                    <option value="{{ att.pk }}"
+                        {% if selected_attendant == att.pk|stringformat:"i" %}selected{% endif %}>
+                        {{ att.get_full_name|default:att.email|truncatechars:20 }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+            <div class="col-md-2">
+                <label class="form-label">Status</label>
+                <select name="status" class="form-select">
+                    <option value="">All</option>
+                    <option value="COMPLETED" {% if selected_status == 'COMPLETED' %}selected{% endif %}>Completed
+                    </option>
+                    <option value="VOIDED" {% if selected_status == 'VOIDED' %}selected{% endif %}>Voided</option>
+                    <option value="PENDING" {% if selected_status == 'PENDING' %}selected{% endif %}>Pending</option>
+                </select>
+            </div>
+            <div class="col-md-2 d-flex align-items-end gap-2">
+                <button type="submit" class="btn btn-primary flex-grow-1">
+                    <i class="bi bi-filter me-1"></i>Filter
+                </button>
+                <a href="?" class="btn btn-outline-secondary">
+                    <i class="bi bi-x-lg"></i>
+                </a>
             </div>
         </form>
     </div>
