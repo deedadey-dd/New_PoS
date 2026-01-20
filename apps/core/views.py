@@ -765,39 +765,16 @@ class ContactSubmitView(View):
                 logger.error(f"Failed to send Telegram notification: {e}")
                 # Don't fail the request if notification fails
             
-            # Try sending email as backup (optional)
-            try:
-                email_subject = f"POS System Inquiry from {name}"
-                email_body = f"""
-New inquiry from POS System website:
-
-Name: {name}
-Phone: {phone}
-Email: {email or 'Not provided'}
-WhatsApp Contact: {'Yes' if whatsapp_contact else 'No'}
-
-Message:
-{message or 'No message provided'}
-
----
-This message was sent from the POS System landing page contact form.
-"""
-                send_mail(
-                    subject=email_subject,
-                    message=email_body,
-                    from_email=settings.DEFAULT_FROM_EMAIL,
-                    recipient_list=['hendaxis@gmail.com'],
-                    fail_silently=True,
-                )
-            except Exception as e:
-                logger.error(f"Failed to send contact email: {e}")
-            
-            return JsonResponse({'success': True})
+            # Return success immediately (email disabled for now to avoid blocking)
+            logger.info(f"Contact form submitted successfully for {name}")
+            return JsonResponse({'success': True}, content_type='application/json')
             
         except Exception as e:
+            import traceback
             logger.error(f"Error processing contact form: {e}")
+            logger.error(traceback.format_exc())
             return JsonResponse({
                 'success': False, 
                 'error': 'An error occurred. Please try again.'
-            }, status=500)
+            }, status=500, content_type='application/json')
 
