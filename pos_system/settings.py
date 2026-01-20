@@ -261,6 +261,10 @@ DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@pos-system.com')
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '')
 
+# WhatsApp Contact Number (for Contact Us button)
+# Format: country code + number without + or spaces (e.g., 233XXXXXXXXX)
+WHATSAPP_NUMBER = os.getenv('WHATSAPP_NUMBER', '')
+
 # SMS Configuration (for future use)
 # SMS_URL = os.getenv('SMS_URL', '')
 # SMS_SENDER = os.getenv('SMS_SENDER', 'POS System')

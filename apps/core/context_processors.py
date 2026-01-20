@@ -9,6 +9,8 @@ def tenant_context(request):
     """
     Add tenant information to template context.
     """
+    from django.conf import settings
+    
     context = {
         'current_tenant': None,
         'currency_symbol': '$',
@@ -17,6 +19,7 @@ def tenant_context(request):
         'cash_on_hand': None,
         'pending_transfers_count': 0,
         'role_name': None,
+        'whatsapp_number': getattr(settings, 'WHATSAPP_NUMBER', ''),
     }
     
     if request.user.is_authenticated and hasattr(request.user, 'tenant') and request.user.tenant:
