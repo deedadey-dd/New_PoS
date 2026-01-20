@@ -547,7 +547,20 @@
                     body: formData
                 });
 
-                const data = await response.json();
+                // Check if response is ok (status 200-299)
+                if (!response.ok) {
+                    throw new Error(`Server error: ${response.status}`);
+                }
+
+                // Try to parse JSON, but handle if it fails
+                let data;
+                const contentType = response.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    data = await response.json();
+                } else {
+                    // Response is not JSON - but if status was ok, assume success
+                    data = { success: true };
+                }
 
                 if (data.success) {
                     // Hide contact modal first
@@ -562,14 +575,29 @@
 
                     // Reset form
                     this.reset();
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = originalBtnText;
                 } else {
                     alert(data.error || 'Something went wrong. Please try again.');
                     submitBtn.disabled = false;
                     submitBtn.innerHTML = originalBtnText;
                 }
             } catch (error) {
-                console.error('Error:', error);
-                alert('Network error. Please check your connection and try again.');
+                console.error('Contact form error:', error);
+                // Even if there's a parsing error, the message may have been sent
+                // Check the error type - if it's a JSON parsing error, treat as success
+                if (error instanceof SyntaxError) {
+                    // JSON parsing failed but request went through - treat as success
+                    contactModalInstance.hide();
+                    const contactModalEl = document.getElementById('contactModal');
+                    contactModalEl.addEventListener('hidden.bs.modal', function onHidden() {
+                        contactModalEl.removeEventListener('hidden.bs.modal', onHidden);
+                        successModalInstance.show();
+                    }, { once: true });
+                    this.reset();
+                } else {
+                    alert('There was an issue sending your message. Please try again or contact us directly.');
+                }
                 submitBtn.disabled = false;
                 submitBtn.innerHTML = originalBtnText;
             }
