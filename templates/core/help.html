@@ -4,6 +4,15 @@
 
 {% block content %}
 <div class="container-fluid py-4">
+    <!-- Back to Home for unauthenticated users -->
+    {% if not user.is_authenticated %}
+    <div class="mb-3">
+        <a href="{% url 'core:home' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i> Back to Home
+        </a>
+    </div>
+    {% endif %}
+
     <!-- Page Header -->
     <div class="row mb-4">
         <div class="col-12">
@@ -66,6 +75,7 @@
         <div class="card-body">
             <div class="row">
                 <div class="col-md-6">
+                    {% if user.is_authenticated %}
                     <h5>Your Role:
                         {% if user.role %}
                         <span class="badge bg-info">{{ user.role.get_name_display }}</span>
@@ -118,6 +128,23 @@
                         {% endwith %}
                         {% endif %}
                     </ul>
+                    {% else %}
+                    <h5>Welcome to POS System Help</h5>
+                    <p>This help guide covers all features of the POS System including:</p>
+                    <ul>
+                        <li><strong>Point of Sale</strong> - Process sales quickly</li>
+                        <li><strong>Inventory Management</strong> - Track products and batches</li>
+                        <li><strong>Stock Transfers</strong> - Move stock between locations</li>
+                        <li><strong>Customer Management</strong> - Credit sales and payments</li>
+                        <li><strong>Cash Management</strong> - Track cash transfers</li>
+                        <li><strong>Reports & Analytics</strong> - Business insights</li>
+                    </ul>
+                    <div class="mt-4">
+                        <a href="{% url 'core:home' %}" class="btn btn-primary">
+                            <i class="bi bi-box-arrow-in-right me-2"></i>Login to Access System
+                        </a>
+                    </div>
+                    {% endif %}
                 </div>
                 <div class="col-md-6">
                     <div class="alert alert-info">

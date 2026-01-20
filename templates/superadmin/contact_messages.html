@@ -1,0 +1,150 @@
+{% extends "superadmin/base.html" %}
+
+{% block title %}Contact Messages{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-envelope me-2"></i>Contact Messages</h2>
+        <p class="text-muted mb-0">
+            {{ unread_count }} unread message{{ unread_count|pluralize }}
+        </p>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="sa-card p-3 mb-4">
+    <form method="get" class="row g-3">
+        <div class="col-md-6">
+            <div class="input-group">
+                <span class="input-group-text bg-transparent border-secondary">
+                    <i class="bi bi-search"></i>
+                </span>
+                <input type="text" name="q" class="form-control bg-transparent border-secondary text-white" 
+                       placeholder="Search by name, phone, or email..." value="{{ search_query }}">
+            </div>
+        </div>
+        <div class="col-md-3">
+            <select name="status" class="form-select bg-transparent border-secondary text-white">
+                <option value="">All Messages</option>
+                <option value="unread" {% if current_status == 'unread' %}selected{% endif %}>Unread Only</option>
+                <option value="read" {% if current_status == 'read' %}selected{% endif %}>Read Only</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <button type="submit" class="btn btn-primary w-100">
+                <i class="bi bi-funnel me-1"></i> Filter
+            </button>
+        </div>
+    </form>
+</div>
+
+<!-- Messages List -->
+<div class="sa-card">
+    {% if messages_list %}
+    <div class="table-responsive">
+        <table class="table table-dark-custom table-hover mb-0">
+            <thead>
+                <tr>
+                    <th style="width: 40px;"></th>
+                    <th>Name</th>
+                    <th>Phone</th>
+                    <th>Email</th>
+                    <th>WhatsApp</th>
+                    <th>Received</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for msg in messages_list %}
+                <tr class="{% if not msg.is_read %}table-active{% endif %}">
+                    <td>
+                        {% if not msg.is_read %}
+                        <span class="badge bg-primary rounded-pill">New</span>
+                        {% else %}
+                        <i class="bi bi-check-circle text-muted"></i>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <a href="{% url 'superadmin:contact_detail' msg.pk %}" class="text-white text-decoration-none fw-{% if not msg.is_read %}bold{% else %}normal{% endif %}">
+                            {{ msg.name }}
+                        </a>
+                    </td>
+                    <td>{{ msg.phone }}</td>
+                    <td>{{ msg.email|default:"-" }}</td>
+                    <td>
+                        {% if msg.whatsapp_contact %}
+                        <span class="text-success"><i class="bi bi-whatsapp"></i> Yes</span>
+                        {% else %}
+                        <span class="text-muted">No</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span title="{{ msg.created_at }}">{{ msg.created_at|timesince }} ago</span>
+                    </td>
+                    <td>
+                        <a href="{% url 'superadmin:contact_detail' msg.pk %}" class="btn btn-sm btn-outline-light">
+                            <i class="bi bi-eye"></i>
+                        </a>
+                        {% if msg.is_read %}
+                        <form method="post" action="{% url 'superadmin:contact_mark_read' msg.pk %}" class="d-inline">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="unread">
+                            <button type="submit" class="btn btn-sm btn-outline-secondary" title="Mark as unread">
+                                <i class="bi bi-envelope"></i>
+                            </button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+    <!-- Pagination -->
+    {% if page_obj.has_other_pages %}
+    <div class="p-3 border-top border-secondary">
+        <nav>
+            <ul class="pagination mb-0 justify-content-center">
+                {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link bg-transparent border-secondary" href="?page={{ page_obj.previous_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}{% if current_status %}&status={{ current_status }}{% endif %}">
+                        <i class="bi bi-chevron-left"></i>
+                    </a>
+                </li>
+                {% endif %}
+                
+                <li class="page-item disabled">
+                    <span class="page-link bg-transparent border-secondary">
+                        Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+                    </span>
+                </li>
+                
+                {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link bg-transparent border-secondary" href="?page={{ page_obj.next_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}{% if current_status %}&status={{ current_status }}{% endif %}">
+                        <i class="bi bi-chevron-right"></i>
+                    </a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+    
+    {% else %}
+    <div class="text-center py-5">
+        <i class="bi bi-inbox display-1 text-muted"></i>
+        <h4 class="mt-3">No messages found</h4>
+        <p class="text-muted">
+            {% if search_query or current_status %}
+            Try adjusting your filters.
+            {% else %}
+            Contact form submissions will appear here.
+            {% endif %}
+        </p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

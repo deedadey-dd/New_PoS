@@ -255,3 +255,15 @@ else:
 
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@pos-system.com')
 
+
+# Telegram Notifications Configuration
+# Free instant notifications via Telegram Bot
+TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
+TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '')
+
+# SMS Configuration (for future use)
+# SMS_URL = os.getenv('SMS_URL', '')
+# SMS_SENDER = os.getenv('SMS_SENDER', 'POS System')
+# SMS_NOTIFY_PHONE = os.getenv('SMS_NOTIFY_PHONE', '')
+
+

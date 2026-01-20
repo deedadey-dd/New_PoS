@@ -1,0 +1,169 @@
+{% extends "superadmin/base.html" %}
+
+{% block title %}Message from {{ contact.name }}{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <a href="{% url 'superadmin:contact_list' %}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Back to Messages
+    </a>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <!-- Message Details -->
+        <div class="sa-card p-4 mb-4">
+            <div class="d-flex justify-content-between align-items-start mb-4">
+                <div>
+                    <h3 class="mb-1">{{ contact.name }}</h3>
+                    <p class="text-muted mb-0">
+                        <i class="bi bi-clock me-1"></i>
+                        {{ contact.created_at|date:"F j, Y, g:i a" }}
+                        {% if contact.is_read %}
+                        <span class="badge bg-secondary ms-2">Read</span>
+                        {% else %}
+                        <span class="badge bg-primary ms-2">New</span>
+                        {% endif %}
+                    </p>
+                </div>
+                {% if contact.telegram_sent %}
+                <span class="badge bg-info">
+                    <i class="bi bi-telegram me-1"></i> Notified
+                </span>
+                {% endif %}
+            </div>
+
+            <div class="row g-3 mb-4">
+                <div class="col-md-6">
+                    <div class="p-3 rounded" style="background: rgba(255,255,255,0.05);">
+                        <small class="text-muted d-block mb-1">Phone Number</small>
+                        <span class="fs-5">
+                            <i class="bi bi-telephone me-2"></i>
+                            <a href="tel:{{ contact.phone }}"
+                                class="text-white text-decoration-none">{{ contact.phone }}</a>
+                        </span>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="p-3 rounded" style="background: rgba(255,255,255,0.05);">
+                        <small class="text-muted d-block mb-1">Email</small>
+                        <span class="fs-5">
+                            <i class="bi bi-envelope me-2"></i>
+                            {% if contact.email %}
+                            <a href="mailto:{{ contact.email }}"
+                                class="text-white text-decoration-none">{{ contact.email }}</a>
+                            {% else %}
+                            <span class="text-muted">Not provided</span>
+                            {% endif %}
+                        </span>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="p-3 rounded" style="background: rgba(255,255,255,0.05);">
+                        <small class="text-muted d-block mb-1">WhatsApp Contact</small>
+                        <span class="fs-5">
+                            {% if contact.whatsapp_contact %}
+                            <i class="bi bi-whatsapp text-success me-2"></i>
+                            <a href="https://wa.me/{{ contact.phone|slice:'1:' }}" target="_blank"
+                                class="text-success text-decoration-none">
+                                Yes - Click to chat
+                            </a>
+                            {% else %}
+                            <span class="text-muted"><i class="bi bi-x-circle me-2"></i>No</span>
+                            {% endif %}
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <h5 class="mb-3">Message</h5>
+                <div class="p-3 rounded" style="background: rgba(255,255,255,0.05);">
+                    {% if contact.message %}
+                    <p class="mb-0 white-space-pre-wrap">{{ contact.message }}</p>
+                    {% else %}
+                    <p class="mb-0 text-muted fst-italic">No message provided</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Notes Section -->
+        <div class="sa-card p-4">
+            <h5 class="mb-3"><i class="bi bi-sticky me-2"></i>Internal Notes</h5>
+            <form method="post" action="{% url 'superadmin:contact_notes' contact.pk %}">
+                {% csrf_token %}
+                <div class="mb-3">
+                    <textarea name="notes" class="form-control bg-transparent border-secondary text-white" rows="4"
+                        placeholder="Add notes about this contact...">{{ contact.notes }}</textarea>
+                </div>
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-save me-1"></i> Save Notes
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <!-- Quick Actions -->
+        <div class="sa-card p-4 mb-4">
+            <h5 class="mb-3"><i class="bi bi-lightning me-2"></i>Quick Actions</h5>
+
+            {% if contact.whatsapp_contact %}
+            <a href="https://wa.me/{{ contact.phone|slice:'1:' }}?text=Hello%20{{ contact.name|urlencode }},%20thank%20you%20for%20your%20interest%20in%20our%20POS%20System!"
+                target="_blank" class="btn btn-success w-100 mb-2">
+                <i class="bi bi-whatsapp me-2"></i>Chat on WhatsApp
+            </a>
+            {% endif %}
+
+            <a href="tel:{{ contact.phone }}" class="btn btn-outline-light w-100 mb-2">
+                <i class="bi bi-telephone me-2"></i>Call
+            </a>
+
+            {% if contact.email %}
+            <a href="mailto:{{ contact.email }}?subject=RE: POS System Inquiry"
+                class="btn btn-outline-light w-100 mb-2">
+                <i class="bi bi-envelope me-2"></i>Send Email
+            </a>
+            {% endif %}
+
+            <hr class="my-3 border-secondary">
+
+            <form method="post" action="{% url 'superadmin:contact_mark_read' contact.pk %}" class="mb-2">
+                {% csrf_token %}
+                {% if contact.is_read %}
+                <input type="hidden" name="action" value="unread">
+                <button type="submit" class="btn btn-outline-secondary w-100">
+                    <i class="bi bi-envelope me-2"></i>Mark as Unread
+                </button>
+                {% else %}
+                <input type="hidden" name="action" value="read">
+                <button type="submit" class="btn btn-outline-primary w-100">
+                    <i class="bi bi-check-circle me-2"></i>Mark as Read
+                </button>
+                {% endif %}
+            </form>
+        </div>
+
+        <!-- Danger Zone -->
+        <div class="sa-card p-4 border-danger">
+            <h5 class="mb-3 text-danger"><i class="bi bi-exclamation-triangle me-2"></i>Danger Zone</h5>
+            <form method="post" action="{% url 'superadmin:contact_delete' contact.pk %}"
+                onsubmit="return confirm('Are you sure you want to delete this message? This cannot be undone.');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-outline-danger w-100">
+                    <i class="bi bi-trash me-2"></i>Delete Message
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .white-space-pre-wrap {
+        white-space: pre-wrap;
+    }
+</style>
+{% endblock %}

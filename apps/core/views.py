@@ -699,26 +699,38 @@ class ForcedPasswordChangeView(LoginRequiredMixin, View):
         return render(request, self.template_name, {'form': form})
 
 
-class HelpView(LoginRequiredMixin, View):
-    """Display help and documentation page."""
+class HelpView(View):
+    """Display help and documentation page. Accessible without login."""
     template_name = 'core/help.html'
     
     def get(self, request):
         return render(request, self.template_name)
 
 
-class DocumentationView(LoginRequiredMixin, View):
-    """Display full documentation/user manual page."""
+class DocumentationView(View):
+    """Display full documentation/user manual page. Accessible without login."""
     template_name = 'core/documentation.html'
     
     def get(self, request):
         return render(request, self.template_name)
 
 
+class StartupKitView(View):
+    """Display the Startup Kit / Hardware selection page for potential clients."""
+    template_name = 'core/startup_kit.html'
+    
+    def get(self, request):
+        return render(request, self.template_name)
+
+
+@method_decorator(csrf_exempt, name='dispatch')
 class ContactSubmitView(View):
     """Handle contact form submission from home page."""
     
     def post(self, request):
+        import logging
+        logger = logging.getLogger(__name__)
+        
         try:
             name = request.POST.get('name', '').strip()
             phone = request.POST.get('phone', '').strip()
@@ -733,9 +745,30 @@ class ContactSubmitView(View):
                     'error': 'Name and phone number are required.'
                 }, status=400)
             
-            # Compose email content
-            email_subject = f"POS System Inquiry from {name}"
-            email_body = f"""
+            # Import here to avoid circular imports
+            from .models import ContactMessage
+            from .notifications import notify_new_contact
+            
+            # Save to database
+            contact_msg = ContactMessage.objects.create(
+                name=name,
+                phone=phone,
+                email=email,
+                message=message,
+                whatsapp_contact=whatsapp_contact
+            )
+            
+            # Send Telegram notification (runs in background, doesn't block)
+            try:
+                notify_new_contact(contact_msg)
+            except Exception as e:
+                logger.error(f"Failed to send Telegram notification: {e}")
+                # Don't fail the request if notification fails
+            
+            # Try sending email as backup (optional)
+            try:
+                email_subject = f"POS System Inquiry from {name}"
+                email_body = f"""
 New inquiry from POS System website:
 
 Name: {name}
@@ -749,28 +782,22 @@ Message:
 ---
 This message was sent from the POS System landing page contact form.
 """
-            
-            # Send email
-            try:
                 send_mail(
                     subject=email_subject,
                     message=email_body,
                     from_email=settings.DEFAULT_FROM_EMAIL,
                     recipient_list=['hendaxis@gmail.com'],
-                    fail_silently=False,
+                    fail_silently=True,
                 )
             except Exception as e:
-                # Log the error but still return success to user
-                # In production, you might want to log this properly
-                import logging
-                logger = logging.getLogger(__name__)
                 logger.error(f"Failed to send contact email: {e}")
-                # Still return success - we can follow up manually
             
             return JsonResponse({'success': True})
             
         except Exception as e:
+            logger.error(f"Error processing contact form: {e}")
             return JsonResponse({
                 'success': False, 
                 'error': 'An error occurred. Please try again.'
             }, status=500)
+
