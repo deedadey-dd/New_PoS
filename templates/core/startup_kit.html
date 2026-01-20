@@ -484,6 +484,17 @@
     <script>
         let selectedKitCode = '';
         let selectedKitName = '';
+        let contactModalInstance = null;
+        let successModalInstance = null;
+
+        // Initialize modal instances after DOM is ready
+        document.addEventListener('DOMContentLoaded', function () {
+            const contactModalEl = document.getElementById('contactModal');
+            const successModalEl = document.getElementById('successModal');
+
+            contactModalInstance = new bootstrap.Modal(contactModalEl);
+            successModalInstance = new bootstrap.Modal(successModalEl);
+        });
 
         function selectKit(element, code, name) {
             // Remove selected class from all cards
@@ -513,12 +524,17 @@
             }
 
             document.getElementById('selectedKit').value = selectedKitName;
-            new bootstrap.Modal(document.getElementById('contactModal')).show();
+            contactModalInstance.show();
         }
 
         // Form submission
         document.getElementById('contactForm').addEventListener('submit', async function (e) {
             e.preventDefault();
+
+            const submitBtn = this.querySelector('button[type="submit"]');
+            const originalBtnText = submitBtn.innerHTML;
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Sending...';
 
             const formData = new FormData(this);
             // Prepend the kit selection to the message
@@ -534,13 +550,28 @@
                 const data = await response.json();
 
                 if (data.success) {
-                    bootstrap.Modal.getInstance(document.getElementById('contactModal')).hide();
-                    new bootstrap.Modal(document.getElementById('successModal')).show();
+                    // Hide contact modal first
+                    contactModalInstance.hide();
+
+                    // Wait for contact modal to fully close, then show success modal
+                    const contactModalEl = document.getElementById('contactModal');
+                    contactModalEl.addEventListener('hidden.bs.modal', function onHidden() {
+                        contactModalEl.removeEventListener('hidden.bs.modal', onHidden);
+                        successModalInstance.show();
+                    }, { once: true });
+
+                    // Reset form
+                    this.reset();
                 } else {
                     alert(data.error || 'Something went wrong. Please try again.');
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = originalBtnText;
                 }
             } catch (error) {
+                console.error('Error:', error);
                 alert('Network error. Please check your connection and try again.');
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalBtnText;
             }
         });
     </script>
