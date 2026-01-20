@@ -118,6 +118,13 @@
                     href="{% url 'superadmin:tenant_list' %}">
                     <i class="bi bi-buildings me-2"></i> Tenants
                 </a>
+                <a class="nav-link {% if 'contact' in request.resolver_match.url_name %}active{% endif %}"
+                    href="{% url 'superadmin:contact_list' %}">
+                    <i class="bi bi-envelope me-2"></i> Contact Messages
+                    {% if unread_messages %}
+                    <span class="badge bg-danger ms-1">{{ unread_messages }}</span>
+                    {% endif %}
+                </a>
                 <hr class="my-3 border-secondary">
                 <a class="nav-link" href="/super_office/" target="_blank">
                     <i class="bi bi-gear me-2"></i> Django Admin

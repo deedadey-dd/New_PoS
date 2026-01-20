@@ -344,3 +344,39 @@ class User(AbstractUser):
     def needs_tenant_setup(self):
         """Check if user needs to set up their tenant."""
         return self.is_admin and not self.tenant and not self.is_tenant_setup_complete
+
+
+class ContactMessage(models.Model):
+    """
+    Store contact form submissions from the landing page.
+    Displayed in the superadmin dashboard for follow-up.
+    """
+    name = models.CharField(max_length=255)
+    phone = models.CharField(max_length=50)
+    email = models.EmailField(blank=True)
+    message = models.TextField(blank=True)
+    whatsapp_contact = models.BooleanField(default=False)
+    
+    # Tracking
+    is_read = models.BooleanField(default=False)
+    read_at = models.DateTimeField(null=True, blank=True)
+    notes = models.TextField(blank=True, help_text="Internal notes for follow-up")
+    
+    # Notification status
+    telegram_sent = models.BooleanField(default=False)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"{self.name} - {self.phone} ({self.created_at.strftime('%Y-%m-%d %H:%M')})"
+    
+    def mark_as_read(self):
+        """Mark message as read."""
+        if not self.is_read:
+            self.is_read = True
+            self.read_at = timezone.now()
+            self.save(update_fields=['is_read', 'read_at'])
+

@@ -43,6 +43,9 @@ urlpatterns = [
     path('help/', views.HelpView.as_view(), name='help'),
     path('documentation/', views.DocumentationView.as_view(), name='documentation'),
     
+    # Startup Kit / Get Started
+    path('get-started/', views.StartupKitView.as_view(), name='startup_kit'),
+    
     # Contact form
     path('contact/submit/', views.ContactSubmitView.as_view(), name='contact_submit'),
 ]
