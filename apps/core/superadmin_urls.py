@@ -14,6 +14,16 @@ urlpatterns = [
     path('tenants/<int:pk>/deactivate/', superadmin_views.TenantDeactivateView.as_view(), name='tenant_deactivate'),
     path('tenants/<int:pk>/subscription/', superadmin_views.TenantSubscriptionView.as_view(), name='tenant_subscription'),
     path('tenants/<int:pk>/extend/', superadmin_views.TenantExtendView.as_view(), name='tenant_extend'),
+    path('tenants/<int:pk>/unlock/', superadmin_views.TenantUnlockView.as_view(), name='tenant_unlock'),
+    path('tenants/<int:pk>/payments/', superadmin_views.TenantPaymentListView.as_view(), name='tenant_payments'),
+    path('tenants/<int:pk>/payments/record/', superadmin_views.RecordPaymentView.as_view(), name='record_payment'),
+    
+    # Tenant Managers
+    path('managers/', superadmin_views.TenantManagerListView.as_view(), name='tenant_manager_list'),
+    path('managers/create/', superadmin_views.TenantManagerCreateView.as_view(), name='tenant_manager_create'),
+    path('managers/<int:pk>/', superadmin_views.TenantManagerDetailView.as_view(), name='tenant_manager_detail'),
+    path('managers/<int:pk>/edit/', superadmin_views.TenantManagerEditView.as_view(), name='tenant_manager_edit'),
+    path('managers/<int:pk>/delete/', superadmin_views.TenantManagerDeleteView.as_view(), name='tenant_manager_delete'),
     
     # Contact Messages
     path('contacts/', superadmin_views.ContactMessageListView.as_view(), name='contact_list'),

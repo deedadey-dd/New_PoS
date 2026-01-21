@@ -1,0 +1,162 @@
+{% extends 'superadmin/base.html' %}
+
+{% block title %}{% if is_edit %}Edit{% else %}Create{% endif %} Tenant Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1">
+                <i class="bi bi-person-badge me-2 text-primary"></i>
+                {% if is_edit %}Edit Tenant Manager{% else %}Create Tenant Manager{% endif %}
+            </h2>
+            <p class="text-muted mb-0">
+                {% if is_edit %}Update manager details and assignments{% else %}Add a new manager to handle tenant
+                subscriptions{% endif %}
+            </p>
+        </div>
+        <a href="{% url 'superadmin:tenant_manager_list' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>Back to List
+        </a>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-8">
+            <form method="post">
+                {% csrf_token %}
+
+                <!-- Account Details -->
+                <div class="card bg-dark border-secondary mb-4">
+                    <div class="card-header bg-transparent border-secondary">
+                        <h5 class="mb-0"><i class="bi bi-person me-2 text-info"></i>Account Details</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if not is_edit %}
+                        <div class="mb-3">
+                            <label class="form-label">Email <span class="text-danger">*</span></label>
+                            <input type="email" name="email" class="form-control bg-dark border-secondary text-white"
+                                required placeholder="manager@example.com">
+                        </div>
+                        {% else %}
+                        <div class="mb-3">
+                            <label class="form-label">Email</label>
+                            <input type="email" class="form-control bg-dark border-secondary text-white"
+                                value="{{ manager.email }}" disabled>
+                        </div>
+                        {% endif %}
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">First Name</label>
+                                <input type="text" name="first_name"
+                                    class="form-control bg-dark border-secondary text-white" placeholder="First Name"
+                                    value="{{ manager.first_name|default:'' }}">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Last Name</label>
+                                <input type="text" name="last_name"
+                                    class="form-control bg-dark border-secondary text-white" placeholder="Last Name"
+                                    value="{{ manager.last_name|default:'' }}">
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Phone</label>
+                            <input type="text" name="phone" class="form-control bg-dark border-secondary text-white"
+                                placeholder="Phone number" value="{{ manager.phone|default:'' }}">
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">
+                                Password {% if is_edit %}<small class="text-muted">(leave blank to keep
+                                    current)</small>{% else %}<span class="text-danger">*</span>{% endif %}
+                            </label>
+                            <input type="password" name="password"
+                                class="form-control bg-dark border-secondary text-white"
+                                {% if not is_edit %}required{% endif %} placeholder="••••••••">
+                        </div>
+
+                        {% if is_edit %}
+                        <div class="form-check">
+                            <input type="checkbox" name="is_active" id="is_active" class="form-check-input"
+                                {% if manager.is_active %}checked{% endif %}>
+                            <label class="form-check-label" for="is_active">Active Account</label>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Tenant Assignments -->
+                <div class="card bg-dark border-secondary mb-4">
+                    <div class="card-header bg-transparent border-secondary">
+                        <h5 class="mb-0"><i class="bi bi-building me-2 text-success"></i>Assigned Tenants</h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted mb-3">Select which tenants this manager can handle:</p>
+
+                        <div class="tenant-list" style="max-height: 400px; overflow-y: auto;">
+                            {% for tenant in tenants %}
+                            <div
+                                class="form-check mb-2 p-2 rounded {% if tenant.pk in assigned_tenant_ids %}bg-success bg-opacity-10{% endif %}">
+                                <input type="checkbox" name="assigned_tenants" value="{{ tenant.pk }}"
+                                    id="tenant_{{ tenant.pk }}" class="form-check-input"
+                                    {% if tenant.pk in assigned_tenant_ids %}checked{% endif %}>
+                                <label class="form-check-label w-100" for="tenant_{{ tenant.pk }}">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <strong>{{ tenant.name }}</strong>
+                                            <br><small class="text-muted">{{ tenant.email }}</small>
+                                        </div>
+                                        <div>
+                                            {% if tenant.subscription_status == 'ACTIVE' %}
+                                            <span class="badge bg-success">Active</span>
+                                            {% elif tenant.subscription_status == 'TRIAL' %}
+                                            <span class="badge bg-info">Trial</span>
+                                            {% elif tenant.subscription_status == 'EXPIRED' %}
+                                            <span class="badge bg-danger">Expired</span>
+                                            {% else %}
+                                            <span
+                                                class="badge bg-secondary">{{ tenant.get_subscription_status_display }}</span>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </label>
+                            </div>
+                            {% empty %}
+                            <p class="text-muted">No active tenants available.</p>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-between">
+                    <a href="{% url 'superadmin:tenant_manager_list' %}" class="btn btn-outline-secondary">Cancel</a>
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-check-lg me-1"></i>
+                        {% if is_edit %}Update Manager{% else %}Create Manager{% endif %}
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card bg-dark border-secondary">
+                <div class="card-body">
+                    <h6 class="text-muted mb-3"><i class="bi bi-info-circle me-2"></i>About Tenant Managers</h6>
+                    <p class="small text-muted">
+                        Tenant Managers are staff members who handle subscription management for assigned clients.
+                        They can:
+                    </p>
+                    <ul class="small text-muted">
+                        <li>View assigned tenant details</li>
+                        <li>Record subscription payments</li>
+                        <li>Extend subscriptions</li>
+                        <li>Update pricing overrides</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

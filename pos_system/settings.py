@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     'apps.reports',
     'apps.audit',
     'apps.payments',
+    'apps.subscriptions',
 ]
 
 MIDDLEWARE = [
@@ -265,9 +266,20 @@ TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '')
 # Format: country code + number without + or spaces (e.g., 233XXXXXXXXX)
 WHATSAPP_NUMBER = os.getenv('WHATSAPP_NUMBER', '')
 
-# SMS Configuration (for future use)
-# SMS_URL = os.getenv('SMS_URL', '')
-# SMS_SENDER = os.getenv('SMS_SENDER', 'POS System')
-# SMS_NOTIFY_PHONE = os.getenv('SMS_NOTIFY_PHONE', '')
+# mNotify SMS Configuration
+# Used for subscription notifications when email is not configured
+MNOTIFY_API_KEY = os.getenv('MNOTIFY_API_KEY', '')
+MNOTIFY_SENDER_ID = os.getenv('MNOTIFY_SENDER_ID', 'POSSystem')
+
+# Subscription Notification Settings
+# Set EMAIL_NOTIFICATIONS_ENABLED=True when email is properly configured
+EMAIL_NOTIFICATIONS_ENABLED = os.getenv('EMAIL_NOTIFICATIONS_ENABLED', 'False').lower() == 'true'
+SMS_NOTIFICATIONS_ENABLED = os.getenv('SMS_NOTIFICATIONS_ENABLED', 'True').lower() == 'true'
+
+# Default subscription pricing (in GHS)
+DEFAULT_ONBOARDING_FEE = float(os.getenv('DEFAULT_ONBOARDING_FEE', '4500.00'))
+DEFAULT_STARTER_PRICE = float(os.getenv('DEFAULT_STARTER_PRICE', '250.00'))
+DEFAULT_STANDARD_PRICE = float(os.getenv('DEFAULT_STANDARD_PRICE', '350.00'))
+DEFAULT_ADDITIONAL_SHOP_PRICE = float(os.getenv('DEFAULT_ADDITIONAL_SHOP_PRICE', '100.00'))
 
 

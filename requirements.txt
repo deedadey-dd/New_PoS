@@ -35,3 +35,6 @@ urllib3==2.6.3
 
 # Type hints
 typing_extensions==4.15.0
+
+# PDF generation (for subscription receipts)
+reportlab>=4.0.0

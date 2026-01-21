@@ -18,6 +18,9 @@ class Notification(TenantModel):
         ('TRANSFER_DISPUTED', 'Transfer Disputed'),
         ('LOW_STOCK', 'Low Stock Alert'),
         ('EXPIRY_WARNING', 'Expiry Warning'),
+        ('SUBSCRIPTION_EXPIRY', 'Subscription Expiry'),
+        ('SUBSCRIPTION_DEACTIVATED', 'Subscription Deactivated'),
+        ('ACCOUNT_LOCKED', 'Account Locked'),
         ('SYSTEM', 'System Notification'),
     ]
     

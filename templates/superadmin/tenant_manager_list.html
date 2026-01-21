@@ -1,0 +1,105 @@
+{% extends 'superadmin/base.html' %}
+
+{% block title %}Tenant Managers{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1">
+                <i class="bi bi-person-badge me-2 text-primary"></i>Tenant Managers
+            </h2>
+            <p class="text-muted mb-0">Manage users who handle tenant subscriptions</p>
+        </div>
+        <a href="{% url 'superadmin:tenant_manager_create' %}" class="btn btn-success">
+            <i class="bi bi-plus-lg me-1"></i>Add Manager
+        </a>
+    </div>
+
+    <!-- Stats -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-4">
+            <div class="card bg-dark border-secondary">
+                <div class="card-body text-center">
+                    <div class="display-5 text-primary">{{ total_managers }}</div>
+                    <div class="text-muted">Total Managers</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Managers List -->
+    <div class="card bg-dark border-secondary">
+        <div class="card-body p-0">
+            {% if managers %}
+            <div class="table-responsive">
+                <table class="table table-dark table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Phone</th>
+                            <th>Assigned Tenants</th>
+                            <th>Status</th>
+                            <th class="text-center">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for manager in managers %}
+                        <tr>
+                            <td>
+                                <strong>{{ manager.get_full_name|default:"-" }}</strong>
+                            </td>
+                            <td>{{ manager.email }}</td>
+                            <td>{{ manager.phone|default:"-" }}</td>
+                            <td>
+                                {% with assignments=manager.tenant_assignments.all %}
+                                {% if assignments %}
+                                {% for assignment in assignments|slice:":3" %}
+                                <span class="badge bg-secondary">{{ assignment.tenant.name }}</span>
+                                {% endfor %}
+                                {% if assignments.count > 3 %}
+                                <span class="badge bg-info">+{{ assignments.count|add:"-3" }} more</span>
+                                {% endif %}
+                                {% else %}
+                                <span class="text-muted">None assigned</span>
+                                {% endif %}
+                                {% endwith %}
+                            </td>
+                            <td>
+                                {% if manager.is_active %}
+                                <span class="badge bg-success">Active</span>
+                                {% else %}
+                                <span class="badge bg-danger">Inactive</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <a href="{% url 'superadmin:tenant_manager_detail' manager.pk %}"
+                                    class="btn btn-sm btn-outline-info" title="View">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+                                <a href="{% url 'superadmin:tenant_manager_edit' manager.pk %}"
+                                    class="btn btn-sm btn-outline-primary" title="Edit">
+                                    <i class="bi bi-pencil"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-5">
+                <i class="bi bi-person-badge text-muted display-1 mb-3"></i>
+                <h5 class="text-muted">No Tenant Managers</h5>
+                <p class="text-muted">Create a tenant manager to handle client subscriptions.</p>
+                <a href="{% url 'superadmin:tenant_manager_create' %}" class="btn btn-success">
+                    <i class="bi bi-plus-lg me-1"></i>Add First Manager
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

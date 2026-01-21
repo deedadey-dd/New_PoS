@@ -1,0 +1,229 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ tenant.name }} - Tenant Details{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Breadcrumb -->
+    <nav aria-label="breadcrumb" class="mb-3">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{% url 'subscriptions:tm_dashboard' %}">Dashboard</a></li>
+            <li class="breadcrumb-item active">{{ tenant.name }}</li>
+        </ol>
+    </nav>
+
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-start mb-4">
+        <div>
+            <h1 class="h3 mb-1">{{ tenant.name }}</h1>
+            <p class="text-muted mb-0">{{ tenant.email }}</p>
+        </div>
+        <div>
+            <a href="{% url 'subscriptions:tm_record_payment' pk=tenant.pk %}" class="btn btn-success">
+                <i class="bi bi-plus-circle me-1"></i>Record Payment
+            </a>
+            <a href="{% url 'subscriptions:tm_payment_history' pk=tenant.pk %}" class="btn btn-outline-primary">
+                <i class="bi bi-clock-history me-1"></i>Full History
+            </a>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <!-- Subscription Status -->
+        <div class="col-md-6">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0"><i class="bi bi-credit-card me-2"></i>Subscription Status</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-6">
+                            <div class="text-muted small">Current Plan</div>
+                            <div class="fs-5 fw-semibold">
+                                {% if tenant.subscription_plan %}
+                                {{ tenant.subscription_plan.name }}
+                                {% else %}
+                                <span class="text-muted">No Plan</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="text-muted small">Status</div>
+                            <div>
+                                {% with status=tenant.subscription_status %}
+                                {% if status == 'ACTIVE' %}
+                                <span class="badge bg-success fs-6">Active</span>
+                                {% elif status == 'TRIAL' %}
+                                <span class="badge bg-info fs-6">Trial</span>
+                                {% elif status == 'EXPIRED' %}
+                                <span class="badge bg-danger fs-6">Expired</span>
+                                {% elif status == 'INACTIVE' %}
+                                <span class="badge bg-warning text-dark fs-6">Inactive</span>
+                                {% elif status == 'LOCKED' %}
+                                <span class="badge bg-dark fs-6">Locked</span>
+                                {% else %}
+                                <span class="badge bg-secondary fs-6">{{ status }}</span>
+                                {% endif %}
+                                {% endwith %}
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="text-muted small">Start Date</div>
+                            <div>
+                                {% if tenant.subscription_start_date %}
+                                {{ tenant.subscription_start_date|date:"M d, Y" }}
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="text-muted small">End Date</div>
+                            <div>
+                                {% if tenant.subscription_end_date %}
+                                {{ tenant.subscription_end_date|date:"M d, Y" }}
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="text-muted small">Days Remaining</div>
+                            <div class="fs-5">
+                                {% with days=tenant.days_until_expiry %}
+                                {% if days is not None %}
+                                {% if days <= 0 %}
+                                <span class="text-danger fw-bold">{{ days }} days</span>
+                                {% elif days <= 7 %}
+                                <span class="text-danger">{{ days }} days</span>
+                                {% elif days <= 14 %}
+                                <span class="text-warning">{{ days }} days</span>
+                                {% else %}
+                                <span class="text-success">{{ days }} days</span>
+                                {% endif %}
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                                {% endwith %}
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="text-muted small">Monthly Price</div>
+                            <div class="fs-5 fw-semibold text-primary">
+                                {{ tenant.currency_symbol }}{{ tenant.get_monthly_subscription_price|floatformat:2 }}
+                            </div>
+                        </div>
+                    </div>
+
+                    {% if not tenant.onboarding_paid %}
+                    <div class="alert alert-warning mt-3 mb-0">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        <strong>Onboarding fee not paid</strong>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Organization Details -->
+        <div class="col-md-6">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0"><i class="bi bi-building me-2"></i>Organization Details</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-6">
+                            <div class="text-muted small">Phone</div>
+                            <div>{{ tenant.phone|default:"-" }}</div>
+                        </div>
+                        <div class="col-6">
+                            <div class="text-muted small">Currency</div>
+                            <div>{{ tenant.currency }} ({{ tenant.currency_symbol }})</div>
+                        </div>
+                        <div class="col-6">
+                            <div class="text-muted small">Created</div>
+                            <div>{{ tenant.created_at|date:"M d, Y" }}</div>
+                        </div>
+                        <div class="col-6">
+                            <div class="text-muted small">Shop Count</div>
+                            <div>{{ tenant.get_shop_count }} shops</div>
+                        </div>
+                        <div class="col-12">
+                            <div class="text-muted small">Address</div>
+                            <div>{{ tenant.address|default:"-" }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Payments -->
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="bi bi-clock-history me-2"></i>Recent Payments</h5>
+                    <a href="{% url 'subscriptions:tm_payment_history' pk=tenant.pk %}"
+                        class="btn btn-sm btn-outline-primary">
+                        View All
+                    </a>
+                </div>
+                <div class="card-body p-0">
+                    {% if payments %}
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Receipt #</th>
+                                    <th>Type</th>
+                                    <th>Date</th>
+                                    <th>Method</th>
+                                    <th>Status</th>
+                                    <th class="text-end">Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for payment in payments %}
+                                <tr>
+                                    <td><code>{{ payment.receipt_number }}</code></td>
+                                    <td>
+                                        {% if payment.payment_type == 'ONBOARDING' %}
+                                        <span class="badge bg-info">Onboarding</span>
+                                        {% elif payment.payment_type == 'SUBSCRIPTION' %}
+                                        <span class="badge bg-primary">Subscription</span>
+                                        {% elif payment.payment_type == 'RENEWAL' %}
+                                        <span class="badge bg-success">Renewal</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">{{ payment.payment_type }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ payment.created_at|date:"M d, Y" }}</td>
+                                    <td>{{ payment.get_payment_method_display }}</td>
+                                    <td>
+                                        {% if payment.status == 'COMPLETED' %}
+                                        <span class="badge bg-success">Completed</span>
+                                        {% elif payment.status == 'PENDING' %}
+                                        <span class="badge bg-warning text-dark">Pending</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">{{ payment.status }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-end fw-semibold">
+                                        {{ tenant.currency_symbol }}{{ payment.amount|floatformat:2 }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-4">
+                        <i class="bi bi-inbox fs-1 text-muted d-block mb-2"></i>
+                        <p class="text-muted mb-0">No payments recorded yet.</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

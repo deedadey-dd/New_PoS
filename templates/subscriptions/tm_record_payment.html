@@ -1,0 +1,152 @@
+{% extends 'base.html' %}
+
+{% block title %}Record Payment - {{ tenant.name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Breadcrumb -->
+    <nav aria-label="breadcrumb" class="mb-3">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{% url 'subscriptions:tm_dashboard' %}">Dashboard</a></li>
+            <li class="breadcrumb-item"><a
+                    href="{% url 'subscriptions:tm_tenant_detail' pk=tenant.pk %}">{{ tenant.name }}</a></li>
+            <li class="breadcrumb-item active">Record Payment</li>
+        </ol>
+    </nav>
+
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card shadow-sm">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0">
+                        <i class="bi bi-plus-circle me-2"></i>
+                        Record Payment for {{ tenant.name }}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <!-- Current Status Info -->
+                    <div class="alert alert-info mb-4">
+                        <div class="row">
+                            <div class="col-md-4">
+                                <strong>Current Plan:</strong> {{ tenant.subscription_plan.name|default:"No Plan" }}
+                            </div>
+                            <div class="col-md-4">
+                                <strong>Status:</strong> {{ tenant.get_subscription_status_display }}
+                            </div>
+                            <div class="col-md-4">
+                                <strong>Expires:</strong> {{ tenant.subscription_end_date|date:"M d, Y"|default:"N/A" }}
+                            </div>
+                        </div>
+                    </div>
+
+                    <form method="post">
+                        {% csrf_token %}
+
+                        <div class="row g-3">
+                            <!-- Payment Type -->
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Payment Type <span
+                                        class="text-danger">*</span></label>
+                                <select name="payment_type" class="form-select" required>
+                                    <option value="">Select Type</option>
+                                    {% if not tenant.onboarding_paid %}
+                                    <option value="ONBOARDING">Onboarding Fee</option>
+                                    {% endif %}
+                                    <option value="SUBSCRIPTION">New Subscription</option>
+                                    <option value="RENEWAL">Renewal</option>
+                                </select>
+                            </div>
+
+                            <!-- Payment Method -->
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Payment Method <span
+                                        class="text-danger">*</span></label>
+                                <select name="payment_method" class="form-select" required>
+                                    <option value="">Select Method</option>
+                                    <option value="MOMO">Mobile Money</option>
+                                    <option value="BANK">Bank Transfer</option>
+                                    <option value="CASH">Cash</option>
+                                    <option value="PAYSTACK">Paystack</option>
+                                    <option value="OTHER">Other</option>
+                                </select>
+                            </div>
+
+                            <!-- Amount -->
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Amount ({{ tenant.currency_symbol }}) <span
+                                        class="text-danger">*</span></label>
+                                <input type="number" name="amount" class="form-control" step="0.01" min="0" required
+                                    placeholder="0.00">
+                                <div class="form-text">
+                                    Monthly price:
+                                    {{ tenant.currency_symbol }}{{ tenant.get_monthly_subscription_price|floatformat:2 }}
+                                </div>
+                            </div>
+
+                            <!-- Months -->
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Subscription Months</label>
+                                <select name="months" class="form-select">
+                                    <option value="1">1 month</option>
+                                    <option value="2">2 months</option>
+                                    <option value="3">3 months</option>
+                                    <option value="6">6 months</option>
+                                    <option value="12">12 months (1 year)</option>
+                                </select>
+                                <div class="form-text">For subscription or renewal payments only</div>
+                            </div>
+
+                            <!-- Transaction Reference -->
+                            <div class="col-12">
+                                <label class="form-label fw-semibold">Transaction Reference</label>
+                                <input type="text" name="reference" class="form-control"
+                                    placeholder="e.g., MoMo transaction ID, bank reference">
+                            </div>
+                        </div>
+
+                        <hr class="my-4">
+
+                        <div class="d-flex justify-content-between">
+                            <a href="{% url 'subscriptions:tm_tenant_detail' pk=tenant.pk %}"
+                                class="btn btn-outline-secondary">
+                                <i class="bi bi-arrow-left me-1"></i>Cancel
+                            </a>
+                            <button type="submit" class="btn btn-success">
+                                <i class="bi bi-check-circle me-1"></i>Record Payment
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Pricing Reference -->
+            <div class="card shadow-sm mt-4">
+                <div class="card-header bg-white">
+                    <h6 class="mb-0"><i class="bi bi-info-circle me-2"></i>Pricing Reference</h6>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Plan</th>
+                                    <th class="text-end">Monthly Price</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for plan in plans %}
+                                <tr {% if tenant.subscription_plan.pk == plan.pk %}class="table-primary" {% endif %}>
+                                    <td>{{ plan.name }}</td>
+                                    <td class="text-end">{{ tenant.currency_symbol }}{{ plan.base_price|floatformat:2 }}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

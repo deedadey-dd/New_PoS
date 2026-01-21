@@ -27,7 +27,16 @@ class LoginForm(AuthenticationForm):
 
 
 class TenantSetupForm(forms.ModelForm):
-    """Form for setting up a new tenant."""
+    """Form for setting up a new tenant with subscription plan selection."""
+    
+    subscription_plan = forms.ModelChoiceField(
+        queryset=None,  # Set in __init__
+        widget=forms.RadioSelect(attrs={
+            'class': 'subscription-plan-radio',
+        }),
+        required=True,
+        empty_label=None,
+    )
     
     class Meta:
         model = Tenant
@@ -54,6 +63,14 @@ class TenantSetupForm(forms.ModelForm):
                 'class': 'form-select',
             }),
         }
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Import here to avoid circular imports
+        from apps.subscriptions.models import SubscriptionPlan
+        self.fields['subscription_plan'].queryset = SubscriptionPlan.objects.filter(
+            is_active=True
+        ).order_by('display_order', 'base_price')
 
 
 class LocationForm(forms.ModelForm):
