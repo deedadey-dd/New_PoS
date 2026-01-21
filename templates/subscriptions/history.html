@@ -1,0 +1,137 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Payment History{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Page Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1">
+                <i class="bi bi-clock-history me-2 text-info"></i>Payment History
+            </h2>
+            <p class="text-muted mb-0">View all subscription payments and download receipts</p>
+        </div>
+        <a href="{% url 'subscriptions:status' %}" class="btn btn-outline-light">
+            <i class="bi bi-arrow-left me-1"></i>Back to Status
+        </a>
+    </div>
+
+    <div class="card bg-dark border-secondary">
+        <div class="card-body p-0">
+            {% if payments %}
+            <div class="table-responsive">
+                <table class="table table-dark table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>Receipt #</th>
+                            <th>Type</th>
+                            <th>Period</th>
+                            <th>Method</th>
+                            <th>Date</th>
+                            <th>Status</th>
+                            <th>Amount</th>
+                            <th class="text-center">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for payment in payments %}
+                        <tr>
+                            <td>
+                                <code class="text-success">{{ payment.receipt_number }}</code>
+                            </td>
+                            <td>{{ payment.get_payment_type_display }}</td>
+                            <td>
+                                {% if payment.period_start and payment.period_end %}
+                                {{ payment.period_start|date:"M d" }} - {{ payment.period_end|date:"M d, Y" }}
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ payment.get_payment_method_display }}</td>
+                            <td>{{ payment.created_at|date:"M d, Y" }}</td>
+                            <td>
+                                {% if payment.status == 'COMPLETED' %}
+                                <span class="badge bg-success">Completed</span>
+                                {% elif payment.status == 'PENDING' %}
+                                <span class="badge bg-warning text-dark">Pending</span>
+                                {% elif payment.status == 'FAILED' %}
+                                <span class="badge bg-danger">Failed</span>
+                                {% elif payment.status == 'REFUNDED' %}
+                                <span class="badge bg-info">Refunded</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <strong>{{ tenant.currency_symbol }}{{ payment.amount|floatformat:2|intcomma }}</strong>
+                            </td>
+                            <td class="text-center">
+                                {% if payment.status == 'COMPLETED' %}
+                                <a href="{% url 'subscriptions:receipt_view' payment.pk %}"
+                                    class="btn btn-sm btn-outline-primary" target="_blank" title="View Receipt">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+                                <a href="{% url 'subscriptions:receipt_download' payment.pk %}"
+                                    class="btn btn-sm btn-outline-success" title="Download Receipt">
+                                    <i class="bi bi-download"></i>
+                                </a>
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            {% if is_paginated %}
+            <div class="card-footer bg-transparent border-secondary d-flex justify-content-center">
+                <nav aria-label="Payment history pagination">
+                    <ul class="pagination mb-0">
+                        {% if page_obj.has_previous %}
+                        <li class="page-item">
+                            <a class="page-link bg-dark border-secondary text-light"
+                                href="?page={{ page_obj.previous_page_number }}">
+                                <i class="bi bi-chevron-left"></i>
+                            </a>
+                        </li>
+                        {% endif %}
+
+                        {% for num in page_obj.paginator.page_range %}
+                        {% if page_obj.number == num %}
+                        <li class="page-item active">
+                            <span class="page-link bg-success border-success">{{ num }}</span>
+                        </li>
+                        {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                        <li class="page-item">
+                            <a class="page-link bg-dark border-secondary text-light"
+                                href="?page={{ num }}">{{ num }}</a>
+                        </li>
+                        {% endif %}
+                        {% endfor %}
+
+                        {% if page_obj.has_next %}
+                        <li class="page-item">
+                            <a class="page-link bg-dark border-secondary text-light"
+                                href="?page={{ page_obj.next_page_number }}">
+                                <i class="bi bi-chevron-right"></i>
+                            </a>
+                        </li>
+                        {% endif %}
+                    </ul>
+                </nav>
+            </div>
+            {% endif %}
+            {% else %}
+            <div class="text-center py-5">
+                <i class="bi bi-receipt text-muted display-1 mb-3"></i>
+                <h5 class="text-muted">No Payment History</h5>
+                <p class="text-muted">Your payment records will appear here once you make a subscription payment.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

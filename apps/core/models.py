@@ -70,8 +70,18 @@ class Tenant(models.Model):
         ('ACTIVE', 'Active'),
         ('EXPIRED', 'Expired'),
         ('SUSPENDED', 'Suspended'),
+        ('INACTIVE', 'Inactive'),  # Can login but cannot transact
+        ('LOCKED', 'Locked'),  # Cannot access account (6-month inactive)
     ]
     
+    subscription_plan = models.ForeignKey(
+        'subscriptions.SubscriptionPlan',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='tenants',
+        help_text="Current subscription plan"
+    )
     subscription_status = models.CharField(
         max_length=20,
         choices=SUBSCRIPTION_STATUS_CHOICES,
@@ -92,6 +102,32 @@ class Tenant(models.Model):
         default=False,
         help_text="If True, subscription won't auto-expire"
     )
+    
+    # Setup tracking
+    setup_completed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When tenant completed initial setup"
+    )
+    onboarding_paid = models.BooleanField(
+        default=False,
+        help_text="Whether onboarding fee has been paid"
+    )
+    
+    # Notification tracking
+    last_notification_sent = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Date of last subscription notification"
+    )
+    
+    # Account locking (6-month inactive)
+    locked_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When account was locked due to extended inactivity"
+    )
+    
     admin_notes = models.TextField(
         blank=True,
         help_text="Internal notes for superuser (not visible to tenant)"
@@ -134,11 +170,25 @@ class Tenant(models.Model):
     @property
     def is_subscription_valid(self):
         """Check if subscription is currently valid."""
-        if self.subscription_status in ['EXPIRED', 'SUSPENDED']:
+        if self.subscription_status in ['EXPIRED', 'SUSPENDED', 'INACTIVE', 'LOCKED']:
             return False
         if self.subscription_end_date and self.subscription_end_date < timezone.now().date():
             return False
         return True
+    
+    @property
+    def can_transact(self):
+        """Check if tenant can perform transactions (not just login)."""
+        if self.subscription_status in ['INACTIVE', 'LOCKED', 'EXPIRED', 'SUSPENDED']:
+            return False
+        if not self.is_active:
+            return False
+        return True
+    
+    @property
+    def is_locked(self):
+        """Check if account is locked due to extended inactivity."""
+        return self.subscription_status == 'LOCKED' or self.locked_at is not None
     
     @property
     def days_until_expiry(self):
@@ -149,13 +199,49 @@ class Tenant(models.Model):
         return None
     
     @property
+    def days_since_expiry(self):
+        """Get days since subscription expired (negative means not expired yet)."""
+        if self.days_until_expiry is not None:
+            return -self.days_until_expiry
+        return None
+    
+    @property
+    def is_in_setup_period(self):
+        """Check if tenant is still in the 14-day setup period."""
+        if not self.setup_completed_at:
+            return True  # Setup not completed yet
+        from datetime import timedelta
+        setup_end = self.setup_completed_at + timedelta(days=14)
+        return timezone.now() < setup_end
+    
+    @property
     def subscription_status_display(self):
         """Return a display-friendly status with warning for expiring soon."""
-        if self.subscription_status in ['EXPIRED', 'SUSPENDED']:
+        if self.subscription_status in ['EXPIRED', 'SUSPENDED', 'INACTIVE', 'LOCKED']:
             return self.get_subscription_status_display()
         if self.days_until_expiry is not None and self.days_until_expiry <= 30:
             return f"{self.get_subscription_status_display()} (Expires in {self.days_until_expiry} days)"
         return self.get_subscription_status_display()
+    
+    def get_shop_count(self):
+        """Get the number of shop locations for this tenant."""
+        return self.location_set.filter(location_type='SHOP', is_active=True).count()
+    
+    def get_monthly_subscription_price(self):
+        """Calculate monthly subscription price considering plan and shop count."""
+        if not self.subscription_plan:
+            return None
+        
+        shop_count = self.get_shop_count()
+        
+        # Check for pricing override
+        try:
+            override = self.pricing_override
+            return override.get_effective_monthly_price(self.subscription_plan, shop_count)
+        except Exception:
+            pass
+        
+        return self.subscription_plan.calculate_price(shop_count)
 
 
 class TenantModel(models.Model):
@@ -214,6 +300,7 @@ class Role(models.Model):
     """
     ROLE_CHOICES = [
         ('SUPER_ADMIN', 'Super Admin'),
+        ('TENANT_MANAGER', 'Tenant Manager'),  # Manages subscriptions for clients
         ('ADMIN', 'Admin'),
         ('PRODUCTION_MANAGER', 'Production Manager'),
         ('STORES_MANAGER', 'Stores Manager'),

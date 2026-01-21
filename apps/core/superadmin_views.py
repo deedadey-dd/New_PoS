@@ -302,3 +302,304 @@ class ContactMessageMarkReadView(SuperuserRequiredMixin, View):
         
         return redirect('superadmin:contact_list')
 
+
+# ============== TENANT MANAGER VIEWS ==============
+
+class TenantManagerListView(SuperuserRequiredMixin, ListView):
+    """List all Tenant Managers."""
+    template_name = 'superadmin/tenant_manager_list.html'
+    context_object_name = 'managers'
+    
+    def get_queryset(self):
+        from apps.core.models import Role
+        tenant_manager_role = Role.objects.filter(name='TENANT_MANAGER').first()
+        if tenant_manager_role:
+            return User.objects.filter(
+                role=tenant_manager_role,
+                is_superuser=False
+            ).prefetch_related('managed_tenants')
+        return User.objects.none()
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['total_managers'] = self.get_queryset().count()
+        return context
+
+
+class TenantManagerCreateView(SuperuserRequiredMixin, View):
+    """Create a new Tenant Manager."""
+    template_name = 'superadmin/tenant_manager_form.html'
+    
+    def get(self, request):
+        return render(request, self.template_name, {
+            'tenants': Tenant.objects.filter(is_active=True).order_by('name'),
+        })
+    
+    def post(self, request):
+        from apps.core.models import Role
+        
+        email = request.POST.get('email', '').strip()
+        first_name = request.POST.get('first_name', '').strip()
+        last_name = request.POST.get('last_name', '').strip()
+        phone = request.POST.get('phone', '').strip()
+        password = request.POST.get('password', '')
+        assigned_tenants = request.POST.getlist('assigned_tenants')
+        
+        # Validation
+        errors = []
+        if not email:
+            errors.append("Email is required.")
+        if not password:
+            errors.append("Password is required.")
+        if User.objects.filter(email=email).exists():
+            errors.append("A user with this email already exists.")
+        
+        if errors:
+            for error in errors:
+                messages.error(request, error)
+            return render(request, self.template_name, {
+                'tenants': Tenant.objects.filter(is_active=True).order_by('name'),
+            })
+        
+        # Get or create TENANT_MANAGER role
+        tenant_manager_role, _ = Role.objects.get_or_create(
+            name='TENANT_MANAGER',
+            defaults={'description': 'Manages subscriptions for assigned tenants'}
+        )
+        
+        # Create user
+        user = User.objects.create_user(
+            email=email,
+            password=password,
+            first_name=first_name,
+            last_name=last_name,
+            phone=phone,
+            role=tenant_manager_role,
+            is_active=True,
+            tenant=None  # Tenant managers don't belong to a tenant
+        )
+        
+        # Assign tenants
+        from apps.subscriptions.models import TenantManagerAssignment
+        for tenant_id in assigned_tenants:
+            try:
+                tenant = Tenant.objects.get(pk=tenant_id)
+                TenantManagerAssignment.objects.create(
+                    manager=user,
+                    tenant=tenant,
+                    is_primary=len(assigned_tenants) == 1
+                )
+            except Tenant.DoesNotExist:
+                pass
+        
+        messages.success(request, f"Tenant Manager '{user.get_full_name() or user.email}' created successfully.")
+        return redirect('superadmin:tenant_manager_list')
+
+
+class TenantManagerDetailView(SuperuserRequiredMixin, DetailView):
+    """View Tenant Manager details."""
+    model = User
+    template_name = 'superadmin/tenant_manager_detail.html'
+    context_object_name = 'manager'
+    
+    def get_queryset(self):
+        from apps.core.models import Role
+        tenant_manager_role = Role.objects.filter(name='TENANT_MANAGER').first()
+        if tenant_manager_role:
+            return User.objects.filter(role=tenant_manager_role, is_superuser=False)
+        return User.objects.none()
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        from apps.subscriptions.models import TenantManagerAssignment
+        context['assignments'] = TenantManagerAssignment.objects.filter(
+            manager=self.object
+        ).select_related('tenant')
+        return context
+
+
+class TenantManagerEditView(SuperuserRequiredMixin, View):
+    """Edit a Tenant Manager."""
+    template_name = 'superadmin/tenant_manager_form.html'
+    
+    def get_manager(self, pk):
+        from apps.core.models import Role
+        tenant_manager_role = Role.objects.filter(name='TENANT_MANAGER').first()
+        if tenant_manager_role:
+            return get_object_or_404(User, pk=pk, role=tenant_manager_role)
+        raise Http404()
+    
+    def get(self, request, pk):
+        from apps.subscriptions.models import TenantManagerAssignment
+        manager = self.get_manager(pk)
+        assigned_ids = TenantManagerAssignment.objects.filter(
+            manager=manager
+        ).values_list('tenant_id', flat=True)
+        
+        return render(request, self.template_name, {
+            'manager': manager,
+            'tenants': Tenant.objects.filter(is_active=True).order_by('name'),
+            'assigned_tenant_ids': list(assigned_ids),
+            'is_edit': True,
+        })
+    
+    def post(self, request, pk):
+        from apps.subscriptions.models import TenantManagerAssignment
+        manager = self.get_manager(pk)
+        
+        manager.first_name = request.POST.get('first_name', '').strip()
+        manager.last_name = request.POST.get('last_name', '').strip()
+        manager.phone = request.POST.get('phone', '').strip()
+        manager.is_active = request.POST.get('is_active') == 'on'
+        
+        # Update password if provided
+        new_password = request.POST.get('password', '')
+        if new_password:
+            manager.set_password(new_password)
+        
+        manager.save()
+        
+        # Update tenant assignments
+        assigned_tenants = request.POST.getlist('assigned_tenants')
+        TenantManagerAssignment.objects.filter(manager=manager).delete()
+        
+        for tenant_id in assigned_tenants:
+            try:
+                tenant = Tenant.objects.get(pk=tenant_id)
+                TenantManagerAssignment.objects.create(
+                    manager=manager,
+                    tenant=tenant,
+                    is_primary=len(assigned_tenants) == 1
+                )
+            except Tenant.DoesNotExist:
+                pass
+        
+        messages.success(request, f"Tenant Manager '{manager.get_full_name() or manager.email}' updated.")
+        return redirect('superadmin:tenant_manager_detail', pk=pk)
+
+
+class TenantManagerDeleteView(SuperuserRequiredMixin, View):
+    """Delete a Tenant Manager."""
+    
+    def post(self, request, pk):
+        from apps.core.models import Role
+        tenant_manager_role = Role.objects.filter(name='TENANT_MANAGER').first()
+        if tenant_manager_role:
+            manager = get_object_or_404(User, pk=pk, role=tenant_manager_role)
+            name = manager.get_full_name() or manager.email
+            manager.delete()
+            messages.success(request, f"Tenant Manager '{name}' deleted.")
+        return redirect('superadmin:tenant_manager_list')
+
+
+# ============== TENANT UNLOCK VIEW ==============
+
+class TenantUnlockView(SuperuserRequiredMixin, View):
+    """Unlock a locked tenant account."""
+    
+    def post(self, request, pk):
+        tenant = get_object_or_404(Tenant, pk=pk)
+        
+        if tenant.subscription_status != 'LOCKED' and tenant.locked_at is None:
+            messages.warning(request, f"Tenant '{tenant.name}' is not locked.")
+            return redirect('superadmin:tenant_detail', pk=pk)
+        
+        # Unlock the account
+        tenant.subscription_status = 'INACTIVE'  # Set to inactive, needs to renew
+        tenant.locked_at = None
+        tenant.is_active = True
+        tenant.admin_notes += f"\n[{timezone.now().strftime('%Y-%m-%d %H:%M')}] Account unlocked by {request.user.email}"
+        tenant.save()
+        
+        messages.success(request, f"Tenant '{tenant.name}' has been unlocked. They should renew their subscription.")
+        return redirect('superadmin:tenant_detail', pk=pk)
+
+
+# ============== SUBSCRIPTION PAYMENT VIEWS ==============
+
+class TenantPaymentListView(SuperuserRequiredMixin, ListView):
+    """List all subscription payments for a tenant."""
+    template_name = 'superadmin/tenant_payments.html'
+    context_object_name = 'payments'
+    paginate_by = 20
+    
+    def get_queryset(self):
+        from apps.subscriptions.models import SubscriptionPayment
+        self.tenant = get_object_or_404(Tenant, pk=self.kwargs['pk'])
+        return SubscriptionPayment.objects.filter(tenant=self.tenant).order_by('-created_at')
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['tenant'] = self.tenant
+        return context
+
+
+class RecordPaymentView(SuperuserRequiredMixin, View):
+    """Record a manual subscription payment."""
+    template_name = 'superadmin/record_payment.html'
+    
+    def get(self, request, pk):
+        from apps.subscriptions.models import SubscriptionPlan
+        tenant = get_object_or_404(Tenant, pk=pk)
+        plans = SubscriptionPlan.objects.filter(is_active=True)
+        return render(request, self.template_name, {
+            'tenant': tenant,
+            'plans': plans,
+        })
+    
+    def post(self, request, pk):
+        from apps.subscriptions.models import SubscriptionPayment, SubscriptionPlan
+        from decimal import Decimal
+        
+        tenant = get_object_or_404(Tenant, pk=pk)
+        
+        payment_type = request.POST.get('payment_type')
+        amount = request.POST.get('amount')
+        payment_method = request.POST.get('payment_method')
+        reference = request.POST.get('reference', '')
+        months = int(request.POST.get('months', 1))
+        
+        try:
+            amount = Decimal(amount)
+        except:
+            messages.error(request, "Invalid amount.")
+            return redirect('superadmin:record_payment', pk=pk)
+        
+        # Create payment record
+        payment = SubscriptionPayment.objects.create(
+            tenant=tenant,
+            payment_type=payment_type,
+            amount=amount,
+            currency=tenant.currency,
+            status='COMPLETED',
+            payment_method=payment_method,
+            transaction_reference=reference,
+            plan_name=tenant.subscription_plan.name if tenant.subscription_plan else None,
+            recorded_by=request.user,
+            notes=f"Manually recorded by {request.user.email}"
+        )
+        
+        # Update subscription dates
+        if payment_type == 'ONBOARDING':
+            tenant.onboarding_paid = True
+            tenant.save(update_fields=['onboarding_paid'])
+        elif payment_type in ['SUBSCRIPTION', 'RENEWAL']:
+            # Extend subscription
+            today = timezone.now().date()
+            if tenant.subscription_end_date and tenant.subscription_end_date > today:
+                tenant.subscription_end_date = tenant.subscription_end_date + timedelta(days=30 * months)
+            else:
+                tenant.subscription_start_date = today
+                tenant.subscription_end_date = today + timedelta(days=30 * months)
+            
+            tenant.subscription_status = 'ACTIVE'
+            tenant.is_active = True
+            tenant.save()
+            
+            # Update payment period
+            payment.period_start = tenant.subscription_start_date
+            payment.period_end = tenant.subscription_end_date
+            payment.save()
+        
+        messages.success(request, f"Payment of {tenant.currency_symbol}{amount} recorded successfully.")
+        return redirect('superadmin:tenant_payments', pk=pk)

@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 0;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #27ae60, #2ecc71);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .alert-box {
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .alert-warning {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+        }
+
+        .alert-danger {
+            background-color: #f8d7da;
+            border-left: 4px solid #dc3545;
+        }
+
+        .alert-critical {
+            background-color: #2c3e50;
+            border-left: 4px solid #e74c3c;
+            color: white;
+        }
+
+        .info-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+
+        .info-table td {
+            padding: 12px 0;
+            border-bottom: 1px solid #eee;
+        }
+
+        .info-table td:first-child {
+            font-weight: 600;
+            color: #666;
+            width: 40%;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 14px 28px;
+            background: linear-gradient(135deg, #27ae60, #2ecc71);
+            color: white !important;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+            margin: 10px 0;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+        }
+
+        .footer {
+            background-color: #2c3e50;
+            color: #bdc3c7;
+            padding: 20px 30px;
+            text-align: center;
+            font-size: 12px;
+        }
+
+        .footer a {
+            color: #27ae60;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>POS System</h1>
+        </div>
+
+        <div class="content">
+            {% if notification_type == 'expiry_warning' %}
+            <div class="alert-box alert-warning">
+                <strong>⚠️ Subscription Expiring Soon</strong>
+                <p style="margin: 10px 0 0;">Your subscription will expire in <strong>{{ days_info }} days</strong>.</p>
+            </div>
+
+            <p>Dear {{ tenant.name }} Team,</p>
+
+            <p>This is a friendly reminder that your POS System subscription is expiring soon. Please renew before
+                <strong>{{ tenant.subscription_end_date|date:"F d, Y" }}</strong> to avoid any service interruption.
+            </p>
+
+            {% elif notification_type == 'expired' %}
+            <div class="alert-box alert-danger">
+                <strong>🔴 Subscription Expired</strong>
+                <p style="margin: 10px 0 0;">Your subscription expired <strong>{{ days_info|abs }} days ago</strong>.
+                </p>
+            </div>
+
+            <p>Dear {{ tenant.name }} Team,</p>
+
+            <p>Your POS System subscription has expired. Some features may already be restricted.
+                Please renew immediately to restore full access to all features.</p>
+
+            {% elif notification_type == 'deactivated' %}
+            <div class="alert-box alert-danger">
+                <strong>🚫 Account Deactivated</strong>
+                <p style="margin: 10px 0 0;">Your account has been deactivated due to an expired subscription.</p>
+            </div>
+
+            <p>Dear {{ tenant.name }} Team,</p>
+
+            <p>Your POS System account has been deactivated because your subscription remained expired for more than 10
+                days.
+                You can still login to view your dashboard, but all transactions have been disabled.</p>
+
+            <p>Please contact our support team to reactivate your account and renew your subscription.</p>
+
+            {% elif notification_type == 'locked' %}
+            <div class="alert-box alert-critical">
+                <strong>🔒 Account Locked</strong>
+                <p style="margin: 10px 0 0;">Your account has been locked due to extended inactivity.</p>
+            </div>
+
+            <p>Dear {{ tenant.name }} Team,</p>
+
+            <p>Your POS System account has been locked because it remained inactive for 6 months without action.
+                You can no longer access your account.</p>
+
+            <p><strong>To unlock your account, please contact our support team.</strong></p>
+
+            {% endif %}
+
+            <table class="info-table">
+                <tr>
+                    <td>Organization</td>
+                    <td>{{ tenant.name }}</td>
+                </tr>
+                <tr>
+                    <td>Current Plan</td>
+                    <td>{{ tenant.subscription_plan.name|default:"N/A" }}</td>
+                </tr>
+                <tr>
+                    <td>Status</td>
+                    <td>{{ tenant.get_subscription_status_display }}</td>
+                </tr>
+                <tr>
+                    <td>Expiry Date</td>
+                    <td>{{ tenant.subscription_end_date|date:"F d, Y" }}</td>
+                </tr>
+            </table>
+
+            {% if notification_type != 'locked' %}
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="#" class="btn">Renew Subscription</a>
+            </div>
+
+            <p>If you have any questions or need assistance, please don't hesitate to contact our support team.</p>
+            {% else %}
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="#" class="btn btn-secondary">Contact Support</a>
+            </div>
+            {% endif %}
+
+            <p>Best regards,<br>The POS System Team</p>
+        </div>
+
+        <div class="footer">
+            <p>This is an automated message from POS System.</p>
+            <p>If you have questions, contact us at <a href="mailto:support@pos-system.com">support@pos-system.com</a>
+            </p>
+        </div>
+    </div>
+</body>
+
+</html>

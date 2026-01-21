@@ -8,26 +8,251 @@
     <title>Setup Your Organization - POS System</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="{% static 'css/styles.css' %}" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #0d1117 0%, #1a1f2e 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+
+        .setup-container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .setup-header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .setup-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 2rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .section-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .section-title i {
+            color: #27ae60;
+        }
+
+        /* Plan cards */
+        .plan-selection {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .plan-card {
+            background: rgba(22, 27, 34, 0.8);
+            border: 2px solid transparent;
+            border-radius: 12px;
+            padding: 1.5rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .plan-card:hover {
+            border-color: #27ae60;
+            transform: translateY(-4px);
+        }
+
+        .plan-card.selected {
+            border-color: #27ae60;
+            background: rgba(39, 174, 96, 0.1);
+        }
+
+        .plan-card.selected::after {
+            content: '✓';
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 24px;
+            height: 24px;
+            background: #27ae60;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            color: white;
+        }
+
+        .plan-card input[type="radio"] {
+            display: none;
+        }
+
+        .plan-name {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .plan-price {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: #27ae60;
+            margin-bottom: 0.5rem;
+        }
+
+        .plan-price small {
+            font-size: 0.75rem;
+            font-weight: 400;
+            color: #8b949e;
+        }
+
+        .plan-features {
+            font-size: 0.875rem;
+            color: #8b949e;
+        }
+
+        .plan-badge {
+            display: inline-block;
+            background: linear-gradient(135deg, #27ae60, #2ecc71);
+            color: white;
+            font-size: 0.7rem;
+            padding: 2px 8px;
+            border-radius: 10px;
+            margin-bottom: 0.5rem;
+        }
+
+        .form-control,
+        .form-select {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #fff;
+        }
+
+        .form-control:focus,
+        .form-select:focus {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: #27ae60;
+            box-shadow: 0 0 0 0.25rem rgba(39, 174, 96, 0.25);
+            color: #fff;
+        }
+
+        .form-select option {
+            background: #161b22;
+            color: #fff;
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #27ae60, #2ecc71);
+            border: none;
+        }
+
+        .btn-success:hover {
+            background: linear-gradient(135deg, #2ecc71, #27ae60);
+        }
+
+        .trial-info {
+            background: rgba(52, 152, 219, 0.1);
+            border: 1px solid rgba(52, 152, 219, 0.3);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .trial-info i {
+            color: #3498db;
+        }
+    </style>
 </head>
 
 <body>
-    <div class="setup-wrapper">
-        <div class="setup-card">
-            <div class="text-center mb-4">
-                <i class="bi bi-building fs-1 text-success"></i>
-                <h3 class="mt-2 mb-1">Set Up Your Organization</h3>
-                <p class="text-muted">Welcome! Let's get your organization configured.</p>
+    <div class="setup-container">
+        <div class="setup-header">
+            <i class="bi bi-building display-1 text-success"></i>
+            <h2 class="mt-3 mb-2">Set Up Your Organization</h2>
+            <p class="text-muted">Welcome! Let's get your organization configured.</p>
+        </div>
+
+        {% if form.errors %}
+        <div class="alert alert-danger">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            Please correct the errors below.
+        </div>
+        {% endif %}
+
+        <form method="post" class="needs-validation" novalidate>
+            {% csrf_token %}
+
+            <!-- Subscription Plan Selection -->
+            <div class="setup-card">
+                <h5 class="section-title">
+                    <i class="bi bi-credit-card-2-front"></i>
+                    Choose Your Subscription Plan
+                </h5>
+
+                <div class="trial-info">
+                    <i class="bi bi-info-circle me-2"></i>
+                    <strong>14-Day Setup Period:</strong> You'll have 14 days to set up your organization before your
+                    subscription begins.
+                </div>
+
+                <div class="plan-selection">
+                    {% for plan in plans %}
+                    <label
+                        class="plan-card {% if form.subscription_plan.value == plan.pk|stringformat:'s' %}selected{% endif %}"
+                        data-plan-id="{{ plan.pk }}">
+                        <input type="radio" name="subscription_plan" value="{{ plan.pk }}"
+                            {% if form.subscription_plan.value == plan.pk|stringformat:'s' %}checked{% endif %}
+                            required>
+
+                        {% if plan.code == 'STANDARD' %}
+                        <span class="plan-badge">Most Popular</span>
+                        {% endif %}
+
+                        <div class="plan-name">{{ plan.name }}</div>
+                        <div class="plan-price">
+                            GH₵{{ plan.base_price|floatformat:0 }}
+                            <small>/month</small>
+                        </div>
+                        <div class="plan-features">
+                            <i class="bi bi-shop text-primary me-1"></i>
+                            Up to {{ plan.max_shops }} shop{% if plan.max_shops > 1 %}s{% endif %}
+                            {% if plan.code == 'PREMIUM' %}
+                            <br>+ GH₵{{ plan.additional_shop_price|floatformat:0 }}/extra shop
+                            {% endif %}
+                        </div>
+                    </label>
+                    {% empty %}
+                    <!-- Fallback if no plans configured -->
+                    <div class="text-muted text-center py-3">
+                        <p>Subscription plans are being configured. Please try again later or contact support.</p>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                {% if form.subscription_plan.errors %}
+                <div class="invalid-feedback d-block">
+                    {% for error in form.subscription_plan.errors %}{{ error }}{% endfor %}
+                </div>
+                {% endif %}
             </div>
 
-            {% if form.errors %}
-            <div class="alert alert-danger">
-                Please correct the errors below.
-            </div>
-            {% endif %}
-
-            <form method="post" class="needs-validation" novalidate>
-                {% csrf_token %}
+            <!-- Organization Details -->
+            <div class="setup-card">
+                <h5 class="section-title">
+                    <i class="bi bi-building"></i>
+                    Organization Details
+                </h5>
 
                 <div class="mb-3">
                     <label for="id_name" class="form-label">Organization Name <span class="text-danger">*</span></label>
@@ -69,15 +294,36 @@
                     <label for="id_currency" class="form-label">Default Currency <span
                             class="text-danger">*</span></label>
                     {{ form.currency }}
-                    <div class="form-text">This will be used for all pricing and reports.</div>
+                    <div class="form-text text-muted">This will be used for all pricing and reports.</div>
                 </div>
+            </div>
 
-                <button type="submit" class="btn btn-success w-100 py-2">
-                    <i class="bi bi-check-circle me-2"></i>Complete Setup
-                </button>
-            </form>
-        </div>
+            <button type="submit" class="btn btn-success w-100 py-3 fs-5">
+                <i class="bi bi-check-circle me-2"></i>Complete Setup
+            </button>
+
+            <div class="text-center mt-3">
+                <a href="{% url 'subscriptions:pricing' %}" class="text-muted small">
+                    <i class="bi bi-info-circle me-1"></i>View detailed pricing information
+                </a>
+            </div>
+        </form>
     </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Plan card selection
+        document.querySelectorAll('.plan-card').forEach(card => {
+            card.addEventListener('click', function () {
+                // Remove selected class from all cards
+                document.querySelectorAll('.plan-card').forEach(c => c.classList.remove('selected'));
+                // Add selected class to clicked card
+                this.classList.add('selected');
+                // Check the radio button
+                this.querySelector('input[type="radio"]').checked = true;
+            });
+        });
+    </script>
 </body>
 
 </html>

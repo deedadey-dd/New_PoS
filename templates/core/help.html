@@ -65,6 +65,14 @@
                 </div>
             </a>
         </div>
+        <div class="col-md-3 mb-3">
+            <a href="#subscription" class="card shadow-sm text-decoration-none h-100">
+                <div class="card-body text-center">
+                    <i class="bi bi-credit-card-2-front fs-1 text-purple mb-2" style="color: #6f42c1;"></i>
+                    <h5 class="text-dark">Subscription</h5>
+                </div>
+            </a>
+        </div>
     </div>
 
     <!-- Getting Started -->
@@ -466,6 +474,51 @@
         </div>
     </div>
 
+    <!-- Subscription Management -->
+    <div class="card shadow-sm mb-4" id="subscription">
+        <div class="card-header text-white" style="background-color: #6f42c1;">
+            <h4 class="mb-0"><i class="bi bi-credit-card-2-front me-2"></i>Subscription Management</h4>
+        </div>
+        <div class="card-body">
+            <p>Manage your organization's subscription to the POS system.</p>
+
+            <div class="row">
+                <div class="col-md-6">
+                    <h5><i class="bi bi-pie-chart me-2"></i>Subscription Plans</h5>
+                    <p>We offer three subscription tiers:</p>
+                    <ul>
+                        <li><strong>Starter</strong> - Up to 2 shops, GH₵250/month</li>
+                        <li><strong>Standard</strong> - Up to 5 shops, GH₵350/month</li>
+                        <li><strong>Premium</strong> - Unlimited shops, GH₵350/month + GH₵100/extra shop</li>
+                    </ul>
+                    <a href="{% url 'subscriptions:pricing' %}" class="btn btn-sm btn-outline-primary">
+                        <i class="bi bi-info-circle me-1"></i>View Pricing Details
+                    </a>
+                </div>
+                <div class="col-md-6">
+                    <h5><i class="bi bi-clock-history me-2"></i>Subscription Status</h5>
+                    <p>Check your current subscription:</p>
+                    <ol>
+                        <li>Go to <strong>Subscription → Status</strong> in the sidebar</li>
+                        <li>View your current plan and expiry date</li>
+                        <li>See recent payment history</li>
+                    </ol>
+                    {% if user.is_authenticated and user.role.name == 'ADMIN' %}
+                    <a href="{% url 'subscriptions:status' %}" class="btn btn-sm btn-outline-success">
+                        <i class="bi bi-speedometer2 me-1"></i>View Status
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="alert alert-info mt-3 mb-0">
+                <h6><i class="bi bi-bell me-2"></i>Subscription Notifications</h6>
+                <p class="mb-0">You'll receive notifications 5 days before your subscription expires. If expired, you
+                    have a 10-day grace period before your account is deactivated.</p>
+            </div>
+        </div>
+    </div>
+
     <!-- Troubleshooting -->
     <div class="card shadow-sm mb-4" id="troubleshooting">
         <div class="card-header bg-danger text-white">
@@ -538,6 +591,25 @@
                                 <li>The destination location hasn't received it yet</li>
                                 <li>Contact the destination manager</li>
                                 <li>They need to complete the receipt</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                            data-bs-target="#trouble5">
+                            "Subscription expired" or "Account inactive"
+                        </button>
+                    </h2>
+                    <div id="trouble5" class="accordion-collapse collapse">
+                        <div class="accordion-body">
+                            <ul>
+                                <li>Your subscription may have expired - check <strong>Subscription → Status</strong>
+                                </li>
+                                <li>Contact your account manager to renew your subscription</li>
+                                <li>If your account is locked, contact our support team</li>
+                                <li>Make payment via Mobile Money, Bank Transfer, or Paystack</li>
                             </ul>
                         </div>
                     </div>

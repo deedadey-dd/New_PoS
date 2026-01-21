@@ -114,9 +114,13 @@
                     href="{% url 'superadmin:dashboard' %}">
                     <i class="bi bi-speedometer2 me-2"></i> Dashboard
                 </a>
-                <a class="nav-link {% if 'tenant' in request.resolver_match.url_name %}active{% endif %}"
+                <a class="nav-link {% if 'tenant' in request.resolver_match.url_name and 'manager' not in request.resolver_match.url_name %}active{% endif %}"
                     href="{% url 'superadmin:tenant_list' %}">
                     <i class="bi bi-buildings me-2"></i> Tenants
+                </a>
+                <a class="nav-link {% if 'manager' in request.resolver_match.url_name %}active{% endif %}"
+                    href="{% url 'superadmin:tenant_manager_list' %}">
+                    <i class="bi bi-person-badge me-2"></i> Tenant Managers
                 </a>
                 <a class="nav-link {% if 'contact' in request.resolver_match.url_name %}active{% endif %}"
                     href="{% url 'superadmin:contact_list' %}">

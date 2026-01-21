@@ -37,6 +37,7 @@ urlpatterns = [
     path('customers/', include('apps.customers.urls')),
     path('payments/', include('apps.payments.urls')),
     path('audit/', include('apps.audit.urls')),
+    path('subscription/', include('apps.subscriptions.urls')),
     
     # Superadmin (Platform Management) - Superuser only
     path('superadmin/', include('apps.core.superadmin_urls')),

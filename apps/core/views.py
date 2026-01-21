@@ -84,7 +84,7 @@ class LogoutView(View):
 
 
 class TenantSetupView(LoginRequiredMixin, View):
-    """Handle tenant setup for new admin users."""
+    """Handle tenant setup for new admin users with subscription plan selection."""
     template_name = 'core/tenant_setup.html'
     
     def get(self, request):
@@ -93,26 +93,68 @@ class TenantSetupView(LoginRequiredMixin, View):
             return redirect('core:dashboard')
         
         form = TenantSetupForm()
-        return render(request, self.template_name, {'form': form})
+        
+        # Get subscription plans for display
+        from apps.subscriptions.models import SubscriptionPlan
+        plans = SubscriptionPlan.objects.filter(is_active=True).order_by('display_order', 'base_price')
+        
+        return render(request, self.template_name, {
+            'form': form,
+            'plans': plans,
+        })
     
     def post(self, request):
+        from datetime import timedelta
+        from django.utils import timezone
+        
         if not request.user.is_admin or request.user.tenant:
             return redirect('core:dashboard')
         
         form = TenantSetupForm(request.POST)
+        
         if form.is_valid():
-            # Create tenant
-            tenant = form.save()
+            # Create tenant with subscription plan
+            tenant = form.save(commit=False)
+            
+            # Set subscription plan from form
+            subscription_plan = form.cleaned_data.get('subscription_plan')
+            if subscription_plan:
+                tenant.subscription_plan = subscription_plan
+            
+            # Set up trial period
+            now = timezone.now()
+            tenant.setup_completed_at = now
+            tenant.subscription_status = 'TRIAL'
+            
+            # Subscription starts 14 days after setup completion
+            tenant.subscription_start_date = now.date() + timedelta(days=14)
+            
+            # Default 1 month subscription period (will be set properly on first payment)
+            tenant.subscription_end_date = tenant.subscription_start_date + timedelta(days=30)
+            
+            tenant.save()
             
             # Link admin to tenant
             request.user.tenant = tenant
             request.user.is_tenant_setup_complete = True
             request.user.save()
             
-            messages.success(request, f'Organization "{tenant.name}" has been set up successfully!')
+            messages.success(
+                request, 
+                f'Organization "{tenant.name}" has been set up successfully! '
+                f'You have a 14-day setup period starting now. Your subscription will begin on '
+                f'{tenant.subscription_start_date.strftime("%B %d, %Y")}.'
+            )
             return redirect('core:dashboard')
         
-        return render(request, self.template_name, {'form': form})
+        # Get plans for re-rendering form with errors
+        from apps.subscriptions.models import SubscriptionPlan
+        plans = SubscriptionPlan.objects.filter(is_active=True).order_by('display_order', 'base_price')
+        
+        return render(request, self.template_name, {
+            'form': form,
+            'plans': plans,
+        })
 
 
 class DashboardView(LoginRequiredMixin, View):
