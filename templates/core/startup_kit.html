@@ -270,7 +270,7 @@
                         <ul class="equipment-list">
                             <li><i class="bi bi-check-circle-fill"></i> Smartphone (Android/iOS)</li>
                             <li><i class="bi bi-check-circle-fill"></i> Internet Connection</li>
-                            <li><i class="bi bi-x-circle text-muted"></i> <span class="text-muted">No printed
+                            <li><i class="bi bi-x-circle text-danger"></i> <span class="text-danger">No printed
                                     receipts</span></li>
                         </ul>
                         <div class="text-success small fw-bold">
@@ -313,7 +313,7 @@
                         <ul class="equipment-list">
                             <li><i class="bi bi-check-circle-fill"></i> Laptop Computer</li>
                             <li><i class="bi bi-check-circle-fill"></i> Internet Connection</li>
-                            <li><i class="bi bi-x-circle text-muted"></i> <span class="text-muted">No printed
+                            <li><i class="bi bi-x-circle text-danger"></i> <span class="text-danger">No printed
                                     receipts</span></li>
                         </ul>
                         <div class="text-info small fw-bold">
@@ -364,25 +364,24 @@
                     </div>
                 </div>
 
-                <!-- Help Card -->
+                <!-- Option 6: Subscription Pricing -->
                 <div class="col-lg-4 col-md-6">
                     <div class="kit-card"
-                        style="background: linear-gradient(145deg, rgba(25, 135, 84, 0.2), rgba(25, 135, 84, 0.1)); border-color: rgba(25, 135, 84, 0.3);">
-                        <div class="card-icon" style="background: linear-gradient(135deg, #198754, #20c997);">
-                            <i class="bi bi-question-lg"></i>
+                        style="background: linear-gradient(145deg, rgba(13, 110, 253, 0.2), rgba(13, 110, 253, 0.1)); border-color: rgba(13, 110, 253, 0.3);">
+                        <div class="card-icon" style="background: linear-gradient(135deg, #0d6efd, #0dcaf0);">
+                            <i class="bi bi-tag-fill"></i>
                         </div>
-                        <h4 class="fw-bold mb-3">Not Sure?</h4>
-                        <p class="text-white-50 mb-3">Our team can help you choose the right setup for your business.
-                        </p>
+                        <h4 class="fw-bold mb-3">Subscription Pricing</h4>
+                        <p class="text-white-50 mb-3">View our flexible subscription plans tailored for your business
+                            growth.</p>
                         <ul class="equipment-list">
-                            <li><i class="bi bi-chat-dots-fill"></i> Free Consultation</li>
-                            <li><i class="bi bi-people-fill"></i> Personalized Advice</li>
-                            <li><i class="bi bi-tools"></i> Setup Assistance</li>
+                            <li><i class="bi bi-check-circle-fill"></i> Transparent Pricing</li>
+                            <li><i class="bi bi-check-circle-fill"></i> Monthly & Annual Plans</li>
+                            <li><i class="bi bi-check-circle-fill"></i> No Hidden Fees</li>
                         </ul>
-                        <button class="btn btn-success w-100 mt-3"
-                            onclick="openContactModal('consultation', 'Need Help Choosing - Free Consultation')">
-                            <i class="bi bi-telephone me-2"></i>Request Callback
-                        </button>
+                        <a href="{% url 'subscriptions:pricing' %}" class="btn btn-primary w-100 mt-3">
+                            <i class="bi bi-eye me-2"></i>View Pricing
+                        </a>
                     </div>
                 </div>
             </div>
