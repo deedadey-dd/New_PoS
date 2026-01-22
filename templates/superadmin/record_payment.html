@@ -30,7 +30,8 @@
                     <div class="card-body">
                         <div class="row">
                             <div class="col-md-6 mb-3">
-                                <label class="form-label">Payment Type <span class="text-danger">*</span></label>
+                                <label class="form-label text-white">Payment Type <span
+                                        class="text-danger">*</span></label>
                                 <select name="payment_type" class="form-select bg-dark border-secondary text-white"
                                     required>
                                     <option value="ONBOARDING">Onboarding Fee</option>
@@ -39,7 +40,7 @@
                                 </select>
                             </div>
                             <div class="col-md-6 mb-3">
-                                <label class="form-label">Amount ({{ tenant.currency }}) <span
+                                <label class="form-label text-white">Amount ({{ tenant.currency }}) <span
                                         class="text-danger">*</span></label>
                                 <input type="number" name="amount" step="0.01" min="0"
                                     class="form-control bg-dark border-secondary text-white" required
@@ -49,7 +50,8 @@
 
                         <div class="row">
                             <div class="col-md-6 mb-3">
-                                <label class="form-label">Payment Method <span class="text-danger">*</span></label>
+                                <label class="form-label text-white">Payment Method <span
+                                        class="text-danger">*</span></label>
                                 <select name="payment_method" class="form-select bg-dark border-secondary text-white"
                                     required>
                                     <option value="MOBILE_MONEY">Mobile Money</option>
@@ -60,7 +62,7 @@
                                 </select>
                             </div>
                             <div class="col-md-6 mb-3">
-                                <label class="form-label">Subscription Months</label>
+                                <label class="form-label text-white">Subscription Months</label>
                                 <select name="months" class="form-select bg-dark border-secondary text-white">
                                     <option value="1">1 Month</option>
                                     <option value="3">3 Months</option>
@@ -71,7 +73,7 @@
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label">Reference / Transaction ID</label>
+                            <label class="form-label text-white">Reference / Transaction ID</label>
                             <input type="text" name="reference" class="form-control bg-dark border-secondary text-white"
                                 placeholder="Enter payment reference or transaction ID">
                         </div>

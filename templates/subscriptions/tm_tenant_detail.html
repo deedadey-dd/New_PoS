@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+{% extends 'subscriptions/tm_base.html' %}
 
 {% block title %}{{ tenant.name }} - Tenant Details{% endblock %}
 
@@ -32,7 +32,7 @@
         <!-- Subscription Status -->
         <div class="col-md-6">
             <div class="card shadow-sm h-100">
-                <div class="card-header bg-white">
+                <div class="card-header bg-transparent">
                     <h5 class="mb-0"><i class="bi bi-credit-card me-2"></i>Subscription Status</h5>
                 </div>
                 <div class="card-body">
@@ -128,7 +128,7 @@
         <!-- Organization Details -->
         <div class="col-md-6">
             <div class="card shadow-sm h-100">
-                <div class="card-header bg-white">
+                <div class="card-header bg-transparent">
                     <h5 class="mb-0"><i class="bi bi-building me-2"></i>Organization Details</h5>
                 </div>
                 <div class="card-body">
@@ -161,7 +161,7 @@
         <!-- Recent Payments -->
         <div class="col-12">
             <div class="card shadow-sm">
-                <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <div class="card-header bg-transparent d-flex justify-content-between align-items-center">
                     <h5 class="mb-0"><i class="bi bi-clock-history me-2"></i>Recent Payments</h5>
                     <a href="{% url 'subscriptions:tm_payment_history' pk=tenant.pk %}"
                         class="btn btn-sm btn-outline-primary">
@@ -172,7 +172,7 @@
                     {% if payments %}
                     <div class="table-responsive">
                         <table class="table table-hover mb-0">
-                            <thead class="table-light">
+                            <thead>
                                 <tr>
                                     <th>Receipt #</th>
                                     <th>Type</th>

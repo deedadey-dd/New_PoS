@@ -22,8 +22,9 @@
         <!-- Current Plan Card -->
         <div class="col-lg-6">
             <div class="card bg-dark border-secondary h-100">
-                <div class="card-header bg-transparent border-secondary d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0">
+                <div
+                    class="card-header bg-transparent border-secondary d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0 text-white">
                         <i class="bi bi-box me-2 text-primary"></i>Current Plan
                     </h5>
                     {% if plan %}
@@ -39,7 +40,7 @@
                         <p class="text-muted">per month</p>
                     </div>
 
-                    <ul class="list-unstyled">
+                    <ul class="list-unstyled text-white">
                         <li class="mb-2">
                             <i class="bi bi-check-circle text-success me-2"></i>
                             Up to {{ plan.max_shops }} shop locations included
@@ -51,7 +52,8 @@
                         {% if plan.code == 'PREMIUM' and shop_count > plan.max_shops %}
                         <li class="mb-2">
                             <i class="bi bi-plus-circle text-warning me-2"></i>
-                            Additional shops: {{ shop_count|add:"-5" }} x {{ tenant.currency_symbol }}{{ plan.additional_shop_price|floatformat:2 }}
+                            Additional shops: {{ shop_count|add:"-5" }} x
+                            {{ tenant.currency_symbol }}{{ plan.additional_shop_price|floatformat:2 }}
                         </li>
                         {% endif %}
                         {% for feature in plan.features %}
@@ -78,7 +80,7 @@
         <div class="col-lg-6">
             <div class="card bg-dark border-secondary h-100">
                 <div class="card-header bg-transparent border-secondary">
-                    <h5 class="mb-0">
+                    <h5 class="mb-0 text-white">
                         <i class="bi bi-calendar-check me-2 text-info"></i>Subscription Details
                     </h5>
                 </div>
@@ -111,7 +113,8 @@
                                     {% if tenant.onboarding_paid %}
                                     <span class="text-success"><i class="bi bi-check-circle me-1"></i>Paid</span>
                                     {% else %}
-                                    <span class="text-warning"><i class="bi bi-exclamation-circle me-1"></i>Pending</span>
+                                    <span class="text-warning"><i
+                                            class="bi bi-exclamation-circle me-1"></i>Pending</span>
                                     {% endif %}
                                 </div>
                             </div>
@@ -119,7 +122,7 @@
                         <div class="col-6">
                             <div class="p-3 bg-secondary bg-opacity-25 rounded">
                                 <div class="text-muted small mb-1">Start Date</div>
-                                <div class="fs-5">
+                                <div class="fs-5 text-white">
                                     {% if tenant.subscription_start_date %}
                                     {{ tenant.subscription_start_date|date:"M d, Y" }}
                                     {% else %}
@@ -131,7 +134,8 @@
                         <div class="col-6">
                             <div class="p-3 bg-secondary bg-opacity-25 rounded">
                                 <div class="text-muted small mb-1">Expires</div>
-                                <div class="fs-5 {% if is_expiring_soon %}text-warning{% elif is_expired %}text-danger{% endif %}">
+                                <div
+                                    class="fs-5 text-white {% if is_expiring_soon %}text-warning{% elif is_expired %}text-danger{% endif %}">
                                     {% if tenant.subscription_end_date %}
                                     {{ tenant.subscription_end_date|date:"M d, Y" }}
                                     {% else %}
@@ -164,7 +168,7 @@
     {% if recent_payments %}
     <div class="card bg-dark border-secondary mt-4">
         <div class="card-header bg-transparent border-secondary d-flex justify-content-between align-items-center">
-            <h5 class="mb-0">
+            <h5 class="mb-0 text-white">
                 <i class="bi bi-receipt me-2 text-success"></i>Recent Payments
             </h5>
             <a href="{% url 'subscriptions:history' %}" class="btn btn-sm btn-outline-light">
@@ -176,11 +180,11 @@
                 <table class="table table-dark table-hover mb-0">
                     <thead>
                         <tr>
-                            <th>Receipt #</th>
-                            <th>Type</th>
-                            <th>Date</th>
-                            <th>Amount</th>
-                            <th class="text-center">Actions</th>
+                            <th class="text-white">Receipt #</th>
+                            <th class="text-white">Type</th>
+                            <th class="text-white">Date</th>
+                            <th class="text-white">Amount</th>
+                            <th class="text-center text-white">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -195,15 +199,14 @@
                                 <strong>{{ tenant.currency_symbol }}{{ payment.amount|floatformat:2|intcomma }}</strong>
                             </td>
                             <td class="text-center">
-                                <a href="{% url 'subscriptions:receipt_view' payment.pk %}" 
-                                   class="btn btn-sm btn-outline-primary" 
-                                   target="_blank"
-                                   title="View Receipt">
+                                <button type="button" class="btn btn-sm btn-outline-primary view-receipt-btn"
+                                    data-receipt-url="{% url 'subscriptions:receipt_view' payment.pk %}"
+                                    data-download-url="{% url 'subscriptions:receipt_download' payment.pk %}"
+                                    title="View Receipt">
                                     <i class="bi bi-eye"></i>
-                                </a>
-                                <a href="{% url 'subscriptions:receipt_download' payment.pk %}" 
-                                   class="btn btn-sm btn-outline-success"
-                                   title="Download Receipt">
+                                </button>
+                                <a href="{% url 'subscriptions:receipt_download' payment.pk %}"
+                                    class="btn btn-sm btn-outline-success" title="Download Receipt">
                                     <i class="bi bi-download"></i>
                                 </a>
                             </td>
@@ -216,4 +219,155 @@
     </div>
     {% endif %}
 </div>
+
+<!-- Receipt View Modal -->
+<div class="modal fade" id="receiptModal" tabindex="-1" aria-labelledby="receiptModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content bg-dark text-white">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title" id="receiptModalLabel">
+                    <i class="bi bi-receipt me-2 text-success"></i>Receipt Details
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                    aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="receiptLoading" class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2 text-muted">Loading receipt details...</p>
+                </div>
+                <div id="receiptContent" class="d-none">
+                    <div class="text-center mb-4">
+                        <h4 class="text-success" id="receiptNumber"></h4>
+                        <span class="badge bg-primary" id="receiptStatus"></span>
+                    </div>
+
+                    <table class="table table-dark table-borderless mb-0">
+                        <tbody>
+                            <tr>
+                                <td class="text-muted">Payment Type:</td>
+                                <td class="text-end fw-semibold" id="receiptType"></td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted">Plan:</td>
+                                <td class="text-end" id="receiptPlan"></td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted">Amount:</td>
+                                <td class="text-end fs-5 fw-bold text-success" id="receiptAmount"></td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted">Payment Method:</td>
+                                <td class="text-end" id="receiptMethod"></td>
+                            </tr>
+                            <tr id="receiptPeriodRow" class="d-none">
+                                <td class="text-muted">Period:</td>
+                                <td class="text-end" id="receiptPeriod"></td>
+                            </tr>
+                            <tr id="receiptReferenceRow">
+                                <td class="text-muted">Reference:</td>
+                                <td class="text-end"><code id="receiptReference"></code></td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted">Date:</td>
+                                <td class="text-end" id="receiptDate"></td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <div id="receiptNotesSection" class="d-none mt-3 p-3 bg-secondary bg-opacity-25 rounded">
+                        <small class="text-muted d-block mb-1">Notes:</small>
+                        <span id="receiptNotes"></span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer border-secondary">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <a href="#" id="receiptDownloadBtn" class="btn btn-success">
+                    <i class="bi bi-download me-1"></i>Download PDF
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const receiptModal = new bootstrap.Modal(document.getElementById('receiptModal'));
+        const receiptLoading = document.getElementById('receiptLoading');
+        const receiptContent = document.getElementById('receiptContent');
+        const receiptDownloadBtn = document.getElementById('receiptDownloadBtn');
+
+        // View receipt buttons
+        document.querySelectorAll('.view-receipt-btn').forEach(btn => {
+            btn.addEventListener('click', function () {
+                const receiptUrl = this.dataset.receiptUrl;
+                const downloadUrl = this.dataset.downloadUrl;
+
+                // Show loading, hide content
+                receiptLoading.classList.remove('d-none');
+                receiptContent.classList.add('d-none');
+                receiptDownloadBtn.href = downloadUrl;
+
+                // Open modal
+                receiptModal.show();
+
+                // Fetch receipt data
+                fetch(receiptUrl)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            // Populate modal
+                            document.getElementById('receiptNumber').textContent = data.receipt_number;
+                            document.getElementById('receiptStatus').textContent = data.status;
+                            document.getElementById('receiptType').textContent = data.payment_type;
+                            document.getElementById('receiptPlan').textContent = data.plan_name;
+                            document.getElementById('receiptAmount').textContent = data.currency_symbol + parseFloat(data.amount).toLocaleString(undefined, { minimumFractionDigits: 2 });
+                            document.getElementById('receiptMethod').textContent = data.payment_method;
+                            document.getElementById('receiptDate').textContent = data.created_at;
+
+                            // Period (if available)
+                            const periodRow = document.getElementById('receiptPeriodRow');
+                            if (data.period_start && data.period_end) {
+                                document.getElementById('receiptPeriod').textContent = data.period_start + ' - ' + data.period_end;
+                                periodRow.classList.remove('d-none');
+                            } else {
+                                periodRow.classList.add('d-none');
+                            }
+
+                            // Reference
+                            const refRow = document.getElementById('receiptReferenceRow');
+                            if (data.transaction_reference && data.transaction_reference !== 'N/A') {
+                                document.getElementById('receiptReference').textContent = data.transaction_reference;
+                                refRow.classList.remove('d-none');
+                            } else {
+                                refRow.classList.add('d-none');
+                            }
+
+                            // Notes
+                            const notesSection = document.getElementById('receiptNotesSection');
+                            if (data.notes) {
+                                document.getElementById('receiptNotes').textContent = data.notes;
+                                notesSection.classList.remove('d-none');
+                            } else {
+                                notesSection.classList.add('d-none');
+                            }
+
+                            // Show content, hide loading
+                            receiptLoading.classList.add('d-none');
+                            receiptContent.classList.remove('d-none');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error fetching receipt:', error);
+                        receiptLoading.innerHTML = '<p class="text-danger">Error loading receipt details</p>';
+                    });
+            });
+        });
+    });
+</script>
 {% endblock %}

@@ -113,6 +113,10 @@ class Tenant(models.Model):
         default=False,
         help_text="Whether onboarding fee has been paid"
     )
+    additional_shops = models.PositiveIntegerField(
+        default=0,
+        help_text="Additional shops beyond plan limit (for Premium)"
+    )
     
     # Notification tracking
     last_notification_sent = models.DateField(
@@ -226,6 +230,32 @@ class Tenant(models.Model):
     def get_shop_count(self):
         """Get the number of shop locations for this tenant."""
         return self.location_set.filter(location_type='SHOP', is_active=True).count()
+    
+    def get_max_shops_allowed(self):
+        """Get the maximum number of shops allowed for this tenant based on their subscription plan."""
+        if not self.subscription_plan:
+            return 2  # Default to Starter limit if no plan
+        
+        # Get base max from plan
+        base_max = self.subscription_plan.max_shops
+        
+        # Premium plan can have additional shops
+        if self.subscription_plan.code == 'PREMIUM':
+            return base_max + self.additional_shops
+        
+        return base_max
+    
+    def can_create_shop(self):
+        """Check if tenant can create another shop based on their subscription."""
+        current_count = self.get_shop_count()
+        max_allowed = self.get_max_shops_allowed()
+        return current_count < max_allowed
+    
+    def shops_remaining(self):
+        """Get number of additional shops that can be created."""
+        current_count = self.get_shop_count()
+        max_allowed = self.get_max_shops_allowed()
+        return max(0, max_allowed - current_count)
     
     def get_monthly_subscription_price(self):
         """Calculate monthly subscription price considering plan and shop count."""

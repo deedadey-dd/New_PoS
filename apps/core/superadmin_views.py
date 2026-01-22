@@ -9,10 +9,11 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
 from django.http import JsonResponse
 from django.utils import timezone
-from django.db.models import Count, Sum
+from django.db.models import Count, Sum, Q
 from datetime import timedelta
 
 from apps.core.models import Tenant, User, Location, ContactMessage
+from apps.subscriptions.models import SubscriptionPayment, SubscriptionPlan
 
 
 class SuperuserRequiredMixin(UserPassesTestMixin):
@@ -158,11 +159,28 @@ class TenantSubscriptionView(SuperuserRequiredMixin, View):
     template_name = 'superadmin/tenant_subscription_form.html'
     
     def get(self, request, pk):
+        from apps.subscriptions.models import SubscriptionPlan
         tenant = get_object_or_404(Tenant, pk=pk)
-        return render(request, self.template_name, {'tenant': tenant})
+        plans = SubscriptionPlan.objects.filter(is_active=True).order_by('display_order', 'base_price')
+        return render(request, self.template_name, {
+            'tenant': tenant,
+            'plans': plans,
+        })
     
     def post(self, request, pk):
+        from apps.subscriptions.models import SubscriptionPlan
         tenant = get_object_or_404(Tenant, pk=pk)
+        
+        # Update subscription plan
+        plan_id = request.POST.get('subscription_plan')
+        if plan_id:
+            try:
+                plan = SubscriptionPlan.objects.get(pk=plan_id, is_active=True)
+                tenant.subscription_plan = plan
+            except SubscriptionPlan.DoesNotExist:
+                pass
+        else:
+            tenant.subscription_plan = None
         
         # Update subscription fields
         status = request.POST.get('subscription_status')
@@ -181,6 +199,16 @@ class TenantSubscriptionView(SuperuserRequiredMixin, View):
         
         tenant.auto_renew = request.POST.get('auto_renew') == 'on'
         tenant.admin_notes = request.POST.get('admin_notes', '')
+        
+        # Handle additional shops for Premium plan
+        if tenant.subscription_plan and tenant.subscription_plan.code == 'PREMIUM':
+            additional_shops = request.POST.get('additional_shops', '0')
+            try:
+                tenant.additional_shops = max(0, int(additional_shops))
+            except ValueError:
+                tenant.additional_shops = 0
+        else:
+            tenant.additional_shops = 0
         
         # Update is_active based on status
         tenant.is_active = status not in ['EXPIRED', 'SUSPENDED']
@@ -333,6 +361,7 @@ class TenantManagerCreateView(SuperuserRequiredMixin, View):
     def get(self, request):
         return render(request, self.template_name, {
             'tenants': Tenant.objects.filter(is_active=True).order_by('name'),
+            'assigned_tenant_ids': [],  # Empty for new manager
         })
     
     def post(self, request):
@@ -574,8 +603,8 @@ class RecordPaymentView(SuperuserRequiredMixin, View):
             status='COMPLETED',
             payment_method=payment_method,
             transaction_reference=reference,
-            plan_name=tenant.subscription_plan.name if tenant.subscription_plan else None,
-            recorded_by=request.user,
+            plan_name=tenant.subscription_plan.name if tenant.subscription_plan else '',
+            created_by=request.user,
             notes=f"Manually recorded by {request.user.email}"
         )
         
@@ -603,3 +632,81 @@ class RecordPaymentView(SuperuserRequiredMixin, View):
         
         messages.success(request, f"Payment of {tenant.currency_symbol}{amount} recorded successfully.")
         return redirect('superadmin:tenant_payments', pk=pk)
+
+
+class AllPaymentsView(SuperuserRequiredMixin, ListView):
+    """View all subscription payments across all tenants."""
+    model = SubscriptionPayment
+    template_name = 'superadmin/all_payments.html'
+    context_object_name = 'payments'
+    paginate_by = 30
+    
+    def get_queryset(self):
+        queryset = SubscriptionPayment.objects.select_related('tenant', 'created_by').order_by('-created_at')
+        
+        # Filter by payment type
+        payment_type = self.request.GET.get('type')
+        if payment_type:
+            queryset = queryset.filter(payment_type=payment_type)
+        
+        # Filter by status
+        status = self.request.GET.get('status')
+        if status:
+            queryset = queryset.filter(status=status)
+        
+        # Filter by tenant
+        tenant_id = self.request.GET.get('tenant')
+        if tenant_id:
+            queryset = queryset.filter(tenant_id=tenant_id)
+        
+        # Filter by recorded by (created_by)
+        recorded_by = self.request.GET.get('recorded_by')
+        if recorded_by:
+            queryset = queryset.filter(created_by_id=recorded_by)
+        
+        # Filter by date range
+        date_from = self.request.GET.get('date_from')
+        if date_from:
+            queryset = queryset.filter(created_at__date__gte=date_from)
+        
+        date_to = self.request.GET.get('date_to')
+        if date_to:
+            queryset = queryset.filter(created_at__date__lte=date_to)
+        
+        # Search by receipt number or reference
+        search = self.request.GET.get('search')
+        if search:
+            queryset = queryset.filter(
+                Q(receipt_number__icontains=search) |
+                Q(transaction_reference__icontains=search)
+            )
+        
+        return queryset
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['payment_types'] = SubscriptionPayment.PAYMENT_TYPE_CHOICES
+        context['status_choices'] = SubscriptionPayment.STATUS_CHOICES
+        
+        # Tenant list for filter dropdown
+        context['tenants'] = Tenant.objects.all().order_by('name')
+        
+        # Users who have recorded payments (tenant managers + superusers)
+        context['managers'] = User.objects.filter(
+            Q(is_superuser=True) | Q(role__name='TENANT_MANAGER')
+        ).distinct().order_by('email')
+        
+        # Summary totals
+        context['total_revenue'] = SubscriptionPayment.objects.filter(
+            status='COMPLETED'
+        ).aggregate(total=Sum('amount'))['total'] or 0
+        
+        context['onboarding_revenue'] = SubscriptionPayment.objects.filter(
+            status='COMPLETED', payment_type='ONBOARDING'
+        ).aggregate(total=Sum('amount'))['total'] or 0
+        
+        context['subscription_revenue'] = SubscriptionPayment.objects.filter(
+            status='COMPLETED', payment_type__in=['SUBSCRIPTION', 'RENEWAL']
+        ).aggregate(total=Sum('amount'))['total'] or 0
+        
+        return context

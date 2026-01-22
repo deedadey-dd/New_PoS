@@ -33,6 +33,14 @@ class SubscriptionPlan(models.Model):
         validators=[MinValueValidator(Decimal('0.00'))],
         help_text="Monthly base price"
     )
+    annual_base_price = models.DecimalField(
+        max_digits=10, 
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal('0.00'))],
+        help_text="Monthly price when paying annually (discounted)"
+    )
     max_shops = models.PositiveIntegerField(
         default=2,
         help_text="Maximum number of shop locations included"
@@ -43,6 +51,14 @@ class SubscriptionPlan(models.Model):
         default=Decimal('0.00'),
         validators=[MinValueValidator(Decimal('0.00'))],
         help_text="Price per additional shop beyond max_shops (for Premium)"
+    )
+    annual_additional_shop_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal('0.00'))],
+        help_text="Additional shop price when paying annually (discounted)"
     )
     
     # Features (can be extended)
@@ -65,15 +81,30 @@ class SubscriptionPlan(models.Model):
     def __str__(self):
         return f"{self.name} - {self.base_price}/month"
     
-    def calculate_price(self, shop_count=0):
+    def calculate_price(self, shop_count=0, annual=False):
         """
         Calculate total monthly price based on shop count.
         For Premium: base_price + (additional_shops * additional_shop_price)
+        If annual=True, uses discounted annual pricing.
         """
+        if annual:
+            base = self.annual_base_price if self.annual_base_price else self.base_price
+            shop_extra = self.annual_additional_shop_price if self.annual_additional_shop_price else self.additional_shop_price
+        else:
+            base = self.base_price
+            shop_extra = self.additional_shop_price
+        
         if self.code == 'PREMIUM' and shop_count > self.max_shops:
             additional_shops = shop_count - self.max_shops
-            return self.base_price + (additional_shops * self.additional_shop_price)
-        return self.base_price
+            return base + (additional_shops * shop_extra)
+        return base
+    
+    def get_annual_savings_percent(self):
+        """Calculate percentage savings when paying annually."""
+        if self.annual_base_price and self.base_price > 0:
+            savings = ((self.base_price - self.annual_base_price) / self.base_price) * 100
+            return round(savings, 0)
+        return 0
 
 
 class TenantPricingOverride(models.Model):
