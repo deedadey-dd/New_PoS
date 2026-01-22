@@ -26,6 +26,10 @@ class POSView(LoginRequiredMixin, View):
     template_name = 'sales/pos.html'
     
     def get(self, request):
+        from django.db.models import Sum, Prefetch
+        from apps.inventory.models import InventoryLedger, Category
+        from apps.customers.models import Customer
+        
         # Get user's shop location
         user_shop = request.user.location
         
@@ -48,23 +52,37 @@ class POSView(LoginRequiredMixin, View):
             status='OPEN'
         ).first()
         
-        # Get products with shop prices
+        # Pre-fetch stock quantities for all products at this location in ONE query
+        stock_by_product = dict(
+            InventoryLedger.objects.filter(
+                tenant=request.user.tenant,
+                location=user_shop
+            ).values('product_id').annotate(
+                total_stock=Sum('quantity')
+            ).values_list('product_id', 'total_stock')
+        )
+        
+        # Get products with prefetched shop prices for THIS shop only
+        shop_price_prefetch = Prefetch(
+            'shop_prices',
+            queryset=ShopPrice.objects.filter(location=user_shop, is_active=True),
+            to_attr='current_shop_prices'
+        )
+        
         products = Product.objects.filter(
             tenant=request.user.tenant,
             is_active=True
-        ).select_related('category').prefetch_related('shop_prices')
+        ).select_related('category').prefetch_related(shop_price_prefetch)
         
-        # Get products with prices for this shop (ShopPrice required)
+        # Build product list efficiently - no more N+1 queries
         products_with_prices = []
         for product in products:
-            shop_price = product.shop_prices.filter(
-                location=user_shop, is_active=True
-            ).first()
-            
-            # Only include products with shop-specific pricing
-            if shop_price:
-                # Get quantity at this location
-                quantity = product.get_stock_at_location(user_shop)
+            # Get shop price from prefetched list
+            shop_prices = getattr(product, 'current_shop_prices', [])
+            if shop_prices:
+                shop_price = shop_prices[0]
+                # Get quantity from pre-fetched dict
+                quantity = stock_by_product.get(product.pk, 0) or 0
                 
                 products_with_prices.append({
                     'id': product.pk,
@@ -78,14 +96,12 @@ class POSView(LoginRequiredMixin, View):
                 })
         
         # Get categories for filtering
-        from apps.inventory.models import Category
         categories = Category.objects.filter(
             tenant=request.user.tenant,
             is_active=True
         )
 
-        # Get customers for POS search
-        from apps.customers.models import Customer
+        # Get customers for POS search (only essential fields)
         customers = Customer.objects.filter(
             tenant=request.user.tenant,
             is_active=True
@@ -102,6 +118,7 @@ class POSView(LoginRequiredMixin, View):
         }
         
         return render(request, self.template_name, context)
+
 
 
 class ShiftOpenView(LoginRequiredMixin, View):
@@ -417,31 +434,36 @@ class SaleDetailView(LoginRequiredMixin, DetailView):
 
 @login_required
 def api_product_search(request):
-    """Search products for POS."""
+    """Search products for POS - optimized with prefetch."""
+    from django.db.models import Q, Prefetch
+    
     query = request.GET.get('q', '')
     shop = request.user.location
     
     if not shop or shop.location_type != 'SHOP':
         return JsonResponse({'products': []})
     
+    # Prefetch shop prices for THIS shop only
+    shop_price_prefetch = Prefetch(
+        'shop_prices',
+        queryset=ShopPrice.objects.filter(location=shop, is_active=True),
+        to_attr='current_shop_prices'
+    )
+    
     products = Product.objects.filter(
         tenant=request.user.tenant,
         is_active=True
     ).filter(
-        models.Q(name__icontains=query) | 
-        models.Q(sku__icontains=query) |
-        models.Q(barcode__icontains=query)
-    )[:20]
+        Q(name__icontains=query) | 
+        Q(sku__icontains=query) |
+        Q(barcode__icontains=query)
+    ).prefetch_related(shop_price_prefetch)[:20]
     
     results = []
     for product in products:
-        shop_price = ShopPrice.objects.filter(
-            product=product,
-            location=shop,
-            is_active=True
-        ).first()
-        
-        if shop_price:
+        shop_prices = getattr(product, 'current_shop_prices', [])
+        if shop_prices:
+            shop_price = shop_prices[0]
             results.append({
                 'id': product.pk,
                 'name': product.name,

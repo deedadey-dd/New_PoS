@@ -46,12 +46,65 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING("DRY RUN MODE - No changes will be made"))
         
         # Process different subscription states
+        self.process_trial_expirations(today, dry_run, skip_notifications)
         self.process_expiry_warnings(today, dry_run, skip_notifications)
         self.process_expired_subscriptions(today, dry_run, skip_notifications)
         self.process_deactivations(today, dry_run, skip_notifications)
         self.process_lockouts(today, dry_run, skip_notifications)
         
         self.stdout.write(self.style.SUCCESS("\nSubscription check complete."))
+
+    def process_trial_expirations(self, today, dry_run, skip_notifications):
+        """Deactivate trial accounts after 14 days."""
+        self.stdout.write("\n--- Checking for trial expirations (14 days) ---")
+        
+        trial_expiry_date = today - timedelta(days=14)
+        
+        # Find TRIAL tenants that started more than 14 days ago
+        tenants = Tenant.objects.filter(
+            subscription_status='TRIAL',
+            subscription_start_date__lte=trial_expiry_date,
+            is_active=True
+        )
+        
+        count = tenants.count()
+        if count == 0:
+            self.stdout.write("  No trial accounts to expire.")
+            return
+        
+        self.stdout.write(f"  Found {count} trial account(s) to expire:")
+        
+        for tenant in tenants:
+            days_in_trial = (today - tenant.subscription_start_date).days
+            self.stdout.write(f"    - {tenant.name} (trial for {days_in_trial} days)")
+            
+            if not dry_run:
+                # Set to INACTIVE
+                tenant.subscription_status = 'INACTIVE'
+                tenant.is_active = False
+                tenant.subscription_end_date = today
+                tenant.last_notification_sent = today
+                tenant.save(update_fields=['subscription_status', 'is_active', 'subscription_end_date', 'last_notification_sent'])
+                
+                # Send notification
+                if not skip_notifications:
+                    success, channel, error = NotificationService.send_subscription_notification(
+                        tenant, 'trial_expired', days_in_trial
+                    )
+                    if success:
+                        self.stdout.write(self.style.SUCCESS(f"      Trial expiration notification sent via {channel}"))
+                    
+                    self._log_notification(tenant, 'TRIAL_EXPIRED', channel, success, error)
+                
+                # Create in-app notification
+                self._create_inapp_notification(
+                    tenant,
+                    'Trial Period Ended',
+                    'Your 14-day trial has ended. Please subscribe to continue using the service.',
+                    'TRIAL_EXPIRED'
+                )
+                
+                logger.info(f"Tenant '{tenant.name}' trial expired after {days_in_trial} days")
 
     def process_expiry_warnings(self, today, dry_run, skip_notifications):
         """Send warnings 5 days before expiry."""

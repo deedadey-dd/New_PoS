@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+{% extends 'subscriptions/tm_base.html' %}
 
 {% block title %}Record Payment - {{ tenant.name }}{% endblock %}
 
@@ -47,7 +47,7 @@
                             <div class="col-md-6">
                                 <label class="form-label fw-semibold">Payment Type <span
                                         class="text-danger">*</span></label>
-                                <select name="payment_type" class="form-select" required>
+                                <select name="payment_type" id="paymentType" class="form-select" required>
                                     <option value="">Select Type</option>
                                     {% if not tenant.onboarding_paid %}
                                     <option value="ONBOARDING">Onboarding Fee</option>
@@ -71,29 +71,53 @@
                                 </select>
                             </div>
 
-                            <!-- Amount -->
-                            <div class="col-md-6">
-                                <label class="form-label fw-semibold">Amount ({{ tenant.currency_symbol }}) <span
+                            <!-- Subscription Plan (shown for subscription/renewal) -->
+                            <div class="col-md-6" id="planSection" style="display: none;">
+                                <label class="form-label fw-semibold">Subscription Plan <span
                                         class="text-danger">*</span></label>
-                                <input type="number" name="amount" class="form-control" step="0.01" min="0" required
-                                    placeholder="0.00">
+                                <select name="subscription_plan" id="subscriptionPlan" class="form-select">
+                                    <option value="">Select Plan</option>
+                                    {% for plan in plans %}
+                                    <option value="{{ plan.pk }}" data-price="{{ plan.base_price }}"
+                                        data-annual-price="{{ plan.annual_base_price|default:plan.base_price }}"
+                                        data-savings="{{ plan.get_annual_savings_percent }}"
+                                        {% if tenant.subscription_plan.pk == plan.pk %}selected{% endif %}>
+                                        {{ plan.name }} -
+                                        {{ tenant.currency_symbol }}{{ plan.base_price|floatformat:2 }}/mo
+                                    </option>
+                                    {% endfor %}
+                                </select>
                                 <div class="form-text">
-                                    Monthly price:
-                                    {{ tenant.currency_symbol }}{{ tenant.get_monthly_subscription_price|floatformat:2 }}
+                                    {% if tenant.subscription_plan %}
+                                    Current plan: <strong>{{ tenant.subscription_plan.name }}</strong>
+                                    {% else %}
+                                    <span class="text-warning">No plan currently assigned</span>
+                                    {% endif %}
                                 </div>
                             </div>
 
-                            <!-- Months -->
-                            <div class="col-md-6">
+                            <!-- Months (shown for subscription/renewal) -->
+                            <div class="col-md-6" id="monthsSection" style="display: none;">
                                 <label class="form-label fw-semibold">Subscription Months</label>
-                                <select name="months" class="form-select">
+                                <select name="months" id="subscriptionMonths" class="form-select">
                                     <option value="1">1 month</option>
                                     <option value="2">2 months</option>
                                     <option value="3">3 months</option>
                                     <option value="6">6 months</option>
-                                    <option value="12">12 months (1 year)</option>
+                                    <option value="12">12 months (Annual - Save up to 15%!)</option>
                                 </select>
-                                <div class="form-text">For subscription or renewal payments only</div>
+                                <div class="form-text" id="monthsHint"></div>
+                            </div>
+
+                            <!-- Amount -->
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Amount ({{ tenant.currency_symbol }}) <span
+                                        class="text-danger">*</span></label>
+                                <input type="number" name="amount" id="paymentAmount" class="form-control" step="0.01"
+                                    min="0" required placeholder="0.00">
+                                <div class="form-text" id="amountHint">
+                                    Enter the payment amount
+                                </div>
                             </div>
 
                             <!-- Transaction Reference -->
@@ -121,7 +145,7 @@
 
             <!-- Pricing Reference -->
             <div class="card shadow-sm mt-4">
-                <div class="card-header bg-white">
+                <div class="card-header bg-transparent">
                     <h6 class="mb-0"><i class="bi bi-info-circle me-2"></i>Pricing Reference</h6>
                 </div>
                 <div class="card-body">
@@ -149,4 +173,86 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const paymentType = document.getElementById('paymentType');
+        const planSection = document.getElementById('planSection');
+        const monthsSection = document.getElementById('monthsSection');
+        const subscriptionPlan = document.getElementById('subscriptionPlan');
+        const subscriptionMonths = document.getElementById('subscriptionMonths');
+        const paymentAmount = document.getElementById('paymentAmount');
+        const amountHint = document.getElementById('amountHint');
+
+        // Show/hide plan and months based on payment type
+        function toggleSections() {
+            const type = paymentType.value;
+            if (type === 'SUBSCRIPTION' || type === 'RENEWAL') {
+                planSection.style.display = 'block';
+                monthsSection.style.display = 'block';
+                subscriptionPlan.required = true;
+                updateAmount();
+            } else {
+                planSection.style.display = 'none';
+                monthsSection.style.display = 'none';
+                subscriptionPlan.required = false;
+                if (type === 'ONBOARDING') {
+                    amountHint.textContent = 'Onboarding fee amount';
+                } else {
+                    amountHint.textContent = 'Enter the payment amount';
+                }
+            }
+        }
+
+        // Calculate and update amount based on plan and months
+        function updateAmount() {
+            const selectedOption = subscriptionPlan.options[subscriptionPlan.selectedIndex];
+            const monthsHint = document.getElementById('monthsHint');
+
+            if (selectedOption && selectedOption.value) {
+                const monthlyPrice = parseFloat(selectedOption.dataset.price || 0);
+                const annualPrice = parseFloat(selectedOption.dataset.annualPrice || monthlyPrice);
+                const savings = parseFloat(selectedOption.dataset.savings || 0);
+                const months = parseInt(subscriptionMonths.value || 1);
+
+                let total, pricePerMonth, hintText;
+
+                if (months === 12) {
+                    // Use annual pricing (discounted)
+                    pricePerMonth = annualPrice;
+                    total = annualPrice * 12;
+                    const regularTotal = monthlyPrice * 12;
+                    const savedAmount = regularTotal - total;
+
+                    if (savedAmount > 0) {
+                        hintText = `12 months × {{ tenant.currency_symbol }}${pricePerMonth.toFixed(2)} = {{ tenant.currency_symbol }}${total.toFixed(2)}`;
+                        monthsHint.innerHTML = `<span class="text-success"><i class="bi bi-piggy-bank me-1"></i>You save {{ tenant.currency_symbol }}${savedAmount.toFixed(2)} (${savings}% discount)!</span>`;
+                    } else {
+                        hintText = `12 months × {{ tenant.currency_symbol }}${pricePerMonth.toFixed(2)} = {{ tenant.currency_symbol }}${total.toFixed(2)}`;
+                        monthsHint.textContent = '';
+                    }
+                } else {
+                    // Use regular monthly pricing
+                    pricePerMonth = monthlyPrice;
+                    total = monthlyPrice * months;
+                    hintText = `${months} month(s) × {{ tenant.currency_symbol }}${pricePerMonth.toFixed(2)} = {{ tenant.currency_symbol }}${total.toFixed(2)}`;
+                    monthsHint.textContent = '';
+                }
+
+                paymentAmount.value = total.toFixed(2);
+                amountHint.textContent = hintText;
+            }
+        }
+
+        // Event listeners
+        paymentType.addEventListener('change', toggleSections);
+        subscriptionPlan.addEventListener('change', updateAmount);
+        subscriptionMonths.addEventListener('change', updateAmount);
+
+        // Initialize on page load
+        toggleSections();
+    });
+</script>
 {% endblock %}

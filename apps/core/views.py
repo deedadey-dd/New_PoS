@@ -169,6 +169,10 @@ class DashboardView(LoginRequiredMixin, View):
         user = request.user
         role_name = user.role.name if user.role else None
         
+        # Redirect SUPERUSER to superadmin dashboard
+        if user.is_superuser:
+            return redirect('superadmin:dashboard')
+        
         # Redirect AUDITOR to their specialized dashboard
         if role_name == 'AUDITOR':
             return redirect('core:auditor_dashboard')
@@ -176,6 +180,10 @@ class DashboardView(LoginRequiredMixin, View):
         # Redirect ACCOUNTANT to financial dashboard
         if role_name == 'ACCOUNTANT':
             return redirect('accounting:accountant_dashboard')
+        
+        # Redirect TENANT_MANAGER to their subscription management dashboard
+        if role_name == 'TENANT_MANAGER':
+            return redirect('subscriptions:tm_dashboard')
         
         # Shop attendants get limited dashboard - no location/user stats
         is_attendant = role_name == 'SHOP_ATTENDANT'
@@ -290,6 +298,23 @@ class LocationCreateView(LoginRequiredMixin, AdminOrManagerRequiredMixin, Create
     form_class = LocationForm
     template_name = 'core/location_form.html'
     success_url = reverse_lazy('core:location_list')
+    
+    def dispatch(self, request, *args, **kwargs):
+        # Check if creating a shop and if shop limit would be exceeded
+        if request.method == 'POST':
+            location_type = request.POST.get('location_type', '')
+            if location_type == 'SHOP' and request.user.tenant:
+                if not request.user.tenant.can_create_shop():
+                    max_allowed = request.user.tenant.get_max_shops_allowed()
+                    current_count = request.user.tenant.get_shop_count()
+                    plan_name = request.user.tenant.subscription_plan.name if request.user.tenant.subscription_plan else "No Plan"
+                    messages.error(
+                        request, 
+                        f'Shop limit reached! Your "{plan_name}" subscription allows {max_allowed} shops. '
+                        f'You currently have {current_count}. Please upgrade your subscription to add more shops.'
+                    )
+                    return redirect('core:location_list')
+        return super().dispatch(request, *args, **kwargs)
     
     def form_valid(self, form):
         form.instance.tenant = self.request.user.tenant

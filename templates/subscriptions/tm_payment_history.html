@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+{% extends 'subscriptions/tm_base.html' %}
 
 {% block title %}Payment History - {{ tenant.name }}{% endblock %}
 
@@ -31,7 +31,7 @@
             {% if payments %}
             <div class="table-responsive">
                 <table class="table table-hover mb-0">
-                    <thead class="table-light">
+                    <thead>
                         <tr>
                             <th>Receipt #</th>
                             <th>Type</th>
@@ -81,7 +81,7 @@
                                 {{ tenant.currency_symbol }}{{ payment.amount|floatformat:2 }}</td>
                         </tr>
                         {% if payment.notes %}
-                        <tr class="table-light">
+                        <tr class="border-top-0">
                             <td colspan="7" class="py-1 ps-5">
                                 <small class="text-muted"><i
                                         class="bi bi-chat-left-text me-1"></i>{{ payment.notes }}</small>

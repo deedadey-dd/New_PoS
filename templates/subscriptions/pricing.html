@@ -232,6 +232,18 @@
         <div class="container">
             <h1>Simple, Transparent Pricing</h1>
             <p class="lead">Choose the plan that fits your business. Scale up anytime.</p>
+
+            <!-- Billing Period Toggle -->
+            <div class="billing-toggle d-flex justify-content-center align-items-center gap-3 mt-4">
+                <span class="billing-label" id="monthlyLabel">Monthly</span>
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" role="switch" id="billingToggle"
+                        style="width: 3em; height: 1.5em;">
+                </div>
+                <span class="billing-label" id="annualLabel">
+                    Annual <span class="badge bg-success ms-1">Save up to 14%</span>
+                </span>
+            </div>
         </div>
     </div>
 
@@ -260,8 +272,16 @@
 
                         <div class="plan-price">
                             <span class="currency">GH₵</span>
-                            <span class="amount">{{ plan.base_price|floatformat:0 }}</span>
+                            <span class="amount monthly-price">{{ plan.base_price|floatformat:0 }}</span>
+                            <span
+                                class="amount annual-price d-none">{% if plan.annual_base_price %}{{ plan.annual_base_price|floatformat:0 }}{% else %}{{ plan.base_price|floatformat:0 }}{% endif %}</span>
                             <span class="period">/month</span>
+                            {% if plan.annual_base_price %}
+                            <div class="savings-badge d-none" style="margin-top: 0.5rem;">
+                                <span class="badge bg-success">Save {{ plan.get_annual_savings_percent|floatformat:0 }}%
+                                    annually</span>
+                            </div>
+                            {% endif %}
                         </div>
 
                         <ul class="feature-list">
@@ -288,7 +308,12 @@
                             {% if plan.code == 'PREMIUM' %}
                             <li>
                                 <i class="bi bi-plus-circle text-warning fs-5"></i>
-                                <span>GH₵{{ plan.additional_shop_price|floatformat:0 }}/additional shop</span>
+                                <span
+                                    class="monthly-shop-price">GH₵{{ plan.additional_shop_price|floatformat:0 }}/additional
+                                    shop</span>
+                                <span
+                                    class="annual-shop-price d-none">GH₵{% if plan.annual_additional_shop_price %}{{ plan.annual_additional_shop_price|floatformat:0 }}{% else %}{{ plan.additional_shop_price|floatformat:0 }}{% endif %}/additional
+                                    shop</span>
                             </li>
                             {% endif %}
                             {% for feature in plan.features %}
@@ -403,7 +428,7 @@
             <!-- Onboarding Notice -->
             <div class="onboarding-notice">
                 <h5><i class="bi bi-info-circle me-2"></i>Onboarding Fee</h5>
-                <p class="mb-0 text-muted">
+                <p class="mb-0">
                     A one-time onboarding fee applies for new accounts, covering setup, training, and initial support.
                     <br>Contact us for details and any special offers.
                 </p>
@@ -413,21 +438,81 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        // Pricing constants
+        const MONTHLY_BASE = 350;
+        const ANNUAL_BASE = 300;
+        const MONTHLY_ADDITIONAL_SHOP = 100;
+        const ANNUAL_ADDITIONAL_SHOP = 85;
+        const INCLUDED_SHOPS = 5;
+
+        let isAnnual = false;
+
+        // Billing toggle functionality
+        const billingToggle = document.getElementById('billingToggle');
+        const monthlyLabel = document.getElementById('monthlyLabel');
+        const annualLabel = document.getElementById('annualLabel');
+
+        billingToggle.addEventListener('change', function () {
+            isAnnual = this.checked;
+
+            // Update label styling
+            monthlyLabel.style.opacity = isAnnual ? '0.5' : '1';
+            annualLabel.style.opacity = isAnnual ? '1' : '0.5';
+
+            // Toggle price visibility
+            document.querySelectorAll('.monthly-price').forEach(el => {
+                el.classList.toggle('d-none', isAnnual);
+            });
+            document.querySelectorAll('.annual-price').forEach(el => {
+                el.classList.toggle('d-none', !isAnnual);
+            });
+
+            // Toggle shop price visibility
+            document.querySelectorAll('.monthly-shop-price').forEach(el => {
+                el.classList.toggle('d-none', isAnnual);
+            });
+            document.querySelectorAll('.annual-shop-price').forEach(el => {
+                el.classList.toggle('d-none', !isAnnual);
+            });
+
+            // Toggle savings badges
+            document.querySelectorAll('.savings-badge').forEach(el => {
+                el.classList.toggle('d-none', !isAnnual);
+            });
+
+            // Update calculator
+            updateCalculator();
+        });
+
+        // Initialize label opacity
+        monthlyLabel.style.opacity = '1';
+        annualLabel.style.opacity = '0.5';
+
         // Premium plan calculator
-        document.getElementById('shopCount').addEventListener('input', function () {
-            const shops = parseInt(this.value) || 6;
-            const basePrice = 350;
-            const additionalShopPrice = 100;
-            const includeShops = 5;
+        function updateCalculator() {
+            const shops = parseInt(document.getElementById('shopCount').value) || 6;
+            const basePrice = isAnnual ? ANNUAL_BASE : MONTHLY_BASE;
+            const additionalShopPrice = isAnnual ? ANNUAL_ADDITIONAL_SHOP : MONTHLY_ADDITIONAL_SHOP;
 
             let total = basePrice;
-            if (shops > includeShops) {
-                total += (shops - includeShops) * additionalShopPrice;
+            if (shops > INCLUDED_SHOPS) {
+                total += (shops - INCLUDED_SHOPS) * additionalShopPrice;
             }
 
             document.getElementById('calculatedPrice').textContent =
                 'GH₵ ' + total.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-        });
+
+            // Update formula text
+            const formulaEl = document.querySelector('.premium-calculator .text-muted');
+            if (formulaEl) {
+                formulaEl.textContent = `Formula: GH₵${basePrice} base + (additional shops × GH₵${additionalShopPrice})`;
+            }
+        }
+
+        document.getElementById('shopCount').addEventListener('input', updateCalculator);
+
+        // Initialize
+        updateCalculator();
     </script>
 </body>
 

@@ -22,7 +22,7 @@
     <meta property="og:image" content="{% static 'images/og-image.png' %}">
 
     <!-- Favicon -->
-    <link rel="icon" type="image/x-icon" href="{% static 'images/favicon.ico' %}">
+    <link rel="icon" type="image/png" href="{% static 'images/cart_icon.png' %}">
 
     <!-- Styles -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -807,6 +807,194 @@
         </div>
     </section>
 
+    <!-- Demo Showcase Section -->
+    <section class="py-5" style="background: linear-gradient(180deg, #ffffff 0%, #f0f4ff 100%);" id="demo">
+        <div class="container">
+            <div class="text-center mb-5">
+                <span class="section-badge">
+                    <i class="bi bi-play-circle me-1"></i>See It In Action
+                </span>
+                <h2 class="section-title">Experience the Power</h2>
+                <p class="section-subtitle">
+                    Explore our intuitive interface designed to streamline every aspect of your retail operations
+                </p>
+            </div>
+
+            <!-- Demo Tabs -->
+            <ul class="nav nav-pills justify-content-center mb-4 gap-2" id="demoTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active px-4 py-2" id="dashboard-tab" data-bs-toggle="pill"
+                        data-bs-target="#dashboard-pane" type="button" role="tab">
+                        <i class="bi bi-speedometer2 me-2"></i>Dashboard
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link px-4 py-2" id="pos-tab" data-bs-toggle="pill" data-bs-target="#pos-pane"
+                        type="button" role="tab">
+                        <i class="bi bi-cart3 me-2"></i>Point of Sale
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link px-4 py-2" id="inventory-tab" data-bs-toggle="pill"
+                        data-bs-target="#inventory-pane" type="button" role="tab">
+                        <i class="bi bi-box-seam me-2"></i>Inventory
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link px-4 py-2" id="reports-tab" data-bs-toggle="pill"
+                        data-bs-target="#reports-pane" type="button" role="tab">
+                        <i class="bi bi-graph-up me-2"></i>Analytics
+                    </button>
+                </li>
+            </ul>
+
+            <!-- Tab Content -->
+            <div class="tab-content" id="demoTabContent">
+                <!-- Dashboard Tab -->
+                <div class="tab-pane fade show active" id="dashboard-pane" role="tabpanel" tabindex="0">
+                    <div class="row align-items-center g-4">
+                        <div class="col-lg-7">
+                            <div class="rounded-4 shadow-lg overflow-hidden">
+                                <img src="{% static 'images/demo_dashboard.png' %}" alt="Dashboard Overview"
+                                    class="img-fluid w-100">
+                            </div>
+                        </div>
+                        <div class="col-lg-5">
+                            <h3 class="fw-bold mb-3">Real-Time Business Overview</h3>
+                            <p class="text-muted mb-4">
+                                Get instant visibility into your business performance with our comprehensive dashboard.
+                                Track sales, monitor inventory levels, and manage operations—all from one central hub.
+                            </p>
+                            <ul class="list-unstyled">
+                                <li class="mb-3">
+                                    <i class="bi bi-check-circle-fill text-success me-2"></i>
+                                    <strong>Live sales tracking</strong> - See today's revenue in real-time
+                                </li>
+                                <li class="mb-3">
+                                    <i class="bi bi-check-circle-fill text-success me-2"></i>
+                                    <strong>Quick actions</strong> - Access POS, transfers, and reports instantly
+                                </li>
+                                <li class="mb-3">
+                                    <i class="bi bi-check-circle-fill text-success me-2"></i>
+                                    <strong>Transaction history</strong> - Recent sales at your fingertips
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- POS Tab -->
+                <div class="tab-pane fade" id="pos-pane" role="tabpanel" tabindex="0">
+                    <div class="row align-items-center g-4">
+                        <div class="col-lg-7">
+                            <div class="rounded-4 shadow-lg overflow-hidden">
+                                <img src="{% static 'images/demo_pos.png' %}" alt="Point of Sale"
+                                    class="img-fluid w-100">
+                            </div>
+                        </div>
+                        <div class="col-lg-5">
+                            <h3 class="fw-bold mb-3">Lightning-Fast Checkout</h3>
+                            <p class="text-muted mb-4">
+                                Ring up sales in seconds with our intuitive POS terminal. Search products by name or
+                                barcode,
+                                manage cart items, and accept multiple payment methods seamlessly.
+                            </p>
+                            <ul class="list-unstyled">
+                                <li class="mb-3">
+                                    <i class="bi bi-check-circle-fill text-success me-2"></i>
+                                    <strong>Product grid</strong> - Quick visual selection for common items
+                                </li>
+                                <li class="mb-3">
+                                    <i class="bi bi-check-circle-fill text-success me-2"></i>
+                                    <strong>Multiple payments</strong> - Cash, Mobile Money, or Credit
+                                </li>
+                                <li class="mb-3">
+                                    <i class="bi bi-check-circle-fill text-success me-2"></i>
+                                    <strong>Customer accounts</strong> - Track credit sales and payments
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Inventory Tab -->
+                <div class="tab-pane fade" id="inventory-pane" role="tabpanel" tabindex="0">
+                    <div class="row align-items-center g-4">
+                        <div class="col-lg-7">
+                            <div class="rounded-4 shadow-lg overflow-hidden">
+                                <img src="{% static 'images/demo_inventory.png' %}" alt="Inventory Management"
+                                    class="img-fluid w-100">
+                            </div>
+                        </div>
+                        <div class="col-lg-5">
+                            <h3 class="fw-bold mb-3">Complete Stock Control</h3>
+                            <p class="text-muted mb-4">
+                                Never run out of stock again. Our inventory system tracks every product across all
+                                locations,
+                                alerts you to low stock, and provides full traceability.
+                            </p>
+                            <ul class="list-unstyled">
+                                <li class="mb-3">
+                                    <i class="bi bi-check-circle-fill text-success me-2"></i>
+                                    <strong>Low stock alerts</strong> - Automatic notifications when running low
+                                </li>
+                                <li class="mb-3">
+                                    <i class="bi bi-check-circle-fill text-success me-2"></i>
+                                    <strong>Multi-location</strong> - Track stock across warehouses and shops
+                                </li>
+                                <li class="mb-3">
+                                    <i class="bi bi-check-circle-fill text-success me-2"></i>
+                                    <strong>Transfer tracking</strong> - Monitor product movement with disputes
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Reports Tab -->
+                <div class="tab-pane fade" id="reports-pane" role="tabpanel" tabindex="0">
+                    <div class="row align-items-center g-4">
+                        <div class="col-lg-7">
+                            <div class="rounded-4 shadow-lg overflow-hidden">
+                                <img src="{% static 'images/demo_reports.png' %}" alt="Analytics & Reports"
+                                    class="img-fluid w-100">
+                            </div>
+                        </div>
+                        <div class="col-lg-5">
+                            <h3 class="fw-bold mb-3">Data-Driven Decisions</h3>
+                            <p class="text-muted mb-4">
+                                Unlock insights that drive growth. Our analytics suite shows trends, top sellers,
+                                profit margins, and performance by location or staff member.
+                            </p>
+                            <ul class="list-unstyled">
+                                <li class="mb-3">
+                                    <i class="bi bi-check-circle-fill text-success me-2"></i>
+                                    <strong>Sales trends</strong> - Visualize performance over time
+                                </li>
+                                <li class="mb-3">
+                                    <i class="bi bi-check-circle-fill text-success me-2"></i>
+                                    <strong>Top products</strong> - Know what's selling and what's not
+                                </li>
+                                <li class="mb-3">
+                                    <i class="bi bi-check-circle-fill text-success me-2"></i>
+                                    <strong>Export reports</strong> - Download PDF or Excel for accounting
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CTA within Demo -->
+            <div class="text-center mt-5">
+                <a href="{% url 'core:startup_kit' %}" class="btn btn-gradient btn-lg px-5">
+                    <i class="bi bi-rocket-takeoff me-2"></i>Start Your Free Trial
+                </a>
+                <p class="text-muted small mt-3">No credit card required • Full access for 14 days</p>
+            </div>
+        </div>
+    </section>
+
     <!-- CTA Section -->
     <section class="cta-section">
         <div class="container text-center position-relative" style="z-index: 10;">
@@ -866,6 +1054,13 @@
                         <p class="text-white-50 small mt-2 mb-0">
                             <i class="bi bi-lightning-charge me-1"></i>Fastest response time
                         </p>
+                    </div>
+
+                    <!-- Phone Call CTA -->
+                    <div class="text-center mb-4">
+                        <a href="tel:+233538127939" class="btn btn-outline-light w-100 py-3">
+                            <i class="bi bi-telephone-fill me-2 fs-5"></i>Call Us: +233 53 812 7939
+                        </a>
                     </div>
 
                     <!-- Divider -->

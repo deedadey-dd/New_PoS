@@ -17,6 +17,7 @@ urlpatterns = [
     path('tenants/<int:pk>/unlock/', superadmin_views.TenantUnlockView.as_view(), name='tenant_unlock'),
     path('tenants/<int:pk>/payments/', superadmin_views.TenantPaymentListView.as_view(), name='tenant_payments'),
     path('tenants/<int:pk>/payments/record/', superadmin_views.RecordPaymentView.as_view(), name='record_payment'),
+    path('payments/', superadmin_views.AllPaymentsView.as_view(), name='all_payments'),
     
     # Tenant Managers
     path('managers/', superadmin_views.TenantManagerListView.as_view(), name='tenant_manager_list'),

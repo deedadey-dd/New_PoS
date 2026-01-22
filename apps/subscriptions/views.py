@@ -100,7 +100,7 @@ class ReceiptDownloadView(LoginRequiredMixin, AdminRequiredMixin, View):
 
 class ReceiptViewView(LoginRequiredMixin, AdminRequiredMixin, View):
     """
-    View PDF receipt inline (in browser).
+    Return receipt details as JSON for modal display.
     """
     
     def get(self, request, pk):
@@ -110,21 +110,28 @@ class ReceiptViewView(LoginRequiredMixin, AdminRequiredMixin, View):
             tenant=request.user.tenant,
             status='COMPLETED'
         )
+        tenant = payment.tenant
         
-        if not PDFReceiptService.is_available():
-            messages.error(request, "PDF generation is not available.")
-            return redirect('subscriptions:history')
+        data = {
+            'success': True,
+            'receipt_number': payment.receipt_number,
+            'payment_type': payment.get_payment_type_display(),
+            'payment_method': payment.get_payment_method_display(),
+            'status': payment.get_status_display(),
+            'amount': str(payment.amount),
+            'currency': payment.currency,
+            'currency_symbol': tenant.currency_symbol,
+            'plan_name': payment.plan_name or 'N/A',
+            'period_start': payment.period_start.strftime('%B %d, %Y') if payment.period_start else None,
+            'period_end': payment.period_end.strftime('%B %d, %Y') if payment.period_end else None,
+            'transaction_reference': payment.transaction_reference or 'N/A',
+            'created_at': payment.created_at.strftime('%B %d, %Y %I:%M %p'),
+            'notes': payment.notes or '',
+            'tenant_name': tenant.name,
+            'download_url': f'/subscriptions/receipt/{payment.pk}/download/',
+        }
         
-        try:
-            pdf_content = PDFReceiptService.generate_receipt(payment)
-            filename = PDFReceiptService.get_receipt_filename(payment)
-            
-            response = HttpResponse(pdf_content, content_type='application/pdf')
-            response['Content-Disposition'] = f'inline; filename="{filename}"'
-            return response
-        except Exception as e:
-            messages.error(request, f"Error generating receipt: {str(e)}")
-            return redirect('subscriptions:history')
+        return JsonResponse(data)
 
 
 class PricingPageView(TemplateView):
@@ -255,12 +262,27 @@ class TenantManagerRecordPaymentView(LoginRequiredMixin, TenantManagerRequiredMi
         payment_method = request.POST.get('payment_method')
         reference = request.POST.get('reference', '')
         months = int(request.POST.get('months', 1))
+        subscription_plan_id = request.POST.get('subscription_plan')
         
         try:
             amount = Decimal(amount)
         except:
             messages.error(request, "Invalid amount.")
             return redirect('subscriptions:tm_record_payment', pk=pk)
+        
+        # Get the selected subscription plan for subscription/renewal payments
+        plan_name = ''
+        if payment_type in ['SUBSCRIPTION', 'RENEWAL'] and subscription_plan_id:
+            try:
+                selected_plan = SubscriptionPlan.objects.get(pk=subscription_plan_id, is_active=True)
+                plan_name = selected_plan.name
+                # Assign the plan to the tenant
+                tenant.subscription_plan = selected_plan
+            except SubscriptionPlan.DoesNotExist:
+                messages.error(request, "Invalid subscription plan selected.")
+                return redirect('subscriptions:tm_record_payment', pk=pk)
+        elif tenant.subscription_plan:
+            plan_name = tenant.subscription_plan.name
         
         # Create payment record
         payment = SubscriptionPayment.objects.create(
@@ -271,7 +293,8 @@ class TenantManagerRecordPaymentView(LoginRequiredMixin, TenantManagerRequiredMi
             status='COMPLETED',
             payment_method=payment_method,
             transaction_reference=reference,
-            plan_name=tenant.subscription_plan.name if tenant.subscription_plan else None,
+            plan_name=plan_name,
+            created_by=request.user,
             notes=f"Recorded by Tenant Manager: {request.user.email}"
         )
         

@@ -1,3 +1,4 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en" data-bs-theme="dark">
 
@@ -5,6 +6,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>POS - {{ shop.name }}</title>
+    <link rel="icon" type="image/png" href="{% static 'images/cart_icon.png' %}">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
     <!-- Paystack Inline JS for E-Cash payments -->
@@ -697,6 +699,9 @@
             {% else %}
             <a href="{% url 'sales:shift_open' %}" class="btn btn-warning btn-sm">Open Shift</a>
             {% endif %}
+            <a href="{% url 'core:dashboard' %}" class="btn btn-outline-light btn-sm" title="Dashboard">
+                <i class="bi bi-speedometer2"></i>
+            </a>
             <span class="text-light">{{ user.get_full_name|default:user.email }}</span>
             <a href="{% url 'core:logout' %}" class="btn btn-outline-light btn-sm">
                 <i class="bi bi-box-arrow-right"></i>
@@ -932,6 +937,13 @@
             document.getElementById('amount-received').addEventListener('input', updateChange);
             document.getElementById('btn-complete-sale').addEventListener('click', completeSale);
 
+            // Block 'e', 'E', '+', '-' keys in amount input (number inputs allow these for scientific notation)
+            document.getElementById('amount-received').addEventListener('keydown', function (e) {
+                if (['e', 'E', '+', '-'].includes(e.key)) {
+                    e.preventDefault();
+                }
+            });
+
             // Mobile: Cart header click to toggle
             const cartHeader = document.querySelector('.cart-header');
             if (cartHeader) {
@@ -1124,7 +1136,12 @@
 
             modal.classList.add('active');
             if (mode === 'CASH' || isPaymentOnAccount) {
-                document.getElementById('amount-received').focus();
+                // Use setTimeout to ensure focus after modal is fully rendered
+                setTimeout(() => {
+                    const amountInput = document.getElementById('amount-received');
+                    amountInput.focus();
+                    amountInput.select(); // Also select any existing value
+                }, 100);
             }
         }
 
