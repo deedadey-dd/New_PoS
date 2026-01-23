@@ -15,6 +15,7 @@ from .forms import TransferForm, TransferItemFormSet, TransferItemForm, Transfer
 from django.forms import inlineformset_factory
 from apps.core.decorators import role_required
 from apps.inventory.models import Batch, Product
+from apps.core.mixins import PaginationMixin
 
 
 class TransferListView(LoginRequiredMixin, ListView):
@@ -524,7 +525,7 @@ from .models import StockRequest, StockRequestItem
 from .forms import StockRequestForm, StockRequestItemForm, StockRequestItemFormSet, StockRequestRejectForm
 
 
-class StockRequestListView(LoginRequiredMixin, ListView):
+class StockRequestListView(LoginRequiredMixin, PaginationMixin, ListView):
     """List stock requests for the tenant."""
     model = StockRequest
     template_name = 'transfers/stock_request_list.html'
