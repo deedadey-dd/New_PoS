@@ -10,13 +10,15 @@ from django.db.models import Sum, Count, F, Q, Case, When, DecimalField
 from django.utils import timezone
 from datetime import timedelta
 from decimal import Decimal
+from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 
 from apps.inventory.models import Product, InventoryLedger
 from apps.sales.models import Sale, SaleItem
 from apps.core.models import Location, User
+from apps.core.mixins import PaginationMixin
 
 
-class AuditAccessMixin:
+class AuditAccessMixin(PaginationMixin):
     """Mixin to restrict access to audit roles."""
     allowed_roles = ['AUDITOR', 'ACCOUNTANT', 'ADMIN']
     
@@ -25,6 +27,11 @@ class AuditAccessMixin:
             messages.error(request, 'You do not have permission to access this page.')
             return redirect('core:dashboard')
         return super().dispatch(request, *args, **kwargs)
+
+    def paginate_queryset(self, request, queryset):
+        # This implementation is now in PaginationMixin.paginate_custom_queryset
+        # But for compatibility with existing code during refactor we proxy it or just change calls
+        return self.paginate_custom_queryset(queryset)
 
 
 class ProductLifecycleView(LoginRequiredMixin, AuditAccessMixin, View):
@@ -85,8 +92,13 @@ class ProductLifecycleView(LoginRequiredMixin, AuditAccessMixin, View):
             # Overall product stock
             total_stock = ledger.aggregate(total=Sum('quantity'))['total'] or Decimal('0')
             
+            # Paginate ledger
+            paginated_ledger, per_page = self.paginate_queryset(request, ledger)
+
             context.update({
-                'ledger_entries': ledger[:200],  # Limit for performance
+                'ledger_entries': paginated_ledger,
+                'page_obj': paginated_ledger,
+                'per_page': per_page,
                 'summary': summary,
                 'location_balances': location_balances,
                 'total_stock': total_stock,
@@ -206,8 +218,13 @@ class ProductProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
         else:
             totals['margin'] = 0
         
+        # Paginate products
+        paginated_products, per_page = self.paginate_queryset(request, product_data)
+
         context = {
-            'products': product_data,
+            'products': paginated_products,
+            'page_obj': paginated_products,
+            'per_page': per_page,
             'totals': totals,
             'date_range': date_range,
             'date_label': date_label,
@@ -336,8 +353,13 @@ class LocationProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
         totals['profit'] = totals['revenue'] - totals['cost']
         totals['margin'] = round((totals['profit'] / totals['revenue'] * 100), 1) if totals['revenue'] > 0 else 0
         
+        # Paginate locations
+        paginated_locations, per_page = self.paginate_queryset(request, location_data)
+
         context = {
-            'locations': location_data,
+            'locations': paginated_locations,
+            'page_obj': paginated_locations,
+            'per_page': per_page,
             'totals': totals,
             'date_range': date_range,
             'date_label': date_label,
@@ -471,8 +493,13 @@ class ManagerProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
         totals['profit'] = totals['revenue'] - totals['cost']
         totals['margin'] = round((totals['profit'] / totals['revenue'] * 100), 1) if totals['revenue'] > 0 else 0
         
+        # Paginate managers
+        paginated_managers, per_page = self.paginate_queryset(request, manager_data)
+
         context = {
-            'managers': manager_data,
+            'managers': paginated_managers,
+            'page_obj': paginated_managers,
+            'per_page': per_page,
             'totals': totals,
             'date_range': date_range,
             'date_label': date_label,
@@ -518,7 +545,9 @@ class InventoryMovementReportView(LoginRequiredMixin, AuditAccessMixin, View):
         
         ledger = InventoryLedger.objects.filter(filters).select_related(
             'product', 'location', 'batch', 'created_by'
-        ).order_by('-created_at')[:500]
+        ).order_by('-created_at')
+
+        paginated_ledger, per_page = self.paginate_queryset(request, ledger)
         
         # Summary by type
         summary_data = InventoryLedger.objects.filter(filters).values(
@@ -536,7 +565,9 @@ class InventoryMovementReportView(LoginRequiredMixin, AuditAccessMixin, View):
             }
         
         context = {
-            'ledger': ledger,
+            'ledger': paginated_ledger,
+            'page_obj': paginated_ledger,
+            'per_page': per_page,
             'summary': summary,
             'locations': Location.objects.filter(tenant=tenant, is_active=True),
             'transaction_types': InventoryLedger.TRANSACTION_TYPES,

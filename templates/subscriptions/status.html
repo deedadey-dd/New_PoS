@@ -37,7 +37,7 @@
                         <h2 class="display-4 text-success mb-1">
                             {{ tenant.currency_symbol }}{{ monthly_price|floatformat:2|intcomma }}
                         </h2>
-                        <p class="text-muted">per month</p>
+                        <p class="text-white-50">per month</p>
                     </div>
 
                     <ul class="list-unstyled text-white">
@@ -66,7 +66,7 @@
                     {% else %}
                     <div class="text-center py-4">
                         <i class="bi bi-exclamation-triangle text-warning display-4 mb-3"></i>
-                        <p class="text-muted">No subscription plan assigned</p>
+                        <p class="text-white-50">No subscription plan assigned</p>
                         <a href="{% url 'subscriptions:pricing' %}" class="btn btn-primary">
                             View Plans
                         </a>
@@ -88,7 +88,7 @@
                     <div class="row g-4">
                         <div class="col-6">
                             <div class="p-3 bg-secondary bg-opacity-25 rounded">
-                                <div class="text-muted small mb-1">Status</div>
+                                <div class="small mb-1 text-white">Status</div>
                                 <div class="fs-5">
                                     {% if tenant.subscription_status == 'ACTIVE' %}
                                     <span class="badge bg-success">Active</span>
@@ -108,7 +108,7 @@
                         </div>
                         <div class="col-6">
                             <div class="p-3 bg-secondary bg-opacity-25 rounded">
-                                <div class="text-muted small mb-1">Onboarding</div>
+                                <div class="small mb-1 text-white">Onboarding</div>
                                 <div class="fs-5">
                                     {% if tenant.onboarding_paid %}
                                     <span class="text-success"><i class="bi bi-check-circle me-1"></i>Paid</span>
@@ -121,25 +121,25 @@
                         </div>
                         <div class="col-6">
                             <div class="p-3 bg-secondary bg-opacity-25 rounded">
-                                <div class="text-muted small mb-1">Start Date</div>
+                                <div class="small mb-1 text-white">Start Date</div>
                                 <div class="fs-5 text-white">
                                     {% if tenant.subscription_start_date %}
                                     {{ tenant.subscription_start_date|date:"M d, Y" }}
                                     {% else %}
-                                    <span class="text-muted">Not set</span>
+                                    <span>Not set</span>
                                     {% endif %}
                                 </div>
                             </div>
                         </div>
                         <div class="col-6">
                             <div class="p-3 bg-secondary bg-opacity-25 rounded">
-                                <div class="text-muted small mb-1">Expires</div>
+                                <div class="small mb-1 text-white">Expires</div>
                                 <div
                                     class="fs-5 text-white {% if is_expiring_soon %}text-warning{% elif is_expired %}text-danger{% endif %}">
                                     {% if tenant.subscription_end_date %}
                                     {{ tenant.subscription_end_date|date:"M d, Y" }}
                                     {% else %}
-                                    <span class="text-muted">Not set</span>
+                                    <span>Not set</span>
                                     {% endif %}
                                 </div>
                             </div>
@@ -236,7 +236,7 @@
                     <div class="spinner-border text-primary" role="status">
                         <span class="visually-hidden">Loading...</span>
                     </div>
-                    <p class="mt-2 text-muted">Loading receipt details...</p>
+                    <p class="mt-2 text-white-50">Loading receipt details...</p>
                 </div>
                 <div id="receiptContent" class="d-none">
                     <div class="text-center mb-4">
@@ -247,38 +247,38 @@
                     <table class="table table-dark table-borderless mb-0">
                         <tbody>
                             <tr>
-                                <td class="text-muted">Payment Type:</td>
+                                <td class="text-white-50">Payment Type:</td>
                                 <td class="text-end fw-semibold" id="receiptType"></td>
                             </tr>
                             <tr>
-                                <td class="text-muted">Plan:</td>
+                                <td class="text-white-50">Plan:</td>
                                 <td class="text-end" id="receiptPlan"></td>
                             </tr>
                             <tr>
-                                <td class="text-muted">Amount:</td>
+                                <td class="text-white-50">Amount:</td>
                                 <td class="text-end fs-5 fw-bold text-success" id="receiptAmount"></td>
                             </tr>
                             <tr>
-                                <td class="text-muted">Payment Method:</td>
+                                <td class="text-white-50">Payment Method:</td>
                                 <td class="text-end" id="receiptMethod"></td>
                             </tr>
                             <tr id="receiptPeriodRow" class="d-none">
-                                <td class="text-muted">Period:</td>
+                                <td class="text-white-50">Period:</td>
                                 <td class="text-end" id="receiptPeriod"></td>
                             </tr>
                             <tr id="receiptReferenceRow">
-                                <td class="text-muted">Reference:</td>
+                                <td class="text-white-50">Reference:</td>
                                 <td class="text-end"><code id="receiptReference"></code></td>
                             </tr>
                             <tr>
-                                <td class="text-muted">Date:</td>
+                                <td class="text-white-50">Date:</td>
                                 <td class="text-end" id="receiptDate"></td>
                             </tr>
                         </tbody>
                     </table>
 
                     <div id="receiptNotesSection" class="d-none mt-3 p-3 bg-secondary bg-opacity-25 rounded">
-                        <small class="text-muted d-block mb-1">Notes:</small>
+                        <small class="text-white-50 d-block mb-1">Notes:</small>
                         <span id="receiptNotes"></span>
                     </div>
                 </div>

@@ -147,8 +147,8 @@
                 <table class="table table-hover table-striped mb-0">
                     <thead class="table-dark">
                         <tr>
-                            <th>#</th>
-                            <th>Shop Name</th>
+                            <th class="text-white">#</th>
+                            <th class="text-white">Shop Name</th>
                             <th class="text-end text-white">Transactions</th>
                             <th class="text-end text-white">Revenue</th>
                             <th class="text-end text-white">Cost</th>
@@ -221,6 +221,7 @@
                     {% endif %}
                 </table>
             </div>
+            {% include 'includes/audit_pagination.html' %}
         </div>
     </div>
 

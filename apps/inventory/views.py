@@ -13,6 +13,8 @@ from django.http import JsonResponse, HttpResponse
 from decimal import Decimal
 import decimal
 
+from apps.core.mixins import PaginationMixin # Added this line
+
 from .models import Category, Product, Batch, InventoryLedger, ShopPrice
 from .forms import CategoryForm, ProductForm, BatchForm, StockAdjustmentForm, ShopPriceForm
 from apps.core.models import Location
@@ -82,7 +84,7 @@ class CategoryDeleteView(LoginRequiredMixin, DeleteView):
 
 
 # ============ Product Views ============
-class ProductListView(LoginRequiredMixin, ListView):
+class ProductListView(LoginRequiredMixin, PaginationMixin, ListView):
     """List all products for the tenant."""
     model = Product
     template_name = 'inventory/product_list.html'
@@ -518,7 +520,7 @@ class InventoryExportView(LoginRequiredMixin, View):
 
 
 # ============ Batch Views ============
-class BatchListView(LoginRequiredMixin, ListView):
+class BatchListView(LoginRequiredMixin, PaginationMixin, ListView):
     """List all batches for the tenant."""
     model = Batch
     template_name = 'inventory/batch_list.html'
@@ -708,7 +710,7 @@ class StockAdjustmentView(LoginRequiredMixin, View):
         return render(request, self.template_name, {'form': form})
 
 
-class InventoryLedgerListView(LoginRequiredMixin, ListView):
+class InventoryLedgerListView(LoginRequiredMixin, PaginationMixin, ListView):
     """
     Complete audit trail of all inventory movements.
     Read-only view for Auditors and Admins.
@@ -716,7 +718,6 @@ class InventoryLedgerListView(LoginRequiredMixin, ListView):
     model = InventoryLedger
     template_name = 'inventory/inventory_ledger.html'
     context_object_name = 'entries'
-    paginate_by = 50
     
     def get_queryset(self):
         from django.utils import timezone
