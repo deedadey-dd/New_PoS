@@ -8,12 +8,12 @@ from django.db import transaction
 
 from .models import Customer, CustomerTransaction
 from .forms import CustomerForm, CustomerPaymentForm
+from apps.core.mixins import PaginationMixin
 
-class CustomerListView(LoginRequiredMixin, ListView):
+class CustomerListView(LoginRequiredMixin, PaginationMixin, ListView):
     model = Customer
     template_name = 'customers/customer_list.html'
     context_object_name = 'customers'
-    paginate_by = 20
 
     def get_queryset(self):
         user = self.request.user

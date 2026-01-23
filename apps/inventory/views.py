@@ -13,15 +13,18 @@ from django.http import JsonResponse, HttpResponse
 from decimal import Decimal
 import decimal
 
+from apps.core.mixins import PaginationMixin # Added this line
+
 from .models import Category, Product, Batch, InventoryLedger, ShopPrice
 from .forms import CategoryForm, ProductForm, BatchForm, StockAdjustmentForm, ShopPriceForm
 from apps.core.models import Location
+from apps.core.mixins import PaginationMixin
 
 import openpyxl
 
 
 # ============ Category Views ============
-class CategoryListView(LoginRequiredMixin, ListView):
+class CategoryListView(LoginRequiredMixin, PaginationMixin, ListView):
     """List all categories for the tenant."""
     model = Category
     template_name = 'inventory/category_list.html'
@@ -82,7 +85,7 @@ class CategoryDeleteView(LoginRequiredMixin, DeleteView):
 
 
 # ============ Product Views ============
-class ProductListView(LoginRequiredMixin, ListView):
+class ProductListView(LoginRequiredMixin, PaginationMixin, ListView):
     """List all products for the tenant."""
     model = Product
     template_name = 'inventory/product_list.html'
@@ -518,7 +521,7 @@ class InventoryExportView(LoginRequiredMixin, View):
 
 
 # ============ Batch Views ============
-class BatchListView(LoginRequiredMixin, ListView):
+class BatchListView(LoginRequiredMixin, PaginationMixin, ListView):
     """List all batches for the tenant."""
     model = Batch
     template_name = 'inventory/batch_list.html'
@@ -580,7 +583,10 @@ class BatchCreateView(LoginRequiredMixin, CreateView):
     
     def form_valid(self, form):
         form.instance.tenant = self.request.user.tenant
-        form.instance.current_quantity = form.instance.initial_quantity
+        # Initialize current_quantity to 0. The ledger entry creation below will 
+        # increment this by the received quantity via the InventoryLedger.save() method.
+        # This prevents double counting (once from here, once from ledger signal).
+        form.instance.current_quantity = Decimal('0')
         
         # Save the batch first
         response = super().form_valid(form)
@@ -627,10 +633,11 @@ class StockOverviewView(LoginRequiredMixin, View):
     template_name = 'inventory/stock_overview.html'
     
     def get(self, request):
+        from django.core.paginator import Paginator
         tenant = request.user.tenant
         
         # Stock by product and location
-        stock_summary = InventoryLedger.objects.filter(
+        stock_summary_qs = InventoryLedger.objects.filter(
             tenant=tenant
         ).values(
             'product__id', 'product__name', 'product__sku',
@@ -640,12 +647,12 @@ class StockOverviewView(LoginRequiredMixin, View):
         ).filter(total_stock__gt=0).order_by('product__name', 'location__name')
         
         # Low stock alerts
-        low_stock = []
+        low_stock_list = []
         products = Product.objects.filter(tenant=tenant, is_active=True)
         for product in products:
             total = product.get_total_stock()
             if total <= product.reorder_level:
-                low_stock.append({
+                low_stock_list.append({
                     'product': product,
                     'current_stock': total,
                     'reorder_level': product.reorder_level
@@ -661,6 +668,16 @@ class StockOverviewView(LoginRequiredMixin, View):
             expiry_date__lte=timezone.now().date() + timedelta(days=30),
             expiry_date__gte=timezone.now().date()
         ).select_related('product', 'location').order_by('expiry_date')
+        
+        # Pagination for Stock Summary
+        page_summary = request.GET.get('page_summary', 1)
+        paginator_summary = Paginator(stock_summary_qs, 25)
+        stock_summary = paginator_summary.get_page(page_summary)
+        
+        # Pagination for Low Stock
+        page_low_stock = request.GET.get('page_low_stock', 1)
+        paginator_low_stock = Paginator(low_stock_list, 25)
+        low_stock = paginator_low_stock.get_page(page_low_stock)
         
         context = {
             'stock_summary': stock_summary,
@@ -708,7 +725,7 @@ class StockAdjustmentView(LoginRequiredMixin, View):
         return render(request, self.template_name, {'form': form})
 
 
-class InventoryLedgerListView(LoginRequiredMixin, ListView):
+class InventoryLedgerListView(LoginRequiredMixin, PaginationMixin, ListView):
     """
     Complete audit trail of all inventory movements.
     Read-only view for Auditors and Admins.
@@ -716,7 +733,6 @@ class InventoryLedgerListView(LoginRequiredMixin, ListView):
     model = InventoryLedger
     template_name = 'inventory/inventory_ledger.html'
     context_object_name = 'entries'
-    paginate_by = 50
     
     def get_queryset(self):
         from django.utils import timezone

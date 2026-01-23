@@ -18,7 +18,7 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
             <h1 class="h3 mb-1">Payment History</h1>
-            <p class="text-muted mb-0">{{ tenant.name }}</p>
+            <p class="text-white-50 mb-0">{{ tenant.name }}</p>
         </div>
         <a href="{% url 'subscriptions:tm_record_payment' pk=tenant.pk %}" class="btn btn-success">
             <i class="bi bi-plus-circle me-1"></i>Record Payment
@@ -33,13 +33,13 @@
                 <table class="table table-hover mb-0">
                     <thead>
                         <tr>
-                            <th>Receipt #</th>
-                            <th>Type</th>
-                            <th>Date</th>
-                            <th>Period</th>
-                            <th>Method</th>
-                            <th>Status</th>
-                            <th class="text-end">Amount</th>
+                            <th class="text-white-50">Receipt #</th>
+                            <th class="text-white-50">Type</th>
+                            <th class="text-white-50">Date</th>
+                            <th class="text-white-50">Period</th>
+                            <th class="text-white-50">Method</th>
+                            <th class="text-white-50">Status</th>
+                            <th class="text-end text-white-50">Amount</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -62,7 +62,7 @@
                                 {% if payment.period_start and payment.period_end %}
                                 {{ payment.period_start|date:"M d" }} - {{ payment.period_end|date:"M d, Y" }}
                                 {% else %}
-                                <span class="text-muted">-</span>
+                                <span class="text-white-50">-</span>
                                 {% endif %}
                             </td>
                             <td>{{ payment.get_payment_method_display }}</td>
@@ -83,7 +83,7 @@
                         {% if payment.notes %}
                         <tr class="border-top-0">
                             <td colspan="7" class="py-1 ps-5">
-                                <small class="text-muted"><i
+                                <small class="text-white-50"><i
                                         class="bi bi-chat-left-text me-1"></i>{{ payment.notes }}</small>
                             </td>
                         </tr>
@@ -126,8 +126,8 @@
             {% endif %}
             {% else %}
             <div class="text-center py-5">
-                <i class="bi bi-inbox fs-1 text-muted d-block mb-3"></i>
-                <p class="text-muted mb-3">No payments recorded yet.</p>
+                <i class="bi bi-inbox fs-1 text-white-50 d-block mb-3"></i>
+                <p class="text-white-50 mb-3">No payments recorded yet.</p>
                 <a href="{% url 'subscriptions:tm_record_payment' pk=tenant.pk %}" class="btn btn-success">
                     <i class="bi bi-plus-circle me-1"></i>Record First Payment
                 </a>

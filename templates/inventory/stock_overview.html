@@ -50,6 +50,9 @@
                         </tbody>
                     </table>
                 </div>
+                {% with page_obj=low_stock param_name='page_low_stock' %}
+                {% include 'includes/multi_pagination.html' %}
+                {% endwith %}
             </div>
         </div>
     </div>
@@ -132,6 +135,9 @@
                 </tbody>
             </table>
         </div>
+        {% with page_obj=stock_summary param_name='page_summary' %}
+        {% include 'includes/multi_pagination.html' %}
+        {% endwith %}
         {% else %}
         <div class="text-center py-5">
             <i class="bi bi-inbox display-1 text-muted"></i>

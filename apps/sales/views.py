@@ -19,6 +19,7 @@ from django.utils import timezone
 from .models import Sale, SaleItem, Shift, ShopSettings
 from apps.inventory.models import Product, ShopPrice
 from apps.core.models import Location
+from apps.core.mixins import PaginationMixin
 
 
 class POSView(LoginRequiredMixin, View):
@@ -309,7 +310,7 @@ class ShiftCloseView(LoginRequiredMixin, View):
         return redirect('core:dashboard')
 
 
-class SaleListView(LoginRequiredMixin, ListView):
+class SaleListView(LoginRequiredMixin, PaginationMixin, ListView):
     """List sales for the shop."""
     model = Sale
     template_name = 'sales/sale_list.html'
@@ -369,7 +370,7 @@ class SaleListView(LoginRequiredMixin, ListView):
         if payment:
             queryset = queryset.filter(payment_method=payment)
         
-        return queryset[:100]  # Limit to last 100
+        return queryset
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

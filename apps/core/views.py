@@ -18,7 +18,11 @@ from django.utils.decorators import method_decorator
 from django.conf import settings
 
 from .models import Tenant, Location, Role, User
-from .forms import LoginForm, TenantSetupForm, LocationForm, UserCreateForm, UserEditForm, TenantSettingsForm
+from .forms import (
+    LoginForm, TenantSetupForm, LocationForm, 
+    UserCreateForm, UserEditForm, TenantSettingsForm
+)
+from .mixins import PaginationMixin
 from .decorators import admin_required, AdminOrManagerRequiredMixin, AdminRequiredMixin
 
 
@@ -352,7 +356,7 @@ class LocationDeleteView(LoginRequiredMixin, AdminRequiredMixin, DeleteView):
 
 
 # User Views
-class UserListView(LoginRequiredMixin, ListView):
+class UserListView(LoginRequiredMixin, PaginationMixin, ListView):
     """List all users for the tenant."""
     model = User
     template_name = 'core/user_list.html'

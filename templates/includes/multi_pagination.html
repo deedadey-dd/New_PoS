@@ -1,0 +1,46 @@
+<div class="d-flex justify-content-center mt-4">
+    <div class="text-center text-muted">
+        <small>Showing {{ page_obj.start_index }}-{{ page_obj.end_index }} of {{ page_obj.paginator.count }}
+            items</small>
+    </div>
+</div>
+
+{% if page_obj.has_other_pages %}
+<nav class="mt-2">
+    <ul class="pagination justify-content-center mb-0">
+        {% if page_obj.has_previous %}
+        <li class="page-item">
+            <a class="page-link"
+                href="?{{ param_name }}=1{% for key, value in request.GET.items %}{% if key != param_name %}&{{ key }}={{ value }}{% endif %}{% endfor %}">
+                <i class="bi bi-chevron-double-left"></i>
+            </a>
+        </li>
+        <li class="page-item">
+            <a class="page-link"
+                href="?{{ param_name }}={{ page_obj.previous_page_number }}{% for key, value in request.GET.items %}{% if key != param_name %}&{{ key }}={{ value }}{% endif %}{% endfor %}">
+                <i class="bi bi-chevron-left"></i>
+            </a>
+        </li>
+        {% endif %}
+
+        <li class="page-item disabled">
+            <span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+        </li>
+
+        {% if page_obj.has_next %}
+        <li class="page-item">
+            <a class="page-link"
+                href="?{{ param_name }}={{ page_obj.next_page_number }}{% for key, value in request.GET.items %}{% if key != param_name %}&{{ key }}={{ value }}{% endif %}{% endfor %}">
+                <i class="bi bi-chevron-right"></i>
+            </a>
+        </li>
+        <li class="page-item">
+            <a class="page-link"
+                href="?{{ param_name }}={{ page_obj.paginator.num_pages }}{% for key, value in request.GET.items %}{% if key != param_name %}&{{ key }}={{ value }}{% endif %}{% endfor %}">
+                <i class="bi bi-chevron-double-right"></i>
+            </a>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}

@@ -90,7 +90,7 @@ class PDFReceiptService:
         )
         
         # Header
-        story.append(Paragraph("SUBSCRIPTION RECEIPT", title_style))
+        story.append(Paragraph("HENDAXIS RECEIPT", title_style))
         story.append(Paragraph("POS System - Subscription Management", header_style))
         story.append(Spacer(1, 20))
         

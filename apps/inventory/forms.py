@@ -84,30 +84,39 @@ class BatchForm(forms.ModelForm):
         self.user = user
         self.auto_location = None
         
+        # Determine allowed location types based on role
+        allowed_types = ['PRODUCTION', 'STORES']
+        if user and user.role:
+            if user.role.name == 'STORES_MANAGER':
+                allowed_types = ['STORES']
+            elif user.role.name == 'PRODUCTION_MANAGER':
+                allowed_types = ['PRODUCTION']
+        
         if tenant:
             self.fields['product'].queryset = Product.objects.filter(tenant=tenant, is_active=True)
+            
             # Only Production and Stores can receive batches
             self.fields['location'].queryset = Location.objects.filter(
                 tenant=tenant, 
                 is_active=True,
-                location_type__in=['PRODUCTION', 'STORES']
+                location_type__in=allowed_types
             )
         else:
             self.fields['product'].queryset = Product.objects.none()
             self.fields['location'].queryset = Location.objects.none()
         
         # Auto-set location based on user's assigned location
-        if user and user.location and user.location.location_type in ['PRODUCTION', 'STORES']:
+        if user and user.location and user.location.location_type in allowed_types:
             self.initial['location'] = user.location.pk
             self.auto_location = user.location
             # Make location field hidden when auto-set
             self.fields['location'].widget = forms.HiddenInput()
         elif user and tenant:
-            # For users without location, find first Production or Stores
+            # For users without location, find first allowed location
             auto_loc = Location.objects.filter(
                 tenant=tenant,
                 is_active=True,
-                location_type__in=['PRODUCTION', 'STORES']
+                location_type__in=allowed_types
             ).first()
             if auto_loc:
                 self.initial['location'] = auto_loc.pk
