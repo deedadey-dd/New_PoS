@@ -1169,14 +1169,16 @@
 
             // Currency selector - store preference
             const currencySelect = document.getElementById('currencySelect');
-            const savedCurrency = localStorage.getItem('preferredCurrency');
-            if (savedCurrency) {
-                currencySelect.value = savedCurrency;
-            }
+            if (currencySelect) {
+                const savedCurrency = localStorage.getItem('preferredCurrency');
+                if (savedCurrency) {
+                    currencySelect.value = savedCurrency;
+                }
 
-            currencySelect.addEventListener('change', function () {
-                localStorage.setItem('preferredCurrency', this.value);
-            });
+                currencySelect.addEventListener('change', function () {
+                    localStorage.setItem('preferredCurrency', this.value);
+                });
+            }
 
             // Contact Form Submission
             const contactForm = document.getElementById('contactForm');
@@ -1185,39 +1187,41 @@
             const errorDiv = document.getElementById('contactError');
             const errorMessage = document.getElementById('contactErrorMessage');
 
-            contactForm.addEventListener('submit', async function (e) {
-                e.preventDefault();
+            if (contactForm) {
+                contactForm.addEventListener('submit', async function (e) {
+                    e.preventDefault();
 
-                // Disable button and show loading
-                submitBtn.disabled = true;
-                submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Sending...';
-                errorDiv.style.display = 'none';
+                    // Disable button and show loading
+                    submitBtn.disabled = true;
+                    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Sending...';
+                    errorDiv.style.display = 'none';
 
-                try {
-                    const formData = new FormData(contactForm);
-                    const response = await fetch('{% url "core:contact_submit" %}', {
-                        method: 'POST',
-                        headers: {
-                            'X-CSRFToken': '{{ csrf_token }}'
-                        },
-                        body: formData
-                    });
+                    try {
+                        const formData = new FormData(contactForm);
+                        const response = await fetch('{% url "core:contact_submit" %}', {
+                            method: 'POST',
+                            body: formData
+                        });
 
-                    const data = await response.json();
+                        if (!response.ok) throw new Error(`Server error: ${response.status}`);
 
-                    if (data.success) {
-                        contactForm.style.display = 'none';
-                        successDiv.style.display = 'block';
-                    } else {
-                        throw new Error(data.error || 'Failed to send message');
+                        const data = await response.json();
+
+                        if (data.success) {
+                            contactForm.style.display = 'none';
+                            successDiv.style.display = 'block';
+                        } else {
+                            throw new Error(data.error || 'Failed to send message');
+                        }
+                    } catch (error) {
+                        console.error('Contact form error:', error);
+                        errorMessage.textContent = error.message || 'Something went wrong. Please try again.';
+                        errorDiv.style.display = 'block';
+                        submitBtn.disabled = false;
+                        submitBtn.innerHTML = '<i class="bi bi-send me-2"></i>Send Message';
                     }
-                } catch (error) {
-                    errorMessage.textContent = error.message || 'Something went wrong. Please try again.';
-                    errorDiv.style.display = 'block';
-                    submitBtn.disabled = false;
-                    submitBtn.innerHTML = '<i class="bi bi-send me-2"></i>Send Message';
-                }
-            });
+                });
+            }
 
             // Reset form when modal is closed
             document.getElementById('contactModal').addEventListener('hidden.bs.modal', function () {
