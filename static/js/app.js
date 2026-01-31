@@ -57,4 +57,14 @@ document.addEventListener('DOMContentLoaded', function () {
     // Initialize tooltips
     const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
     const tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
+
+    // Sync Manager Bindings
+    const syncBtn = document.getElementById('sync-container');
+    if (syncBtn) {
+        syncBtn.addEventListener('click', function () {
+            if (window.syncManager) {
+                window.syncManager.triggerSync();
+            }
+        });
+    }
 });
