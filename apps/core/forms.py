@@ -150,6 +150,7 @@ class UserCreateForm(UserCreationForm):
         if current_user and not current_user.is_superuser:
             # Non-superusers (including tenant Admins) cannot create Admin users
             excluded_roles.append('ADMIN')
+            excluded_roles.append('TENANT_MANAGER')
         
         self.fields['role'].queryset = Role.objects.exclude(name__in=excluded_roles)
         
