@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block title %}Offline - POS System{% endblock %}
+
+{% block content %}
+<div class="container text-center py-5">
+    <div class="display-1 text-muted mb-4">
+        <i class="bi bi-wifi-off"></i>
+    </div>
+    <h1 class="mb-3">You are Offline</h1>
+    <p class="lead text-muted mb-4">
+        We can't load this page right now because you are not connected to the internet.
+    </p>
+    <p class="mb-4">
+        Don't worry! You can still use the Point of Sale to make sales.
+        Your transactions will be synced when you come back online.
+    </p>
+    <a href="{% url 'sales:pos' %}" class="btn btn-primary btn-lg">
+        <i class="bi bi-cart3 me-2"></i> Go to POS
+    </a>
+    <button onclick="window.location.reload()" class="btn btn-outline-secondary btn-lg ms-2">
+        Try Again
+    </button>
+</div>
+{% endblock %}

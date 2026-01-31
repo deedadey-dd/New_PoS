@@ -28,6 +28,9 @@ urlpatterns = [
     path('admin/', admin_honeypot, name='admin_honeypot'),
     path('admin/<path:subpath>', admin_honeypot),
     
+    path('api/', include('apps.sync.api.urls')),
+    path('', include('pwa.urls')),
+
     path('', include('apps.core.urls')),
     path('inventory/', include('apps.inventory.urls')),
     path('transfers/', include('apps.transfers.urls')),

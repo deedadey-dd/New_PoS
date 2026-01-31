@@ -97,6 +97,10 @@ class Product(TenantModel):
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    # Sync fields
+    version = models.IntegerField(default=1)
+    updated_by_device = models.CharField(max_length=100, null=True, blank=True)
     
     class Meta:
         ordering = ['name']
@@ -314,6 +318,42 @@ class InventoryLedger(TenantModel):
             self.batch.save()
         
         super().save(*args, **kwargs)
+
+
+class Inventory(TenantModel):
+    """
+    Denormalized inventory snapshot for efficient syncing.
+    Updated by signals or periodic tasks from InventoryLedger.
+    """
+    product = models.ForeignKey(
+        Product, 
+        on_delete=models.CASCADE, 
+        related_name='inventory_snapshots'
+    )
+    location = models.ForeignKey(
+        Location, 
+        on_delete=models.CASCADE, 
+        related_name='inventory_snapshots'
+    )
+    quantity = models.DecimalField(
+        max_digits=12, 
+        decimal_places=2, 
+        default=Decimal('0')
+    )
+    version = models.IntegerField(default=1)
+    updated_by_device = models.CharField(max_length=100, null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name_plural = "Inventory Snapshots"
+        unique_together = ['tenant', 'product', 'location']
+        indexes = [
+            models.Index(fields=['tenant', 'product', 'location']),
+            models.Index(fields=['tenant', 'updated_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.product.name} @ {self.location.name}: {self.quantity}"
 
 
 class ShopPrice(TenantModel):

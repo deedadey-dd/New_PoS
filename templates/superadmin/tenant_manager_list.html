@@ -54,7 +54,7 @@
                             <td>{{ manager.email }}</td>
                             <td>{{ manager.phone|default:"-" }}</td>
                             <td>
-                                {% with assignments=manager.tenant_assignments.all %}
+                                {% with assignments=manager.managed_tenants.all %}
                                 {% if assignments %}
                                 {% for assignment in assignments|slice:":3" %}
                                 <span class="badge bg-secondary">{{ assignment.tenant.name }}</span>

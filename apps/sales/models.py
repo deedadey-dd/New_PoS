@@ -243,6 +243,25 @@ class Sale(TenantModel):
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
+
+    # Sync fields
+    client_id = models.CharField(max_length=100, unique=True, null=True, blank=True, db_index=True)
+    device_id = models.CharField(max_length=100, null=True, blank=True)
+    device_type = models.CharField(
+        max_length=20, 
+        choices=[('desktop', 'Desktop'), ('tablet', 'Tablet'), ('mobile', 'Mobile')], 
+        null=True, 
+        blank=True
+    )
+    created_at_client = models.DateTimeField(null=True, blank=True)
+    synced_at = models.DateTimeField(null=True, blank=True)
+    sync_status = models.CharField(
+        max_length=20, 
+        choices=[('pending', 'Pending'), ('synced', 'Synced'), ('conflict', 'Conflict'), ('failed', 'Failed')], 
+        default='pending'
+    )
+    retry_count = models.IntegerField(default=0)
+    last_error = models.TextField(null=True, blank=True)
     
     class Meta:
         ordering = ['-created_at']
