@@ -63,6 +63,64 @@ class NotificationService:
         return False, None, "No notification channel configured"
     
     @classmethod
+    def send_payment_confirmation(cls, payment):
+        """
+        Send payment confirmation email to tenant admin(s).
+        
+        Args:
+            payment: SubscriptionPayment instance
+        
+        Returns:
+            tuple: (success: bool, error_message: str or None)
+        """
+        if not settings.EMAIL_NOTIFICATIONS_ENABLED:
+            return False, "Email notifications disabled"
+        
+        tenant = payment.tenant
+        
+        # Get tenant admin(s)
+        from apps.core.models import User
+        admins = User.objects.filter(
+            tenant=tenant,
+            role__name='ADMIN',
+            is_active=True
+        )
+        
+        if not admins.exists():
+            return False, "No active admin found for tenant"
+        
+        try:
+            # Render email template
+            html_message = render_to_string(
+                'notifications/payment_confirmation_email.html',
+                {
+                    'tenant': tenant,
+                    'payment': payment,
+                }
+            )
+            plain_message = strip_tags(html_message)
+            
+            recipient_list = [admin.email for admin in admins if admin.email]
+            
+            if not recipient_list:
+                return False, "No valid email addresses"
+            
+            send_mail(
+                subject=f'Payment Confirmation - {payment.receipt_number}',
+                message=plain_message,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=recipient_list,
+                html_message=html_message,
+                fail_silently=False,
+            )
+            
+            logger.info(f"Payment confirmation sent to {tenant.name}: {payment.receipt_number}")
+            return True, None
+        except Exception as e:
+            logger.error(f"Payment confirmation email error: {str(e)}")
+            return False, str(e)
+    
+    @classmethod
     def _build_notification_context(cls, tenant, notification_type, days_info):
         """Build context for notification templates."""
         messages = {
