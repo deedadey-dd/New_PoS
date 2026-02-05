@@ -219,6 +219,16 @@ class Tenant(models.Model):
         return timezone.now() < setup_end
     
     @property
+    def trial_days_remaining(self):
+        """Get remaining days in 14-day trial period."""
+        if self.subscription_status != 'TRIAL' or not self.setup_completed_at:
+            return None
+        from datetime import timedelta
+        trial_end_date = self.setup_completed_at.date() + timedelta(days=14)
+        remaining = (trial_end_date - timezone.now().date()).days
+        return max(0, remaining)
+    
+    @property
     def subscription_status_display(self):
         """Return a display-friendly status with warning for expiring soon."""
         if self.subscription_status in ['EXPIRED', 'SUSPENDED', 'INACTIVE', 'LOCKED']:
@@ -256,6 +266,14 @@ class Tenant(models.Model):
         current_count = self.get_shop_count()
         max_allowed = self.get_max_shops_allowed()
         return max(0, max_allowed - current_count)
+    
+    def get_extra_shops_count(self):
+        """Get number of shops beyond plan limit (for Premium pricing display)."""
+        if not self.subscription_plan:
+            return 0
+        shop_count = self.get_shop_count()
+        max_included = self.subscription_plan.max_shops
+        return max(0, shop_count - max_included)
     
     def get_monthly_subscription_price(self):
         """Calculate monthly subscription price considering plan and shop count."""
