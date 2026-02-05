@@ -318,6 +318,15 @@ class TenantManagerRecordPaymentView(LoginRequiredMixin, TenantManagerRequiredMi
             payment.period_end = tenant.subscription_end_date
             payment.save()
         
+        # Send payment confirmation email
+        from .services.notification_service import NotificationService
+        success, error = NotificationService.send_payment_confirmation(payment)
+        if not success:
+            # Log but don't fail - payment was still recorded
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to send payment confirmation email: {error}")
+        
         messages.success(request, f"Payment of {tenant.currency_symbol}{amount} recorded successfully.")
         return redirect('subscriptions:tm_tenant_detail', pk=pk)
 
