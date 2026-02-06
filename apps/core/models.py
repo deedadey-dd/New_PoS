@@ -255,6 +255,11 @@ class Tenant(models.Model):
         
         return base_max
     
+    @property
+    def shops_remaining(self):
+        """Get number of shop slots still available."""
+        return max(0, self.get_max_shops_allowed() - self.get_shop_count())
+    
     def can_create_shop(self):
         """Check if tenant can create another shop based on their subscription."""
         current_count = self.get_shop_count()
