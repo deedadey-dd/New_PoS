@@ -27,14 +27,24 @@
                     <!-- Current Status Info -->
                     <div class="alert alert-info mb-4">
                         <div class="row">
-                            <div class="col-md-4">
+                            <div class="col-md-3">
                                 <strong>Current Plan:</strong> {{ tenant.subscription_plan.name|default:"No Plan" }}
                             </div>
-                            <div class="col-md-4">
+                            <div class="col-md-2">
                                 <strong>Status:</strong> {{ tenant.get_subscription_status_display }}
                             </div>
-                            <div class="col-md-4">
+                            <div class="col-md-3">
                                 <strong>Expires:</strong> {{ tenant.subscription_end_date|date:"M d, Y"|default:"N/A" }}
+                            </div>
+                            <div class="col-md-2">
+                                <strong>Shops:</strong> {{ tenant.get_shop_count }}
+                                {% if tenant.get_extra_shops_count > 0 %}
+                                <span class="badge bg-primary">+{{ tenant.get_extra_shops_count }} extra</span>
+                                {% endif %}
+                            </div>
+                            <div class="col-md-2">
+                                <strong>Monthly:</strong> 
+                                <span class="fw-bold">{{ tenant.currency_symbol }}{{ tenant.get_monthly_subscription_price|floatformat:2|default:"N/A" }}</span>
                             </div>
                         </div>
                     </div>
@@ -54,6 +64,9 @@
                                     {% endif %}
                                     <option value="SUBSCRIPTION">New Subscription</option>
                                     <option value="RENEWAL">Renewal</option>
+                                    {% if tenant.subscription_plan.code == 'PREMIUM' %}
+                                    <option value="SHOP_TOPUP">Shop Top-up (Add More Shops)</option>
+                                    {% endif %}
                                 </select>
                             </div>
 
@@ -112,6 +125,17 @@
                                     <option value="12">12 months (Annual - Save up to 15%!)</option>
                                 </select>
                                 <div class="form-text" id="monthsHint"></div>
+                            </div>
+
+                            <!-- Number of Shops (shown for Premium subscription/renewal/topup) -->
+                            <div class="col-md-6" id="shopsSection" style="display: none;">
+                                <label class="form-label fw-semibold">Number of Shops <span
+                                        class="text-danger">*</span></label>
+                                <input type="number" name="shop_count" id="shopCount" class="form-control" 
+                                    min="5" max="50" value="{{ tenant.get_shop_count|default:5 }}">
+                                <div class="form-text" id="shopsHint">
+                                    Premium includes 5 shops. Enter total shops to pay for.
+                                </div>
                             </div>
 
                             <!-- Amount -->
@@ -219,87 +243,115 @@
         const paymentType = document.getElementById('paymentType');
         const planSection = document.getElementById('planSection');
         const monthsSection = document.getElementById('monthsSection');
+        const shopsSection = document.getElementById('shopsSection');
         const subscriptionPlan = document.getElementById('subscriptionPlan');
         const subscriptionMonths = document.getElementById('subscriptionMonths');
+        const shopCount = document.getElementById('shopCount');
         const paymentAmount = document.getElementById('paymentAmount');
         const amountHint = document.getElementById('amountHint');
+        const shopsHint = document.getElementById('shopsHint');
 
-        // Show/hide plan and months based on payment type
+        // Show/hide sections based on payment type
         function toggleSections() {
             const type = paymentType.value;
+            
             if (type === 'SUBSCRIPTION' || type === 'RENEWAL') {
                 planSection.style.display = 'block';
                 monthsSection.style.display = 'block';
                 subscriptionPlan.required = true;
+                
+                // Show shops for Premium plan
+                const selectedPlan = subscriptionPlan.options[subscriptionPlan.selectedIndex];
+                if (selectedPlan && selectedPlan.dataset.code === 'PREMIUM') {
+                    shopsSection.style.display = 'block';
+                    shopCount.min = '5';
+                    shopsHint.textContent = 'Premium includes 5 shops. Extra shops: GH₵100/mo or GH₵85/mo (annual).';
+                } else {
+                    shopsSection.style.display = 'none';
+                }
                 updateAmount();
+            } else if (type === 'SHOP_TOPUP') {
+                // Shop top-up: hide plan/months, show shops
+                planSection.style.display = 'none';
+                monthsSection.style.display = 'none';
+                shopsSection.style.display = 'block';
+                subscriptionPlan.required = false;
+                
+                // For topup, min is current shops + 1
+                const currentShops = {{ tenant.get_shop_count|default:5 }};
+                shopCount.min = currentShops + 1;
+                shopCount.value = currentShops + 1;
+                shopsHint.textContent = `Current: ${currentShops} shops. Enter new total to add more.`;
+                updateTopupAmount();
+            } else if (type === 'ONBOARDING') {
+                planSection.style.display = 'none';
+                monthsSection.style.display = 'none';
+                shopsSection.style.display = 'none';
+                subscriptionPlan.required = false;
+                amountHint.textContent = 'Onboarding fee amount';
             } else {
                 planSection.style.display = 'none';
                 monthsSection.style.display = 'none';
+                shopsSection.style.display = 'none';
                 subscriptionPlan.required = false;
-                if (type === 'ONBOARDING') {
-                    amountHint.textContent = 'Onboarding fee amount';
-                } else {
-                    amountHint.textContent = 'Enter the payment amount';
-                }
+                amountHint.textContent = 'Enter the payment amount';
             }
         }
 
-        // Calculate and update amount based on plan and months
+        // Calculate amount for subscription/renewal
         function updateAmount() {
             const selectedOption = subscriptionPlan.options[subscriptionPlan.selectedIndex];
-            const monthsHint = document.getElementById('monthsHint');
-            
-            // Get tenant's current extra shops count
-            const tenantExtraShops = {{ tenant.get_extra_shops_count }};
+            const monthsHintEl = document.getElementById('monthsHint');
 
             if (selectedOption && selectedOption.value) {
                 const monthlyBasePrice = parseFloat(selectedOption.dataset.price || 0);
                 const annualBasePrice = parseFloat(selectedOption.dataset.annualPrice || monthlyBasePrice);
-                const savings = parseFloat(selectedOption.dataset.savings || 0);
                 const months = parseInt(subscriptionMonths.value || 1);
                 const planCode = selectedOption.dataset.code;
-                const maxShops = parseInt(selectedOption.dataset.maxShops || 0);
+                const maxShops = parseInt(selectedOption.dataset.maxShops || 5);
                 const extraShopPrice = parseFloat(selectedOption.dataset.extraShopPrice || 0);
                 const annualExtraShopPrice = parseFloat(selectedOption.dataset.annualExtraShopPrice || extraShopPrice);
+
+                // Use entered shop count for Premium, otherwise just base price
+                let enteredShops = parseInt(shopCount.value || maxShops);
+                let extraShops = 0;
+                
+                if (planCode === 'PREMIUM') {
+                    shopsSection.style.display = 'block';
+                    extraShops = Math.max(0, enteredShops - maxShops);
+                } else {
+                    shopsSection.style.display = 'none';
+                }
 
                 let total, pricePerMonth, hintText;
                 let extraShopsCost = 0;
                 let extraShopsLabel = '';
 
                 if (months === 12) {
-                    // Use annual pricing (discounted)
                     pricePerMonth = annualBasePrice;
-                    
-                    // Calculate extra shops cost for Premium
-                    if (planCode === 'PREMIUM' && tenantExtraShops > 0) {
-                        extraShopsCost = tenantExtraShops * annualExtraShopPrice * 12;
-                        extraShopsLabel = ` + ${tenantExtraShops} extra × {{ tenant.currency_symbol }}${annualExtraShopPrice.toFixed(0)}`;
+                    if (planCode === 'PREMIUM' && extraShops > 0) {
+                        extraShopsCost = extraShops * annualExtraShopPrice * 12;
+                        extraShopsLabel = ` + ${extraShops} extra × GH₵${annualExtraShopPrice.toFixed(0)}`;
                     }
-                    
                     total = (annualBasePrice * 12) + extraShopsCost;
-                    const regularTotal = (monthlyBasePrice * 12) + (tenantExtraShops * extraShopPrice * 12);
+                    const regularTotal = (monthlyBasePrice * 12) + (extraShops * extraShopPrice * 12);
                     const savedAmount = regularTotal - total;
 
+                    hintText = `12 × GH₵${pricePerMonth.toFixed(2)}${extraShopsLabel} = GH₵${total.toFixed(2)}`;
                     if (savedAmount > 0) {
-                        hintText = `12 × {{ tenant.currency_symbol }}${pricePerMonth.toFixed(2)}${extraShopsLabel} = {{ tenant.currency_symbol }}${total.toFixed(2)}`;
-                        monthsHint.innerHTML = `<span class="text-success"><i class="bi bi-piggy-bank me-1"></i>You save {{ tenant.currency_symbol }}${savedAmount.toFixed(2)}!</span>`;
+                        monthsHintEl.innerHTML = `<span class="text-success"><i class="bi bi-piggy-bank me-1"></i>You save GH₵${savedAmount.toFixed(2)}!</span>`;
                     } else {
-                        hintText = `12 × {{ tenant.currency_symbol }}${pricePerMonth.toFixed(2)}${extraShopsLabel} = {{ tenant.currency_symbol }}${total.toFixed(2)}`;
-                        monthsHint.textContent = '';
+                        monthsHintEl.textContent = '';
                     }
                 } else {
-                    // Use regular monthly pricing
                     pricePerMonth = monthlyBasePrice;
-                    
-                    // Calculate extra shops cost for Premium
-                    if (planCode === 'PREMIUM' && tenantExtraShops > 0) {
-                        extraShopsCost = tenantExtraShops * extraShopPrice * months;
-                        extraShopsLabel = ` + ${tenantExtraShops} extra × {{ tenant.currency_symbol }}${extraShopPrice.toFixed(0)}`;
+                    if (planCode === 'PREMIUM' && extraShops > 0) {
+                        extraShopsCost = extraShops * extraShopPrice * months;
+                        extraShopsLabel = ` + ${extraShops} extra × GH₵${extraShopPrice.toFixed(0)}`;
                     }
-                    
                     total = (monthlyBasePrice * months) + extraShopsCost;
-                    hintText = `${months} × {{ tenant.currency_symbol }}${pricePerMonth.toFixed(2)}${extraShopsLabel} = {{ tenant.currency_symbol }}${total.toFixed(2)}`;
-                    monthsHint.textContent = '';
+                    hintText = `${months} × GH₵${pricePerMonth.toFixed(2)}${extraShopsLabel} = GH₵${total.toFixed(2)}`;
+                    monthsHintEl.textContent = '';
                 }
 
                 paymentAmount.value = total.toFixed(2);
@@ -307,10 +359,44 @@
             }
         }
 
+        // Calculate amount for shop top-up
+        function updateTopupAmount() {
+            const currentShops = {{ tenant.get_shop_count|default:5 }};
+            const newShops = parseInt(shopCount.value || currentShops);
+            const shopsToAdd = Math.max(0, newShops - currentShops);
+            
+            // Get remaining months from subscription end date
+            const endDate = new Date('{{ tenant.subscription_end_date|date:"Y-m-d" }}');
+            const today = new Date();
+            const remainingDays = Math.max(0, Math.ceil((endDate - today) / (1000 * 60 * 60 * 24)));
+            const remainingMonths = Math.ceil(remainingDays / 30);
+            
+            // Use monthly extra shop price (or could prorate)
+            const extraShopPrice = 100; // GH₵100 per extra shop
+            const total = shopsToAdd * extraShopPrice * remainingMonths;
+            
+            paymentAmount.value = total.toFixed(2);
+            if (shopsToAdd > 0) {
+                amountHint.textContent = `${shopsToAdd} new shop(s) × GH₵${extraShopPrice} × ${remainingMonths} month(s) = GH₵${total.toFixed(2)}`;
+            } else {
+                amountHint.textContent = 'Enter a higher shop count to add shops';
+            }
+        }
+
         // Event listeners
         paymentType.addEventListener('change', toggleSections);
-        subscriptionPlan.addEventListener('change', updateAmount);
+        subscriptionPlan.addEventListener('change', function() {
+            toggleSections();
+            updateAmount();
+        });
         subscriptionMonths.addEventListener('change', updateAmount);
+        shopCount.addEventListener('input', function() {
+            if (paymentType.value === 'SHOP_TOPUP') {
+                updateTopupAmount();
+            } else {
+                updateAmount();
+            }
+        });
 
         // Initialize on page load
         toggleSections();
