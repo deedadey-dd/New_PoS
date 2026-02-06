@@ -271,9 +271,9 @@
                 }
                 updateAmount();
             } else if (type === 'SHOP_TOPUP') {
-                // Shop top-up: hide plan/months, show shops
+                // Shop top-up: hide plan, show months and shops
                 planSection.style.display = 'none';
-                monthsSection.style.display = 'none';
+                monthsSection.style.display = 'block';  // Show months for annual option
                 shopsSection.style.display = 'block';
                 subscriptionPlan.required = false;
                 
@@ -364,23 +364,43 @@
             const currentShops = {{ tenant.get_shop_count|default:5 }};
             const newShops = parseInt(shopCount.value || currentShops);
             const shopsToAdd = Math.max(0, newShops - currentShops);
+            const months = parseInt(subscriptionMonths.value || 1);
+            const monthsHintEl = document.getElementById('monthsHint');
             
-            // Get remaining months from subscription end date
-            const endDate = new Date('{{ tenant.subscription_end_date|date:"Y-m-d" }}');
-            const today = new Date();
-            const remainingDays = Math.max(0, Math.ceil((endDate - today) / (1000 * 60 * 60 * 24)));
-            const remainingMonths = Math.ceil(remainingDays / 30);
+            // Use discounted rate for annual (12 months)
+            const monthlyRate = 100;  // GH₵100 per extra shop per month
+            const annualRate = 85;    // GH₵85 per extra shop per month (annual discount)
             
-            // Use monthly extra shop price (or could prorate)
-            const extraShopPrice = 100; // GH₵100 per extra shop
-            const total = shopsToAdd * extraShopPrice * remainingMonths;
+            let extraShopPrice, total, hintText;
+            
+            if (months === 12) {
+                extraShopPrice = annualRate;
+                total = shopsToAdd * extraShopPrice * 12;
+                const regularTotal = shopsToAdd * monthlyRate * 12;
+                const savedAmount = regularTotal - total;
+                
+                if (shopsToAdd > 0) {
+                    amountHint.textContent = `${shopsToAdd} shop(s) × GH₵${extraShopPrice} × 12 months = GH₵${total.toFixed(2)}`;
+                    if (savedAmount > 0) {
+                        monthsHintEl.innerHTML = `<span class="text-success"><i class="bi bi-piggy-bank me-1"></i>You save GH₵${savedAmount.toFixed(2)}!</span>`;
+                    }
+                } else {
+                    amountHint.textContent = 'Enter a higher shop count to add shops';
+                    monthsHintEl.textContent = '';
+                }
+            } else {
+                extraShopPrice = monthlyRate;
+                total = shopsToAdd * extraShopPrice * months;
+                monthsHintEl.textContent = '';
+                
+                if (shopsToAdd > 0) {
+                    amountHint.textContent = `${shopsToAdd} shop(s) × GH₵${extraShopPrice} × ${months} month(s) = GH₵${total.toFixed(2)}`;
+                } else {
+                    amountHint.textContent = 'Enter a higher shop count to add shops';
+                }
+            }
             
             paymentAmount.value = total.toFixed(2);
-            if (shopsToAdd > 0) {
-                amountHint.textContent = `${shopsToAdd} new shop(s) × GH₵${extraShopPrice} × ${remainingMonths} month(s) = GH₵${total.toFixed(2)}`;
-            } else {
-                amountHint.textContent = 'Enter a higher shop count to add shops';
-            }
         }
 
         // Event listeners
@@ -389,7 +409,13 @@
             toggleSections();
             updateAmount();
         });
-        subscriptionMonths.addEventListener('change', updateAmount);
+        subscriptionMonths.addEventListener('change', function() {
+            if (paymentType.value === 'SHOP_TOPUP') {
+                updateTopupAmount();
+            } else {
+                updateAmount();
+            }
+        });
         shopCount.addEventListener('input', function() {
             if (paymentType.value === 'SHOP_TOPUP') {
                 updateTopupAmount();
