@@ -166,8 +166,17 @@
                             <div>{{ tenant.created_at|date:"M d, Y" }}</div>
                         </div>
                         <div class="col-6">
-                            <div class="text-muted small">Shop Count</div>
+                            <div class="text-muted small">Active Shops</div>
                             <div>{{ tenant.get_shop_count }} shops</div>
+                        </div>
+                        <div class="col-6">
+                            <div class="text-muted small">Shops Paid For</div>
+                            <div>
+                                {{ tenant.get_max_shops_allowed }} shops
+                                {% if tenant.get_shop_count < tenant.get_max_shops_allowed %}
+                                <small class="text-success">({{ tenant.shops_remaining }} available)</small>
+                                {% endif %}
+                            </div>
                         </div>
                         <div class="col-12">
                             <div class="text-muted small">Address</div>

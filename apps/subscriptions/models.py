@@ -208,6 +208,7 @@ class SubscriptionPayment(models.Model):
         ('ONBOARDING', 'Onboarding Fee'),
         ('SUBSCRIPTION', 'Subscription'),
         ('RENEWAL', 'Renewal'),
+        ('SHOP_TOPUP', 'Shop Top-up'),
         ('ADDITIONAL', 'Additional Payment'),
     ]
     
@@ -279,6 +280,12 @@ class SubscriptionPayment(models.Model):
     )
     
     notes = models.TextField(blank=True)
+    
+    # Shop count for Premium plans
+    shops_paid = models.PositiveIntegerField(
+        default=0,
+        help_text="Number of shops paid for (Premium plans)"
+    )
     
     # Audit
     created_by = models.ForeignKey(
