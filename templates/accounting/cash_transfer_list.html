@@ -27,7 +27,7 @@
 {% endif %}
 
 <!-- Filters -->
-{% if is_full_view %}
+{% if show_filters %}
 <div class="card mb-4">
     <div class="card-body">
         <form method="get" class="row g-3">
@@ -39,6 +39,7 @@
                 <label class="form-label">To Date</label>
                 <input type="date" name="date_to" class="form-control" value="{{ date_to }}">
             </div>
+            {% if is_full_view %}
             <div class="col-md-3">
                 <label class="form-label">Shop</label>
                 <select name="shop" class="form-select">
@@ -50,6 +51,7 @@
                     {% endfor %}
                 </select>
             </div>
+            {% endif %}
             <div class="col-md-2">
                 <label class="form-label">Status</label>
                 <select name="status" class="form-select">
@@ -72,19 +74,6 @@
         </form>
     </div>
 </div>
-{% else %}
-<div class="mb-3">
-    <div class="btn-group" role="group">
-        <a href="{% url 'accounting:cash_transfer_list' %}"
-            class="btn btn-outline-secondary {% if not request.GET.status %}active{% endif %}">All</a>
-        <a href="?status=PENDING"
-            class="btn btn-outline-warning {% if request.GET.status == 'PENDING' %}active{% endif %}">Pending</a>
-        <a href="?status=CONFIRMED"
-            class="btn btn-outline-success {% if request.GET.status == 'CONFIRMED' %}active{% endif %}">Confirmed</a>
-        <a href="?status=CANCELLED"
-            class="btn btn-outline-danger {% if request.GET.status == 'CANCELLED' %}active{% endif %}">Cancelled</a>
-    </div>
-</div>
 {% endif %}
 
 <!-- Transfers Table -->
@@ -102,6 +91,7 @@
                         <th>To</th>
                         <th class="text-end">Amount</th>
                         <th>Status</th>
+                        <th>Notes</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -144,6 +134,14 @@
                             <span class="badge bg-success">Confirmed</span>
                             {% else %}
                             <span class="badge bg-danger">Cancelled</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if transfer.notes %}
+                            <small>{{ transfer.notes }}</small>
+                            {% endif %}
+                            {% if transfer.status == 'CANCELLED' and transfer.cancellation_reason %}
+                            <small class="text-danger d-block"><i class="bi bi-x-circle me-1"></i>{{ transfer.cancellation_reason }}</small>
                             {% endif %}
                         </td>
                         <td>
@@ -193,11 +191,6 @@
                                 </div>
                             </div>
                             {% endif %}
-                            {% else %}
-                            {% if transfer.notes %}
-                            <span class="text-muted" title="{{ transfer.notes }}"><i
-                                    class="bi bi-chat-left-text"></i></span>
-                            {% endif %}
                             {% endif %}
                         </td>
                     </tr>
@@ -211,13 +204,13 @@
         <nav class="mt-4">
             <ul class="pagination justify-content-center mb-0">
                 {% if page_obj.has_previous %}
-                <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}"><i
+                <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}{% if selected_shop %}&shop={{ selected_shop }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}"><i
                             class="bi bi-chevron-left"></i></a></li>
                 {% endif %}
                 <li class="page-item disabled"><span class="page-link">Page {{ page_obj.number }} of
                         {{ page_obj.paginator.num_pages }}</span></li>
                 {% if page_obj.has_next %}
-                <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}"><i
+                <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}{% if selected_shop %}&shop={{ selected_shop }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}"><i
                             class="bi bi-chevron-right"></i></a></li>
                 {% endif %}
             </ul>

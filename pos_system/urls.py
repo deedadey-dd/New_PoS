@@ -11,6 +11,16 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def serve_serviceworker(request):
+    """Serve the service worker from root path for correct PWA scope."""
+    import os
+    sw_path = os.path.join(settings.STATICFILES_DIRS[0], 'serviceworker.js')
+    with open(sw_path, 'r') as f:
+        content = f.read()
+    from django.http import HttpResponse
+    return HttpResponse(content, content_type='application/javascript')
+
+
 def admin_honeypot(request):
     """Honeypot for /admin/ - logs attempts and returns 404."""
     logger.warning(
@@ -44,6 +54,9 @@ urlpatterns = [
     
     # Email-based password reset (Admin users only - validated in custom view)
     path('password-reset/', include('django.contrib.auth.urls')),
+
+    # PWA: Service worker must be served from root for full scope
+    path('serviceworker.js', serve_serviceworker, name='serviceworker'),
 ]
 
 # Serve media files during development

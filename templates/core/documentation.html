@@ -112,6 +112,7 @@
                             <a class="nav-link sub-link" href="#pos-shift">Opening/Closing Shifts</a>
                             <a class="nav-link sub-link" href="#pos-sale">Making a Sale</a>
                             <a class="nav-link sub-link" href="#pos-payments">Payment Methods</a>
+                            <a class="nav-link sub-link" href="#pos-offline">Offline Mode & Sync</a>
                             <a class="nav-link" href="#inventory">Inventory Management</a>
                             <a class="nav-link sub-link" href="#products">Products</a>
                             <a class="nav-link sub-link" href="#batches">Batches</a>
@@ -450,6 +451,57 @@
                         <li>Any discrepancy will be highlighted</li>
                         <li>Click <strong>Close Shift</strong></li>
                     </ol>
+                </section>
+
+                <!-- Offline Mode & Sync -->
+                <section id="pos-offline">
+                    <h3><i class="bi bi-wifi-off me-2"></i>Offline Mode & Sync</h3>
+
+                    <p>The POS can continue processing sales even without an internet connection. Sales are stored locally in your browser and automatically synced when connectivity returns.</p>
+
+                    <h4>Status Indicator</h4>
+                    <p>Look at the top-left of the POS screen next to the shop name:</p>
+                    <ul>
+                        <li><span style="color: #10b981;">&#9679; Online</span> &mdash; Connected to the server</li>
+                        <li><span style="color: #ef4444;">&#9679; Offline</span> &mdash; No internet connection (pulsing red)</li>
+                        <li><strong>Pending badge</strong> &mdash; Shows the number of sales waiting to sync</li>
+                    </ul>
+
+                    <h4>Making Sales Offline</h4>
+                    <ol>
+                        <li>Add products to cart as normal</li>
+                        <li>Choose <strong>Cash</strong> or <strong>Credit</strong> payment</li>
+                        <li>Complete the sale</li>
+                        <li>The sale is saved locally and a confirmation message appears</li>
+                    </ol>
+
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        <strong>E-Cash (Paystack) payments are not available offline</strong> because they require a live internet connection to process. The E-Cash button is automatically disabled when offline.
+                    </div>
+
+                    <h4>Automatic Syncing</h4>
+                    <p>When internet connectivity is restored:</p>
+                    <ol>
+                        <li>The status indicator changes back to <span style="color: #10b981;">&#9679; Online</span></li>
+                        <li>A <strong>sync bar</strong> appears at the top showing progress</li>
+                        <li>Each pending sale is sent to the server one by one</li>
+                        <li>The pending badge count decreases as sales sync</li>
+                        <li>Once complete, the sync bar shows a success message</li>
+                    </ol>
+
+                    <h4>Conflict Handling</h4>
+                    <p>Stock changes may occur while you are offline (e.g., another attendant sold the same product). When this happens:</p>
+                    <ul>
+                        <li>The sale <strong>still syncs successfully</strong> (it is not rejected)</li>
+                        <li>A <strong>sync conflict flag</strong> is recorded on the sale for manager review</li>
+                        <li>Managers can view flagged sales in Sales History</li>
+                    </ul>
+
+                    <div class="alert alert-info">
+                        <i class="bi bi-shield-check me-2"></i>
+                        <strong>Duplicate Prevention:</strong> Each offline sale is assigned a unique ID. If the same sale is sent twice (e.g., due to a page refresh during sync), the server recognises the duplicate and prevents double-recording.
+                    </div>
                 </section>
 
                 <!-- Inventory Management -->

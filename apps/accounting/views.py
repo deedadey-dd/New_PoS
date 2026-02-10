@@ -95,7 +95,10 @@ class CashTransferListView(LoginRequiredMixin, ListView):
         # Check if user can create transfers (Auditor cannot create)
         context['can_create'] = role_name in ['SHOP_ATTENDANT', 'SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN']
         
-        # For accountants/auditors/admin: show filters
+        # Show filters for all roles
+        context['show_filters'] = True
+        
+        # For accountants/auditors/admin: full view with shop dropdown + summary cards
         if role_name in ['ACCOUNTANT', 'AUDITOR', 'ADMIN']:
             context['is_full_view'] = True
             context['shops'] = Location.objects.filter(
@@ -104,12 +107,6 @@ class CashTransferListView(LoginRequiredMixin, ListView):
                 is_active=True
             )
             context['can_send_to_shops'] = user.tenant.allow_accountant_to_shop_transfers if user.tenant else False
-            
-            # Preserve filter values
-            context['date_from'] = self.request.GET.get('date_from', '')
-            context['date_to'] = self.request.GET.get('date_to', '')
-            context['selected_shop'] = self.request.GET.get('shop', '')
-            context['selected_status'] = self.request.GET.get('status', '')
             
             # Cash deposit summary
             today = timezone.now().date()
@@ -122,6 +119,13 @@ class CashTransferListView(LoginRequiredMixin, ListView):
                 total=Sum('amount'),
                 count=Count('id')
             )
+        
+        # Preserve filter values for all filtered views
+        if context.get('show_filters'):
+            context['date_from'] = self.request.GET.get('date_from', '')
+            context['date_to'] = self.request.GET.get('date_to', '')
+            context['selected_shop'] = self.request.GET.get('shop', '')
+            context['selected_status'] = self.request.GET.get('status', '')
         
         return context
 

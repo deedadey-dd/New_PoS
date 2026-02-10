@@ -73,6 +73,14 @@
                 </div>
             </a>
         </div>
+        <div class="col-md-3 mb-3">
+            <a href="#offline-sync" class="card shadow-sm text-decoration-none h-100">
+                <div class="card-body text-center">
+                    <i class="bi bi-wifi-off fs-1 text-secondary mb-2"></i>
+                    <h5 class="text-dark">Offline Mode</h5>
+                </div>
+            </a>
+        </div>
     </div>
 
     <!-- Getting Started -->
@@ -515,6 +523,88 @@
                 <h6><i class="bi bi-bell me-2"></i>Subscription Notifications</h6>
                 <p class="mb-0">You'll receive notifications 5 days before your subscription expires. If expired, you
                     have a 10-day grace period before your account is deactivated.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Offline Mode & Sync -->
+    <div class="card shadow-sm mb-4" id="offline-sync">
+        <div class="card-header bg-secondary text-white">
+            <h4 class="mb-0"><i class="bi bi-wifi-off me-2"></i>Offline Mode & Sync</h4>
+        </div>
+        <div class="card-body">
+            <div class="accordion" id="offlineAccordion">
+                <!-- How Offline Mode Works -->
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button" type="button" data-bs-toggle="collapse"
+                            data-bs-target="#offlineHow">
+                            <i class="bi bi-info-circle me-2"></i>How Offline Mode Works
+                        </button>
+                    </h2>
+                    <div id="offlineHow" class="accordion-collapse collapse show" data-bs-parent="#offlineAccordion">
+                        <div class="accordion-body">
+                            <p>The POS system can work without an internet connection:</p>
+                            <ul>
+                                <li>A <strong>green dot</strong> in the header indicates you are <strong>online</strong></li>
+                                <li>A <strong>red pulsing dot</strong> means you are <strong>offline</strong></li>
+                                <li>Sales made while offline are saved to your browser and synced automatically when you reconnect</li>
+                            </ul>
+                            <div class="alert alert-info mb-0">
+                                <i class="bi bi-lightbulb me-2"></i>
+                                Cart data is always preserved across page reloads, whether online or offline.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Making Sales Offline -->
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                            data-bs-target="#offlineSales">
+                            <i class="bi bi-cart-check me-2"></i>Making Sales Offline
+                        </button>
+                    </h2>
+                    <div id="offlineSales" class="accordion-collapse collapse" data-bs-parent="#offlineAccordion">
+                        <div class="accordion-body">
+                            <ol>
+                                <li>Add products to cart as usual</li>
+                                <li>Click <strong>Pay Cash</strong> or <strong>Sell on Credit</strong></li>
+                                <li>Complete the sale &mdash; it will be saved locally</li>
+                                <li>A <strong>"pending" badge</strong> shows how many sales are waiting to sync</li>
+                            </ol>
+                            <div class="alert alert-warning mb-0">
+                                <i class="bi bi-exclamation-triangle me-2"></i>
+                                <strong>E-Cash (Paystack)</strong> payments are <strong>not available</strong> while offline because they require an active internet connection.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Syncing -->
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                            data-bs-target="#offlineSync">
+                            <i class="bi bi-arrow-repeat me-2"></i>Automatic Syncing
+                        </button>
+                    </h2>
+                    <div id="offlineSync" class="accordion-collapse collapse" data-bs-parent="#offlineAccordion">
+                        <div class="accordion-body">
+                            <p>When your connection is restored:</p>
+                            <ul>
+                                <li>Pending sales are <strong>automatically synced</strong> to the server</li>
+                                <li>A <strong>sync bar</strong> at the top shows progress</li>
+                                <li>If a stock conflict occurs (e.g. item sold out while offline), the sale still syncs but is <strong>flagged for review</strong></li>
+                            </ul>
+                            <div class="alert alert-success mb-0">
+                                <i class="bi bi-check-circle me-2"></i>
+                                Duplicate syncs are prevented automatically &mdash; even if you refresh the page during sync.
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
