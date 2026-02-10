@@ -263,6 +263,7 @@ class TenantManagerRecordPaymentView(LoginRequiredMixin, TenantManagerRequiredMi
         reference = request.POST.get('reference', '')
         months = int(request.POST.get('months', 1))
         subscription_plan_id = request.POST.get('subscription_plan')
+        shop_count = int(request.POST.get('shop_count', 0))
         
         try:
             amount = Decimal(amount)
@@ -272,6 +273,7 @@ class TenantManagerRecordPaymentView(LoginRequiredMixin, TenantManagerRequiredMi
         
         # Get the selected subscription plan for subscription/renewal payments
         plan_name = ''
+        selected_plan = None
         if payment_type in ['SUBSCRIPTION', 'RENEWAL'] and subscription_plan_id:
             try:
                 selected_plan = SubscriptionPlan.objects.get(pk=subscription_plan_id, is_active=True)
@@ -283,6 +285,24 @@ class TenantManagerRecordPaymentView(LoginRequiredMixin, TenantManagerRequiredMi
                 return redirect('subscriptions:tm_record_payment', pk=pk)
         elif tenant.subscription_plan:
             plan_name = tenant.subscription_plan.name
+            selected_plan = tenant.subscription_plan
+        
+        # Handle shop count for Premium plans
+        shops_paid = 0
+        if selected_plan and selected_plan.code == 'PREMIUM' and shop_count > 0:
+            # Calculate extra shops (beyond the 5 included)
+            extra_shops = max(0, shop_count - selected_plan.max_shops)
+            
+            if payment_type in ['SUBSCRIPTION', 'RENEWAL']:
+                # Set the tenant's additional_shops to the extra count
+                tenant.additional_shops = extra_shops
+                shops_paid = shop_count
+            elif payment_type == 'SHOP_TOPUP':
+                # Add to existing additional_shops
+                current_shops = tenant.get_shop_count()
+                shops_to_add = max(0, shop_count - current_shops)
+                tenant.additional_shops = (tenant.additional_shops or 0) + shops_to_add
+                shops_paid = shops_to_add
         
         # Create payment record
         payment = SubscriptionPayment.objects.create(
@@ -294,6 +314,7 @@ class TenantManagerRecordPaymentView(LoginRequiredMixin, TenantManagerRequiredMi
             payment_method=payment_method,
             transaction_reference=reference,
             plan_name=plan_name,
+            shops_paid=shops_paid,
             created_by=request.user,
             notes=f"Recorded by Tenant Manager: {request.user.email}"
         )
@@ -317,6 +338,18 @@ class TenantManagerRecordPaymentView(LoginRequiredMixin, TenantManagerRequiredMi
             payment.period_start = tenant.subscription_start_date
             payment.period_end = tenant.subscription_end_date
             payment.save()
+        elif payment_type == 'SHOP_TOPUP':
+            # Just save the tenant with updated additional_shops
+            tenant.save(update_fields=['additional_shops'])
+        
+        # Send payment confirmation email
+        from .services.notification_service import NotificationService
+        success, error = NotificationService.send_payment_confirmation(payment)
+        if not success:
+            # Log but don't fail - payment was still recorded
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to send payment confirmation email: {error}")
         
         messages.success(request, f"Payment of {tenant.currency_symbol}{amount} recorded successfully.")
         return redirect('subscriptions:tm_tenant_detail', pk=pk)

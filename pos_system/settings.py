@@ -43,12 +43,19 @@ INSTALLED_APPS = [
     'apps.audit',
     'apps.payments',
     'apps.subscriptions',
+    'apps.sync',
+    
+    # Third party
+    'rest_framework',
+    'pwa',
+    'corsheaders',
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',  # Serve static files efficiently
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'corsheaders.middleware.CorsMiddleware', # CORS before CommonMiddleware
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -254,7 +261,8 @@ else:
     EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
     EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
 
-DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@pos-system.com')
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@hendaxis.com')
+SUPPORT_EMAIL = os.getenv('SUPPORT_EMAIL', 'support@hendaxis.com')
 
 
 # Telegram Notifications Configuration
@@ -281,5 +289,37 @@ DEFAULT_ONBOARDING_FEE = float(os.getenv('DEFAULT_ONBOARDING_FEE', '4500.00'))
 DEFAULT_STARTER_PRICE = float(os.getenv('DEFAULT_STARTER_PRICE', '250.00'))
 DEFAULT_STANDARD_PRICE = float(os.getenv('DEFAULT_STANDARD_PRICE', '350.00'))
 DEFAULT_ADDITIONAL_SHOP_PRICE = float(os.getenv('DEFAULT_ADDITIONAL_SHOP_PRICE', '100.00'))
+
+# CORS Settings
+CORS_ALLOW_ALL_ORIGINS = DEBUG  # Allow all in dev/electron
+CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:8000').split(',')
+
+# PWA Settings
+PWA_APP_NAME = 'New PoS'
+PWA_APP_DESCRIPTION = 'Offline-First Point of Sale System'
+PWA_THEME_COLOR = '#0A0302'
+PWA_BACKGROUND_COLOR = '#ffffff'
+PWA_DISPLAY = 'standalone'
+PWA_SCOPE = '/'
+PWA_START_URL = '/'
+PWA_ICONS = [
+    {
+        'src': '/static/images/logo.png',
+        'sizes': '512x512',
+        'type': 'image/png'
+    }
+]
+PWA_SERVICE_WORKER_PATH = BASE_DIR / 'static/js/serviceworker.js'
+
+# REST Framework
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.SessionAuthentication',
+        'rest_framework.authentication.BasicAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+}
 
 

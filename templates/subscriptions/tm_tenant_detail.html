@@ -88,8 +88,22 @@
                             </div>
                         </div>
                         <div class="col-6">
-                            <div class="text-muted small">Days Remaining</div>
+                            <div class="text-muted small">
+                                {% if tenant.subscription_status == 'TRIAL' %}
+                                Trial Days Left
+                                {% else %}
+                                Days Remaining
+                                {% endif %}
+                            </div>
                             <div class="fs-5">
+                                {% if tenant.subscription_status == 'TRIAL' and tenant.setup_completed_at %}
+                                {% with trial_end=tenant.setup_completed_at|date:"U"|add:"1209600" %}
+                                <span class="text-info">
+                                    <i class="bi bi-hourglass-split me-1"></i>
+                                    Trial ends {{ tenant.subscription_start_date|date:"M d, Y" }}
+                                </span>
+                                {% endwith %}
+                                {% else %}
                                 {% with days=tenant.days_until_expiry %}
                                 {% if days is not None %}
                                 {% if days <= 0 %}
@@ -105,6 +119,7 @@
                                 <span class="text-muted">-</span>
                                 {% endif %}
                                 {% endwith %}
+                                {% endif %}
                             </div>
                         </div>
                         <div class="col-6">
@@ -112,6 +127,11 @@
                             <div class="fs-5 fw-semibold text-primary">
                                 {{ tenant.currency_symbol }}{{ tenant.get_monthly_subscription_price|floatformat:2 }}
                             </div>
+                            {% if tenant.subscription_plan.code == 'PREMIUM' and tenant.get_extra_shops_count > 0 %}
+                            <small class="text-muted">
+                                ({{ tenant.subscription_plan.max_shops }} incl. + {{ tenant.get_extra_shops_count }} extra)
+                            </small>
+                            {% endif %}
                         </div>
                     </div>
 
@@ -146,8 +166,17 @@
                             <div>{{ tenant.created_at|date:"M d, Y" }}</div>
                         </div>
                         <div class="col-6">
-                            <div class="text-muted small">Shop Count</div>
+                            <div class="text-muted small">Active Shops</div>
                             <div>{{ tenant.get_shop_count }} shops</div>
+                        </div>
+                        <div class="col-6">
+                            <div class="text-muted small">Shops Paid For</div>
+                            <div>
+                                {{ tenant.get_max_shops_allowed }} shops
+                                {% if tenant.get_shop_count < tenant.get_max_shops_allowed %}
+                                <small class="text-success">({{ tenant.shops_remaining }} available)</small>
+                                {% endif %}
+                            </div>
                         </div>
                         <div class="col-12">
                             <div class="text-muted small">Address</div>
