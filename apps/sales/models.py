@@ -240,6 +240,32 @@ class Sale(TenantModel):
     paystack_reference = models.CharField(max_length=100, blank=True)
     paystack_status = models.CharField(max_length=20, blank=True)
     
+    # Offline sync fields
+    client_sale_id = models.CharField(
+        max_length=64,
+        blank=True,
+        null=True,
+        help_text="Client-generated UUID for offline sale idempotency"
+    )
+    synced_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Timestamp when this offline sale was synced to server"
+    )
+    offline_created_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Original timestamp when sale was created offline"
+    )
+    has_sync_conflict = models.BooleanField(
+        default=False,
+        help_text="Whether this sale had stock or other conflicts during sync"
+    )
+    sync_conflict_notes = models.TextField(
+        blank=True,
+        help_text="Details of any sync conflicts"
+    )
+    
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
@@ -271,6 +297,7 @@ class Sale(TenantModel):
             models.Index(fields=['tenant', 'created_at']),
             models.Index(fields=['tenant', 'shop', 'created_at']),
             models.Index(fields=['tenant', 'payment_method']),
+            models.Index(fields=['tenant', 'client_sale_id']),
         ]
     
     def __str__(self):

@@ -27,6 +27,9 @@ urlpatterns = [
     path('api/ecash/initialize/', views.initialize_ecash_payment, name='initialize_ecash_payment'),
     path('api/ecash/verify/', views.verify_ecash_payment, name='verify_ecash_payment'),
     
+    # Offline Sync
+    path('api/sync-offline/', views.api_sync_offline_sales, name='api_sync_offline_sales'),
+    
     # Reports
     path('report/', views.ShopSalesReportView.as_view(), name='shop_sales_report'),
 ]

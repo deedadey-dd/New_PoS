@@ -586,6 +586,17 @@
             }
         });
     </script>
+
+    <script>
+        // Register Service Worker for PWA install & offline caching
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/serviceworker.js', { scope: '/' })
+                    .then(reg => console.log('[PWA] Service worker registered, scope:', reg.scope))
+                    .catch(err => console.warn('[PWA] Service worker registration failed:', err));
+            });
+        }
+    </script>
 </body>
 
 </html>

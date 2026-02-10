@@ -7,6 +7,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>POS - {{ shop.name }}</title>
     <link rel="icon" type="image/png" href="{% static 'images/cart_icon.png' %}">
+    <link rel="manifest" href="{% static 'manifest.json' %}">
+    <meta name="theme-color" content="#4f46e5">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="{% static 'images/icons/icon-192x192.png' %}">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
     <!-- Paystack Inline JS for E-Cash payments -->
@@ -470,6 +475,78 @@
             text-align: center;
         }
 
+        /* Offline Sync Styles */
+        .offline-indicator {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .offline-indicator.online {
+            background: rgba(16, 185, 129, 0.2);
+            color: #10b981;
+        }
+
+        .offline-indicator.offline {
+            background: rgba(239, 68, 68, 0.25);
+            color: #ef4444;
+            animation: pulse-offline 2s infinite;
+        }
+
+        .offline-indicator .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .offline-indicator.online .status-dot {
+            background: #10b981;
+        }
+
+        .offline-indicator.offline .status-dot {
+            background: #ef4444;
+        }
+
+        .pending-badge {
+            background: var(--pos-warning);
+            color: #000;
+            border-radius: 12px;
+            padding: 2px 8px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            margin-left: 4px;
+        }
+
+        .sync-status-bar {
+            background: rgba(79, 70, 229, 0.9);
+            color: #fff;
+            padding: 6px 1rem;
+            text-align: center;
+            font-size: 0.8rem;
+            display: none;
+        }
+
+        .sync-status-bar.active {
+            display: block;
+        }
+
+        @keyframes pulse-offline {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+
+        .btn-pay-ecash.disabled-offline {
+            opacity: 0.4;
+            pointer-events: none;
+            position: relative;
+        }
+
         /* Mobile Cart Toggle Button */
         .mobile-cart-toggle {
             display: none;
@@ -691,6 +768,12 @@
     <header class="pos-header d-flex justify-content-between align-items-center">
         <div class="d-flex align-items-center gap-3">
             <h5 class="mb-0"><i class="bi bi-shop me-2"></i>{{ shop.name }}</h5>
+            <!-- Offline/Online Indicator -->
+            <div class="offline-indicator online" id="offline-indicator">
+                <span class="status-dot"></span>
+                <span id="offline-status-text">Online</span>
+                <span class="pending-badge" id="pending-badge" style="display: none;">0 pending</span>
+            </div>
         </div>
         <div class="d-flex align-items-center gap-3">
             {% if shift %}
@@ -708,6 +791,11 @@
             </a>
         </div>
     </header>
+    <!-- Sync Status Bar -->
+    <div class="sync-status-bar" id="sync-status-bar">
+        <i class="bi bi-arrow-repeat me-1"></i>
+        <span id="sync-status-text">Syncing...</span>
+    </div>
 
     {% if not shift %}
     <div class="shift-banner">
@@ -885,6 +973,7 @@
     </button>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{% static 'js/offline-sync.js' %}"></script>
     
     <!-- Offline & Sync Scripts -->
     <script src="{% static 'js/vendor/dexie.js' %}"></script>
@@ -901,6 +990,8 @@
         const PRODUCTS = {{ products| safe }};
         const CUSTOMERS = {{ customers| safe }};
         const CSRF_TOKEN = '{{ csrf_token }}';
+        const SYNC_URL = '{% url "sales:api_sync_offline_sales" %}';
+        const CHECKOUT_URL = '/sales/api/checkout/';
         const HAS_SHIFT = {% if shift %}true{% else %} false{% endif %};
 
         let cart = [];
@@ -909,6 +1000,62 @@
         let selectedCustomer = null;
         let paymentMode = 'CASH'; // CASH, ECASH, CREDIT
         let pendingPaymentMode = null; // For shift check continuation
+
+        // Initialize OfflineSyncManager
+        const syncManager = new OfflineSyncManager({
+            csrfToken: CSRF_TOKEN,
+            syncUrl: SYNC_URL,
+            checkoutUrl: CHECKOUT_URL,
+            onStatusChange: function(isOnline) {
+                const indicator = document.getElementById('offline-indicator');
+                const statusText = document.getElementById('offline-status-text');
+                const ecashBtn = document.getElementById('btn-pay-ecash');
+
+                if (isOnline) {
+                    indicator.className = 'offline-indicator online';
+                    statusText.textContent = 'Online';
+                    if (ecashBtn) {
+                        ecashBtn.classList.remove('disabled-offline');
+                        ecashBtn.title = '';
+                    }
+                } else {
+                    indicator.className = 'offline-indicator offline';
+                    statusText.textContent = 'Offline';
+                    if (ecashBtn) {
+                        ecashBtn.classList.add('disabled-offline');
+                        ecashBtn.title = 'E-Cash not available offline';
+                    }
+                }
+            },
+            onPendingCountChange: function(count) {
+                const badge = document.getElementById('pending-badge');
+                if (count > 0) {
+                    badge.style.display = 'inline';
+                    badge.textContent = count + ' pending';
+                } else {
+                    badge.style.display = 'none';
+                }
+            },
+            onSyncProgress: function(current, total) {
+                const bar = document.getElementById('sync-status-bar');
+                const text = document.getElementById('sync-status-text');
+                bar.classList.add('active');
+                text.textContent = `Syncing sale ${current} of ${total}...`;
+            },
+            onSyncComplete: function(synced, failed) {
+                const bar = document.getElementById('sync-status-bar');
+                const text = document.getElementById('sync-status-text');
+                if (failed === 0) {
+                    text.textContent = `✓ ${synced} sale(s) synced successfully!`;
+                } else {
+                    text.textContent = `${synced} synced, ${failed} failed - check sales history`;
+                }
+                setTimeout(() => bar.classList.remove('active'), 4000);
+            },
+            onSyncError: function(error) {
+                console.error('Sync error:', error);
+            }
+        });
 
         // Initialize
         document.addEventListener('DOMContentLoaded', function () {
@@ -1866,6 +2013,17 @@
                     updateCart();
                 }
             } catch (e) { }
+        }
+    </script>
+
+    <script>
+        // Register Service Worker for PWA install & offline caching
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/serviceworker.js', { scope: '/' })
+                    .then(reg => console.log('[PWA] Service worker registered, scope:', reg.scope))
+                    .catch(err => console.warn('[PWA] Service worker registration failed:', err));
+            });
         }
     </script>
 </body>

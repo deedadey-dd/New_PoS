@@ -1143,3 +1143,211 @@ def verify_ecash_payment(request):
             'success': False,
             'error': str(e)
         }, status=500)
+
+
+# ============ Offline Sync API ============
+
+@login_required
+@require_POST
+def api_sync_offline_sales(request):
+    """
+    Sync a single offline sale to the server.
+    Uses client_sale_id for idempotency.
+    """
+    try:
+        data = json.loads(request.body)
+        user = request.user
+        tenant = user.tenant
+
+        client_sale_id = data.get('client_sale_id')
+        if not client_sale_id:
+            return JsonResponse({
+                'success': False,
+                'error': 'Missing client_sale_id for offline sync.'
+            }, status=400)
+
+        # Idempotency check - if this sale was already synced, return success
+        existing = Sale.objects.filter(
+            tenant=tenant,
+            client_sale_id=client_sale_id
+        ).first()
+        if existing:
+            return JsonResponse({
+                'success': True,
+                'sale_id': existing.pk,
+                'sale_number': existing.sale_number,
+                'message': 'Sale already synced (duplicate client_sale_id).',
+                'already_synced': True,
+            })
+
+        # Extract sale data
+        cart_items = data.get('items', [])
+        discount_amount = Decimal(str(data.get('discount_amount', 0)))
+        customer_id = data.get('customer_id')
+        payment_method = data.get('payment_method', 'CASH')
+        amount_paid = Decimal(str(data.get('amount_paid', 0)))
+        offline_created_at = data.get('offline_created_at')
+
+        if not cart_items:
+            return JsonResponse({
+                'success': False,
+                'error': 'No items in offline sale.'
+            }, status=400)
+
+        # Only CASH and CREDIT allowed for offline sales (no E-Cash)
+        if payment_method not in ('CASH', 'CREDIT', 'MIXED'):
+            return JsonResponse({
+                'success': False,
+                'error': 'Only Cash or Credit payments are supported offline.'
+            }, status=400)
+
+        # Get shop
+        shop = user.location
+        if not shop or shop.location_type != 'SHOP':
+            shop = Location.objects.filter(
+                tenant=tenant,
+                location_type='SHOP',
+                is_active=True
+            ).first()
+
+        if not shop:
+            return JsonResponse({
+                'success': False,
+                'error': 'No shop location configured.'
+            }, status=400)
+
+        # Get customer if specified
+        customer = None
+        if customer_id:
+            from apps.customers.models import Customer
+            customer = Customer.objects.filter(
+                tenant=tenant,
+                pk=customer_id
+            ).first()
+
+        # Get current shift if any
+        current_shift = Shift.objects.filter(
+            tenant=tenant,
+            attendant=user,
+            status='OPEN'
+        ).first()
+
+        sync_conflicts = []
+
+        with transaction.atomic():
+            # Create the sale
+            sale = Sale(
+                tenant=tenant,
+                shop=shop,
+                attendant=user,
+                shift=current_shift,
+                customer=customer,
+                payment_method=payment_method,
+                status='PENDING',
+                discount_amount=discount_amount,
+                client_sale_id=client_sale_id,
+                synced_at=timezone.now(),
+            )
+
+            # Parse offline_created_at if provided
+            if offline_created_at:
+                from datetime import datetime
+                try:
+                    sale.offline_created_at = datetime.fromisoformat(
+                        offline_created_at.replace('Z', '+00:00')
+                    )
+                except (ValueError, AttributeError):
+                    pass  # Keep as None if parsing fails
+
+            sale.save()
+
+            # Create sale items and check for stock conflicts
+            for item_data in cart_items:
+                product = Product.objects.filter(
+                    tenant=tenant,
+                    pk=item_data.get('product_id'),
+                    is_active=True
+                ).first()
+
+                if not product:
+                    sync_conflicts.append(
+                        f"Product ID {item_data.get('product_id')} not found or inactive."
+                    )
+                    continue
+
+                # Check stock availability
+                from apps.inventory.models import InventoryLedger
+                from django.db.models import Sum
+                quantity = Decimal(str(item_data.get('quantity', 0)))
+                available = InventoryLedger.objects.filter(
+                    tenant=tenant,
+                    product=product,
+                    location=shop
+                ).aggregate(
+                    total=Sum('quantity')
+                )['total'] or Decimal('0')
+
+                if available < quantity:
+                    sync_conflicts.append(
+                        f"{product.name}: requested {quantity}, available {available}"
+                    )
+
+                # Determine batch
+                batch = None
+                batch_id = item_data.get('batch_id')
+                if batch_id:
+                    from apps.inventory.models import Batch
+                    batch = Batch.objects.filter(
+                        tenant=tenant,
+                        pk=batch_id
+                    ).first()
+
+                SaleItem.objects.create(
+                    tenant=tenant,
+                    sale=sale,
+                    product=product,
+                    batch=batch,
+                    quantity=quantity,
+                    unit_price=Decimal(str(item_data.get('unit_price', 0))),
+                )
+
+            # Calculate totals
+            sale.calculate_totals()
+
+            # Flag sync conflicts if any
+            if sync_conflicts:
+                sale.has_sync_conflict = True
+                sale.sync_conflict_notes = '\n'.join(sync_conflicts)
+                sale.save(update_fields=['has_sync_conflict', 'sync_conflict_notes'])
+
+            # Complete the sale (deducts inventory)
+            try:
+                sale.complete(amount_paid, payment_method)
+            except ValidationError as ve:
+                # If completion fails (e.g., credit limit), flag as conflict
+                sale.has_sync_conflict = True
+                sale.sync_conflict_notes += f'\nCompletion error: {str(ve)}'
+                sale.save(update_fields=['has_sync_conflict', 'sync_conflict_notes'])
+                # Still mark as synced, but with conflict
+                sync_conflicts.append(f'Completion error: {str(ve)}')
+
+        return JsonResponse({
+            'success': True,
+            'sale_id': sale.pk,
+            'sale_number': sale.sale_number,
+            'has_conflicts': bool(sync_conflicts),
+            'conflicts': sync_conflicts,
+            'message': 'Offline sale synced successfully.' if not sync_conflicts
+                       else 'Sale synced with conflicts - please review.',
+        })
+
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'success': False,
+            'error': 'Invalid JSON data.'
+        }, status=400)
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
