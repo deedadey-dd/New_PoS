@@ -270,7 +270,7 @@ class Sale(TenantModel):
     created_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
 
-    # Sync fields
+    # Sync fields (from main/alpha - for bidirectional sync support)
     client_id = models.CharField(max_length=100, unique=True, null=True, blank=True, db_index=True)
     device_id = models.CharField(max_length=100, null=True, blank=True)
     device_type = models.CharField(
@@ -280,7 +280,6 @@ class Sale(TenantModel):
         blank=True
     )
     created_at_client = models.DateTimeField(null=True, blank=True)
-    synced_at = models.DateTimeField(null=True, blank=True)
     sync_status = models.CharField(
         max_length=20, 
         choices=[('pending', 'Pending'), ('synced', 'Synced'), ('conflict', 'Conflict'), ('failed', 'Failed')], 
