@@ -101,6 +101,7 @@
                             <th>Date</th>
                             <th>Description</th>
                             <th>Reference</th>
+                            <th>Received By</th>
                             <th class="text-end">Amount</th>
                             <th class="text-end">Balance</th>
                         </tr>
@@ -118,6 +119,13 @@
                                 {{ transaction.description }}
                             </td>
                             <td>{{ transaction.reference_id }}</td>
+                            <td>
+                                {% if transaction.performed_by %}
+                                <small>{{ transaction.performed_by.get_full_name|default:transaction.performed_by.email }}</small>
+                                {% else %}
+                                <small class="text-muted">—</small>
+                                {% endif %}
+                            </td>
                             <td
                                 class="text-end fw-bold {% if transaction.transaction_type == 'DEBIT' %}text-danger{% else %}text-success{% endif %}">
                                 {{ transaction.amount }}
@@ -128,7 +136,7 @@
                         </tr>
                         {% empty %}
                         <tr>
-                            <td colspan="5" class="text-center py-4 text-muted">No transactions found</td>
+                            <td colspan="6" class="text-center py-4 text-muted">No transactions found</td>
                         </tr>
                         {% endfor %}
                     </tbody>

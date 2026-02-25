@@ -17,6 +17,7 @@ urlpatterns = [
     # Sales History
     path('', views.SaleListView.as_view(), name='sale_list'),
     path('<int:pk>/receipt/', views.SaleDetailView.as_view(), name='sale_receipt'),
+    path('api/<int:pk>/detail/', views.api_sale_detail, name='api_sale_detail'),
     
     # API Endpoints
     path('api/products/search/', views.api_product_search, name='api_product_search'),

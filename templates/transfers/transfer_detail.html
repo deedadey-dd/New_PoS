@@ -220,7 +220,15 @@
                 <tbody>
                     {% for item in transfer.items.all %}
                     <tr class="{% if item.discrepancy != 0 and transfer.status != 'DRAFT' %}table-warning{% endif %}">
-                        <td>{{ item.product.name }}</td>
+                        <td>
+                            {{ item.product.name }}
+                            {% if item.discrepancy_reason and transfer.status != 'DRAFT' %}
+                            <br><span class="badge bg-danger">{{ item.get_discrepancy_reason_display }}</span>
+                            {% if item.discrepancy_notes %}
+                            <br><small class="text-muted">{{ item.discrepancy_notes }}</small>
+                            {% endif %}
+                            {% endif %}
+                        </td>
                         <td>{{ item.batch.batch_number|default:"-" }}</td>
                         <td class="text-end">{{ item.quantity_requested }}</td>
                         <td class="text-end">{{ item.quantity_sent }}</td>

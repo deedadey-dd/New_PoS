@@ -261,24 +261,36 @@ class Transfer(TenantModel):
             self.destination_location
         )
     
-    def receive(self, user, items_received):
+    def receive(self, user, items_received, discrepancy_data=None):
         """
         Receive the transfer - adds stock to destination location.
         Creates TRANSFER_IN inventory ledger entries.
         items_received: dict of {item_id: quantity_received}
+        discrepancy_data: dict of {item_id: {'reason': str, 'notes': str, 'action': 'RETURN'|'ACCEPT'}} (optional)
         """
         if not self.can_receive:
             raise ValidationError(f"Cannot receive transfer in {self.status} status.")
         
+        if discrepancy_data is None:
+            discrepancy_data = {}
+        
         all_complete = True
+        has_discrepancy = False
+        returned_items = []
         
         for item in self.items.all():
             received_qty = items_received.get(str(item.pk), item.quantity_sent)
             item.quantity_received = Decimal(str(received_qty))
-            item.save()
             
+            # Save discrepancy reason/notes if provided
+            item_disc = discrepancy_data.get(str(item.pk), {})
             if item.quantity_received != item.quantity_sent:
                 all_complete = False
+                has_discrepancy = True
+                item.discrepancy_reason = item_disc.get('reason', '')
+                item.discrepancy_notes = item_disc.get('notes', '')
+            
+            item.save()
             
             if item.quantity_received > 0:
                 # Create or find batch at destination
@@ -313,6 +325,29 @@ class Transfer(TenantModel):
                     notes=f"Transfer from {self.source_location.name}",
                     created_by=user
                 )
+            
+            # Handle discrepancy based on action choice
+            discrepancy_qty = item.quantity_sent - item.quantity_received
+            action = item_disc.get('action', 'RETURN')  # Default to RETURN
+            
+            if discrepancy_qty > 0 and action == 'RETURN':
+                reason_display = dict(TransferItem.DISCREPANCY_REASONS).get(
+                    item.discrepancy_reason, item.discrepancy_reason
+                )
+                InventoryLedger.objects.create(
+                    tenant=self.tenant,
+                    product=item.product,
+                    batch=item.batch,
+                    location=self.source_location,
+                    transaction_type='DISPUTE_REVERSAL',
+                    quantity=discrepancy_qty,
+                    unit_cost=item.unit_cost,
+                    reference_type='Transfer',
+                    reference_id=self.pk,
+                    notes=f"Auto-return: {discrepancy_qty} units. Reason: {reason_display}. {item.discrepancy_notes}".strip(),
+                    created_by=user
+                )
+                returned_items.append(f"{item.product.name} x{discrepancy_qty}")
         
         self.status = 'RECEIVED' if all_complete else 'PARTIAL'
         self.received_by = user
@@ -321,9 +356,12 @@ class Transfer(TenantModel):
         
         # Create notification for source location
         status_text = "fully received" if all_complete else "partially received"
+        disc_note = ""
+        if returned_items:
+            disc_note = f" Discrepancy returned to {self.source_location.name}: {', '.join(returned_items)}."
         self._create_notification(
             f"Transfer {self.transfer_number} {status_text}",
-            f"{self.destination_location.name} has {status_text} the transfer.",
+            f"{self.destination_location.name} has {status_text} the transfer.{disc_note}",
             'TRANSFER_RECEIVED',
             self.source_location
         )
@@ -411,6 +449,14 @@ class TransferItem(TenantModel):
     Individual item in a transfer.
     Tracks requested, sent, and received quantities.
     """
+    DISCREPANCY_REASONS = [
+        ('DAMAGED', 'Damaged in Transit'),
+        ('SHORT', 'Short Quantity'),
+        ('EXPIRED', 'Expired'),
+        ('REJECTED', 'Quality Rejected'),
+        ('OTHER', 'Other'),
+    ]
+    
     transfer = models.ForeignKey(
         Transfer,
         on_delete=models.CASCADE,
@@ -459,6 +505,18 @@ class TransferItem(TenantModel):
     )
     
     notes = models.TextField(blank=True)
+    
+    # Discrepancy tracking
+    discrepancy_reason = models.CharField(
+        max_length=20,
+        choices=DISCREPANCY_REASONS,
+        blank=True,
+        help_text="Reason for quantity discrepancy on receipt"
+    )
+    discrepancy_notes = models.TextField(
+        blank=True,
+        help_text="Additional details about the discrepancy"
+    )
     
     class Meta:
         ordering = ['id']
@@ -799,4 +857,99 @@ class StockRequestItem(TenantModel):
     def __str__(self):
         qty_str = str(self.quantity_requested) if self.quantity_requested > 0 else "any"
         return f"{self.product.name} x {qty_str}"
+
+
+class StockWriteOff(TenantModel):
+    """
+    Record of stock written off from inventory.
+    Used by Stores to remove damaged, expired, lost, or returned items.
+    Creates a DAMAGE ledger entry on save.
+    """
+    REASON_CHOICES = [
+        ('DAMAGED', 'Damaged'),
+        ('EXPIRED', 'Expired'),
+        ('RETURNED', 'Returned to Supplier'),
+        ('LOST', 'Lost / Missing'),
+        ('OTHER', 'Other'),
+    ]
+
+    writeoff_number = models.CharField(max_length=50)
+    location = models.ForeignKey(
+        Location,
+        on_delete=models.PROTECT,
+        related_name='write_offs',
+        limit_choices_to={'location_type': 'STORES'},
+    )
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.PROTECT,
+        related_name='write_offs',
+    )
+    batch = models.ForeignKey(
+        Batch,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='write_offs',
+    )
+    quantity = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal('0.01'))],
+    )
+    reason = models.CharField(max_length=20, choices=REASON_CHOICES)
+    notes = models.TextField(blank=True)
+
+    performed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='write_offs',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        unique_together = ['tenant', 'writeoff_number']
+
+    def __str__(self):
+        return f"WO-{self.writeoff_number}: {self.product.name} x {self.quantity}"
+
+    def save(self, *args, **kwargs):
+        # Auto-generate write-off number
+        if not self.writeoff_number:
+            last_wo = StockWriteOff.objects.filter(tenant=self.tenant).order_by('-id').first()
+            if last_wo and last_wo.writeoff_number:
+                try:
+                    last_num = int(last_wo.writeoff_number.replace('WO', ''))
+                    self.writeoff_number = f"WO{last_num + 1:06d}"
+                except ValueError:
+                    self.writeoff_number = "WO000001"
+            else:
+                self.writeoff_number = "WO000001"
+
+        is_new = self.pk is None
+        super().save(*args, **kwargs)
+
+        # Create inventory ledger entry on first save only
+        if is_new:
+            reason_display = dict(self.REASON_CHOICES).get(self.reason, self.reason)
+            unit_cost = Decimal('0')
+            if self.batch and self.batch.unit_cost:
+                unit_cost = self.batch.unit_cost
+
+            InventoryLedger.objects.create(
+                tenant=self.tenant,
+                product=self.product,
+                batch=self.batch,
+                location=self.location,
+                transaction_type='DAMAGE',
+                quantity=-self.quantity,  # Negative = deduction
+                unit_cost=unit_cost,
+                reference_type='WriteOff',
+                reference_id=self.pk,
+                notes=f"Write-off ({reason_display}): {self.notes}"[:255] if self.notes else f"Write-off: {reason_display}",
+                created_by=self.performed_by,
+            )
+
 

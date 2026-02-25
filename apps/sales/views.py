@@ -431,6 +431,46 @@ class SaleDetailView(LoginRequiredMixin, DetailView):
         return context
 
 
+@login_required
+def api_sale_detail(request, pk):
+    """Return sale detail as JSON for modal display."""
+    sale = get_object_or_404(
+        Sale.objects.select_related('shop', 'attendant', 'customer')
+                    .prefetch_related('items__product'),
+        pk=pk,
+        tenant=request.user.tenant,
+    )
+    items = []
+    for item in sale.items.all():
+        items.append({
+            'product_name': item.product.name,
+            'sku': item.product.sku,
+            'quantity': str(item.quantity),
+            'unit_price': str(item.unit_price),
+            'total': str(item.total),
+        })
+
+    data = {
+        'sale_number': sale.sale_number,
+        'created_at': sale.created_at.strftime('%b %d, %Y %H:%M'),
+        'shop': sale.shop.name,
+        'attendant': sale.attendant.get_full_name() or sale.attendant.email,
+        'payment_method': sale.get_payment_method_display(),
+        'payment_method_code': sale.payment_method,
+        'status': sale.get_status_display(),
+        'status_code': sale.status,
+        'subtotal': str(sale.subtotal),
+        'discount_amount': str(sale.discount_amount) if sale.discount_amount else None,
+        'tax_amount': str(sale.tax_amount) if sale.tax_amount else None,
+        'total': str(sale.total),
+        'amount_paid': str(sale.amount_paid),
+        'change_given': str(sale.change_given) if sale.change_given else None,
+        'customer': sale.customer.name if sale.customer else None,
+        'items': items,
+    }
+    return JsonResponse(data)
+
+
 # ============ API Views for POS ============
 
 @login_required

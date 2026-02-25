@@ -32,5 +32,9 @@ urlpatterns = [
     path('requests/<int:pk>/reject/', views.StockRequestRejectView.as_view(), name='stock_request_reject'),
     path('requests/<int:pk>/convert/', views.StockRequestConvertView.as_view(), name='stock_request_convert'),
     path('requests/<int:pk>/cancel/', views.StockRequestCancelView.as_view(), name='stock_request_cancel'),
+
+    # Stock Write-Offs
+    path('write-offs/', views.StockWriteOffListView.as_view(), name='write_off_list'),
+    path('write-offs/create/', views.StockWriteOffCreateView.as_view(), name='write_off_create'),
 ]
 

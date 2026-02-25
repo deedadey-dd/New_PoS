@@ -53,23 +53,40 @@ def tenant_context(request):
             ).first()
             
             if open_shift:
-                shift_cash = Sale.objects.filter(
+                # Cash from pure cash sales
+                cash_sales = Sale.objects.filter(
                     tenant=tenant,
                     shift=open_shift,
                     status='COMPLETED',
                     payment_method='CASH'
                 ).aggregate(total=Sum('total'))['total'] or Decimal('0')
+                # Cash portion from mixed payments (partial cash + credit)
+                mixed_cash = Sale.objects.filter(
+                    tenant=tenant,
+                    shift=open_shift,
+                    status='COMPLETED',
+                    payment_method='MIXED'
+                ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+                shift_cash = cash_sales + mixed_cash
                 cash_on_hand += open_shift.opening_cash + shift_cash
             
             # 2. Cash from shiftless sales (sales made without opening a shift)
             # These are sales where shift is null and not yet transferred
-            shiftless_cash = Sale.objects.filter(
+            shiftless_cash_sales = Sale.objects.filter(
                 tenant=tenant,
                 attendant=user,
                 shift__isnull=True,
                 status='COMPLETED',
                 payment_method='CASH'
             ).aggregate(total=Sum('total'))['total'] or Decimal('0')
+            shiftless_mixed = Sale.objects.filter(
+                tenant=tenant,
+                attendant=user,
+                shift__isnull=True,
+                status='COMPLETED',
+                payment_method='MIXED'
+            ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+            shiftless_cash = shiftless_cash_sales + shiftless_mixed
             
             # Add customer cash payments received (even outside shift)
             # Only count explicit (CASH) payments, not (ECASH)
@@ -98,9 +115,9 @@ def tenant_context(request):
         
         elif role_name == 'SHOP_MANAGER':
             # Cash received from attendants (confirmed) minus sent to accountant
-            # Plus own sales made directly (without shift)
+            # Plus own sales made directly (with or without shift)
             # Plus customer payments received in cash
-            from apps.sales.models import Sale
+            from apps.sales.models import Shift, Sale
             from apps.customers.models import CustomerTransaction
             
             received = CashTransfer.objects.filter(
@@ -113,16 +130,51 @@ def tenant_context(request):
                 tenant=tenant,
                 from_user=user,
                 status='CONFIRMED'
+            ).exclude(
+                to_user=user  # Exclude self-transfers (shop manager shift closings)
             ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
             
-            # Add own shiftless cash sales (made directly by manager)
-            own_sales = Sale.objects.filter(
+            # Cash from current open shift (if manager has one)
+            open_shift_cash = Decimal('0')
+            open_shift = Shift.objects.filter(
+                tenant=tenant,
+                attendant=user,
+                status='OPEN'
+            ).first()
+            
+            if open_shift:
+                # Cash from pure cash sales in this shift
+                shift_cash_sales = Sale.objects.filter(
+                    tenant=tenant,
+                    shift=open_shift,
+                    status='COMPLETED',
+                    payment_method='CASH'
+                ).aggregate(total=Sum('total'))['total'] or Decimal('0')
+                # Cash portion from mixed payments in this shift
+                shift_mixed = Sale.objects.filter(
+                    tenant=tenant,
+                    shift=open_shift,
+                    status='COMPLETED',
+                    payment_method='MIXED'
+                ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+                open_shift_cash = open_shift.opening_cash + shift_cash_sales + shift_mixed
+            
+            # Add own shiftless cash sales (made directly by manager without a shift)
+            shiftless_cash_sales = Sale.objects.filter(
                 tenant=tenant,
                 attendant=user,
                 shift__isnull=True,
                 status='COMPLETED',
                 payment_method='CASH'
             ).aggregate(total=Sum('total'))['total'] or Decimal('0')
+            shiftless_mixed = Sale.objects.filter(
+                tenant=tenant,
+                attendant=user,
+                shift__isnull=True,
+                status='COMPLETED',
+                payment_method='MIXED'
+            ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+            own_sales = shiftless_cash_sales + shiftless_mixed
             
             # Add customer cash payments received (payments on account)
             # Only count explicit (CASH) payments, not (ECASH)
@@ -135,7 +187,7 @@ def tenant_context(request):
                 description__icontains='ECASH'
             ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
             
-            context['cash_on_hand'] = received - sent + own_sales + customer_payments
+            context['cash_on_hand'] = received - sent + open_shift_cash + own_sales + customer_payments
         
         elif role_name == 'ACCOUNTANT':
             # All deposits received minus any sent out
@@ -156,11 +208,18 @@ def tenant_context(request):
         # Add total credit debt for managers/admin
         if role_name in ['SHOP_MANAGER', 'ADMIN', 'ACCOUNTANT']:
             from apps.customers.models import Customer
-            # Sum of all positive balances (debt owed to shop)
+            # Base filter: active customers with positive balance (debt owed to shop)
+            debt_filter = {
+                'tenant': tenant,
+                'is_active': True,
+                'current_balance__gt': 0,
+            }
+            # Shop managers only see debt from their own shop's customers
+            if role_name == 'SHOP_MANAGER' and user.location and user.location.location_type == 'SHOP':
+                debt_filter['shop'] = user.location
+            
             total_debt = Customer.objects.filter(
-                tenant=tenant,
-                is_active=True,
-                current_balance__gt=0
+                **debt_filter
             ).aggregate(total=Sum('current_balance'))['total'] or Decimal('0')
             context['total_credit_debt'] = total_debt
         

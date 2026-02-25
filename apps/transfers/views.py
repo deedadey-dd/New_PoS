@@ -258,13 +258,16 @@ class TransferReceiveView(LoginRequiredMixin, View):
         for item in transfer.items.all():
             items_with_fields.append({
                 'item': item,
-                'field': form[f'received_{item.pk}']
+                'field': form[f'received_{item.pk}'],
+                'reason_field': form[f'reason_{item.pk}'],
+                'action_field': form[f'action_{item.pk}'],
+                'notes_field': form[f'notes_{item.pk}'],
             })
         
         return render(request, self.template_name, {
             'transfer': transfer,
             'form': form,
-            'items_with_fields': items_with_fields
+            'items_with_fields': items_with_fields,
         })
     
     def post(self, request, pk):
@@ -279,17 +282,47 @@ class TransferReceiveView(LoginRequiredMixin, View):
         form = TransferReceiveForm(request.POST, transfer=transfer)
         
         if form.is_valid():
-            # Build items_received dict
+            # Build items_received dict and discrepancy_data
             items_received = {}
+            discrepancy_data = {}
             for item in transfer.items.all():
                 items_received[str(item.pk)] = form.cleaned_data.get(f'received_{item.pk}', 0)
+                reason = form.cleaned_data.get(f'reason_{item.pk}', '')
+                notes = form.cleaned_data.get(f'notes_{item.pk}', '')
+                action = form.cleaned_data.get(f'action_{item.pk}', 'RETURN')
+                if reason:
+                    discrepancy_data[str(item.pk)] = {
+                        'reason': reason,
+                        'notes': notes,
+                        'action': action,
+                    }
             
             try:
                 with transaction.atomic():
-                    transfer.receive(request.user, items_received)
-                messages.success(request, f"Transfer {transfer.transfer_number} received!")
+                    transfer.receive(request.user, items_received, discrepancy_data)
+                
+                if transfer.status == 'PARTIAL':
+                    messages.success(request, f"Transfer {transfer.transfer_number} partially received.")
+                else:
+                    messages.success(request, f"Transfer {transfer.transfer_number} received!")
             except Exception as e:
                 messages.error(request, str(e))
+        else:
+            # Re-render with errors
+            items_with_fields = []
+            for item in transfer.items.all():
+                items_with_fields.append({
+                    'item': item,
+                    'field': form[f'received_{item.pk}'],
+                    'reason_field': form[f'reason_{item.pk}'],
+                    'action_field': form[f'action_{item.pk}'],
+                    'notes_field': form[f'notes_{item.pk}'],
+                })
+            return render(request, self.template_name, {
+                'transfer': transfer,
+                'form': form,
+                'items_with_fields': items_with_fields,
+            })
         
         return redirect('transfers:transfer_detail', pk=pk)
 
@@ -858,3 +891,121 @@ class StockRequestCancelView(LoginRequiredMixin, View):
             messages.error(request, str(e))
         
         return redirect('transfers:stock_request_list')
+
+
+# ==================== Stock Write-Off Views ====================
+
+from .models import StockWriteOff
+from .forms import StockWriteOffForm
+
+
+class StockWriteOffListView(LoginRequiredMixin, PaginationMixin, ListView):
+    """List stock write-offs."""
+    model = StockWriteOff
+    template_name = 'transfers/write_off_list.html'
+    context_object_name = 'write_offs'
+
+    def get_queryset(self):
+        from django.db.models import Q
+        user = self.request.user
+        queryset = StockWriteOff.objects.filter(
+            tenant=user.tenant
+        ).select_related('product', 'batch', 'location', 'performed_by')
+
+        # Non-admin: only see write-offs at own location
+        if user.role and user.role.name != 'ADMIN':
+            if user.location:
+                queryset = queryset.filter(location=user.location)
+            else:
+                role_location_map = {
+                    'STORES_MANAGER': 'STORES',
+                }
+                loc_type = role_location_map.get(user.role.name)
+                if loc_type:
+                    queryset = queryset.filter(location__location_type=loc_type)
+
+        # Search filter
+        search = self.request.GET.get('search')
+        if search:
+            queryset = queryset.filter(
+                Q(product__name__icontains=search) |
+                Q(product__sku__icontains=search) |
+                Q(writeoff_number__icontains=search)
+            )
+
+        # Reason filter
+        reason = self.request.GET.get('reason')
+        if reason:
+            queryset = queryset.filter(reason=reason)
+
+        # Date range
+        date_from = self.request.GET.get('date_from')
+        date_to = self.request.GET.get('date_to')
+        if date_from:
+            queryset = queryset.filter(created_at__date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(created_at__date__lte=date_to)
+
+        return queryset
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['reason_choices'] = StockWriteOff.REASON_CHOICES
+        context['current_search'] = self.request.GET.get('search', '')
+        context['current_reason'] = self.request.GET.get('reason', '')
+        context['current_date_from'] = self.request.GET.get('date_from', '')
+        context['current_date_to'] = self.request.GET.get('date_to', '')
+        return context
+
+
+class StockWriteOffCreateView(LoginRequiredMixin, View):
+    """Create a stock write-off."""
+    template_name = 'transfers/write_off_form.html'
+
+    def _get_user_location(self, user):
+        """Resolve the stores location for the user."""
+        if user.location and user.location.location_type == 'STORES':
+            return user.location
+        # Fallback: find a stores location for this tenant
+        from apps.core.models import Location
+        return Location.objects.filter(
+            tenant=user.tenant, is_active=True, location_type='STORES'
+        ).first()
+
+    def get(self, request):
+        location = self._get_user_location(request.user)
+        if not location:
+            messages.error(request, "No stores location found. Write-offs can only be created at stores locations.")
+            return redirect('transfers:write_off_list')
+
+        form = StockWriteOffForm(tenant=request.user.tenant, location=location)
+        return render(request, self.template_name, {
+            'form': form,
+            'location': location,
+        })
+
+    def post(self, request):
+        location = self._get_user_location(request.user)
+        if not location:
+            messages.error(request, "No stores location found.")
+            return redirect('transfers:write_off_list')
+
+        form = StockWriteOffForm(request.POST, tenant=request.user.tenant, location=location)
+
+        if form.is_valid():
+            try:
+                with transaction.atomic():
+                    write_off = form.save(commit=False)
+                    write_off.tenant = request.user.tenant
+                    write_off.location = location
+                    write_off.performed_by = request.user
+                    write_off.save()
+                messages.success(request, f"Write-off {write_off.writeoff_number} created. Stock deducted.")
+                return redirect('transfers:write_off_list')
+            except Exception as e:
+                messages.error(request, str(e))
+
+        return render(request, self.template_name, {
+            'form': form,
+            'location': location,
+        })

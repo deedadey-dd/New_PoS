@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}New Stock Write-Off{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="fas fa-trash-alt me-2"></i>New Stock Write-Off</h2>
+        <a href="{% url 'transfers:write_off_list' %}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i>Back to List
+        </a>
+    </div>
+
+    <div class="alert alert-warning">
+        <i class="fas fa-exclamation-triangle me-2"></i>
+        <strong>Warning:</strong> Writing off stock will permanently deduct it from inventory at <strong>{{ location.name }}</strong>.
+        This action cannot be undone.
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">Write-Off Details</h5>
+        </div>
+        <div class="card-body">
+            <form method="post">
+                {% csrf_token %}
+
+                {% if form.non_field_errors %}
+                <div class="alert alert-danger">
+                    {% for error in form.non_field_errors %}
+                    <p class="mb-0">{{ error }}</p>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label for="{{ form.product.id_for_label }}" class="form-label">Product <span class="text-danger">*</span></label>
+                        {{ form.product }}
+                        {% for error in form.product.errors %}
+                        <div class="text-danger small mt-1">{{ error }}</div>
+                        {% endfor %}
+                    </div>
+
+                    <div class="col-md-6">
+                        <label for="{{ form.batch.id_for_label }}" class="form-label">Batch <small class="text-white-50">(optional)</small></label>
+                        {{ form.batch }}
+                        {% for error in form.batch.errors %}
+                        <div class="text-danger small mt-1">{{ error }}</div>
+                        {% endfor %}
+                    </div>
+
+                    <div class="col-md-4">
+                        <label for="{{ form.quantity.id_for_label }}" class="form-label">Quantity <span class="text-danger">*</span></label>
+                        {{ form.quantity }}
+                        {% for error in form.quantity.errors %}
+                        <div class="text-danger small mt-1">{{ error }}</div>
+                        {% endfor %}
+                    </div>
+
+                    <div class="col-md-4">
+                        <label for="{{ form.reason.id_for_label }}" class="form-label">Reason <span class="text-danger">*</span></label>
+                        {{ form.reason }}
+                        {% for error in form.reason.errors %}
+                        <div class="text-danger small mt-1">{{ error }}</div>
+                        {% endfor %}
+                    </div>
+
+                    <div class="col-12">
+                        <label for="{{ form.notes.id_for_label }}" class="form-label">Notes</label>
+                        {{ form.notes }}
+                        {% for error in form.notes.errors %}
+                        <div class="text-danger small mt-1">{{ error }}</div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="mt-4 d-flex justify-content-end gap-2">
+                    <a href="{% url 'transfers:write_off_list' %}" class="btn btn-secondary">Cancel</a>
+                    <button type="submit" class="btn btn-danger" onclick="return confirm('Are you sure? This will permanently remove stock from inventory.');">
+                        <i class="fas fa-trash-alt me-1"></i>Write Off Stock
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

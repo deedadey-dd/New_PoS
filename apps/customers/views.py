@@ -134,7 +134,7 @@ class CustomerDetailView(LoginRequiredMixin, DetailView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['transactions'] = self.object.transactions.all().order_by('-created_at')[:50]
+        context['transactions'] = self.object.transactions.select_related('performed_by').order_by('-created_at')[:50]
         context['payment_form'] = CustomerPaymentForm()
         
         # Pass payment receipt to context and then clear from session

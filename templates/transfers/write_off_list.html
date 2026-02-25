@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Stock Write-Offs{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="fas fa-trash-alt me-2"></i>Stock Write-Offs</h2>
+        <a href="{% url 'transfers:write_off_create' %}" class="btn btn-danger">
+            <i class="fas fa-plus me-1"></i>New Write-Off
+        </a>
+    </div>
+
+    <!-- Filters -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label text-white-50 small">Search</label>
+                    <input type="text" name="search" class="form-control border-secondary"
+                           value="{{ current_search }}" placeholder="Product name, SKU, or WO#">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label text-white-50 small">Reason</label>
+                    <select name="reason" class="form-select border-secondary">
+                        <option value="">All Reasons</option>
+                        {% for code, label in reason_choices %}
+                        <option value="{{ code }}" {% if current_reason == code %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label text-white-50 small">From</label>
+                    <input type="date" name="date_from" class="form-control border-secondary"
+                           value="{{ current_date_from }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label text-white-50 small">To</label>
+                    <input type="date" name="date_to" class="form-control border-secondary"
+                           value="{{ current_date_to }}">
+                </div>
+                <div class="col-md-3 d-flex align-items-end gap-2">
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> Filter</button>
+                    <a href="{% url 'transfers:write_off_list' %}" class="btn btn-outline-secondary">Clear</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Write-Off List -->
+    <div class="card">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>WO #</th>
+                            <th>Date</th>
+                            <th>Product</th>
+                            <th>Batch</th>
+                            <th class="text-center">Qty</th>
+                            <th>Reason</th>
+                            <th>Notes</th>
+                            <th>Performed By</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for wo in write_offs %}
+                        <tr>
+                            <td><span class="badge bg-danger">{{ wo.writeoff_number }}</span></td>
+                            <td>{{ wo.created_at|date:"d M Y H:i" }}</td>
+                            <td>
+                                <strong>{{ wo.product.name }}</strong>
+                                <br><small class="text-white-50">{{ wo.product.sku }}</small>
+                            </td>
+                            <td>
+                                {% if wo.batch %}
+                                {{ wo.batch.batch_number }}
+                                {% else %}
+                                <span class="text-white-50">—</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <span class="badge bg-warning text-dark">{{ wo.quantity }}</span>
+                            </td>
+                            <td>
+                                <span class="badge {% if wo.reason == 'DAMAGED' %}bg-danger{% elif wo.reason == 'EXPIRED' %}bg-warning text-dark{% elif wo.reason == 'LOST' %}bg-secondary{% else %}bg-info{% endif %}">
+                                    {{ wo.get_reason_display }}
+                                </span>
+                            </td>
+                            <td>
+                                {% if wo.notes %}
+                                <small>{{ wo.notes|truncatewords:10 }}</small>
+                                {% else %}
+                                <span class="text-white-50">—</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ wo.performed_by.get_full_name|default:wo.performed_by.username }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="8" class="text-center py-4 text-white-50">
+                                <i class="fas fa-inbox fa-2x mb-2 d-block"></i>
+                                No write-offs found.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pagination -->
+    {% if is_paginated %}
+    <nav class="mt-4">
+        <ul class="pagination justify-content-center">
+            {% if page_obj.has_previous %}
+            <li class="page-item">
+                <a class="page-link bg-dark text-white border-secondary" href="?page={{ page_obj.previous_page_number }}{% if current_search %}&search={{ current_search }}{% endif %}{% if current_reason %}&reason={{ current_reason }}{% endif %}{% if current_date_from %}&date_from={{ current_date_from }}{% endif %}{% if current_date_to %}&date_to={{ current_date_to }}{% endif %}">
+                    <i class="fas fa-chevron-left"></i>
+                </a>
+            </li>
+            {% endif %}
+            
+            {% for num in page_obj.paginator.page_range %}
+            {% if page_obj.number == num %}
+            <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+            {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+            <li class="page-item">
+                <a class="page-link bg-dark text-white border-secondary" href="?page={{ num }}{% if current_search %}&search={{ current_search }}{% endif %}{% if current_reason %}&reason={{ current_reason }}{% endif %}{% if current_date_from %}&date_from={{ current_date_from }}{% endif %}{% if current_date_to %}&date_to={{ current_date_to }}{% endif %}">{{ num }}</a>
+            </li>
+            {% endif %}
+            {% endfor %}
+            
+            {% if page_obj.has_next %}
+            <li class="page-item">
+                <a class="page-link bg-dark text-white border-secondary" href="?page={{ page_obj.next_page_number }}{% if current_search %}&search={{ current_search }}{% endif %}{% if current_reason %}&reason={{ current_reason }}{% endif %}{% if current_date_from %}&date_from={{ current_date_from }}{% endif %}{% if current_date_to %}&date_to={{ current_date_to }}{% endif %}">
+                    <i class="fas fa-chevron-right"></i>
+                </a>
+            </li>
+            {% endif %}
+        </ul>
+    </nav>
+    {% endif %}
+</div>
+{% endblock %}

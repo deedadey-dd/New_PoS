@@ -391,13 +391,29 @@ class Sale(TenantModel):
         for item in self.items.all():
             # Get the actual unit cost from batch for profit tracking
             actual_cost = Decimal('0')
-            if item.batch and item.batch.unit_cost:
-                actual_cost = item.batch.unit_cost
+            batch = item.batch
+            
+            # If no batch linked, find the best available batch at sale location (FEFO)
+            if not batch:
+                batch = Batch.objects.filter(
+                    tenant=self.tenant,
+                    product=item.product,
+                    location=self.shop,
+                    status='AVAILABLE',
+                    current_quantity__gt=0,
+                ).order_by('expiry_date', 'created_at').first()
+                
+                # Link the batch to the sale item for future reference
+                if batch:
+                    item.batch = batch
+            
+            if batch and batch.unit_cost:
+                actual_cost = batch.unit_cost
             
             # Store the cost on the sale item for profit/loss reporting
             if item.unit_cost == Decimal('0') and actual_cost > 0:
                 item.unit_cost = actual_cost
-                item.save(update_fields=['unit_cost'])
+                item.save(update_fields=['unit_cost', 'batch'])
             
             InventoryLedger.objects.create(
                 tenant=self.tenant,

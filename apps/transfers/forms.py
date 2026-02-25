@@ -199,12 +199,18 @@ TransferItemFormSet = inlineformset_factory(
 
 
 class TransferReceiveForm(forms.Form):
-    """Form for receiving transfer items."""
+    """Form for receiving transfer items with discrepancy tracking."""
+    
+    DISCREPANCY_ACTIONS = [
+        ('RETURN', 'Return to Source'),
+        ('ACCEPT', 'Accept Difference'),
+    ]
     
     def __init__(self, *args, transfer=None, **kwargs):
         super().__init__(*args, **kwargs)
         
         if transfer:
+            from .models import TransferItem
             for item in transfer.items.all():
                 self.fields[f'received_{item.pk}'] = forms.DecimalField(
                     label=f"{item.product.name}",
@@ -212,12 +218,59 @@ class TransferReceiveForm(forms.Form):
                     min_value=Decimal('0'),
                     max_value=item.quantity_sent,
                     widget=forms.NumberInput(attrs={
-                        'class': 'form-control',
+                        'class': 'form-control received-qty',
                         'min': '0',
                         'max': str(item.quantity_sent),
-                        'step': '0.01'
+                        'step': '0.01',
+                        'data-sent': str(item.quantity_sent),
+                        'data-item-id': str(item.pk),
                     })
                 )
+                self.fields[f'reason_{item.pk}'] = forms.ChoiceField(
+                    choices=[('', '-- Select reason --')] + list(TransferItem.DISCREPANCY_REASONS),
+                    required=False,
+                    widget=forms.Select(attrs={
+                        'class': 'form-select discrepancy-reason',
+                        'data-item-id': str(item.pk),
+                    })
+                )
+                self.fields[f'action_{item.pk}'] = forms.ChoiceField(
+                    choices=self.DISCREPANCY_ACTIONS,
+                    initial='RETURN',
+                    required=False,
+                    widget=forms.Select(attrs={
+                        'class': 'form-select discrepancy-action',
+                        'data-item-id': str(item.pk),
+                    })
+                )
+                self.fields[f'notes_{item.pk}'] = forms.CharField(
+                    required=False,
+                    widget=forms.TextInput(attrs={
+                        'class': 'form-control discrepancy-notes',
+                        'placeholder': 'Details...',
+                        'data-item-id': str(item.pk),
+                    })
+                )
+    
+    def clean(self):
+        cleaned_data = super().clean()
+        # Validate that reason is provided when there's a discrepancy
+        for key, value in list(cleaned_data.items()):
+            if key.startswith('received_'):
+                item_id = key.replace('received_', '')
+                received = cleaned_data.get(f'received_{item_id}')
+                reason = cleaned_data.get(f'reason_{item_id}', '')
+                
+                # Get sent qty from widget attrs
+                field = self.fields.get(f'received_{item_id}')
+                if field and received is not None:
+                    sent = Decimal(field.widget.attrs.get('data-sent', '0'))
+                    if received < sent and not reason:
+                        self.add_error(
+                            f'reason_{item_id}',
+                            'Please select a reason for the discrepancy.'
+                        )
+        return cleaned_data
 
 
 class TransferDisputeForm(forms.Form):
@@ -231,6 +284,56 @@ class TransferDisputeForm(forms.Form):
         }),
         min_length=10
     )
+
+
+# ==================== Stock Write-Off Forms ====================
+
+from .models import StockWriteOff
+
+
+class StockWriteOffForm(forms.ModelForm):
+    """Form for creating stock write-offs."""
+
+    class Meta:
+        model = StockWriteOff
+        fields = ['product', 'batch', 'quantity', 'reason', 'notes']
+        widgets = {
+            'product': forms.Select(attrs={'class': 'form-select'}),
+            'batch': forms.Select(attrs={'class': 'form-select'}),
+            'quantity': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'min': '0.01',
+                'step': '0.01',
+            }),
+            'reason': forms.Select(attrs={'class': 'form-select'}),
+            'notes': forms.Textarea(attrs={
+                'class': 'form-control',
+                'rows': 3,
+                'placeholder': 'Additional details about the write-off...',
+            }),
+        }
+
+    def __init__(self, *args, tenant=None, location=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.tenant = tenant
+        self.location = location
+
+        if tenant:
+            self.fields['product'].queryset = Product.objects.filter(
+                tenant=tenant, is_active=True
+            ).order_by('name')
+
+        if tenant and location:
+            self.fields['batch'].queryset = Batch.objects.filter(
+                tenant=tenant,
+                location=location,
+                status='AVAILABLE',
+                current_quantity__gt=0,
+            ).select_related('product').order_by('product__name', 'expiry_date')
+        else:
+            self.fields['batch'].queryset = Batch.objects.none()
+
+        self.fields['batch'].required = False
 
 
 class TransferCloseForm(forms.Form):

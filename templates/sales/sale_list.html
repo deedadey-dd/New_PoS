@@ -95,7 +95,8 @@
                     {% for sale in sales %}
                     <tr>
                         <td>
-                            <a href="{% url 'sales:sale_receipt' sale.pk %}" class="fw-bold text-decoration-none">
+                            <a href="#" class="fw-bold text-decoration-none sale-detail-link"
+                               data-sale-id="{{ sale.pk }}">
                                 {{ sale.sale_number }}
                             </a>
                         </td>
@@ -151,4 +152,199 @@
         {% endif %}
     </div>
 </div>
+
+<!-- Sale Detail Modal -->
+<div class="modal fade" id="saleDetailModal" tabindex="-1" aria-labelledby="saleDetailModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="saleDetailModalLabel">
+                    <i class="bi bi-receipt-cutoff me-2"></i>Sale Details
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="saleDetailBody">
+                <!-- Loading spinner -->
+                <div class="text-center py-5" id="saleDetailLoading">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="text-muted mt-2">Loading sale details...</p>
+                </div>
+                <!-- Content (populated by JS) -->
+                <div id="saleDetailContent" style="display:none;"></div>
+            </div>
+            <div class="modal-footer">
+                <a href="#" class="btn btn-outline-info" id="saleDetailPrintBtn" target="_blank">
+                    <i class="bi bi-printer me-1"></i>Print Receipt
+                </a>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const modal = new bootstrap.Modal(document.getElementById('saleDetailModal'));
+    const loadingEl = document.getElementById('saleDetailLoading');
+    const contentEl = document.getElementById('saleDetailContent');
+    const printBtn = document.getElementById('saleDetailPrintBtn');
+    const currencySymbol = '{{ current_tenant.currency_symbol|default:"$" }}';
+
+    document.querySelectorAll('.sale-detail-link').forEach(function(link) {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const saleId = this.dataset.saleId;
+
+            // Show loading, hide content
+            loadingEl.style.display = 'block';
+            contentEl.style.display = 'none';
+
+            // Set print button link
+            printBtn.href = '/sales/' + saleId + '/receipt/';
+
+            // Open modal immediately
+            modal.show();
+
+            // Fetch sale detail
+            fetch('/sales/api/' + saleId + '/detail/')
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
+                    renderSaleDetail(data);
+                    loadingEl.style.display = 'none';
+                    contentEl.style.display = 'block';
+                })
+                .catch(function(err) {
+                    contentEl.innerHTML = '<div class="alert alert-danger">Failed to load sale details.</div>';
+                    loadingEl.style.display = 'none';
+                    contentEl.style.display = 'block';
+                });
+        });
+    });
+
+    function getStatusBadge(statusCode, statusDisplay) {
+        const colors = {
+            'COMPLETED': 'success',
+            'VOIDED': 'danger',
+            'PENDING': 'warning',
+        };
+        const color = colors[statusCode] || 'secondary';
+        return '<span class="badge bg-' + color + '">' + statusDisplay + '</span>';
+    }
+
+    function getPaymentBadge(code, display) {
+        const colors = {
+            'CASH': 'success',
+            'ECASH': 'primary',
+            'CREDIT': 'warning',
+        };
+        const color = colors[code] || 'secondary';
+        return '<span class="badge bg-' + color + '">' + display + '</span>';
+    }
+
+    function renderSaleDetail(data) {
+        let html = '';
+
+        // Header info
+        html += '<div class="row mb-3">';
+        html += '<div class="col-sm-6">';
+        html += '<h6 class="text-muted mb-1">Sale Number</h6>';
+        html += '<p class="fw-bold fs-5 mb-2">' + data.sale_number + '</p>';
+        html += '</div>';
+        html += '<div class="col-sm-6 text-sm-end">';
+        html += '<h6 class="text-muted mb-1">Status</h6>';
+        html += '<p class="mb-2">' + getStatusBadge(data.status_code, data.status) + '</p>';
+        html += '</div>';
+        html += '</div>';
+
+        // Details row
+        html += '<div class="row mb-3 py-2 bg-light rounded">';
+        html += '<div class="col-sm-4">';
+        html += '<small class="text-muted d-block">Date</small>';
+        html += '<span class="fw-medium">' + data.created_at + '</span>';
+        html += '</div>';
+        html += '<div class="col-sm-4">';
+        html += '<small class="text-muted d-block">Shop</small>';
+        html += '<span class="fw-medium">' + data.shop + '</span>';
+        html += '</div>';
+        html += '<div class="col-sm-4">';
+        html += '<small class="text-muted d-block">Attendant</small>';
+        html += '<span class="fw-medium">' + data.attendant + '</span>';
+        html += '</div>';
+        html += '</div>';
+
+        // Customer and payment
+        html += '<div class="row mb-3">';
+        html += '<div class="col-sm-6">';
+        html += '<small class="text-muted d-block">Payment Method</small>';
+        html += getPaymentBadge(data.payment_method_code, data.payment_method);
+        html += '</div>';
+        if (data.customer) {
+            html += '<div class="col-sm-6">';
+            html += '<small class="text-muted d-block">Customer</small>';
+            html += '<span class="fw-medium">' + data.customer + '</span>';
+            html += '</div>';
+        }
+        html += '</div>';
+
+        // Items table
+        html += '<h6 class="border-bottom pb-2 mb-0">Items</h6>';
+        html += '<div class="table-responsive">';
+        html += '<table class="table table-sm mb-0">';
+        html += '<thead class="table-light"><tr>';
+        html += '<th>Product</th><th class="text-center">Qty</th>';
+        html += '<th class="text-end">Price</th><th class="text-end">Total</th>';
+        html += '</tr></thead><tbody>';
+
+        data.items.forEach(function(item) {
+            html += '<tr>';
+            html += '<td>' + item.product_name + '<br><small class="text-muted">' + item.sku + '</small></td>';
+            html += '<td class="text-center">' + parseFloat(item.quantity) + '</td>';
+            html += '<td class="text-end">' + currencySymbol + parseFloat(item.unit_price).toFixed(2) + '</td>';
+            html += '<td class="text-end">' + currencySymbol + parseFloat(item.total).toFixed(2) + '</td>';
+            html += '</tr>';
+        });
+
+        html += '</tbody></table></div>';
+
+        // Totals
+        html += '<div class="border-top pt-2 mt-2">';
+        html += '<div class="d-flex justify-content-between mb-1">';
+        html += '<span>Subtotal</span><span>' + currencySymbol + parseFloat(data.subtotal).toFixed(2) + '</span>';
+        html += '</div>';
+
+        if (data.discount_amount) {
+            html += '<div class="d-flex justify-content-between mb-1 text-danger">';
+            html += '<span>Discount</span><span>-' + currencySymbol + parseFloat(data.discount_amount).toFixed(2) + '</span>';
+            html += '</div>';
+        }
+        if (data.tax_amount) {
+            html += '<div class="d-flex justify-content-between mb-1">';
+            html += '<span>Tax</span><span>' + currencySymbol + parseFloat(data.tax_amount).toFixed(2) + '</span>';
+            html += '</div>';
+        }
+
+        html += '<div class="d-flex justify-content-between fw-bold fs-5 border-top pt-2">';
+        html += '<span>Total</span><span>' + currencySymbol + parseFloat(data.total).toFixed(2) + '</span>';
+        html += '</div>';
+
+        html += '<div class="d-flex justify-content-between mt-1 text-muted">';
+        html += '<span>Amount Paid</span><span>' + currencySymbol + parseFloat(data.amount_paid).toFixed(2) + '</span>';
+        html += '</div>';
+
+        if (data.change_given && parseFloat(data.change_given) > 0) {
+            html += '<div class="d-flex justify-content-between text-success">';
+            html += '<span>Change</span><span>' + currencySymbol + parseFloat(data.change_given).toFixed(2) + '</span>';
+            html += '</div>';
+        }
+
+        html += '</div>';
+
+        contentEl.innerHTML = html;
+    }
+});
+</script>
 {% endblock %}

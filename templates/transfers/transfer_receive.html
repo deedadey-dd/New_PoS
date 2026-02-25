@@ -1,72 +1,150 @@
-{% extends 'base.html' %}
+{% extends "base.html" %}
+{% load static %}
 
-{% block title %}Receive Transfer {{ transfer.transfer_number }} - {{ current_tenant.name }}{% endblock %}
+{% block title %}Receive Transfer {{ transfer.transfer_number }}{% endblock %}
 
 {% block content %}
-<div class="mb-4">
-    <nav aria-label="breadcrumb">
-        <ol class="breadcrumb">
-            <li class="breadcrumb-item"><a href="{% url 'transfers:transfer_list' %}">Transfers</a></li>
-            <li class="breadcrumb-item"><a
-                    href="{% url 'transfers:transfer_detail' transfer.pk %}">{{ transfer.transfer_number }}</a></li>
-            <li class="breadcrumb-item active">Receive</li>
-        </ol>
-    </nav>
-    <h2 class="mb-1">Receive Transfer</h2>
-    <p class="text-muted">{{ transfer.transfer_number }} from {{ transfer.source_location.name }}</p>
-</div>
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="fas fa-box-open me-2"></i>Receive Transfer {{ transfer.transfer_number }}</h2>
+        <a href="{% url 'transfers:transfer_detail' transfer.pk %}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i>Back to Detail
+        </a>
+    </div>
 
-<div class="row">
-    <div class="col-lg-8">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="mb-0">Confirm Received Quantities</h5>
-            </div>
-            <div class="card-body">
-                <form method="post">
-                    {% csrf_token %}
-
-                    <div class="table-responsive">
-                        <table class="table">
-                            <thead>
-                                <tr>
-                                    <th>Product</th>
-                                    <th>Batch</th>
-                                    <th class="text-end">Sent</th>
-                                    <th class="text-end">Received</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for entry in items_with_fields %}
-                                <tr>
-                                    <td>{{ entry.item.product.name }}</td>
-                                    <td>{{ entry.item.batch.batch_number|default:"-" }}</td>
-                                    <td class="text-end">{{ entry.item.quantity_sent }}</td>
-                                    <td class="text-end" style="width: 150px;">
-                                        {{ entry.field }}
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <div class="alert alert-info">
-                        <i class="bi bi-info-circle me-2"></i>
-                        Enter the actual quantity received for each item. If quantities don't match, the transfer will
-                        be marked as "Partially Received".
-                    </div>
-
-                    <div class="d-flex gap-2">
-                        <button type="submit" class="btn btn-primary">
-                            <i class="bi bi-check-circle me-2"></i>Confirm Receipt
-                        </button>
-                        <a href="{% url 'transfers:transfer_detail' transfer.pk %}"
-                            class="btn btn-outline-secondary">Cancel</a>
-                    </div>
-                </form>
+    <div class="card mb-4">
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-4">
+                    <small class="text-white-50">From</small>
+                    <p class="mb-0 fw-bold">{{ transfer.source_location.name }}</p>
+                </div>
+                <div class="col-md-4">
+                    <small class="text-white-50">To</small>
+                    <p class="mb-0 fw-bold">{{ transfer.destination_location.name }}</p>
+                </div>
+                <div class="col-md-4">
+                    <small class="text-white-50">Date Sent</small>
+                    <p class="mb-0">{{ transfer.sent_at|date:"d M Y H:i" }}</p>
+                </div>
             </div>
         </div>
     </div>
+
+    <form method="post">
+        {% csrf_token %}
+
+        {% if form.non_field_errors %}
+        <div class="alert alert-danger">
+            {% for error in form.non_field_errors %}
+            <p class="mb-0">{{ error }}</p>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-list me-2"></i>Items to Receive</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table mb-0">
+                        <thead>
+                            <tr>
+                                <th>Product</th>
+                                <th class="text-center">Sent</th>
+                                <th class="text-center" style="width: 130px;">Received</th>
+                                <th class="discrepancy-header" style="width: 160px; display: none;">Reason</th>
+                                <th class="discrepancy-header" style="width: 160px; display: none;">Action</th>
+                                <th class="discrepancy-header" style="width: 180px; display: none;">Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for entry in items_with_fields %}
+                            <tr class="receive-row" data-item-id="{{ entry.item.pk }}">
+                                <td>
+                                    <strong>{{ entry.item.product.name }}</strong>
+                                    {% if entry.item.batch %}
+                                    <br><small class="text-white-50">Batch: {{ entry.item.batch.batch_number }}</small>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center align-middle">
+                                    <span class="badge bg-secondary fs-6">{{ entry.item.quantity_sent }}</span>
+                                </td>
+                                <td class="align-middle">
+                                    {{ entry.field }}
+                                    {% for error in entry.field.errors %}
+                                    <div class="text-danger small mt-1">{{ error }}</div>
+                                    {% endfor %}
+                                </td>
+                                <td class="align-middle discrepancy-col" style="display: none;">
+                                    {{ entry.reason_field }}
+                                    {% for error in entry.reason_field.errors %}
+                                    <div class="text-danger small mt-1">{{ error }}</div>
+                                    {% endfor %}
+                                </td>
+                                <td class="align-middle discrepancy-col" style="display: none;">
+                                    {{ entry.action_field }}
+                                </td>
+                                <td class="align-middle discrepancy-col" style="display: none;">
+                                    {{ entry.notes_field }}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-3 small text-white-50">
+            <i class="fas fa-info-circle me-1"></i>
+            <strong>Return to Source</strong> = discrepancy quantity goes back to the sender's inventory.
+            <strong>Accept Difference</strong> = quantity is absorbed as a loss (can be written off later).
+        </div>
+
+        <div class="mt-3 d-flex justify-content-end gap-2">
+            <a href="{% url 'transfers:transfer_detail' transfer.pk %}" class="btn btn-secondary">Cancel</a>
+            <button type="submit" class="btn btn-success">
+                <i class="fas fa-check me-1"></i>Confirm Receipt
+            </button>
+        </div>
+    </form>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const headers = document.querySelectorAll('.discrepancy-header');
+    let anyDiscrepancy = false;
+
+    document.querySelectorAll('.received-qty').forEach(function(input) {
+        const row = input.closest('.receive-row');
+        const sent = parseFloat(input.dataset.sent);
+        const discCols = row.querySelectorAll('.discrepancy-col');
+
+        function toggleDiscrepancy() {
+            const received = parseFloat(input.value) || 0;
+            const show = received < sent;
+            discCols.forEach(function(col) {
+                col.style.display = show ? '' : 'none';
+            });
+
+            // Check if any row has discrepancy to show/hide headers
+            let globalShow = false;
+            document.querySelectorAll('.received-qty').forEach(function(inp) {
+                const s = parseFloat(inp.dataset.sent);
+                const r = parseFloat(inp.value) || 0;
+                if (r < s) globalShow = true;
+            });
+            headers.forEach(function(h) {
+                h.style.display = globalShow ? '' : 'none';
+            });
+        }
+
+        input.addEventListener('input', toggleDiscrepancy);
+        input.addEventListener('change', toggleDiscrepancy);
+        toggleDiscrepancy();
+    });
+});
+</script>
 {% endblock %}

@@ -52,22 +52,39 @@ class CashTransferForm(forms.ModelForm):
                 ).first()
                 
                 if open_shift:
-                    shift_cash = Sale.objects.filter(
+                    # Cash from pure cash sales
+                    cash_sales = Sale.objects.filter(
                         tenant=user.tenant,
                         shift=open_shift,
                         status='COMPLETED',
                         payment_method='CASH'
                     ).aggregate(total=Sum('total'))['total'] or Decimal('0')
+                    # Cash portion from mixed payments (partial cash + credit)
+                    mixed_cash = Sale.objects.filter(
+                        tenant=user.tenant,
+                        shift=open_shift,
+                        status='COMPLETED',
+                        payment_method='MIXED'
+                    ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+                    shift_cash = cash_sales + mixed_cash
                     cash_on_hand += open_shift.opening_cash + shift_cash
                 
                 # 2. Cash from shiftless sales
-                shiftless_cash = Sale.objects.filter(
+                shiftless_cash_sales = Sale.objects.filter(
                     tenant=user.tenant,
                     attendant=user,
                     shift__isnull=True,
                     status='COMPLETED',
                     payment_method='CASH'
                 ).aggregate(total=Sum('total'))['total'] or Decimal('0')
+                shiftless_mixed = Sale.objects.filter(
+                    tenant=user.tenant,
+                    attendant=user,
+                    shift__isnull=True,
+                    status='COMPLETED',
+                    payment_method='MIXED'
+                ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+                shiftless_cash = shiftless_cash_sales + shiftless_mixed
                 
                 # Subtract already transferred amounts
                 transferred = CashTransfer.objects.filter(
@@ -92,6 +109,8 @@ class CashTransferForm(forms.ModelForm):
                     self.fields['to_user'].queryset = User.objects.none()
                     
             elif role_name == 'SHOP_MANAGER':
+                from apps.sales.models import Shift, Sale
+                
                 received = CashTransfer.objects.filter(
                     tenant=user.tenant,
                     to_user=user,
@@ -102,9 +121,51 @@ class CashTransferForm(forms.ModelForm):
                     tenant=user.tenant,
                     from_user=user,
                     status='CONFIRMED'
+                ).exclude(
+                    to_user=user  # Exclude self-transfers (shift closings)
                 ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
                 
-                self.cash_on_hand = received - sent
+                # Cash from current open shift
+                open_shift_cash = Decimal('0')
+                open_shift = Shift.objects.filter(
+                    tenant=user.tenant,
+                    attendant=user,
+                    status='OPEN'
+                ).first()
+                
+                if open_shift:
+                    shift_cash_sales = Sale.objects.filter(
+                        tenant=user.tenant,
+                        shift=open_shift,
+                        status='COMPLETED',
+                        payment_method='CASH'
+                    ).aggregate(total=Sum('total'))['total'] or Decimal('0')
+                    shift_mixed = Sale.objects.filter(
+                        tenant=user.tenant,
+                        shift=open_shift,
+                        status='COMPLETED',
+                        payment_method='MIXED'
+                    ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+                    open_shift_cash = open_shift.opening_cash + shift_cash_sales + shift_mixed
+                
+                # Own shiftless cash sales
+                shiftless_cash_sales = Sale.objects.filter(
+                    tenant=user.tenant,
+                    attendant=user,
+                    shift__isnull=True,
+                    status='COMPLETED',
+                    payment_method='CASH'
+                ).aggregate(total=Sum('total'))['total'] or Decimal('0')
+                shiftless_mixed = Sale.objects.filter(
+                    tenant=user.tenant,
+                    attendant=user,
+                    shift__isnull=True,
+                    status='COMPLETED',
+                    payment_method='MIXED'
+                ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+                own_sales = shiftless_cash_sales + shiftless_mixed
+                
+                self.cash_on_hand = received - sent + open_shift_cash + own_sales
                 
                 # Shop managers can only send to accountants
                 self.fields['to_user'].queryset = User.objects.filter(
