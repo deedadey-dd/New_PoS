@@ -14,8 +14,10 @@
 10. [Cash Management](#cash-management)
 11. [Reports & Analytics](#reports--analytics)
 12. [Tracking & Audit Features](#tracking--audit-features)
-13. [Settings & Administration](#settings--administration)
-14. [Troubleshooting](#troubleshooting)
+13. [Notifications](#notifications)
+14. [Settings & Administration](#settings--administration)
+15. [Subscription Management](#subscription-management)
+16. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -87,11 +89,11 @@ If you're the first admin user:
 |------|-------------|-----------------|
 | **Admin** | Full system administrator | All permissions + user management |
 | **Production Manager** | Manages production location | Inventory, transfers, batch creation |
-| **Stores Manager** | Manages central stores | Inventory, transfers in/out |
+| **Stores Manager** | Manages central stores | Inventory, transfers in/out, stock write-offs, stock request approvals |
 | **Shop Manager** | Manages retail shop | POS, sales, local inventory, cash transfers |
 | **Shop Attendant** | Front-line sales staff | POS, basic sales only |
-| **Accountant** | Financial management | Cash transfers, sales reports, price history |
-| **Auditor** | Read-only auditing | View all data, no modifications |
+| **Accountant** | Financial management | Cash transfers, sales reports, sales history, price history (via Sales & Financial menus) |
+| **Auditor** | Read-only auditing & oversight | Sales reports, sales history, price history, inventory ledger, transfers, cash transfers, tracking & audit reports (via Sales, Financial & Inventory menus) |
 
 ---
 
@@ -294,10 +296,56 @@ When stock arrives at your location:
 ### Handling Discrepancies
 
 If received quantity doesn't match sent quantity:
-1. Enter the actual quantity received
-2. The transfer status becomes **PARTIAL** or **DISPUTED**
-3. Add notes explaining the discrepancy
-4. The sender can investigate
+
+1. Enter the actual quantity received for each item
+2. For each item with a discrepancy, select a **reason**:
+
+| Reason | When to Use |
+|--------|-------------|
+| Damaged in Transit | Products arrived broken, spilled, or physically damaged |
+| Short Quantity | Fewer items arrived than listed on the transfer |
+| Expired | Products have passed their expiry date |
+| Quality Rejected | Products failed quality inspection on arrival |
+| Other | Any other reason (explain in notes) |
+
+3. Choose a **discrepancy action**:
+   - **Return to Source** — the shortage quantity is added back to the sender's inventory (default)
+   - **Accept Difference** — the shortage is absorbed; no stock adjustment at the source
+4. Add optional notes to explain the situation
+5. Click **Complete Receipt**
+
+> **Note:** If all items match, the status becomes **Received**. If there are discrepancies, the status becomes **Partial** or **Disputed**. Relevant managers receive notifications about the discrepancy.
+
+### Product Transfer History
+
+View the transfer history of individual products across all locations:
+
+1. Go to **Inventory → Transfers → Product History**
+2. Use filters to narrow results:
+   - **Product** — search by name or SKU
+   - **Location** — filter by source or destination
+   - **Direction** — Incoming or Outgoing (relative to your location)
+   - **Date Range** — filter by transfer date
+   - **Status** — filter by transfer status
+3. View details including quantities sent/received and any discrepancies
+
+### Stock Write-Offs
+
+Stores Managers can write off stock that is no longer usable:
+
+1. Go to **Inventory → Write-Offs**
+2. Click **New Write-Off**
+3. Select the product and quantity to write off
+4. Choose a reason:
+   - **Damaged** — physically damaged stock
+   - **Expired** — past expiry date
+   - **Returned to Supplier** — sent back to vendor
+   - **Lost / Missing** — unaccounted-for stock
+   - **Other** — specify in notes
+5. Add notes explaining the write-off
+6. Click **Submit**
+
+> **Warning:** Write-offs immediately deduct from inventory and create a permanent ledger entry (DAMAGE type). This action cannot be undone.
 
 ### Transfer Statuses
 
@@ -361,8 +409,13 @@ When a customer pays their debt:
 1. Go to **Customers**
 2. Find the customer
 3. Click **Record Payment**
-4. Enter amount paid
-5. Click **Save**
+4. Select payment method:
+   - **Cash** — physical cash payment, recorded immediately
+   - **E-Cash** — launches a Paystack popup to process mobile money or card payment; debt is only reduced after successful Paystack verification
+5. Enter amount paid
+6. Click **Save** (for cash) or complete the Paystack flow (for E-Cash)
+
+> **E-Cash Badge:** The navbar shows an E-Cash badge displaying the total E-Cash balance collected at your shop. This amount is filtered per shop for Shop Managers.
 
 ### Viewing Customer History
 
@@ -405,9 +458,42 @@ When handing over cash (e.g., Shop Manager → Accountant):
 | **Confirmed** | Successfully transferred |
 | **Cancelled** | Transfer voided |
 
+### Cash Transfer Filters
+
+Use the filter panel at the top of the Cash Transfers page to find specific transfers:
+- **Date Range** — filter by start and end date
+- **Shop** — filter by specific shop location
+- **Attendant** — filter by the staff member who created the transfer
+
+> **Navigation:** Shop Managers access Cash Transfers from the sidebar link. Accountants, Auditors, and Admins access it via **Financial → Cash Transfers**.
+
 ---
 
 ## Reports & Analytics
+
+### Sidebar Menu Structure
+
+Reports and data are organized into three sidebar menus based on your role:
+
+**Sales Menu** (Shop Manager, Accountant, Auditor, Admin):
+- **Sales Report** — daily sales summaries
+- **Sales History** — individual sale records with details
+- **Price History** — product price change log
+
+**Financial Menu** (Accountant, Auditor, Admin):
+- **Accountant Sales Report** — detailed financial report across shops
+- **Cash Transfers** — cash movement records with filters
+
+**Tracking & Reports Menu** (Auditor, Accountant, Admin):
+- Product Lifecycle, P&L by Product/Location/Manager, Inventory Movements
+
+### Auditor Dashboard & Inventory Menu
+
+Auditors have access to a dedicated **Auditor Dashboard** and an **Inventory** menu in the sidebar containing:
+- **Ledger** — full inventory ledger showing all stock movements
+- **Transfers** — view all stock transfers across the organization
+
+This gives Auditors full read-only visibility into inventory and stock flow.
 
 ### Sales Report (Shop Manager)
 
@@ -505,6 +591,43 @@ View all stock movements with filters:
 
 ---
 
+## Notifications
+
+The system provides in-app notifications to keep you informed of important events.
+
+### Notification Bell
+
+Look for the bell icon in the top navigation bar:
+- A **red badge** shows the count of unread notifications
+- Click the bell for a quick dropdown preview
+- Click **View all notifications** to see the full list
+
+### Notification Types
+
+| Type | Triggered When |
+|------|----------------|
+| **Transfer** | A transfer is sent to your location, received, or has discrepancies |
+| **Low Stock** | Product stock falls below the reorder level at your location |
+| **Stock Request** | A stock request is submitted, approved, or rejected |
+| **Subscription** | Subscription is nearing expiry, expired, or renewed |
+
+### Managing Notifications
+
+1. Click a notification to navigate to the related page
+2. Click **Mark All as Read** to clear unread notifications
+3. Notifications are automatically marked as read when clicked
+
+### Stock Alerts Panel
+
+A dedicated **Stock Alerts** panel appears in the sidebar showing:
+- Products currently below their reorder level at your location
+- The product name, current stock quantity, and reorder threshold
+- Click any alert to view the product details
+
+> **Tip:** Stock alerts help you proactively reorder products before they run out.
+
+---
+
 ## Settings & Administration
 
 ### General Settings (Admin Only)
@@ -554,6 +677,41 @@ Configure Paystack for E-Cash payments:
    - Type (Production, Stores, Shop)
    - Address
 4. Click **Save**
+
+---
+
+## Subscription Management
+
+Your organization's access to the POS system is managed through a subscription model.
+
+### Subscription Plans
+
+| Plan | Monthly Price | Max Shops | Key Features |
+|------|---------------|-----------|---------------|
+| **Starter** | GH₵250/month | 2 shops | Unlimited products, real-time inventory, basic reports |
+| **Standard** | GH₵350/month | 5 shops | All Starter + transfers, multi-user support |
+| **Premium** | GH₵350/month base (+GH₵100/extra shop) | Unlimited | All Standard + priority support, advanced reporting |
+
+### Annual Billing
+
+All plans are available with **annual billing** at a discounted rate:
+- Pay for 12 months upfront at a reduced price
+- Annual pricing is calculated automatically — savings percentage shown on pricing page
+- Both base price and additional-shop price are discounted
+
+> **Save with annual billing!** Visit the **Pricing** page to compare monthly vs. annual costs.
+
+### Subscription Lifecycle
+
+| Status | Description | Access Level |
+|--------|-------------|---------------|
+| **Trial** | 14-day setup period | Full access |
+| **Active** | Paid and current | Full access |
+| **Expired** | Subscription ended, 10-day grace period | Full access (grace) |
+| **Inactive** | 10+ days past expiry | Login only |
+| **Locked** | 6+ months inactive | No access |
+
+> **Important:** Renew before the 10-day grace period ends to avoid service interruption.
 
 ---
 
@@ -648,5 +806,5 @@ If you encounter issues:
 
 ---
 
-*Last Updated: January 2026*
-*Version: 1.0*
+*Last Updated: February 2026*
+*Version: 1.1*

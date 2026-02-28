@@ -118,11 +118,15 @@
                             <a class="nav-link sub-link" href="#batches">Batches</a>
                             <a class="nav-link sub-link" href="#shop-pricing">Shop Pricing</a>
                             <a class="nav-link" href="#transfers">Stock Transfers</a>
+                            <a class="nav-link sub-link" href="#transfer-discrepancies">Discrepancies</a>
+                            <a class="nav-link sub-link" href="#product-transfer-history">Product Transfer History</a>
+                            <a class="nav-link sub-link" href="#stock-write-offs">Stock Write-Offs</a>
                             <a class="nav-link" href="#stock-requests">Stock Requests</a>
                             <a class="nav-link" href="#customers">Customer Management</a>
                             <a class="nav-link" href="#cash">Cash Management</a>
                             <a class="nav-link" href="#reports">Reports & Analytics</a>
                             <a class="nav-link" href="#tracking">Tracking & Audit</a>
+                            <a class="nav-link" href="#notifications-section">Notifications</a>
                             <a class="nav-link" href="#settings">Settings & Admin</a>
                             <a class="nav-link" href="#subscription">Subscription Management</a>
                             <a class="nav-link" href="#troubleshooting">Troubleshooting</a>
@@ -281,7 +285,7 @@
                                 <tr>
                                     <td><span class="badge bg-info">Stores Manager</span></td>
                                     <td>Manages central stores</td>
-                                    <td>Inventory, transfers in/out</td>
+                                    <td>Inventory, transfers in/out, stock write-offs, stock request approvals</td>
                                 </tr>
                                 <tr>
                                     <td><span class="badge bg-primary">Shop Manager</span></td>
@@ -296,12 +300,12 @@
                                 <tr>
                                     <td><span class="badge bg-success">Accountant</span></td>
                                     <td>Financial management</td>
-                                    <td>Cash transfers, sales reports, price history</td>
+                                    <td>Cash transfers, sales reports, sales history, price history (via Sales &amp; Financial menus)</td>
                                 </tr>
                                 <tr>
                                     <td><span class="badge bg-dark">Auditor</span></td>
-                                    <td>Read-only auditing</td>
-                                    <td>View all data, no modifications</td>
+                                    <td>Read-only auditing &amp; oversight</td>
+                                    <td>Sales reports, sales history, price history, inventory ledger, transfers, cash transfers, tracking &amp; audit reports (via Sales, Financial &amp; Inventory menus)</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -647,15 +651,98 @@
                         <li>Click <strong>Complete Receipt</strong></li>
                     </ol>
 
-                    <h3>Handling Discrepancies</h3>
+                    <h3 id="transfer-discrepancies">Handling Discrepancies</h3>
                     <p>If received quantity doesn't match sent quantity:</p>
                     <ol>
-                        <li>Enter the actual quantity received</li>
-                        <li>The transfer status becomes <span class="badge bg-warning text-dark">PARTIAL</span> or <span
-                                class="badge bg-danger">DISPUTED</span></li>
-                        <li>Add notes explaining the discrepancy</li>
-                        <li>The sender can investigate</li>
+                        <li>Enter the actual quantity received for each item</li>
+                        <li>For each item with a discrepancy, select a <strong>reason</strong>:
+                            <div class="table-responsive mt-2 mb-2">
+                                <table class="table table-bordered table-sm">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Reason</th>
+                                            <th>When to Use</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td>Damaged in Transit</td>
+                                            <td>Products arrived broken, spilled, or physically damaged</td>
+                                        </tr>
+                                        <tr>
+                                            <td>Short Quantity</td>
+                                            <td>Fewer items arrived than listed on the transfer</td>
+                                        </tr>
+                                        <tr>
+                                            <td>Expired</td>
+                                            <td>Products have passed their expiry date</td>
+                                        </tr>
+                                        <tr>
+                                            <td>Quality Rejected</td>
+                                            <td>Products failed quality inspection on arrival</td>
+                                        </tr>
+                                        <tr>
+                                            <td>Other</td>
+                                            <td>Any other reason (explain in notes)</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </li>
+                        <li>Choose a <strong>discrepancy action</strong>:
+                            <ul>
+                                <li><strong>Return to Source</strong> &mdash; the shortage quantity is added back to the sender's inventory (default)</li>
+                                <li><strong>Accept Difference</strong> &mdash; the shortage is absorbed; no stock adjustment at the source</li>
+                            </ul>
+                        </li>
+                        <li>Add optional notes to explain the situation</li>
+                        <li>Click <strong>Complete Receipt</strong></li>
                     </ol>
+
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        <strong>What happens next:</strong> If all items match, the status becomes <span class="badge bg-success">Received</span>. If there are discrepancies, the status becomes <span class="badge bg-warning text-dark">Partial</span> or <span class="badge bg-danger">Disputed</span>. The sender and relevant managers receive notifications about the discrepancy.
+                    </div>
+
+                    <h3 id="product-transfer-history">Product Transfer History</h3>
+                    <p>View the transfer history of individual products across all locations:</p>
+                    <ol>
+                        <li>Go to <strong>Inventory &rarr; Transfers &rarr; Product History</strong></li>
+                        <li>Use filters to narrow results:
+                            <ul>
+                                <li><strong>Product</strong> &mdash; search by name or SKU</li>
+                                <li><strong>Location</strong> &mdash; filter by source or destination</li>
+                                <li><strong>Direction</strong> &mdash; Incoming or Outgoing (relative to your location)</li>
+                                <li><strong>Date Range</strong> &mdash; filter by transfer date</li>
+                                <li><strong>Status</strong> &mdash; filter by transfer status</li>
+                            </ul>
+                        </li>
+                        <li>View details including quantities sent/received and any discrepancies</li>
+                    </ol>
+
+                    <h3 id="stock-write-offs">Stock Write-Offs</h3>
+                    <p>Stores Managers can write off stock that is no longer usable:</p>
+                    <ol>
+                        <li>Go to <strong>Inventory &rarr; Write-Offs</strong></li>
+                        <li>Click <strong>New Write-Off</strong></li>
+                        <li>Select the product and quantity to write off</li>
+                        <li>Choose a reason:
+                            <ul>
+                                <li><strong>Damaged</strong> &mdash; physically damaged stock</li>
+                                <li><strong>Expired</strong> &mdash; past expiry date</li>
+                                <li><strong>Returned to Supplier</strong> &mdash; sent back to vendor</li>
+                                <li><strong>Lost / Missing</strong> &mdash; unaccounted-for stock</li>
+                                <li><strong>Other</strong> &mdash; specify in notes</li>
+                            </ul>
+                        </li>
+                        <li>Add notes explaining the write-off</li>
+                        <li>Click <strong>Submit</strong></li>
+                    </ol>
+
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        <strong>Important:</strong> Write-offs immediately deduct from inventory and create a permanent ledger entry (DAMAGE type). This action cannot be undone.
+                    </div>
 
                     <h3>Transfer Statuses</h3>
                     <div class="table-responsive">
@@ -758,9 +845,20 @@
                         <li>Go to <strong>Customers</strong></li>
                         <li>Find the customer</li>
                         <li>Click <strong>Record Payment</strong></li>
+                        <li>Select payment method:
+                            <ul>
+                                <li><strong>Cash</strong> &mdash; physical cash payment, recorded immediately</li>
+                                <li><strong>E-Cash</strong> &mdash; launches a Paystack popup to process mobile money or card payment; the debt is only reduced after successful Paystack verification</li>
+                            </ul>
+                        </li>
                         <li>Enter amount paid</li>
-                        <li>Click <strong>Save</strong></li>
+                        <li>Click <strong>Save</strong> (for cash) or complete the Paystack flow (for E-Cash)</li>
                     </ol>
+
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        <strong>E-Cash Badge:</strong> The navbar shows an <span class="badge bg-info">E-Cash</span> badge displaying the total E-Cash balance collected at your shop. This amount is filtered per shop for Shop Managers.
+                    </div>
 
                     <h3>Viewing Customer History</h3>
                     <ul>
@@ -824,11 +922,86 @@
                             </tbody>
                         </table>
                     </div>
+
+                    <h3>Cash Transfer Filters</h3>
+                    <p>Use the filter panel at the top of the Cash Transfers page to find specific transfers:</p>
+                    <ul>
+                        <li><strong>Date Range</strong> &mdash; filter by start and end date</li>
+                        <li><strong>Shop</strong> &mdash; filter by specific shop location</li>
+                        <li><strong>Attendant</strong> &mdash; filter by the staff member who created the transfer</li>
+                    </ul>
+
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        <strong>Navigation:</strong> Cash Transfers is accessed from:
+                        <ul class="mb-0 mt-1">
+                            <li><strong>Shop Managers</strong> &mdash; sidebar Cash Transfers link</li>
+                            <li><strong>Accountants, Auditors, Admins</strong> &mdash; <strong>Financial &rarr; Cash Transfers</strong> in the sidebar</li>
+                        </ul>
+                    </div>
                 </section>
 
                 <!-- Reports & Analytics -->
                 <section id="reports">
                     <h2><i class="bi bi-graph-up me-2"></i>Reports & Analytics</h2>
+
+                    <h3>Sidebar Menu Structure</h3>
+                    <p>Reports and data are organized into three sidebar menus based on your role:</p>
+
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-4">
+                            <div class="card border-primary h-100">
+                                <div class="card-header bg-primary text-white">
+                                    <i class="bi bi-receipt me-2"></i>Sales Menu
+                                </div>
+                                <div class="card-body">
+                                    <ul class="small mb-2">
+                                        <li><strong>Sales Report</strong> &mdash; daily sales summaries</li>
+                                        <li><strong>Sales History</strong> &mdash; individual sale records with details</li>
+                                        <li><strong>Price History</strong> &mdash; product price change log</li>
+                                    </ul>
+                                    <p class="small text-muted mb-0"><strong>Available to:</strong> Shop Manager, Accountant, Auditor, Admin</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card border-success h-100">
+                                <div class="card-header bg-success text-white">
+                                    <i class="bi bi-bank me-2"></i>Financial Menu
+                                </div>
+                                <div class="card-body">
+                                    <ul class="small mb-2">
+                                        <li><strong>Accountant Sales Report</strong> &mdash; detailed financial report across shops</li>
+                                        <li><strong>Cash Transfers</strong> &mdash; cash movement records with filters</li>
+                                    </ul>
+                                    <p class="small text-muted mb-0"><strong>Available to:</strong> Accountant, Auditor, Admin</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card border-info h-100">
+                                <div class="card-header bg-info text-white">
+                                    <i class="bi bi-search me-2"></i>Tracking & Reports Menu
+                                </div>
+                                <div class="card-body">
+                                    <ul class="small mb-2">
+                                        <li><strong>Product Lifecycle</strong></li>
+                                        <li><strong>P&L by Product / Location / Manager</strong></li>
+                                        <li><strong>Inventory Movements</strong></li>
+                                    </ul>
+                                    <p class="small text-muted mb-0"><strong>Available to:</strong> Auditor, Accountant, Admin</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <h3>Auditor Dashboard & Inventory Menu</h3>
+                    <p>Auditors have access to a dedicated <strong>Auditor Dashboard</strong> and an <strong>Inventory</strong> menu in the sidebar containing:</p>
+                    <ul>
+                        <li><strong>Ledger</strong> &mdash; full inventory ledger showing all stock movements</li>
+                        <li><strong>Transfers</strong> &mdash; view all stock transfers across the organization</li>
+                    </ul>
+                    <p>This gives Auditors full read-only visibility into inventory and stock flow alongside their Sales, Financial, and Tracking access.</p>
 
                     <h3>Sales Report (Shop Manager)</h3>
                     <p>View sales performance for your shop:</p>
@@ -953,6 +1126,76 @@
                     </ol>
                 </section>
 
+                <!-- Notifications -->
+                <section id="notifications-section">
+                    <h2><i class="bi bi-bell me-2"></i>Notifications</h2>
+
+                    <p>The system provides in-app notifications to keep you informed of important events in real-time.</p>
+
+                    <h3>Notification Bell</h3>
+                    <p>Look for the <i class="bi bi-bell"></i> bell icon in the top navigation bar:</p>
+                    <ul>
+                        <li>A <span class="badge bg-danger">red badge</span> shows the count of unread notifications</li>
+                        <li>Click the bell to see a quick dropdown preview of recent notifications</li>
+                        <li>Click <strong>View all notifications</strong> to see the full list</li>
+                    </ul>
+
+                    <h3>Notification Types</h3>
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-sm">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Type</th>
+                                    <th>Description</th>
+                                    <th>Triggered When</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><i class="bi bi-arrow-left-right text-primary me-1"></i>Transfer</td>
+                                    <td>Stock transfer alerts</td>
+                                    <td>A transfer is sent to your location, received, or has discrepancies</td>
+                                </tr>
+                                <tr>
+                                    <td><i class="bi bi-exclamation-triangle text-warning me-1"></i>Low Stock</td>
+                                    <td>Inventory alerts</td>
+                                    <td>Product stock falls below the reorder level at your location</td>
+                                </tr>
+                                <tr>
+                                    <td><i class="bi bi-box-arrow-in-down text-info me-1"></i>Stock Request</td>
+                                    <td>Request updates</td>
+                                    <td>A stock request is submitted, approved, or rejected</td>
+                                </tr>
+                                <tr>
+                                    <td><i class="bi bi-credit-card text-success me-1"></i>Subscription</td>
+                                    <td>Subscription alerts</td>
+                                    <td>Subscription is nearing expiry, expired, or renewed</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <h3>Managing Notifications</h3>
+                    <ol>
+                        <li>Click a notification to navigate to the related page (e.g., transfer details)</li>
+                        <li>Click <strong>Mark All as Read</strong> to clear all unread notifications</li>
+                        <li>Individual notifications are automatically marked as read when you click on them</li>
+                    </ol>
+
+                    <h3>Stock Alerts Panel</h3>
+                    <p>A dedicated <strong>Stock Alerts</strong> panel appears in the sidebar showing:</p>
+                    <ul>
+                        <li>Products currently below their reorder level at your location</li>
+                        <li>The product name, current stock quantity, and reorder threshold</li>
+                        <li>Click any alert to view the product details</li>
+                    </ul>
+
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        <strong>Tip:</strong> Stock alerts help you proactively reorder products before they run out. Use them alongside Stock Requests to keep your shop well-stocked.
+                    </div>
+                </section>
+
                 <!-- Settings & Administration -->
                 <section id="settings">
                     <h2><i class="bi bi-gear me-2"></i>Settings & Administration</h2>
@@ -1044,7 +1287,7 @@
                             <thead class="table-dark">
                                 <tr>
                                     <th>Plan</th>
-                                    <th>Price</th>
+                                    <th>Monthly Price</th>
                                     <th>Max Shops</th>
                                     <th>Key Features</th>
                                 </tr>
@@ -1070,6 +1313,18 @@
                                 </tr>
                             </tbody>
                         </table>
+                    </div>
+
+                    <h4>Annual Billing</h4>
+                    <p>All plans are available with <strong>annual billing</strong> at a discounted per-month rate:</p>
+                    <ul>
+                        <li>Pay for 12 months upfront at a reduced price</li>
+                        <li>Annual pricing is calculated automatically &mdash; the savings percentage is shown on the pricing page</li>
+                        <li>Both the base price and the additional-shop price are discounted when paying annually</li>
+                    </ul>
+                    <div class="alert alert-success">
+                        <i class="bi bi-piggy-bank me-2"></i>
+                        <strong>Save with annual billing!</strong> Visit the <strong>Pricing</strong> page to compare monthly vs. annual costs and see your potential savings.
                     </div>
 
                     <div class="alert alert-info">
@@ -1448,7 +1703,7 @@
                 <div class="border-top pt-4 mt-5 text-center text-muted">
                     <p class="mb-0">
                         <i class="bi bi-book me-2"></i>
-                        POS System User Manual | Version 1.0 | Last Updated: January 2026
+                        POS System User Manual | Version 1.1 | Last Updated: February 2026
                     </p>
                 </div>
             </div>

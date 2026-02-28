@@ -66,6 +66,14 @@
             </a>
         </div>
         <div class="col-md-3 mb-3">
+            <a href="#notifications" class="card shadow-sm text-decoration-none h-100">
+                <div class="card-body text-center">
+                    <i class="bi bi-bell fs-1 text-danger mb-2"></i>
+                    <h5 class="text-dark">Notifications</h5>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-3 mb-3">
             <a href="#subscription" class="card shadow-sm text-decoration-none h-100">
                 <div class="card-body text-center">
                     <i class="bi bi-credit-card-2-front fs-1 text-purple mb-2" style="color: #6f42c1;"></i>
@@ -128,18 +136,20 @@
                         <li>Manage store inventory</li>
                         <li>Create and send transfers</li>
                         <li>Approve stock requests</li>
+                        <li>Create stock write-offs</li>
                         {% elif role_name == 'PRODUCTION_MANAGER' %}
                         <li>Manage production inventory</li>
                         <li>Create batches</li>
                         <li>Send transfers to stores</li>
                         {% elif role_name == 'ACCOUNTANT' %}
-                        <li>View sales reports</li>
+                        <li>View sales reports and sales history</li>
                         <li>Manage cash transfers</li>
                         <li>Track financial data</li>
                         {% elif role_name == 'AUDITOR' %}
-                        <li>View all transactions (read-only)</li>
-                        <li>Access audit reports</li>
-                        <li>Track inventory movements</li>
+                        <li>View sales reports, sales history, and price history</li>
+                        <li>Access audit and tracking reports</li>
+                        <li>View inventory ledger and transfers</li>
+                        <li>View cash transfers</li>
                         {% endif %}
                         {% endwith %}
                         {% endif %}
@@ -316,6 +326,12 @@
                 <span class="badge bg-primary fs-6">Sent</span>
                 <i class="bi bi-arrow-right"></i>
                 <span class="badge bg-success fs-6">Received</span>
+                <span class="text-muted mx-1">or</span>
+                <span class="badge bg-warning text-dark fs-6">Partial</span>
+                <i class="bi bi-arrow-right"></i>
+                <span class="badge bg-danger fs-6">Disputed</span>
+                <i class="bi bi-arrow-right"></i>
+                <span class="badge bg-dark fs-6">Closed</span>
             </div>
 
             <div class="row">
@@ -359,11 +375,39 @@
                             <p class="small">If received quantity differs from sent:</p>
                             <ol class="small">
                                 <li>Enter actual quantity received</li>
-                                <li>Add notes explaining difference</li>
-                                <li>Transfer becomes "Disputed"</li>
-                                <li>Sender investigates</li>
+                                <li>Select a <strong>reason</strong>:
+                                    <ul>
+                                        <li>Damaged in Transit</li>
+                                        <li>Short Quantity</li>
+                                        <li>Expired</li>
+                                        <li>Quality Rejected</li>
+                                        <li>Other</li>
+                                    </ul>
+                                </li>
+                                <li>Choose an <strong>action</strong>:
+                                    <ul>
+                                        <li><strong>Return to Source</strong> &mdash; shortage restored to sender's inventory</li>
+                                        <li><strong>Accept Difference</strong> &mdash; shortage is absorbed</li>
+                                    </ul>
+                                </li>
+                                <li>Add optional notes</li>
                             </ol>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row mt-3">
+                <div class="col-md-6">
+                    <div class="alert alert-info mb-0">
+                        <h6><i class="bi bi-clock-history me-2"></i>Product Transfer History</h6>
+                        <p class="mb-0 small">View transfer history by product using <strong>Inventory &rarr; Transfers &rarr; Product History</strong>. Filter by product, location, direction, date range, or status.</p>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="alert alert-warning mb-0">
+                        <h6><i class="bi bi-trash me-2"></i>Stock Write-Offs</h6>
+                        <p class="mb-0 small">Stores Managers can write off damaged, expired, lost, or returned stock via <strong>Inventory &rarr; Write-Offs</strong>. Each write-off deducts from inventory and is permanently recorded.</p>
                     </div>
                 </div>
             </div>
@@ -394,9 +438,20 @@
                         <li>Go to <strong>Customers</strong></li>
                         <li>Find the customer</li>
                         <li>Click <strong>Record Payment</strong></li>
+                        <li>Select payment method:
+                            <ul>
+                                <li><strong>Cash</strong> &mdash; physical money</li>
+                                <li><strong>E-Cash</strong> &mdash; launches Paystack to process a mobile money or card payment</li>
+                            </ul>
+                        </li>
                         <li>Enter amount received</li>
                     </ol>
                 </div>
+            </div>
+
+            <div class="alert alert-info mt-3 mb-0">
+                <i class="bi bi-info-circle me-2"></i>
+                The <strong>credit debt badge</strong> (yellow, top navbar) shows the total debt owed by customers at your shop. Click it to view the customer list.
             </div>
         </div>
     </div>
@@ -431,6 +486,16 @@
                     </ol>
                 </div>
             </div>
+
+            <div class="alert alert-info mt-3 mb-0">
+                <h6><i class="bi bi-funnel me-2"></i>Filtering &amp; Navigation</h6>
+                <ul class="mb-0 small">
+                    <li>Use <strong>date range</strong>, <strong>shop</strong>, and <strong>attendant</strong> filters to find specific transfers</li>
+                    <li>The <strong>cash on hand badge</strong> (green, top navbar) shows your current cash balance</li>
+                    <li>The <strong>pending transfers badge</strong> (red, pulsing) shows unconfirmed transfers waiting for action</li>
+                    <li>Cash Transfers is found under <strong>Financial</strong> in the sidebar for Accountants, Auditors, and Admins</li>
+                </ul>
+            </div>
         </div>
     </div>
 
@@ -440,45 +505,60 @@
             <h4 class="mb-0"><i class="bi bi-graph-up me-2"></i>Reports & Analytics</h4>
         </div>
         <div class="card-body">
-            <div class="row g-3">
+            <h5 class="mb-3">Sidebar Menus</h5>
+            <div class="row g-3 mb-4">
                 <div class="col-md-4">
-                    <div class="card h-100">
-                        <div class="card-body text-center">
-                            <i class="bi bi-diagram-3 fs-1 text-primary"></i>
-                            <h5 class="mt-2">Product Lifecycle</h5>
-                            <p class="small text-muted">Track products from entry to exit</p>
+                    <div class="card border-primary h-100">
+                        <div class="card-header bg-primary text-white">
+                            <i class="bi bi-receipt me-2"></i>Sales Menu
+                        </div>
+                        <div class="card-body">
+                            <ul class="small mb-0">
+                                <li><strong>Sales Report</strong> &mdash; daily summaries</li>
+                                <li><strong>Sales History</strong> &mdash; individual sale records</li>
+                                <li><strong>Price History</strong> &mdash; product price changes</li>
+                            </ul>
+                            <p class="small text-muted mt-2 mb-0">Available to: Shop Manager, Accountant, Auditor, Admin</p>
                         </div>
                     </div>
                 </div>
                 <div class="col-md-4">
-                    <div class="card h-100">
-                        <div class="card-body text-center">
-                            <i class="bi bi-currency-dollar fs-1 text-success"></i>
-                            <h5 class="mt-2">Profit & Loss</h5>
-                            <p class="small text-muted">By product, location, or manager</p>
+                    <div class="card border-success h-100">
+                        <div class="card-header bg-success text-white">
+                            <i class="bi bi-bank me-2"></i>Financial Menu
+                        </div>
+                        <div class="card-body">
+                            <ul class="small mb-0">
+                                <li><strong>Accountant Sales Report</strong> &mdash; detailed financial report</li>
+                                <li><strong>Cash Transfers</strong> &mdash; cash movement records</li>
+                            </ul>
+                            <p class="small text-muted mt-2 mb-0">Available to: Accountant, Auditor, Admin</p>
                         </div>
                     </div>
                 </div>
                 <div class="col-md-4">
-                    <div class="card h-100">
-                        <div class="card-body text-center">
-                            <i class="bi bi-arrow-left-right fs-1 text-info"></i>
-                            <h5 class="mt-2">Inventory Movements</h5>
-                            <p class="small text-muted">All stock transactions</p>
+                    <div class="card border-info h-100">
+                        <div class="card-header bg-info text-white">
+                            <i class="bi bi-graph-up-arrow me-2"></i>Tracking & Reports
+                        </div>
+                        <div class="card-body">
+                            <ul class="small mb-0">
+                                <li><strong>Product Lifecycle</strong> &mdash; entry to exit</li>
+                                <li><strong>P&L by Product</strong></li>
+                                <li><strong>P&L by Location</strong></li>
+                                <li><strong>P&L by Manager</strong></li>
+                                <li><strong>Inventory Movements</strong></li>
+                            </ul>
+                            <p class="small text-muted mt-2 mb-0">Available to: Auditor, Accountant, Admin</p>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <p class="mt-3 text-muted">
-                <i class="bi bi-info-circle me-2"></i>
-                Access these from <strong>Tracking & Reports</strong> in the sidebar
-                {% if user.role %}
-                {% if user.role.name != 'AUDITOR' and user.role.name != 'ACCOUNTANT' and user.role.name != 'ADMIN' %}
-                (requires Auditor, Accountant, or Admin role)
-                {% endif %}
-                {% endif %}
-            </p>
+            <div class="alert alert-secondary mb-0">
+                <h6><i class="bi bi-clipboard-data me-2"></i>Auditor Dashboard</h6>
+                <p class="mb-0 small">Auditors have a dedicated <strong>Auditor Dashboard</strong> and an <strong>Inventory</strong> menu in the sidebar with access to the <strong>Inventory Ledger</strong> and <strong>Transfers</strong> for full visibility.</p>
+            </div>
         </div>
     </div>
 
@@ -493,12 +573,16 @@
             <div class="row">
                 <div class="col-md-6">
                     <h5><i class="bi bi-pie-chart me-2"></i>Subscription Plans</h5>
-                    <p>We offer three subscription tiers:</p>
+                    <p>We offer three subscription tiers with <strong>monthly</strong> or <strong>annual</strong> billing:</p>
                     <ul>
-                        <li><strong>Starter</strong> - Up to 2 shops, GH₵250/month</li>
-                        <li><strong>Standard</strong> - Up to 5 shops, GH₵350/month</li>
-                        <li><strong>Premium</strong> - Unlimited shops, GH₵350/month + GH₵100/extra shop</li>
+                        <li><strong>Starter</strong> &mdash; Up to 2 shops, GH₵250/month (or save with annual billing)</li>
+                        <li><strong>Standard</strong> &mdash; Up to 5 shops, GH₵350/month (or save with annual billing)</li>
+                        <li><strong>Premium</strong> &mdash; Unlimited shops, GH₵350/month + GH₵100/extra shop (discounted annually)</li>
                     </ul>
+                    <div class="alert alert-success py-2 mb-2">
+                        <i class="bi bi-piggy-bank me-1"></i>
+                        <strong>Save with annual billing!</strong> Pay for 12 months upfront at a discounted per-month rate.
+                    </div>
                     <a href="{% url 'subscriptions:pricing' %}" class="btn btn-sm btn-outline-primary">
                         <i class="bi bi-info-circle me-1"></i>View Pricing Details
                     </a>
@@ -609,9 +693,45 @@
         </div>
     </div>
 
+    <!-- Notifications -->
+    <div class="card shadow-sm mb-4" id="notifications">
+        <div class="card-header bg-danger text-white">
+            <h4 class="mb-0"><i class="bi bi-bell me-2"></i>Notifications</h4>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <h5><i class="bi bi-bell me-2"></i>Notification Bell</h5>
+                    <p>The <strong>bell icon</strong> in the top navbar shows your notifications:</p>
+                    <ul>
+                        <li>A <strong>red badge</strong> indicates unread notifications</li>
+                        <li>Click the bell to see a dropdown of recent notifications</li>
+                        <li>Click <strong>"Mark all read"</strong> to clear unread status</li>
+                        <li>Click <strong>"View all notifications"</strong> for the full list</li>
+                    </ul>
+                </div>
+                <div class="col-md-6">
+                    <h5><i class="bi bi-list-check me-2"></i>Notification Types</h5>
+                    <ul>
+                        <li><i class="bi bi-box-arrow-right text-primary me-1"></i><strong>Transfer Sent</strong> &mdash; stock sent to your location</li>
+                        <li><i class="bi bi-box-arrow-in-left text-success me-1"></i><strong>Transfer Received</strong> &mdash; your transfer was received</li>
+                        <li><i class="bi bi-exclamation-triangle text-danger me-1"></i><strong>Transfer Disputed</strong> &mdash; discrepancy reported</li>
+                        <li><i class="bi bi-check-circle text-success me-1"></i><strong>Request Approved</strong> &mdash; stock request was approved</li>
+                        <li><i class="bi bi-x-circle text-danger me-1"></i><strong>Request Rejected</strong> &mdash; stock request was rejected</li>
+                        <li><i class="bi bi-exclamation-circle text-warning me-1"></i><strong>Low Stock</strong> &mdash; product below reorder level</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="alert alert-info mt-2 mb-0">
+                <i class="bi bi-exclamation-triangle text-warning me-2"></i>
+                <strong>Stock Alerts:</strong> The sidebar also shows a <strong>Stock Alerts</strong> panel when products fall below their reorder level, with severity colour coding (red = critical, yellow = low).
+            </div>
+        </div>
+    </div>
+
     <!-- Troubleshooting -->
     <div class="card shadow-sm mb-4" id="troubleshooting">
-        <div class="card-header bg-danger text-white">
+        <div class="card-header" style="background-color: #dc3545; color: white;">
             <h4 class="mb-0"><i class="bi bi-tools me-2"></i>Troubleshooting</h4>
         </div>
         <div class="card-body">
@@ -713,6 +833,7 @@
         <div class="card-body text-center">
             <h5><i class="bi bi-headset me-2"></i>Need More Help?</h5>
             <p class="text-muted">Contact your system administrator for assistance</p>
+            <p class="small text-muted mb-0">Version 1.1 &mdash; Last updated: February 2026</p>
         </div>
     </div>
 </div>

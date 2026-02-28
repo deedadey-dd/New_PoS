@@ -3,6 +3,7 @@ Forms for inventory app.
 """
 from django import forms
 from django.core.exceptions import ValidationError
+from django.utils import timezone
 from decimal import Decimal
 
 from .models import Category, Product, Batch, InventoryLedger, ShopPrice
@@ -79,9 +80,38 @@ class BatchForm(forms.ModelForm):
             'notes': forms.Textarea(attrs={'class': 'form-control', 'rows': 2, 'placeholder': 'Notes'}),
         }
     
+    def _generate_batch_number(self, tenant):
+        """Generate a date-based batch number (YYYYMMDD), appending a suffix if needed."""
+        today = timezone.now().date()
+        base_number = today.strftime('%Y%m%d')
+        
+        # Check if this base number already exists for this tenant
+        existing = Batch.objects.filter(
+            tenant=tenant,
+            batch_number__startswith=base_number
+        ).values_list('batch_number', flat=True)
+        
+        if not existing:
+            return base_number
+        
+        # Find the highest suffix
+        max_suffix = 0
+        for bn in existing:
+            if bn == base_number:
+                max_suffix = max(max_suffix, 1)
+            elif bn.startswith(base_number + '-'):
+                try:
+                    suffix = int(bn.split('-')[-1])
+                    max_suffix = max(max_suffix, suffix)
+                except ValueError:
+                    pass
+        
+        return f"{base_number}-{str(max_suffix + 1).zfill(2)}"
+    
     def __init__(self, *args, tenant=None, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.user = user
+        self.tenant = tenant
         self.auto_location = None
         
         # Determine allowed location types based on role
@@ -101,6 +131,10 @@ class BatchForm(forms.ModelForm):
                 is_active=True,
                 location_type__in=allowed_types
             )
+            
+            # Auto-generate batch number if creating a new batch
+            if not self.instance.pk:
+                self.initial['batch_number'] = self._generate_batch_number(tenant)
         else:
             self.fields['product'].queryset = Product.objects.none()
             self.fields['location'].queryset = Location.objects.none()
@@ -127,9 +161,30 @@ class BatchForm(forms.ModelForm):
         cleaned_data = super().clean()
         manufacture_date = cleaned_data.get('manufacture_date')
         expiry_date = cleaned_data.get('expiry_date')
+        batch_number = cleaned_data.get('batch_number')
+        product = cleaned_data.get('product')
+        location = cleaned_data.get('location')
         
         if manufacture_date and expiry_date and expiry_date <= manufacture_date:
             raise ValidationError("Expiry date must be after manufacture date.")
+        
+        # Check for duplicate batch number (same tenant + product + batch_number + location)
+        if batch_number and product and location and self.tenant:
+            duplicate_qs = Batch.objects.filter(
+                tenant=self.tenant,
+                product=product,
+                batch_number=batch_number,
+                location=location
+            )
+            # Exclude current instance when editing
+            if self.instance.pk:
+                duplicate_qs = duplicate_qs.exclude(pk=self.instance.pk)
+            
+            if duplicate_qs.exists():
+                raise ValidationError(
+                    f'A batch with number "{batch_number}" already exists for this product '
+                    f'at {location.name}. Please use a different batch number.'
+                )
         
         return cleaned_data
 
