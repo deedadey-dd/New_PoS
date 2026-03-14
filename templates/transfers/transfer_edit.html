@@ -7,11 +7,19 @@
     <nav aria-label="breadcrumb">
         <ol class="breadcrumb">
             <li class="breadcrumb-item"><a href="{% url 'transfers:transfer_list' %}">Transfers</a></li>
-            <li class="breadcrumb-item active">{{ title }}</li>
+            <li class="breadcrumb-item"><a href="{% url 'transfers:transfer_detail' transfer.pk %}">{{ transfer.transfer_number }}</a></li>
+            <li class="breadcrumb-item active">Edit</li>
         </ol>
     </nav>
     <h2 class="mb-1">{{ title }}</h2>
-    <p class="text-muted">Select source, destination, and items to transfer</p>
+    <p class="text-muted">
+        Edit items, quantities, batches, and costs before sending
+        {% if source_request %}
+            <br><small><i class="bi bi-link-45deg me-1"></i>From Stock Request
+                <a href="{% url 'transfers:stock_request_detail' pk=source_request.pk %}">{{ source_request.request_number }}</a>
+            </small>
+        {% endif %}
+    </p>
 </div>
 
 <form method="post" id="transfer-form">
@@ -19,7 +27,7 @@
 
     <div class="row">
         <div class="col-lg-8">
-            <!-- Locations -->
+            <!-- Locations (read-only for edit) -->
             <div class="card mb-4">
                 <div class="card-header">
                     <h5 class="mb-0">Locations</h5>
@@ -29,7 +37,6 @@
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Source Location</label>
                             {{ form.source_location }}
-                            {% if form.source_location_display %}
                             <div class="form-control-plaintext">
                                 <span
                                     class="badge bg-{% if form.source_location_display.location_type == 'PRODUCTION' %}primary{% elif form.source_location_display.location_type == 'STORES' %}info{% else %}success{% endif %} fs-6">
@@ -38,19 +45,9 @@
                                 <small
                                     class="text-muted d-block mt-1">{{ form.source_location_display.get_location_type_display }}</small>
                             </div>
-                            {% else %}
-                            <div class="alert alert-warning mb-0">
-                                <i class="bi bi-exclamation-triangle me-2"></i>No source location assigned. Please
-                                contact admin.
-                            </div>
-                            {% endif %}
-                            {% if form.source_location.errors %}
-                            <div class="invalid-feedback d-block">{{ form.source_location.errors|join:", " }}</div>
-                            {% endif %}
                         </div>
                         <div class="col-md-6 mb-3">
-                            <label for="id_destination_location" class="form-label">Destination Location <span
-                                    class="text-danger">*</span></label>
+                            <label class="form-label">Destination Location</label>
                             {{ form.destination_location }}
                             {% if form.destination_location.errors %}
                             <div class="invalid-feedback d-block">{{ form.destination_location.errors|join:", " }}</div>
@@ -77,7 +74,7 @@
 
                     <div id="item-formset">
                         {% for item_form in formset %}
-                        <div class="item-row border rounded p-3 mb-3 {% if forloop.last %}template-row{% endif %}">
+                        <div class="item-row border rounded p-3 mb-3" {% if item_form.instance.pk %}data-has-id="true"{% endif %} style="{% if item_form.DELETE.value %}display:none{% endif %}">
                             <div class="row">
                                 <div class="col-md-4 mb-2">
                                     <label class="form-label">Product <span class="text-danger">*</span></label>
@@ -131,15 +128,15 @@
             <div class="card sticky-top" style="top: 1rem;">
                 <div class="card-body">
                     <h5 class="card-title">Summary</h5>
-                    <p class="text-muted">Review and submit the transfer</p>
+                    <p class="text-muted">Review and save changes</p>
 
                     <hr>
 
                     <div class="d-grid gap-2">
                         <button type="submit" class="btn btn-primary btn-lg">
-                            <i class="bi bi-save me-2"></i>Save as Draft
+                            <i class="bi bi-save me-2"></i>Save Changes
                         </button>
-                        <a href="{% url 'transfers:transfer_list' %}" class="btn btn-outline-secondary">
+                        <a href="{% url 'transfers:transfer_detail' transfer.pk %}" class="btn btn-outline-secondary">
                             Cancel
                         </a>
                     </div>
@@ -153,7 +150,7 @@
 {% block extra_js %}
 <script>
     const SOURCE_TYPE = '{{ source_type }}';
-    const SOURCE_LOCATION_ID = '{{ form.source_location.value }}';
+    const SOURCE_LOCATION_ID = '{{ transfer.source_location.pk }}';
 
     document.addEventListener('DOMContentLoaded', function () {
         const formsetDiv = document.getElementById('item-formset');
@@ -171,13 +168,17 @@
             const formCount = parseInt(totalForms.value);
 
             newRow.innerHTML = newRow.innerHTML.replace(/-\d+-/g, `-${formCount}-`);
+            newRow.removeAttribute('data-has-id');
+            newRow.style.display = '';
 
             newRow.querySelectorAll('input').forEach(input => {
                 if (input.type !== 'hidden') input.value = '';
+                // Clear the id hidden field for new rows
+                if (input.name && input.name.endsWith('-id')) input.value = '';
             });
             newRow.querySelectorAll('select').forEach(select => {
                 select.selectedIndex = 0;
-                // Clear batch options for new rows
+                // Clear batch options for new rows (will be populated dynamically)
                 if (select.classList.contains('batch-select')) {
                     select.innerHTML = '<option value="">---------</option>';
                 }
@@ -271,7 +272,6 @@
             const batchCostHint = row.querySelector('.batch-cost-hint');
 
             if (SOURCE_TYPE === 'PRODUCTION' && totalCostInput && quantityInput) {
-                // Production: Calculate unit cost from total cost / quantity
                 const calculateUnitCost = () => {
                     const quantity = parseFloat(quantityInput.value) || 0;
                     const totalCost = parseFloat(totalCostInput.value) || 0;
@@ -294,7 +294,6 @@
                 quantityInput.addEventListener('input', calculateUnitCost);
                 totalCostInput.addEventListener('input', calculateUnitCost);
             } else if (batchSelect && unitCostInput) {
-                // Stores/Shop: Auto-fill unit cost when batch is selected
                 batchSelect.addEventListener('change', function () {
                     const selectedOption = this.options[this.selectedIndex];
                     if (selectedOption && selectedOption.value) {

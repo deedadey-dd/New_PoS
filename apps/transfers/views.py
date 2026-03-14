@@ -176,6 +176,143 @@ class TransferCreateView(LoginRequiredMixin, View):
         })
 
 
+class TransferEditView(LoginRequiredMixin, View):
+    """Edit an existing draft transfer."""
+    template_name = 'transfers/transfer_edit.html'
+
+    def get(self, request, pk):
+        transfer = get_object_or_404(
+            Transfer, pk=pk, tenant=request.user.tenant
+        )
+
+        # Only DRAFT transfers can be edited
+        if transfer.status != 'DRAFT':
+            messages.error(request, f"Cannot edit transfer in {transfer.get_status_display()} status.")
+            return redirect('transfers:transfer_detail', pk=pk)
+
+        # Only source users can edit
+        if not transfer.user_is_source(request.user):
+            messages.error(request, "You don't have permission to edit this transfer.")
+            return redirect('transfers:transfer_detail', pk=pk)
+
+        form = TransferForm(
+            instance=transfer,
+            tenant=request.user.tenant,
+        )
+        # Set source_location_display for the template
+        form.source_location_display = transfer.source_location
+
+        # Build formset bound to the existing items, plus 1 extra empty row
+        EditTransferItemFormSet = inlineformset_factory(
+            Transfer,
+            TransferItem,
+            form=TransferItemForm,
+            extra=1,
+            can_delete=True,
+            min_num=0,
+            validate_min=False,
+        )
+        formset = EditTransferItemFormSet(
+            instance=transfer,
+            queryset=transfer.items.all(),
+        )
+
+        # Filter products and batches for each form in formset
+        for item_form in formset:
+            if hasattr(item_form.fields.get('product'), 'queryset'):
+                item_form.fields['product'].queryset = Product.objects.filter(
+                    tenant=request.user.tenant, is_active=True
+                )
+            # For existing items, populate batch queryset with product-specific batches
+            if item_form.instance and item_form.instance.pk and item_form.instance.product:
+                item_form.fields['batch'].queryset = Batch.objects.filter(
+                    tenant=request.user.tenant,
+                    product=item_form.instance.product,
+                    location=transfer.source_location,
+                    status='AVAILABLE',
+                    current_quantity__gt=0
+                ).order_by('-id')
+                # Also include the currently selected batch even if it has 0 quantity
+                if item_form.instance.batch:
+                    item_form.fields['batch'].queryset = (
+                        item_form.fields['batch'].queryset | Batch.objects.filter(pk=item_form.instance.batch.pk)
+                    ).distinct()
+            else:
+                item_form.fields['batch'].queryset = Batch.objects.none()
+
+        source_type = transfer.source_location.location_type
+
+        # Check if this transfer came from a stock request
+        source_request = transfer.source_request.first() if hasattr(transfer, 'source_request') else None
+
+        return render(request, self.template_name, {
+            'form': form,
+            'formset': formset,
+            'transfer': transfer,
+            'title': f'Edit Transfer {transfer.transfer_number}',
+            'source_type': source_type,
+            'source_request': source_request,
+        })
+
+    def post(self, request, pk):
+        transfer = get_object_or_404(
+            Transfer, pk=pk, tenant=request.user.tenant
+        )
+
+        if transfer.status != 'DRAFT':
+            messages.error(request, f"Cannot edit transfer in {transfer.get_status_display()} status.")
+            return redirect('transfers:transfer_detail', pk=pk)
+
+        if not transfer.user_is_source(request.user):
+            messages.error(request, "You don't have permission to edit this transfer.")
+            return redirect('transfers:transfer_detail', pk=pk)
+
+        form = TransferForm(request.POST, instance=transfer, tenant=request.user.tenant)
+
+        EditTransferItemFormSet = inlineformset_factory(
+            Transfer,
+            TransferItem,
+            form=TransferItemForm,
+            extra=1,
+            can_delete=True,
+            min_num=0,
+            validate_min=False,
+        )
+        formset = EditTransferItemFormSet(request.POST, instance=transfer)
+
+        if form.is_valid() and formset.is_valid():
+            with transaction.atomic():
+                transfer = form.save()
+
+                for item_form in formset:
+                    if item_form.cleaned_data:
+                        if item_form.cleaned_data.get('DELETE', False):
+                            if item_form.instance.pk:
+                                item_form.instance.delete()
+                        else:
+                            item = item_form.save(commit=False)
+                            item.tenant = request.user.tenant
+                            item.transfer = transfer
+                            item.save()
+
+                messages.success(request, f"Transfer {transfer.transfer_number} updated successfully!")
+                return redirect('transfers:transfer_detail', pk=transfer.pk)
+
+        # Re-render with errors
+        form.source_location_display = transfer.source_location
+        source_type = transfer.source_location.location_type
+        source_request = transfer.source_request.first() if hasattr(transfer, 'source_request') else None
+
+        return render(request, self.template_name, {
+            'form': form,
+            'formset': formset,
+            'transfer': transfer,
+            'title': f'Edit Transfer {transfer.transfer_number}',
+            'source_type': source_type,
+            'source_request': source_request,
+        })
+
+
 class TransferDetailView(LoginRequiredMixin, DetailView):
     """View transfer details."""
     model = Transfer
@@ -206,6 +343,7 @@ class TransferDetailView(LoginRequiredMixin, DetailView):
         context['can_send'] = transfer.user_can_send(user)
         context['can_receive'] = transfer.user_can_receive(user)
         context['can_cancel'] = transfer.user_can_cancel(user)
+        context['can_edit'] = transfer.status == 'DRAFT' and transfer.user_is_source(user)
         context['is_source'] = transfer.user_is_source(user)
         context['is_destination'] = transfer.user_is_destination(user)
         return context
@@ -414,7 +552,7 @@ def get_batches_for_transfer(request):
         location_id=location_id,
         status='AVAILABLE',
         current_quantity__gt=0
-    ).values('id', 'batch_number', 'current_quantity', 'unit_cost', 'expiry_date')
+    ).order_by('-id').values('id', 'batch_number', 'current_quantity', 'unit_cost', 'expiry_date')
     
     return JsonResponse({'batches': list(batches)})
 
@@ -864,9 +1002,9 @@ class StockRequestConvertView(LoginRequiredMixin, View):
             messages.success(
                 request, 
                 f"Stock Request converted to Transfer {transfer.transfer_number}. "
-                f"Please edit and send the transfer."
+                f"Please review, edit, and send the transfer."
             )
-            return redirect('transfers:transfer_detail', pk=transfer.pk)
+            return redirect('transfers:transfer_edit', pk=transfer.pk)
         except Exception as e:
             messages.error(request, str(e))
             return redirect('transfers:stock_request_detail', pk=pk)
