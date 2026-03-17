@@ -39,6 +39,9 @@
 <div class="card mb-4">
     <div class="card-body">
         <form method="get" class="row g-3">
+            {% if request.GET.shop %}
+            <input type="hidden" name="shop" value="{{ request.GET.shop }}">
+            {% endif %}
             <div class="col-md-2">
                 <label class="form-label">From Date</label>
                 <input type="date" name="date_from" class="form-control" value="{{ date_from|date:'Y-m-d' }}">
