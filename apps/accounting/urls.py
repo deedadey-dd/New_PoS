@@ -14,4 +14,9 @@ urlpatterns = [
     path('cash-transfers/new/', views.CashTransferCreateView.as_view(), name='cash_transfer_create'),
     path('cash-transfers/<int:pk>/confirm/', views.CashTransferConfirmView.as_view(), name='cash_transfer_confirm'),
     path('cash-transfers/<int:pk>/cancel/', views.CashTransferCancelView.as_view(), name='cash_transfer_cancel'),
+
+    # Excel Exports
+    path('cash-transfers/export/', views.CashTransferExportView.as_view(), name='cash_transfer_export'),
+    path('sales-report/export/', views.SalesReportExportView.as_view(), name='sales_report_export'),
+    path('price-history/export/', views.PriceHistoryExportView.as_view(), name='price_history_export'),
 ]

@@ -581,3 +581,294 @@ class InventoryMovementReportView(LoginRequiredMixin, AuditAccessMixin, View):
         }
         
         return render(request, self.template_name, context)
+
+
+class ProductProfitLossExportView(LoginRequiredMixin, AuditAccessMixin, View):
+    """Export product P&L to Excel."""
+
+    def get(self, request):
+        from datetime import datetime
+        from apps.core.excel_utils import create_export_workbook, build_excel_response
+
+        tenant = request.user.tenant
+
+        # Parse date range (same as ProductProfitLossView)
+        date_range = request.GET.get('range', 'month')
+        custom_from = request.GET.get('date_from')
+        custom_to = request.GET.get('date_to')
+        today = timezone.now().date()
+
+        if custom_from and custom_to:
+            try:
+                date_from = datetime.strptime(custom_from, '%Y-%m-%d').date()
+                date_to = datetime.strptime(custom_to, '%Y-%m-%d').date()
+                if date_from > date_to:
+                    date_from, date_to = date_to, date_from
+                if date_to > today:
+                    date_to = today
+            except ValueError:
+                date_from = today - timedelta(days=30)
+                date_to = today
+        else:
+            date_to = today
+            if date_range == 'week':
+                date_from = today - timedelta(days=7)
+            elif date_range == 'quarter':
+                date_from = today - timedelta(days=90)
+            elif date_range == 'year':
+                date_from = today - timedelta(days=365)
+            elif date_range == 'all':
+                date_from = None
+                date_to = None
+            else:
+                date_from = today - timedelta(days=30)
+
+        filters = Q(sale__tenant=tenant, sale__status='COMPLETED')
+        if date_from:
+            filters &= Q(sale__created_at__date__gte=date_from)
+        if date_to:
+            filters &= Q(sale__created_at__date__lte=date_to)
+
+        product_data = list(SaleItem.objects.filter(filters).values(
+            'product__name', 'product__sku', 'product__category__name'
+        ).annotate(
+            qty_sold=Sum('quantity'),
+            revenue=Sum('total'),
+            cost=Sum(F('quantity') * F('unit_cost')),
+        ).order_by('-revenue'))
+
+        headers = ['Product', 'SKU', 'Category', 'Qty Sold', 'Revenue', 'Cost', 'Profit', 'Margin %']
+        rows = []
+        for item in product_data:
+            revenue = item['revenue'] or Decimal('0')
+            cost = item['cost'] or Decimal('0')
+            profit = revenue - cost
+            margin = round((profit / revenue * 100), 1) if revenue > 0 else 0
+            rows.append([
+                item['product__name'],
+                item['product__sku'] or '',
+                item['product__category__name'] or '',
+                float(item['qty_sold'] or 0),
+                float(revenue),
+                float(cost),
+                float(profit),
+                margin,
+            ])
+
+        wb = create_export_workbook('Product Profit & Loss', headers, rows)
+        return build_excel_response(wb, 'product_profit_loss_export.xlsx')
+
+
+class LocationProfitLossExportView(LoginRequiredMixin, AuditAccessMixin, View):
+    """Export location P&L to Excel."""
+
+    def get(self, request):
+        from datetime import datetime
+        from apps.core.excel_utils import create_export_workbook, build_excel_response
+
+        tenant = request.user.tenant
+
+        # Parse date range (same logic as LocationProfitLossView)
+        date_range = request.GET.get('range', 'month')
+        custom_from = request.GET.get('date_from')
+        custom_to = request.GET.get('date_to')
+        today = timezone.now().date()
+
+        if custom_from and custom_to:
+            try:
+                date_from = datetime.strptime(custom_from, '%Y-%m-%d').date()
+                date_to = datetime.strptime(custom_to, '%Y-%m-%d').date()
+                if date_from > date_to:
+                    date_from, date_to = date_to, date_from
+                if date_to > today:
+                    date_to = today
+            except ValueError:
+                date_from = today - timedelta(days=30)
+                date_to = today
+        else:
+            date_to = today
+            if date_range == 'week':
+                date_from = today - timedelta(days=7)
+            elif date_range == 'quarter':
+                date_from = today - timedelta(days=90)
+            elif date_range == 'year':
+                date_from = today - timedelta(days=365)
+            elif date_range == 'all':
+                date_from = None
+                date_to = None
+            else:
+                date_from = today - timedelta(days=30)
+
+        shops = Location.objects.filter(tenant=tenant, location_type='SHOP', is_active=True)
+
+        headers = ['Shop', 'Sales Count', 'Revenue', 'Cost', 'Profit', 'Margin %', 'Avg Sale']
+        rows = []
+
+        for shop in shops:
+            shop_sales = Sale.objects.filter(tenant=tenant, shop=shop, status='COMPLETED')
+            if date_from:
+                shop_sales = shop_sales.filter(created_at__date__gte=date_from)
+            if date_to:
+                shop_sales = shop_sales.filter(created_at__date__lte=date_to)
+
+            sale_items = SaleItem.objects.filter(sale__in=shop_sales)
+            revenue = shop_sales.aggregate(total=Sum('total'))['total'] or Decimal('0')
+            cost = sale_items.aggregate(
+                total=Sum(F('quantity') * F('unit_cost'))
+            )['total'] or Decimal('0')
+            sale_count = shop_sales.count()
+
+            profit = revenue - cost
+            margin = round((profit / revenue * 100), 1) if revenue > 0 else 0
+            avg_sale = round(revenue / sale_count, 2) if sale_count > 0 else 0
+
+            rows.append([
+                shop.name,
+                sale_count,
+                float(revenue),
+                float(cost),
+                float(profit),
+                margin,
+                float(avg_sale),
+            ])
+
+        wb = create_export_workbook('Location Profit & Loss', headers, rows)
+        return build_excel_response(wb, 'location_profit_loss_export.xlsx')
+
+
+class ManagerProfitLossExportView(LoginRequiredMixin, AuditAccessMixin, View):
+    """Export manager P&L to Excel."""
+
+    def get(self, request):
+        from datetime import datetime
+        from apps.core.excel_utils import create_export_workbook, build_excel_response
+
+        tenant = request.user.tenant
+
+        # Parse date range
+        date_range = request.GET.get('range', 'month')
+        custom_from = request.GET.get('date_from')
+        custom_to = request.GET.get('date_to')
+        today = timezone.now().date()
+
+        if custom_from and custom_to:
+            try:
+                date_from = datetime.strptime(custom_from, '%Y-%m-%d').date()
+                date_to = datetime.strptime(custom_to, '%Y-%m-%d').date()
+                if date_from > date_to:
+                    date_from, date_to = date_to, date_from
+                if date_to > today:
+                    date_to = today
+            except ValueError:
+                date_from = today - timedelta(days=30)
+                date_to = today
+        else:
+            date_to = today
+            if date_range == 'week':
+                date_from = today - timedelta(days=7)
+            elif date_range == 'quarter':
+                date_from = today - timedelta(days=90)
+            elif date_range == 'year':
+                date_from = today - timedelta(days=365)
+            elif date_range == 'all':
+                date_from = None
+                date_to = None
+            else:
+                date_from = today - timedelta(days=30)
+
+        base_sales_filter = Q(tenant=tenant, status='COMPLETED')
+        if date_from:
+            base_sales_filter &= Q(created_at__date__gte=date_from)
+        if date_to:
+            base_sales_filter &= Q(created_at__date__lte=date_to)
+
+        attendants = User.objects.filter(tenant=tenant).filter(
+            sales__in=Sale.objects.filter(base_sales_filter)
+        ).distinct()
+
+        headers = ['Name', 'Email', 'Location', 'Role', 'Sales Count', 'Revenue', 'Cost', 'Profit', 'Margin %', 'Avg Sale']
+        rows = []
+
+        for attendant in attendants:
+            attendant_sales = Sale.objects.filter(base_sales_filter, attendant=attendant)
+            sale_items = SaleItem.objects.filter(sale__in=attendant_sales)
+
+            revenue = attendant_sales.aggregate(total=Sum('total'))['total'] or Decimal('0')
+            cost = sale_items.aggregate(
+                total=Sum(F('quantity') * F('unit_cost'))
+            )['total'] or Decimal('0')
+            sale_count = attendant_sales.count()
+
+            if sale_count > 0:
+                profit = revenue - cost
+                margin = round((profit / revenue * 100), 1) if revenue > 0 else 0
+                avg_sale = round(revenue / sale_count, 2) if sale_count > 0 else 0
+
+                rows.append([
+                    attendant.get_full_name() or attendant.email,
+                    attendant.email,
+                    attendant.location.name if attendant.location else '',
+                    attendant.role.name if attendant.role else '',
+                    sale_count,
+                    float(revenue),
+                    float(cost),
+                    float(profit),
+                    margin,
+                    float(avg_sale),
+                ])
+
+        wb = create_export_workbook('Manager Profit & Loss', headers, rows)
+        return build_excel_response(wb, 'manager_profit_loss_export.xlsx')
+
+
+class InventoryMovementExportView(LoginRequiredMixin, AuditAccessMixin, View):
+    """Export inventory movements to Excel."""
+
+    def get(self, request):
+        from apps.core.excel_utils import create_export_workbook, build_excel_response
+
+        tenant = request.user.tenant
+
+        # Get filters (same as InventoryMovementReportView)
+        transaction_type = request.GET.get('type', '')
+        location_id = request.GET.get('location', '')
+        date_from = request.GET.get('date_from', '')
+        date_to = request.GET.get('date_to', '')
+        product_search = request.GET.get('product', '')
+
+        filters = Q(tenant=tenant)
+        if transaction_type:
+            filters &= Q(transaction_type=transaction_type)
+        if location_id:
+            filters &= Q(location_id=location_id)
+        if date_from:
+            filters &= Q(created_at__date__gte=date_from)
+        if date_to:
+            filters &= Q(created_at__date__lte=date_to)
+        if product_search:
+            filters &= (Q(product__name__icontains=product_search) |
+                        Q(product__sku__icontains=product_search))
+
+        ledger = InventoryLedger.objects.filter(filters).select_related(
+            'product', 'location', 'batch', 'created_by'
+        ).order_by('-created_at')
+
+        headers = ['Date', 'Product', 'SKU', 'Location', 'Type', 'Quantity',
+                    'Unit Cost', 'Batch', 'User', 'Notes']
+        rows = []
+        for entry in ledger:
+            rows.append([
+                entry.created_at.strftime('%Y-%m-%d %H:%M') if entry.created_at else '',
+                entry.product.name if entry.product else '',
+                entry.product.sku if entry.product else '',
+                entry.location.name if entry.location else '',
+                entry.get_transaction_type_display() if hasattr(entry, 'get_transaction_type_display') else entry.transaction_type,
+                float(entry.quantity) if entry.quantity else 0,
+                float(entry.unit_cost) if entry.unit_cost else 0,
+                entry.batch.batch_number if entry.batch else '',
+                entry.created_by.get_full_name() or entry.created_by.email if entry.created_by else '',
+                entry.notes or '',
+            ])
+
+        wb = create_export_workbook('Inventory Movements', headers, rows)
+        return build_excel_response(wb, 'inventory_movements_export.xlsx')

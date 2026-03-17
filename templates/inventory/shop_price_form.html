@@ -24,7 +24,7 @@
                     <strong>SKU:</strong> {{ product.sku|default:"-" }}<br>
                     <strong>Category:</strong> {{ product.category.name|default:"Uncategorized" }}<br>
                     <strong>Default Price:</strong>
-                    {{ currency_symbol }}{{ product.default_selling_price|floatformat:2 }}
+                    {{ currency_symbol }}{{ product.default_selling_price|floatformat:"2g" }}
                 </div>
 
                 <hr>
@@ -41,7 +41,7 @@
                         </div>
                         {% if existing_price %}
                         <small class="text-muted">Current price:
-                            {{ currency_symbol }}{{ existing_price.selling_price|floatformat:2 }}</small>
+                            {{ currency_symbol }}{{ existing_price.selling_price|floatformat:"2g" }}</small>
                         {% else %}
                         <small class="text-muted">This product has no price set for this shop yet.</small>
                         {% endif %}

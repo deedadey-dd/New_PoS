@@ -120,7 +120,7 @@
                                 {% endif %}
                             </td>
                             <td class="text-end">
-                                <strong>{{ tenant.currency_symbol }}{{ payment.amount|floatformat:2|intcomma }}</strong>
+                                <strong>{{ tenant.currency_symbol }}{{ payment.amount|floatformat:"2g"|intcomma }}</strong>
                             </td>
                         </tr>
                         {% endfor %}

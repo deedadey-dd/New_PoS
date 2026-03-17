@@ -305,13 +305,13 @@
 
                         <div class="plan-price">
                             <span class="currency">GH₵</span>
-                            <span class="amount monthly-price">{{ plan.base_price|floatformat:0 }}</span>
+                            <span class="amount monthly-price">{{ plan.base_price|floatformat:"0g" }}</span>
                             <span
-                                class="amount annual-price d-none">{% if plan.annual_base_price %}{{ plan.annual_base_price|floatformat:0 }}{% else %}{{ plan.base_price|floatformat:0 }}{% endif %}</span>
+                                class="amount annual-price d-none">{% if plan.annual_base_price %}{{ plan.annual_base_price|floatformat:"0g" }}{% else %}{{ plan.base_price|floatformat:"0g" }}{% endif %}</span>
                             <span class="period">/month</span>
                             {% if plan.annual_base_price %}
                             <div class="savings-badge d-none" style="margin-top: 0.5rem;">
-                                <span class="badge bg-success">Save {{ plan.get_annual_savings_percent|floatformat:0 }}%
+                                <span class="badge bg-success">Save {{ plan.get_annual_savings_percent|floatformat:"0g" }}%
                                     annually</span>
                             </div>
                             {% endif %}
@@ -342,10 +342,10 @@
                             <li>
                                 <i class="bi bi-plus-circle text-warning fs-5"></i>
                                 <span
-                                    class="monthly-shop-price">GH₵{{ plan.additional_shop_price|floatformat:0 }}/additional
+                                    class="monthly-shop-price">GH₵{{ plan.additional_shop_price|floatformat:"0g" }}/additional
                                     shop</span>
                                 <span
-                                    class="annual-shop-price d-none">GH₵{% if plan.annual_additional_shop_price %}{{ plan.annual_additional_shop_price|floatformat:0 }}{% else %}{{ plan.additional_shop_price|floatformat:0 }}{% endif %}/additional
+                                    class="annual-shop-price d-none">GH₵{% if plan.annual_additional_shop_price %}{{ plan.annual_additional_shop_price|floatformat:"0g" }}{% else %}{{ plan.additional_shop_price|floatformat:"0g" }}{% endif %}/additional
                                     shop</span>
                             </li>
                             {% endif %}

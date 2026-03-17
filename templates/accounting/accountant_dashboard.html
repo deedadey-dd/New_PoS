@@ -38,7 +38,7 @@
         <div class="card bg-success text-white h-100">
             <div class="card-body text-center">
                 <h6 class="card-subtitle mb-2 opacity-75">Total Revenue</h6>
-                <h3 class="mb-0">{{ currency_symbol }}{{ sales_summary.total_revenue|default:0|floatformat:2 }}</h3>
+                <h3 class="mb-0">{{ currency_symbol }}{{ sales_summary.total_revenue|default:0|floatformat:"2g" }}</h3>
                 <small class="opacity-75">{{ sales_summary.total_count|default:0 }} sales</small>
             </div>
         </div>
@@ -47,7 +47,7 @@
         <div class="card bg-warning text-dark h-100">
             <div class="card-body text-center">
                 <h6 class="card-subtitle mb-2 opacity-75">Cash Sales</h6>
-                <h3 class="mb-0">{{ currency_symbol }}{{ sales_summary.cash_total|default:0|floatformat:2 }}</h3>
+                <h3 class="mb-0">{{ currency_symbol }}{{ sales_summary.cash_total|default:0|floatformat:"2g" }}</h3>
             </div>
         </div>
     </div>
@@ -55,7 +55,7 @@
         <div class="card bg-info text-white h-100">
             <div class="card-body text-center">
                 <h6 class="card-subtitle mb-2 opacity-75">E-Cash Sales</h6>
-                <h3 class="mb-0">{{ currency_symbol }}{{ sales_summary.ecash_total|default:0|floatformat:2 }}</h3>
+                <h3 class="mb-0">{{ currency_symbol }}{{ sales_summary.ecash_total|default:0|floatformat:"2g" }}</h3>
             </div>
         </div>
     </div>
@@ -63,7 +63,7 @@
         <div class="card bg-primary text-white h-100">
             <div class="card-body text-center">
                 <h6 class="card-subtitle mb-2 opacity-75">Cash Deposited</h6>
-                <h3 class="mb-0">{{ currency_symbol }}{{ deposits_summary.confirmed_amount|default:0|floatformat:2 }}
+                <h3 class="mb-0">{{ currency_symbol }}{{ deposits_summary.confirmed_amount|default:0|floatformat:"2g" }}
                 </h3>
                 <small class="opacity-75">{{ deposits_summary.confirmed_count|default:0 }} deposits</small>
             </div>
@@ -95,7 +95,7 @@
                                 <td><i class="bi bi-shop me-1 text-muted"></i>{{ shop.shop__name }}</td>
                                 <td class="text-center"><span class="badge bg-secondary">{{ shop.count }}</span></td>
                                 <td class="text-end fw-bold text-success">
-                                    {{ currency_symbol }}{{ shop.revenue|floatformat:2 }}</td>
+                                    {{ currency_symbol }}{{ shop.revenue|floatformat:"2g" }}</td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -132,7 +132,7 @@
                                 <td><i class="bi bi-shop me-1 text-muted"></i>{{ dep.from_location__name }}</td>
                                 <td class="text-center"><span class="badge bg-secondary">{{ dep.count }}</span></td>
                                 <td class="text-end fw-bold text-primary">
-                                    {{ currency_symbol }}{{ dep.total|floatformat:2 }}</td>
+                                    {{ currency_symbol }}{{ dep.total|floatformat:"2g" }}</td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -173,7 +173,7 @@
                         </td>
                         <td>{{ d.from_location.name|default:"-" }}</td>
                         <td>{{ d.from_user.get_full_name|default:d.from_user.email }}</td>
-                        <td class="text-end fw-bold text-success">{{ currency_symbol }}{{ d.amount|floatformat:2 }}</td>
+                        <td class="text-end fw-bold text-success">{{ currency_symbol }}{{ d.amount|floatformat:"2g" }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>

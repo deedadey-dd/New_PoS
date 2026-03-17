@@ -129,7 +129,7 @@
                                     <td>{{ item.product.name }}</td>
                                     <td>
                                         {% if item.quantity_requested > 0 %}
-                                        {{ item.quantity_requested|floatformat:2 }} {{ item.product.unit_of_measure }}
+                                        {{ item.quantity_requested|floatformat:"2g" }} {{ item.product.unit_of_measure }}
                                         {% else %}
                                         <span class="text-muted">Any quantity</span>
                                         {% endif %}

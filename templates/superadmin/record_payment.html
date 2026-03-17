@@ -146,7 +146,7 @@
                     <div class="d-flex justify-content-between mb-2">
                         <span>{{ plan.name }}</span>
                         <strong
-                            class="text-success">{{ tenant.currency_symbol }}{{ plan.base_price|floatformat:0 }}/mo</strong>
+                            class="text-success">{{ tenant.currency_symbol }}{{ plan.base_price|floatformat:"0g" }}/mo</strong>
                     </div>
                     {% endfor %}
                 </div>

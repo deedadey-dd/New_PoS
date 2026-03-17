@@ -10,9 +10,14 @@
         </h2>
         <p class="text-muted mb-0">View all products that have been transferred</p>
     </div>
-    <a href="{% url 'transfers:transfer_list' %}" class="btn btn-outline-secondary">
-        <i class="bi bi-arrow-left me-2"></i>Back to Transfers
-    </a>
+    <div class="d-flex gap-2">
+        <a href="{% url 'transfers:transfer_item_history_export' %}?{{ request.GET.urlencode }}" class="btn btn-outline-success">
+            <i class="bi bi-file-earmark-spreadsheet me-1"></i>Export
+        </a>
+        <a href="{% url 'transfers:transfer_list' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-2"></i>Back to Transfers
+        </a>
+    </div>
 </div>
 
 <!-- Filters -->

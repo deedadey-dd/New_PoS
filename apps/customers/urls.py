@@ -10,4 +10,7 @@ urlpatterns = [
     path('<int:pk>/edit/', views.CustomerUpdateView.as_view(), name='customer_edit'),
     path('<int:pk>/payment/', views.CustomerPaymentView.as_view(), name='customer_payment'),
     path('payment/<int:pk>/receipt/', views.PaymentReceiptView.as_view(), name='payment_receipt'),
+
+    # Excel Export
+    path('export/', views.CustomerListExportView.as_view(), name='customer_list_export'),
 ]

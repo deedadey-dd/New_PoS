@@ -50,7 +50,7 @@
                             <option value="{{ plan.pk }}" data-code="{{ plan.code }}" data-base="{{ plan.base_price }}"
                                 data-extra="{{ plan.additional_shop_price }}" data-max="{{ plan.max_shops }}"
                                 {% if tenant.subscription_plan_id == plan.pk %}selected{% endif %}>
-                                {{ plan.name }} - GH₵{{ plan.base_price|floatformat:0 }}/month (up to
+                                {{ plan.name }} - GH₵{{ plan.base_price|floatformat:"0g" }}/month (up to
                                 {{ plan.max_shops }} shops)
                             </option>
                             {% endfor %}

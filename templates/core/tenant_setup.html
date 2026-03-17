@@ -221,14 +221,14 @@
 
                         <div class="plan-name">{{ plan.name }}</div>
                         <div class="plan-price">
-                            GH₵{{ plan.base_price|floatformat:0 }}
+                            GH₵{{ plan.base_price|floatformat:"0g" }}
                             <small>/month</small>
                         </div>
                         <div class="plan-features">
                             <i class="bi bi-shop text-primary me-1"></i>
                             Up to {{ plan.max_shops }} shop{% if plan.max_shops > 1 %}s{% endif %}
                             {% if plan.code == 'PREMIUM' %}
-                            <br>+ GH₵{{ plan.additional_shop_price|floatformat:0 }}/extra shop
+                            <br>+ GH₵{{ plan.additional_shop_price|floatformat:"0g" }}/extra shop
                             {% endif %}
                         </div>
                     </label>

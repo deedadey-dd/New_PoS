@@ -63,7 +63,7 @@
                                 {% endif %}
                             </td>
                             <td>
-                                <strong>{{ tenant.currency_symbol }}{{ payment.amount|floatformat:2|intcomma }}</strong>
+                                <strong>{{ tenant.currency_symbol }}{{ payment.amount|floatformat:"2g"|intcomma }}</strong>
                             </td>
                             <td class="text-center">
                                 {% if payment.status == 'COMPLETED' %}

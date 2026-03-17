@@ -391,8 +391,9 @@ class SaleListView(LoginRequiredMixin, PaginationMixin, ListView):
             from apps.core.models import User as TenantUser
             context['attendants'] = TenantUser.objects.filter(
                 tenant=user.tenant,
+                role__name__in=['SHOP_ATTENDANT', 'SHOP_MANAGER'],
                 is_active=True
-            ).exclude(role__name__in=['AUDITOR', 'ACCOUNTANT']).order_by('first_name', 'email')
+            ).order_by('first_name', 'email')
         
         # Preserve filter values
         context['date_from'] = self.request.GET.get('date_from', '')
@@ -743,6 +744,7 @@ class ShopSalesReportView(LoginRequiredMixin, View):
         context['attendants'] = TenantUser.objects.filter(
             tenant=user.tenant,
             location=shop,
+            role__name__in=['SHOP_ATTENDANT', 'SHOP_MANAGER'],
             is_active=True
         ).order_by('first_name', 'email')
         
@@ -1391,3 +1393,194 @@ def api_sync_offline_sales(request):
             'success': False,
             'error': str(e)
         }, status=500)
+
+
+# ============ Excel Export Views ============
+
+class SaleListExportView(LoginRequiredMixin, View):
+    """Export sales list to Excel."""
+
+    def get(self, request):
+        from datetime import datetime
+        from django.db.models import Q
+        from apps.core.excel_utils import create_export_workbook, build_excel_response
+
+        user = request.user
+        role_name = user.role.name if user.role else None
+
+        queryset = Sale.objects.filter(
+            tenant=user.tenant
+        ).select_related('shop', 'attendant', 'customer').order_by('-created_at')
+
+        # Role-based filtering (same as SaleListView)
+        if role_name not in ['AUDITOR', 'ACCOUNTANT', 'ADMIN']:
+            if user.location and user.location.location_type == 'SHOP':
+                queryset = queryset.filter(shop=user.location)
+        else:
+            shop_id = request.GET.get('shop')
+            if shop_id:
+                queryset = queryset.filter(shop_id=shop_id)
+            attendant_id = request.GET.get('attendant')
+            if attendant_id:
+                queryset = queryset.filter(attendant_id=attendant_id)
+
+        # Date range filter
+        date_from = request.GET.get('date_from')
+        date_to = request.GET.get('date_to')
+        if date_from:
+            try:
+                queryset = queryset.filter(created_at__date__gte=datetime.strptime(date_from, '%Y-%m-%d').date())
+            except ValueError:
+                pass
+        if date_to:
+            try:
+                queryset = queryset.filter(created_at__date__lte=datetime.strptime(date_to, '%Y-%m-%d').date())
+            except ValueError:
+                pass
+
+        status = request.GET.get('status')
+        if status:
+            queryset = queryset.filter(status=status)
+
+        payment = request.GET.get('payment')
+        if payment:
+            queryset = queryset.filter(payment_method=payment)
+
+        headers = ['Sale #', 'Date', 'Shop', 'Attendant', 'Customer', 'Payment Method',
+                    'Status', 'Subtotal', 'Discount', 'Total', 'Amount Paid']
+        rows = []
+        for sale in queryset:
+            rows.append([
+                sale.sale_number,
+                sale.created_at.strftime('%Y-%m-%d %H:%M') if sale.created_at else '',
+                sale.shop.name if sale.shop else '',
+                sale.attendant.get_full_name() or sale.attendant.email if sale.attendant else '',
+                sale.customer.name if sale.customer else '',
+                sale.get_payment_method_display(),
+                sale.get_status_display(),
+                float(sale.subtotal),
+                float(sale.discount_amount),
+                float(sale.total),
+                float(sale.amount_paid),
+            ])
+
+        wb = create_export_workbook('Sales', headers, rows)
+        return build_excel_response(wb, 'sales_export.xlsx')
+
+
+class ShopSalesReportExportView(LoginRequiredMixin, View):
+    """Export shop sales report to Excel (attendant + product breakdown)."""
+
+    def get(self, request):
+        from django.db.models import Sum, Count, Q
+        from datetime import timedelta, datetime
+        from apps.core.excel_utils import create_export_workbook, add_sheet, build_excel_response
+
+        user = request.user
+        role_name = user.role.name if user.role else None
+
+        if role_name not in ['SHOP_MANAGER', 'ACCOUNTANT', 'AUDITOR', 'ADMIN']:
+            messages.error(request, 'You do not have permission to export this report.')
+            return redirect('core:dashboard')
+
+        # Get the shop
+        shop = user.location
+        if not shop and role_name in ['ADMIN', 'ACCOUNTANT', 'AUDITOR']:
+            shop_id = request.GET.get('shop')
+            if shop_id:
+                shop = Location.objects.filter(
+                    tenant=user.tenant, pk=shop_id, location_type='SHOP'
+                ).first()
+
+        if not shop or shop.location_type != 'SHOP':
+            messages.error(request, 'No shop selected for export.')
+            return redirect('sales:shop_sales_report')
+
+        # Date range
+        today = timezone.now().date()
+        date_from_str = request.GET.get('date_from')
+        date_to_str = request.GET.get('date_to')
+        date_range = request.GET.get('range', 'month')
+
+        if date_from_str and date_to_str:
+            try:
+                date_from = datetime.strptime(date_from_str, '%Y-%m-%d').date()
+                date_to = datetime.strptime(date_to_str, '%Y-%m-%d').date()
+            except ValueError:
+                date_from = today - timedelta(days=30)
+                date_to = today
+        elif date_range == 'today':
+            date_from = today
+            date_to = today
+        elif date_range == 'week':
+            date_from = today - timedelta(days=7)
+            date_to = today
+        else:
+            date_from = today - timedelta(days=30)
+            date_to = today
+
+        attendant_id = request.GET.get('attendant')
+        payment_filter = request.GET.get('payment')
+
+        # Build sales filter
+        sales_filter = Q(
+            tenant=user.tenant, shop=shop, status='COMPLETED',
+            created_at__date__gte=date_from, created_at__date__lte=date_to
+        )
+        if attendant_id:
+            sales_filter &= Q(attendant_id=attendant_id)
+        if payment_filter:
+            sales_filter &= Q(payment_method=payment_filter)
+
+        # Sheet 1: Attendant Breakdown
+        attendant_stats = Sale.objects.filter(sales_filter).values(
+            'attendant__first_name', 'attendant__last_name', 'attendant__email'
+        ).annotate(
+            total_sales=Count('id'),
+            total_revenue=Sum('total'),
+            cash_amount=Sum('total', filter=Q(payment_method='CASH')),
+            ecash_amount=Sum('total', filter=Q(payment_method='ECASH')),
+        ).order_by('-total_revenue')
+
+        att_headers = ['Attendant', 'Sales Count', 'Revenue', 'Cash', 'E-Cash']
+        att_rows = []
+        for a in attendant_stats:
+            name = f"{a['attendant__first_name'] or ''} {a['attendant__last_name'] or ''}".strip() or a['attendant__email']
+            att_rows.append([
+                name,
+                a['total_sales'],
+                float(a['total_revenue'] or 0),
+                float(a['cash_amount'] or 0),
+                float(a['ecash_amount'] or 0),
+            ])
+
+        wb = create_export_workbook('Attendant Breakdown', att_headers, att_rows)
+
+        # Sheet 2: Product Breakdown
+        items_filter = {
+            'sale__tenant': user.tenant,
+            'sale__shop': shop,
+            'sale__status': 'COMPLETED',
+            'sale__created_at__date__gte': date_from,
+            'sale__created_at__date__lte': date_to,
+        }
+        if attendant_id:
+            items_filter['sale__attendant_id'] = attendant_id
+        if payment_filter:
+            items_filter['sale__payment_method'] = payment_filter
+
+        all_products = SaleItem.objects.filter(
+            **items_filter
+        ).values('product__name').annotate(
+            qty_sold=Sum('quantity'),
+            revenue=Sum('total')
+        ).order_by('product__name')
+
+        prod_headers = ['Product', 'Qty Sold', 'Revenue']
+        prod_rows = [
+            [p['product__name'], float(p['qty_sold'] or 0), float(p['revenue'] or 0)]
+            for p in all_products
+        ]
+        add_sheet(wb, 'Product Breakdown', prod_headers, prod_rows)
+
+        return build_excel_response(wb, f'shop_sales_report_{shop.name}_{date_from}_to_{date_to}.xlsx')

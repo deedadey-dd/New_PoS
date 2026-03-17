@@ -79,11 +79,11 @@
                 <div class="col-md-3">
                     <div class="text-muted small">Default Price</div>
                     <div class="fw-semibold">
-                        {{ currency_symbol }}{{ selected_product.default_selling_price|floatformat:2 }}</div>
+                        {{ currency_symbol }}{{ selected_product.default_selling_price|floatformat:"2g" }}</div>
                 </div>
                 <div class="col-md-3">
                     <div class="text-muted small">Current Total Stock</div>
-                    <div class="fw-bold text-primary fs-4">{{ total_stock|floatformat:2 }}</div>
+                    <div class="fw-bold text-primary fs-4">{{ total_stock|floatformat:"2g" }}</div>
                 </div>
             </div>
         </div>
@@ -103,25 +103,25 @@
                             <tr>
                                 <td>Stock In (Initial)</td>
                                 <td class="text-end fw-semibold text-success">
-                                    +{{ summary.IN.qty|default:"0"|floatformat:2 }}
+                                    +{{ summary.IN.qty|default:"0"|floatformat:"2g" }}
                                 </td>
                             </tr>
                             <tr>
                                 <td>Production</td>
                                 <td class="text-end fw-semibold text-success">
-                                    +{{ summary.PRODUCTION.qty|default:"0"|floatformat:2 }}
+                                    +{{ summary.PRODUCTION.qty|default:"0"|floatformat:"2g" }}
                                 </td>
                             </tr>
                             <tr>
                                 <td>Transfer In</td>
                                 <td class="text-end fw-semibold text-success">
-                                    +{{ summary.TRANSFER_IN.qty|default:"0"|floatformat:2 }}
+                                    +{{ summary.TRANSFER_IN.qty|default:"0"|floatformat:"2g" }}
                                 </td>
                             </tr>
                             <tr>
                                 <td>Returns</td>
                                 <td class="text-end fw-semibold text-success">
-                                    +{{ summary.RETURN.qty|default:"0"|floatformat:2 }}
+                                    +{{ summary.RETURN.qty|default:"0"|floatformat:"2g" }}
                                 </td>
                             </tr>
                         </tbody>
@@ -142,25 +142,25 @@
                             <tr>
                                 <td>Sales</td>
                                 <td class="text-end fw-semibold text-danger">
-                                    {{ summary.SALE.qty|default:"0"|floatformat:2 }}
+                                    {{ summary.SALE.qty|default:"0"|floatformat:"2g" }}
                                 </td>
                             </tr>
                             <tr>
                                 <td>Transfer Out</td>
                                 <td class="text-end fw-semibold text-danger">
-                                    {{ summary.TRANSFER_OUT.qty|default:"0"|floatformat:2 }}
+                                    {{ summary.TRANSFER_OUT.qty|default:"0"|floatformat:"2g" }}
                                 </td>
                             </tr>
                             <tr>
                                 <td>Damage/Write-off</td>
                                 <td class="text-end fw-semibold text-danger">
-                                    {{ summary.DAMAGE.qty|default:"0"|floatformat:2 }}
+                                    {{ summary.DAMAGE.qty|default:"0"|floatformat:"2g" }}
                                 </td>
                             </tr>
                             <tr>
                                 <td>Dispute Reversal</td>
                                 <td class="text-end fw-semibold">
-                                    {{ summary.DISPUTE_REVERSAL.qty|default:"0"|floatformat:2 }}
+                                    {{ summary.DISPUTE_REVERSAL.qty|default:"0"|floatformat:"2g" }}
                                 </td>
                             </tr>
                         </tbody>
@@ -186,7 +186,7 @@
                                 </td>
                                 <td
                                     class="text-end fw-semibold {% if loc.current_stock >= 0 %}text-success{% else %}text-danger{% endif %}">
-                                    {{ loc.current_stock|floatformat:2 }}
+                                    {{ loc.current_stock|floatformat:"2g" }}
                                 </td>
                             </tr>
                             {% empty %}
@@ -247,11 +247,11 @@
                             </td>
                             <td
                                 class="text-end fw-semibold {% if entry.quantity > 0 %}text-success{% else %}text-danger{% endif %}">
-                                {% if entry.quantity > 0 %}+{% endif %}{{ entry.quantity|floatformat:2 }}
+                                {% if entry.quantity > 0 %}+{% endif %}{{ entry.quantity|floatformat:"2g" }}
                             </td>
                             <td class="text-end">
                                 {% if entry.unit_cost %}
-                                {{ currency_symbol }}{{ entry.unit_cost|floatformat:2 }}
+                                {{ currency_symbol }}{{ entry.unit_cost|floatformat:"2g" }}
                                 {% else %}
                                 <span class="text-muted">-</span>
                                 {% endif %}

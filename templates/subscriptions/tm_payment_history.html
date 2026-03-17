@@ -78,7 +78,7 @@
                                 {% endif %}
                             </td>
                             <td class="text-end fw-semibold">
-                                {{ tenant.currency_symbol }}{{ payment.amount|floatformat:2 }}</td>
+                                {{ tenant.currency_symbol }}{{ payment.amount|floatformat:"2g" }}</td>
                         </tr>
                         {% if payment.notes %}
                         <tr class="border-top-0">

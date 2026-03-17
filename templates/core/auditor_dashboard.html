@@ -58,7 +58,7 @@
     {% if total_credit_outstanding > 0 %}
     <span class="badge bg-warning text-dark fs-6 ms-2">
         <i class="bi bi-exclamation-triangle me-1"></i>Outstanding Credit:
-        {{ currency_symbol }}{{ total_credit_outstanding|floatformat:2 }}
+        {{ currency_symbol }}{{ total_credit_outstanding|floatformat:"2g" }}
     </span>
     {% endif %}
 </div>
@@ -71,7 +71,7 @@
                 <div class="d-flex justify-content-between align-items-start">
                     <div>
                         <h6 class="card-subtitle mb-2 opacity-75">Total Revenue</h6>
-                        <h3 class="card-title mb-0">{{ currency_symbol }}{{ financial.total_revenue|floatformat:2 }}
+                        <h3 class="card-title mb-0">{{ currency_symbol }}{{ financial.total_revenue|floatformat:"2g" }}
                         </h3>
                     </div>
                     <i class="bi bi-currency-dollar fs-1 opacity-50"></i>
@@ -88,7 +88,7 @@
                         <h6 class="card-subtitle mb-2 opacity-75">Total Sales</h6>
                         <h3 class="card-title mb-0">{{ financial.total_sales }}</h3>
                         <small class="opacity-75">Avg:
-                            {{ currency_symbol }}{{ financial.avg_sale|floatformat:2 }}</small>
+                            {{ currency_symbol }}{{ financial.avg_sale|floatformat:"2g" }}</small>
                     </div>
                     <i class="bi bi-receipt fs-1 opacity-50"></i>
                 </div>
@@ -102,7 +102,7 @@
                 <div class="d-flex justify-content-between align-items-start">
                     <div>
                         <h6 class="card-subtitle mb-2 opacity-75">Cash Sales</h6>
-                        <h3 class="card-title mb-0">{{ currency_symbol }}{{ financial.cash_sales|floatformat:2 }}</h3>
+                        <h3 class="card-title mb-0">{{ currency_symbol }}{{ financial.cash_sales|floatformat:"2g" }}</h3>
                     </div>
                     <i class="bi bi-cash fs-1 opacity-50"></i>
                 </div>
@@ -116,7 +116,7 @@
                 <div class="d-flex justify-content-between align-items-start">
                     <div>
                         <h6 class="card-subtitle mb-2 opacity-75">E-Cash Sales</h6>
-                        <h3 class="card-title mb-0">{{ currency_symbol }}{{ financial.ecash_sales|floatformat:2 }}</h3>
+                        <h3 class="card-title mb-0">{{ currency_symbol }}{{ financial.ecash_sales|floatformat:"2g" }}</h3>
                     </div>
                     <i class="bi bi-phone fs-1 opacity-50"></i>
                 </div>
@@ -166,7 +166,7 @@
                                             <td class="text-center"><span
                                                     class="badge bg-secondary">{{ day.count }}</span></td>
                                             <td class="text-end fw-bold text-success">
-                                                {{ currency_symbol }}{{ day.revenue|floatformat:2 }}</td>
+                                                {{ currency_symbol }}{{ day.revenue|floatformat:"2g" }}</td>
                                         </tr>
                                         {% endfor %}
                                     </tbody>
@@ -204,7 +204,7 @@
                                             <td class="text-center"><span
                                                     class="badge bg-secondary">{{ shop.count }}</span></td>
                                             <td class="text-end fw-bold text-success">
-                                                {{ currency_symbol }}{{ shop.revenue|floatformat:2 }}</td>
+                                                {{ currency_symbol }}{{ shop.revenue|floatformat:"2g" }}</td>
                                         </tr>
                                         {% endfor %}
                                     </tbody>
@@ -245,7 +245,7 @@
                                             <td class="text-center"><span
                                                     class="badge bg-secondary">{{ att.count }}</span></td>
                                             <td class="text-end fw-bold text-success">
-                                                {{ currency_symbol }}{{ att.revenue|floatformat:2 }}</td>
+                                                {{ currency_symbol }}{{ att.revenue|floatformat:"2g" }}</td>
                                         </tr>
                                         {% endfor %}
                                     </tbody>
@@ -281,10 +281,10 @@
                                         <tr>
                                             <td>{{ p.product__name }}</td>
                                             <td class="text-center"><span
-                                                    class="badge bg-secondary">{{ p.qty_sold|floatformat:0 }}</span>
+                                                    class="badge bg-secondary">{{ p.qty_sold|floatformat:"0g" }}</span>
                                             </td>
                                             <td class="text-end fw-bold text-success">
-                                                {{ currency_symbol }}{{ p.revenue|floatformat:2 }}</td>
+                                                {{ currency_symbol }}{{ p.revenue|floatformat:"2g" }}</td>
                                         </tr>
                                         {% endfor %}
                                     </tbody>
@@ -320,17 +320,17 @@
                                         {% for p in all_products %}
                                         <tr>
                                             <td>{{ p.product__name }}</td>
-                                            <td class="text-center">{{ p.qty_sold|floatformat:0 }}</td>
-                                            <td class="text-end">{{ currency_symbol }}{{ p.revenue|floatformat:2 }}</td>
+                                            <td class="text-center">{{ p.qty_sold|floatformat:"0g" }}</td>
+                                            <td class="text-end">{{ currency_symbol }}{{ p.revenue|floatformat:"2g" }}</td>
                                         </tr>
                                         {% endfor %}
                                     </tbody>
                                     <tfoot class="table-dark">
                                         <tr class="fw-bold">
                                             <td>TOTAL</td>
-                                            <td class="text-center">{{ all_products_total_qty|floatformat:0 }}</td>
+                                            <td class="text-center">{{ all_products_total_qty|floatformat:"0g" }}</td>
                                             <td class="text-end">
-                                                {{ currency_symbol }}{{ all_products_total_revenue|floatformat:2 }}</td>
+                                                {{ currency_symbol }}{{ all_products_total_revenue|floatformat:"2g" }}</td>
                                         </tr>
                                     </tfoot>
                                 </table>
@@ -367,10 +367,10 @@
                                 <i class="bi bi-arrow-left-right me-2"></i>Cash Transfers
                                 <small class="ms-auto text-muted">
                                     Deposits:
-                                    {{ currency_symbol }}{{ cash_transfer_summary.total_deposits|default:0|floatformat:2 }}
+                                    {{ currency_symbol }}{{ cash_transfer_summary.total_deposits|default:0|floatformat:"2g" }}
                                     |
                                     Floats:
-                                    {{ currency_symbol }}{{ cash_transfer_summary.total_floats|default:0|floatformat:2 }}
+                                    {{ currency_symbol }}{{ cash_transfer_summary.total_floats|default:0|floatformat:"2g" }}
                                 </small>
                             </button>
                         </h2>
@@ -400,7 +400,7 @@
                                             <td><small>{{ ct.to_user.get_full_name|default:ct.to_user.email }}</small>
                                             </td>
                                             <td class="text-end fw-bold">
-                                                {{ currency_symbol }}{{ ct.amount|floatformat:2 }}</td>
+                                                {{ currency_symbol }}{{ ct.amount|floatformat:"2g" }}</td>
                                             <td><span
                                                     class="badge {% if ct.status == 'CONFIRMED' %}bg-success{% elif ct.status == 'PENDING' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">{{ ct.get_status_display }}</span>
                                             </td>
@@ -422,10 +422,10 @@
                                 data-bs-target="#ecashTrans">
                                 <i class="bi bi-phone me-2"></i>E-Cash Transactions
                                 <small class="ms-auto text-muted">
-                                    In: {{ currency_symbol }}{{ ecash_summary.total_payments|default:0|floatformat:2 }}
+                                    In: {{ currency_symbol }}{{ ecash_summary.total_payments|default:0|floatformat:"2g" }}
                                     |
                                     Out:
-                                    {{ currency_symbol }}{{ ecash_summary.total_withdrawals|default:0|floatformat:2 }}
+                                    {{ currency_symbol }}{{ ecash_summary.total_withdrawals|default:0|floatformat:"2g" }}
                                 </small>
                             </button>
                         </h2>
@@ -452,7 +452,7 @@
                                             <td><small>{{ entry.shop.name|default:"-" }}</small></td>
                                             <td
                                                 class="text-end fw-bold {% if entry.transaction_type == 'PAYMENT' %}text-success{% else %}text-danger{% endif %}">
-                                                {% if entry.transaction_type == 'PAYMENT' %}+{% else %}-{% endif %}{{ currency_symbol }}{{ entry.amount|floatformat:2 }}
+                                                {% if entry.transaction_type == 'PAYMENT' %}+{% else %}-{% endif %}{{ currency_symbol }}{{ entry.amount|floatformat:"2g" }}
                                             </td>
                                             <td><small
                                                     class="text-muted">{{ entry.paystack_reference|default:"-"|truncatechars:15 }}</small>
@@ -506,11 +506,11 @@
                             <td><small>{{ shift.attendant.get_full_name|default:shift.attendant.email }}</small></td>
                             <td><small>{{ shift.start_time|date:"M d, H:i" }}</small></td>
                             <td><small>{{ shift.end_time|date:"H:i"|default:"-" }}</small></td>
-                            <td class="text-end">{{ currency_symbol }}{{ shift.opening_cash|floatformat:2 }}</td>
-                            <td class="text-end">{{ shift.closing_cash|floatformat:2|default:"-" }}</td>
+                            <td class="text-end">{{ currency_symbol }}{{ shift.opening_cash|floatformat:"2g" }}</td>
+                            <td class="text-end">{{ shift.closing_cash|floatformat:"2g"|default:"-" }}</td>
                             <td
                                 class="text-end {% if shift.cash_variance and shift.cash_variance < 0 %}text-danger{% elif shift.cash_variance and shift.cash_variance > 0 %}text-success{% endif %}">
-                                {% if shift.status == 'CLOSED' %}{{ currency_symbol }}{{ shift.cash_variance|floatformat:2 }}{% else %}-{% endif %}
+                                {% if shift.status == 'CLOSED' %}{{ currency_symbol }}{{ shift.cash_variance|floatformat:"2g" }}{% else %}-{% endif %}
                             </td>
                             <td><span
                                     class="badge {% if shift.status == 'OPEN' %}bg-success{% else %}bg-secondary{% endif %}">{{ shift.get_status_display }}</span>
@@ -558,37 +558,37 @@
                                             <td><span class="badge bg-success me-2">IN</span>Stock In</td>
                                             <td class="text-center">{{ movements.IN.count|default:0 }}</td>
                                             <td class="text-end text-success">
-                                                +{{ movements.IN.quantity|default:0|floatformat:0 }}</td>
+                                                +{{ movements.IN.quantity|default:0|floatformat:"0g" }}</td>
                                         </tr>
                                         <tr>
                                             <td><span class="badge bg-info me-2">→</span>Transfer Out</td>
                                             <td class="text-center">{{ movements.TRANSFER_OUT.count|default:0 }}</td>
                                             <td class="text-end text-danger">
-                                                {{ movements.TRANSFER_OUT.quantity|default:0|floatformat:0 }}</td>
+                                                {{ movements.TRANSFER_OUT.quantity|default:0|floatformat:"0g" }}</td>
                                         </tr>
                                         <tr>
                                             <td><span class="badge bg-info me-2">←</span>Transfer In</td>
                                             <td class="text-center">{{ movements.TRANSFER_IN.count|default:0 }}</td>
                                             <td class="text-end text-success">
-                                                +{{ movements.TRANSFER_IN.quantity|default:0|floatformat:0 }}</td>
+                                                +{{ movements.TRANSFER_IN.quantity|default:0|floatformat:"0g" }}</td>
                                         </tr>
                                         <tr>
                                             <td><span class="badge bg-primary me-2">$</span>Sales</td>
                                             <td class="text-center">{{ movements.SALE.count|default:0 }}</td>
                                             <td class="text-end text-danger">
-                                                {{ movements.SALE.quantity|default:0|floatformat:0 }}</td>
+                                                {{ movements.SALE.quantity|default:0|floatformat:"0g" }}</td>
                                         </tr>
                                         <tr>
                                             <td><span class="badge bg-warning text-dark me-2">↩</span>Returns</td>
                                             <td class="text-center">{{ movements.RETURN.count|default:0 }}</td>
                                             <td class="text-end text-success">
-                                                +{{ movements.RETURN.quantity|default:0|floatformat:0 }}</td>
+                                                +{{ movements.RETURN.quantity|default:0|floatformat:"0g" }}</td>
                                         </tr>
                                         <tr>
                                             <td><span class="badge bg-danger me-2">✗</span>Damage</td>
                                             <td class="text-center">{{ movements.DAMAGE.count|default:0 }}</td>
                                             <td class="text-end text-danger">
-                                                {{ movements.DAMAGE.quantity|default:0|floatformat:0 }}</td>
+                                                {{ movements.DAMAGE.quantity|default:0|floatformat:"0g" }}</td>
                                         </tr>
                                     </tbody>
                                 </table>
@@ -704,7 +704,7 @@
                                 <td>{{ entry.location.name }}</td>
                                 <td
                                     class="text-end fw-bold {% if entry.quantity > 0 %}text-success{% else %}text-danger{% endif %}">
-                                    {% if entry.quantity > 0 %}+{% endif %}{{ entry.quantity|floatformat:0 }}
+                                    {% if entry.quantity > 0 %}+{% endif %}{{ entry.quantity|floatformat:"0g" }}
                                 </td>
                                 <td><small>{{ entry.created_by.get_full_name|default:entry.created_by.email|default:"-" }}</small>
                                 </td>

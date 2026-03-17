@@ -8,9 +8,14 @@
         <h2 class="mb-1"><i class="bi bi-bar-chart-line me-2"></i>Sales Report</h2>
         <p class="text-muted mb-0">Detailed sales analysis</p>
     </div>
-    <a href="{% url 'accounting:accountant_dashboard' %}" class="btn btn-outline-secondary">
-        <i class="bi bi-arrow-left me-1"></i>Dashboard
-    </a>
+    <div class="d-flex gap-2">
+        <a href="{% url 'accounting:sales_report_export' %}?{{ request.GET.urlencode }}" class="btn btn-outline-success">
+            <i class="bi bi-file-earmark-spreadsheet me-1"></i>Export
+        </a>
+        <a href="{% url 'accounting:accountant_dashboard' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>Dashboard
+        </a>
+    </div>
 </div>
 
 <!-- Filters -->
@@ -68,7 +73,7 @@
         <div class="card bg-success text-white h-100">
             <div class="card-body text-center">
                 <h6 class="opacity-75">Total Revenue</h6>
-                <h3 class="mb-0">{{ currency_symbol }}{{ summary.total_revenue|default:0|floatformat:2 }}</h3>
+                <h3 class="mb-0">{{ currency_symbol }}{{ summary.total_revenue|default:0|floatformat:"2g" }}</h3>
             </div>
         </div>
     </div>
@@ -84,7 +89,7 @@
         <div class="card bg-warning text-dark h-100">
             <div class="card-body text-center">
                 <h6 class="opacity-75">Cash</h6>
-                <h3 class="mb-0">{{ currency_symbol }}{{ summary.cash_total|default:0|floatformat:2 }}</h3>
+                <h3 class="mb-0">{{ currency_symbol }}{{ summary.cash_total|default:0|floatformat:"2g" }}</h3>
             </div>
         </div>
     </div>
@@ -92,7 +97,7 @@
         <div class="card bg-info text-white h-100">
             <div class="card-body text-center">
                 <h6 class="opacity-75">E-Cash</h6>
-                <h3 class="mb-0">{{ currency_symbol }}{{ summary.ecash_total|default:0|floatformat:2 }}</h3>
+                <h3 class="mb-0">{{ currency_symbol }}{{ summary.ecash_total|default:0|floatformat:"2g" }}</h3>
             </div>
         </div>
     </div>
@@ -126,7 +131,7 @@
                             <td>{{ day.created_at__date|date:"D, M d" }}</td>
                             <td class="text-center"><span class="badge bg-secondary">{{ day.count }}</span></td>
                             <td class="text-end fw-bold text-success">
-                                {{ currency_symbol }}{{ day.revenue|floatformat:2 }}</td>
+                                {{ currency_symbol }}{{ day.revenue|floatformat:"2g" }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -163,7 +168,7 @@
                             <td><i class="bi bi-shop me-1 text-muted"></i>{{ shop.shop__name }}</td>
                             <td class="text-center"><span class="badge bg-secondary">{{ shop.count }}</span></td>
                             <td class="text-end fw-bold text-success">
-                                {{ currency_symbol }}{{ shop.revenue|floatformat:2 }}</td>
+                                {{ currency_symbol }}{{ shop.revenue|floatformat:"2g" }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -207,7 +212,7 @@
                             </td>
                             <td class="text-center"><span class="badge bg-secondary">{{ att.count }}</span></td>
                             <td class="text-end fw-bold text-success">
-                                {{ currency_symbol }}{{ att.revenue|floatformat:2 }}</td>
+                                {{ currency_symbol }}{{ att.revenue|floatformat:"2g" }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -243,8 +248,8 @@
                         <tr>
                             <td>{{ p.product__name }}</td>
                             <td class="text-center"><span
-                                    class="badge bg-secondary">{{ p.qty_sold|floatformat:0 }}</span></td>
-                            <td class="text-end fw-bold text-success">{{ currency_symbol }}{{ p.revenue|floatformat:2 }}
+                                    class="badge bg-secondary">{{ p.qty_sold|floatformat:"0g" }}</span></td>
+                            <td class="text-end fw-bold text-success">{{ currency_symbol }}{{ p.revenue|floatformat:"2g" }}
                             </td>
                         </tr>
                         {% endfor %}
@@ -281,16 +286,16 @@
                         {% for p in all_products %}
                         <tr>
                             <td>{{ p.product__name }}</td>
-                            <td class="text-center">{{ p.qty_sold|floatformat:0 }}</td>
-                            <td class="text-end">{{ currency_symbol }}{{ p.revenue|floatformat:2 }}</td>
+                            <td class="text-center">{{ p.qty_sold|floatformat:"0g" }}</td>
+                            <td class="text-end">{{ currency_symbol }}{{ p.revenue|floatformat:"2g" }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
                     <tfoot class="table-dark">
                         <tr class="fw-bold">
                             <td>TOTAL</td>
-                            <td class="text-center">{{ all_products_total_qty|floatformat:0 }}</td>
-                            <td class="text-end">{{ currency_symbol }}{{ all_products_total_revenue|floatformat:2 }}
+                            <td class="text-center">{{ all_products_total_qty|floatformat:"0g" }}</td>
+                            <td class="text-end">{{ currency_symbol }}{{ all_products_total_revenue|floatformat:"2g" }}
                             </td>
                         </tr>
                     </tfoot>

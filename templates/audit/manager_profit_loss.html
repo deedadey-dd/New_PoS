@@ -17,6 +17,9 @@
                     <p class="text-muted mb-0">Analyze profitability by sales personnel</p>
                 </div>
                 <div class="d-flex gap-2 mt-2 mt-md-0">
+                    <a href="{% url 'audit:manager_profit_loss_export' %}?{{ request.GET.urlencode }}" class="btn btn-outline-success">
+                        <i class="bi bi-file-earmark-spreadsheet me-1"></i>Export
+                    </a>
                     <a href="{% url 'audit:product_profit_loss' %}?range={{ date_range }}"
                         class="btn btn-outline-primary">
                         <i class="bi bi-box-seam me-1"></i> By Product
@@ -108,7 +111,7 @@
                 <div class="card-body text-center">
                     <div class="text-muted small mb-1">Total Revenue</div>
                     <div class="fs-3 fw-bold text-primary">
-                        {{ currency_symbol }}{{ totals.revenue|floatformat:2|intcomma }}</div>
+                        {{ currency_symbol }}{{ totals.revenue|floatformat:"2g"|intcomma }}</div>
                 </div>
             </div>
         </div>
@@ -118,7 +121,7 @@
                 <div class="card-body text-center">
                     <div class="text-muted small mb-1">Total Profit</div>
                     <div class="fs-3 fw-bold {% if totals.profit >= 0 %}text-success{% else %}text-warning{% endif %}">
-                        {{ currency_symbol }}{{ totals.profit|floatformat:2|intcomma }}
+                        {{ currency_symbol }}{{ totals.profit|floatformat:"2g"|intcomma }}
                     </div>
                 </div>
             </div>
@@ -192,12 +195,12 @@
                             </td>
                             <td>{{ mgr.location.name|default:"-" }}</td>
                             <td class="text-end">{{ mgr.sale_count|intcomma }}</td>
-                            <td class="text-end">{{ currency_symbol }}{{ mgr.revenue|floatformat:2|intcomma }}</td>
-                            <td class="text-end text-danger">{{ currency_symbol }}{{ mgr.cost|floatformat:2|intcomma }}
+                            <td class="text-end">{{ currency_symbol }}{{ mgr.revenue|floatformat:"2g"|intcomma }}</td>
+                            <td class="text-end text-danger">{{ currency_symbol }}{{ mgr.cost|floatformat:"2g"|intcomma }}
                             </td>
                             <td
                                 class="text-end fw-semibold {% if mgr.profit >= 0 %}text-success{% else %}text-danger{% endif %}">
-                                {{ currency_symbol }}{{ mgr.profit|floatformat:2|intcomma }}
+                                {{ currency_symbol }}{{ mgr.profit|floatformat:"2g"|intcomma }}
                             </td>
                             <td class="text-end">
                                 <span
@@ -205,7 +208,7 @@
                                     {{ mgr.margin }}%
                                 </span>
                             </td>
-                            <td class="text-end">{{ currency_symbol }}{{ mgr.avg_sale|floatformat:2 }}</td>
+                            <td class="text-end">{{ currency_symbol }}{{ mgr.avg_sale|floatformat:"2g" }}</td>
                         </tr>
                         {% empty %}
                         <tr>
@@ -221,12 +224,12 @@
                         <tr class="fw-bold">
                             <td colspan="4">TOTALS</td>
                             <td class="text-end">{{ totals.sale_count|intcomma }}</td>
-                            <td class="text-end">{{ currency_symbol }}{{ totals.revenue|floatformat:2|intcomma }}</td>
+                            <td class="text-end">{{ currency_symbol }}{{ totals.revenue|floatformat:"2g"|intcomma }}</td>
                             <td class="text-end text-danger">
-                                {{ currency_symbol }}{{ totals.cost|floatformat:2|intcomma }}</td>
+                                {{ currency_symbol }}{{ totals.cost|floatformat:"2g"|intcomma }}</td>
                             <td
                                 class="text-end {% if totals.profit >= 0 %}text-success{% else %}text-danger{% endif %}">
-                                {{ currency_symbol }}{{ totals.profit|floatformat:2|intcomma }}
+                                {{ currency_symbol }}{{ totals.profit|floatformat:"2g"|intcomma }}
                             </td>
                             <td class="text-end">{{ totals.margin }}%</td>
                             <td></td>

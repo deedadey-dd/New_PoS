@@ -1147,3 +1147,160 @@ class StockWriteOffCreateView(LoginRequiredMixin, View):
             'form': form,
             'location': location,
         })
+
+
+# ============ Excel Export Views ============
+
+class TransferListExportView(LoginRequiredMixin, View):
+    """Export transfers list to Excel."""
+
+    def get(self, request):
+        from django.db.models import Q
+        from apps.core.excel_utils import create_export_workbook, build_excel_response
+
+        user = request.user
+        queryset = Transfer.objects.filter(tenant=user.tenant)
+
+        # Role-based filtering (same as TransferListView)
+        if not (user.role and user.role.name == 'ADMIN'):
+            role_location_map = {
+                'PRODUCTION_MANAGER': 'PRODUCTION',
+                'STORES_MANAGER': 'STORES',
+                'SHOP_MANAGER': 'SHOP',
+            }
+            user_location_type = role_location_map.get(user.role.name if user.role else None)
+
+            location_filter = Q()
+            if user.location:
+                location_filter |= Q(source_location=user.location) | Q(destination_location=user.location)
+            if user_location_type:
+                location_filter |= Q(source_location__location_type=user_location_type) | Q(destination_location__location_type=user_location_type)
+
+            queryset = queryset.filter(location_filter)
+
+        # Location filter
+        location_id = request.GET.get('location')
+        if location_id:
+            queryset = queryset.filter(
+                Q(source_location_id=location_id) | Q(destination_location_id=location_id)
+            )
+
+        # Status filter
+        status = request.GET.get('status')
+        if status:
+            queryset = queryset.filter(status=status)
+
+        queryset = queryset.select_related(
+            'source_location', 'destination_location', 'created_by'
+        ).order_by('-created_at')
+
+        headers = ['Transfer #', 'Date', 'Source', 'Destination', 'Status',
+                    'Items', 'Created By', 'Sent At', 'Received At']
+        rows = []
+        for t in queryset:
+            rows.append([
+                t.transfer_number,
+                t.created_at.strftime('%Y-%m-%d %H:%M') if t.created_at else '',
+                t.source_location.name if t.source_location else '',
+                t.destination_location.name if t.destination_location else '',
+                t.get_status_display(),
+                t.items.count(),
+                t.created_by.get_full_name() or t.created_by.email if t.created_by else '',
+                t.sent_at.strftime('%Y-%m-%d %H:%M') if t.sent_at else '',
+                t.received_at.strftime('%Y-%m-%d %H:%M') if t.received_at else '',
+            ])
+
+        wb = create_export_workbook('Transfers', headers, rows)
+        return build_excel_response(wb, 'transfers_export.xlsx')
+
+
+class TransferItemHistoryExportView(LoginRequiredMixin, View):
+    """Export transfer item history to Excel."""
+
+    def get(self, request):
+        from django.db.models import Q
+        from apps.core.excel_utils import create_export_workbook, build_excel_response
+
+        user = request.user
+        queryset = TransferItem.objects.filter(
+            tenant=user.tenant,
+            transfer__status__in=['SENT', 'RECEIVED', 'PARTIAL', 'DISPUTED', 'CLOSED']
+        ).select_related(
+            'product', 'batch', 'transfer',
+            'transfer__source_location', 'transfer__destination_location',
+        ).order_by('-transfer__created_at')
+
+        # Role-based filtering (same as TransferItemHistoryView)
+        if not (user.role and user.role.name == 'ADMIN'):
+            role_location_map = {
+                'PRODUCTION_MANAGER': 'PRODUCTION',
+                'STORES_MANAGER': 'STORES',
+                'SHOP_MANAGER': 'SHOP',
+            }
+            user_location_type = role_location_map.get(user.role.name if user.role else None)
+
+            location_filter = Q()
+            if user.location:
+                location_filter |= Q(transfer__source_location=user.location) | Q(transfer__destination_location=user.location)
+            if user_location_type:
+                location_filter |= Q(transfer__source_location__location_type=user_location_type) | Q(transfer__destination_location__location_type=user_location_type)
+
+            queryset = queryset.filter(location_filter)
+
+        # Search filter
+        search = request.GET.get('search')
+        if search:
+            queryset = queryset.filter(
+                Q(product__name__icontains=search) |
+                Q(product__sku__icontains=search) |
+                Q(transfer__transfer_number__icontains=search)
+            )
+
+        # Location filter
+        location_id = request.GET.get('location')
+        if location_id:
+            queryset = queryset.filter(
+                Q(transfer__source_location_id=location_id) |
+                Q(transfer__destination_location_id=location_id)
+            )
+
+        # Direction filter
+        direction = request.GET.get('direction')
+        if direction and user.location:
+            if direction == 'incoming':
+                queryset = queryset.filter(transfer__destination_location=user.location)
+            elif direction == 'outgoing':
+                queryset = queryset.filter(transfer__source_location=user.location)
+
+        # Date range
+        date_from = request.GET.get('date_from')
+        date_to = request.GET.get('date_to')
+        if date_from:
+            queryset = queryset.filter(transfer__created_at__date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(transfer__created_at__date__lte=date_to)
+
+        # Status filter
+        status = request.GET.get('status')
+        if status:
+            queryset = queryset.filter(transfer__status=status)
+
+        headers = ['Date', 'Transfer #', 'Product', 'SKU', 'Batch',
+                    'Qty Sent', 'Qty Received', 'Source', 'Destination', 'Status']
+        rows = []
+        for item in queryset:
+            rows.append([
+                item.transfer.created_at.strftime('%Y-%m-%d') if item.transfer.created_at else '',
+                item.transfer.transfer_number,
+                item.product.name if item.product else '',
+                item.product.sku if item.product else '',
+                item.batch.batch_number if item.batch else '',
+                float(item.quantity) if item.quantity else 0,
+                float(item.received_quantity) if item.received_quantity is not None else '',
+                item.transfer.source_location.name if item.transfer.source_location else '',
+                item.transfer.destination_location.name if item.transfer.destination_location else '',
+                item.transfer.get_status_display(),
+            ])
+
+        wb = create_export_workbook('Transfer Item History', headers, rows)
+        return build_excel_response(wb, 'transfer_item_history_export.xlsx')

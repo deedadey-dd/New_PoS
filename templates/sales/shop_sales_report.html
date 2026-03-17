@@ -8,6 +8,11 @@
         <h2 class="mb-1"><i class="bi bi-graph-up me-2"></i>Sales Report</h2>
         <p class="text-muted mb-0">Sales breakdown{% if shop %} - {{ shop.name }}{% endif %}</p>
     </div>
+    {% if shop %}
+    <a href="{% url 'sales:shop_sales_report_export' %}?{{ request.GET.urlencode }}" class="btn btn-outline-success">
+        <i class="bi bi-file-earmark-spreadsheet me-1"></i>Export
+    </a>
+    {% endif %}
 </div>
 
 {% if not shop %}
@@ -88,7 +93,7 @@
         <div class="card bg-success text-white h-100">
             <div class="card-body text-center">
                 <h6 class="card-subtitle mb-2 opacity-75">Total Revenue</h6>
-                <h3 class="mb-0">{{ currency_symbol }}{{ shop_totals.total_revenue|default:0|floatformat:2 }}</h3>
+                <h3 class="mb-0">{{ currency_symbol }}{{ shop_totals.total_revenue|default:0|floatformat:"2g" }}</h3>
             </div>
         </div>
     </div>
@@ -104,7 +109,7 @@
         <div class="card bg-warning text-dark h-100">
             <div class="card-body text-center">
                 <h6 class="card-subtitle mb-2 opacity-75">Cash Sales</h6>
-                <h3 class="mb-0">{{ currency_symbol }}{{ shop_totals.cash_total|default:0|floatformat:2 }}</h3>
+                <h3 class="mb-0">{{ currency_symbol }}{{ shop_totals.cash_total|default:0|floatformat:"2g" }}</h3>
             </div>
         </div>
     </div>
@@ -112,7 +117,7 @@
         <div class="card bg-info text-white h-100">
             <div class="card-body text-center">
                 <h6 class="card-subtitle mb-2 opacity-75">E-Cash Sales</h6>
-                <h3 class="mb-0">{{ currency_symbol }}{{ shop_totals.ecash_total|default:0|floatformat:2 }}</h3>
+                <h3 class="mb-0">{{ currency_symbol }}{{ shop_totals.ecash_total|default:0|floatformat:"2g" }}</h3>
             </div>
         </div>
     </div>
@@ -146,7 +151,7 @@
                             <td>{{ day.created_at__date|date:"D, M d" }}</td>
                             <td class="text-center"><span class="badge bg-secondary">{{ day.count }}</span></td>
                             <td class="text-end fw-bold text-success">
-                                {{ currency_symbol }}{{ day.revenue|floatformat:2 }}</td>
+                                {{ currency_symbol }}{{ day.revenue|floatformat:"2g" }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -194,13 +199,13 @@
                                 <span class="badge bg-secondary">{{ stat.total_sales }}</span>
                             </td>
                             <td class="text-end fw-bold text-success">
-                                {{ currency_symbol }}{{ stat.total_revenue|default:0|floatformat:2 }}
+                                {{ currency_symbol }}{{ stat.total_revenue|default:0|floatformat:"2g" }}
                             </td>
                             <td class="text-end">
-                                {{ currency_symbol }}{{ stat.cash_amount|default:0|floatformat:2 }}
+                                {{ currency_symbol }}{{ stat.cash_amount|default:0|floatformat:"2g" }}
                             </td>
                             <td class="text-end">
-                                {{ currency_symbol }}{{ stat.ecash_amount|default:0|floatformat:2 }}
+                                {{ currency_symbol }}{{ stat.ecash_amount|default:0|floatformat:"2g" }}
                             </td>
                         </tr>
                         {% endfor %}
@@ -237,8 +242,8 @@
                         <tr>
                             <td>{{ p.product__name }}</td>
                             <td class="text-center"><span
-                                    class="badge bg-secondary">{{ p.qty_sold|floatformat:0 }}</span></td>
-                            <td class="text-end fw-bold text-success">{{ currency_symbol }}{{ p.revenue|floatformat:2 }}
+                                    class="badge bg-secondary">{{ p.qty_sold|floatformat:"0g" }}</span></td>
+                            <td class="text-end fw-bold text-success">{{ currency_symbol }}{{ p.revenue|floatformat:"2g" }}
                             </td>
                         </tr>
                         {% endfor %}
@@ -275,16 +280,16 @@
                         {% for p in all_products %}
                         <tr>
                             <td>{{ p.product__name }}</td>
-                            <td class="text-center">{{ p.qty_sold|floatformat:0 }}</td>
-                            <td class="text-end">{{ currency_symbol }}{{ p.revenue|floatformat:2 }}</td>
+                            <td class="text-center">{{ p.qty_sold|floatformat:"0g" }}</td>
+                            <td class="text-end">{{ currency_symbol }}{{ p.revenue|floatformat:"2g" }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
                     <tfoot class="table-dark">
                         <tr class="fw-bold">
                             <td>TOTAL</td>
-                            <td class="text-center">{{ all_products_total_qty|floatformat:0 }}</td>
-                            <td class="text-end">{{ currency_symbol }}{{ all_products_total_revenue|floatformat:2 }}
+                            <td class="text-center">{{ all_products_total_qty|floatformat:"0g" }}</td>
+                            <td class="text-end">{{ currency_symbol }}{{ all_products_total_revenue|floatformat:"2g" }}
                             </td>
                         </tr>
                     </tfoot>
@@ -327,7 +332,7 @@
                             <td><small>{{ price.created_at|date:"M d, H:i" }}</small></td>
                             <td>{{ price.product.name }}</td>
                             <td class="text-end">
-                                <strong>{{ currency_symbol }}{{ price.selling_price|floatformat:2 }}</strong>
+                                <strong>{{ currency_symbol }}{{ price.selling_price|floatformat:"2g" }}</strong>
                             </td>
                             <td>
                                 {% if price.is_active %}

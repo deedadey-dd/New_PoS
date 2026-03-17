@@ -139,11 +139,11 @@
                         </td>
                         <td
                             class="text-end fw-bold {% if entry.quantity > 0 %}text-success{% else %}text-danger{% endif %}">
-                            {% if entry.quantity > 0 %}+{% endif %}{{ entry.quantity|floatformat:0 }}
+                            {% if entry.quantity > 0 %}+{% endif %}{{ entry.quantity|floatformat:"0g" }}
                         </td>
                         <td class="text-end">
                             {% if entry.unit_cost %}
-                            {{ currency_symbol }}{{ entry.unit_cost|floatformat:2 }}
+                            {{ currency_symbol }}{{ entry.unit_cost|floatformat:"2g" }}
                             {% else %}
                             <span class="text-muted">-</span>
                             {% endif %}

@@ -35,7 +35,7 @@
                     {% if plan %}
                     <div class="text-center mb-4">
                         <h2 class="display-4 text-success mb-1">
-                            {{ tenant.currency_symbol }}{{ monthly_price|floatformat:2|intcomma }}
+                            {{ tenant.currency_symbol }}{{ monthly_price|floatformat:"2g"|intcomma }}
                         </h2>
                         <p class="text-white-50">per month</p>
                     </div>
@@ -53,7 +53,7 @@
                         <li class="mb-2">
                             <i class="bi bi-plus-circle text-warning me-2"></i>
                             Additional shops: {{ shop_count|add:"-5" }} x
-                            {{ tenant.currency_symbol }}{{ plan.additional_shop_price|floatformat:2 }}
+                            {{ tenant.currency_symbol }}{{ plan.additional_shop_price|floatformat:"2g" }}
                         </li>
                         {% endif %}
                         {% for feature in plan.features %}
@@ -196,7 +196,7 @@
                             <td>{{ payment.get_payment_type_display }}</td>
                             <td>{{ payment.created_at|date:"M d, Y" }}</td>
                             <td>
-                                <strong>{{ tenant.currency_symbol }}{{ payment.amount|floatformat:2|intcomma }}</strong>
+                                <strong>{{ tenant.currency_symbol }}{{ payment.amount|floatformat:"2g"|intcomma }}</strong>
                             </td>
                             <td class="text-center">
                                 <button type="button" class="btn btn-sm btn-outline-primary view-receipt-btn"

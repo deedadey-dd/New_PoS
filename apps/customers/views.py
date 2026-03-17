@@ -240,3 +240,49 @@ class PaymentReceiptView(LoginRequiredMixin, DetailView):
         context['tenant'] = self.request.user.tenant
         context['shop'] = self.request.user.location
         return context
+
+
+class CustomerListExportView(LoginRequiredMixin, View):
+    """Export customer list to Excel."""
+
+    def get(self, request):
+        from apps.core.excel_utils import create_export_workbook, build_excel_response
+
+        user = request.user
+        role_name = user.role.name if user.role else None
+
+        # Only shop managers, accountants, auditors, and admins can export
+        if role_name not in ['SHOP_MANAGER', 'ACCOUNTANT', 'AUDITOR', 'ADMIN']:
+            messages.error(request, 'You do not have permission to export customers.')
+            return redirect('customers:customer_list')
+
+        queryset = Customer.objects.filter(tenant=user.tenant).select_related('shop')
+
+        # Shop managers only see their shop's customers
+        if role_name == 'SHOP_MANAGER':
+            queryset = queryset.filter(shop=user.location)
+
+        # Search filter
+        search_query = request.GET.get('search')
+        if search_query:
+            queryset = queryset.filter(
+                Q(name__icontains=search_query) |
+                Q(phone__icontains=search_query) |
+                Q(email__icontains=search_query)
+            )
+
+        headers = ['Name', 'Phone', 'Email', 'Shop', 'Credit Limit', 'Current Balance', 'Active']
+        rows = []
+        for c in queryset:
+            rows.append([
+                c.name,
+                c.phone or '',
+                c.email or '',
+                c.shop.name if c.shop else '',
+                float(c.credit_limit) if c.credit_limit else 'Unlimited',
+                float(c.current_balance) if c.current_balance else 0,
+                'Yes' if c.is_active else 'No',
+            ])
+
+        wb = create_export_workbook('Customers', headers, rows)
+        return build_excel_response(wb, 'customers_export.xlsx')

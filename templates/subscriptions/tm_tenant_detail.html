@@ -125,7 +125,7 @@
                         <div class="col-6">
                             <div class="text-muted small">Monthly Price</div>
                             <div class="fs-5 fw-semibold text-primary">
-                                {{ tenant.currency_symbol }}{{ tenant.get_monthly_subscription_price|floatformat:2 }}
+                                {{ tenant.currency_symbol }}{{ tenant.get_monthly_subscription_price|floatformat:"2g" }}
                             </div>
                             {% if tenant.subscription_plan.code == 'PREMIUM' and tenant.get_extra_shops_count > 0 %}
                             <small class="text-muted">
@@ -238,7 +238,7 @@
                                         {% endif %}
                                     </td>
                                     <td class="text-end fw-semibold">
-                                        {{ tenant.currency_symbol }}{{ payment.amount|floatformat:2 }}</td>
+                                        {{ tenant.currency_symbol }}{{ payment.amount|floatformat:"2g" }}</td>
                                 </tr>
                                 {% endfor %}
                             </tbody>

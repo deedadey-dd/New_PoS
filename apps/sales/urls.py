@@ -33,4 +33,8 @@ urlpatterns = [
     
     # Reports
     path('report/', views.ShopSalesReportView.as_view(), name='shop_sales_report'),
+
+    # Excel Exports
+    path('export/', views.SaleListExportView.as_view(), name='sale_list_export'),
+    path('report/export/', views.ShopSalesReportExportView.as_view(), name='shop_sales_report_export'),
 ]

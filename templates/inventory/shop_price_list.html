@@ -106,11 +106,11 @@
                             <small class="text-muted">{{ p.product.sku }}</small>
                         </td>
                         <td>{{ p.product.category.name|default:"-" }}</td>
-                        <td>{{ currency_symbol }}{{ p.product.default_selling_price|floatformat:2 }}</td>
+                        <td>{{ currency_symbol }}{{ p.product.default_selling_price|floatformat:"2g" }}</td>
                         <td>
                             {% if p.has_price %}
                             <strong
-                                class="text-success">{{ currency_symbol }}{{ p.selling_price|floatformat:2 }}</strong>
+                                class="text-success">{{ currency_symbol }}{{ p.selling_price|floatformat:"2g" }}</strong>
                             {% else %}
                             <span class="text-muted">-</span>
                             {% endif %}

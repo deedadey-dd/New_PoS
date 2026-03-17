@@ -25,7 +25,7 @@
                         </div>
                         <div>
                             <div class="text-muted small">Total Revenue</div>
-                            <div class="fs-4 fw-bold text-success">GHS {{ total_revenue|floatformat:2 }}</div>
+                            <div class="fs-4 fw-bold text-success">GHS {{ total_revenue|floatformat:"2g" }}</div>
                         </div>
                     </div>
                 </div>
@@ -40,7 +40,7 @@
                         </div>
                         <div>
                             <div class="text-muted small">Onboarding Revenue</div>
-                            <div class="fs-4 fw-bold text-info">GHS {{ onboarding_revenue|floatformat:2 }}</div>
+                            <div class="fs-4 fw-bold text-info">GHS {{ onboarding_revenue|floatformat:"2g" }}</div>
                         </div>
                     </div>
                 </div>
@@ -55,7 +55,7 @@
                         </div>
                         <div>
                             <div class="text-muted small">Subscription Revenue</div>
-                            <div class="fs-4 fw-bold text-primary">GHS {{ subscription_revenue|floatformat:2 }}</div>
+                            <div class="fs-4 fw-bold text-primary">GHS {{ subscription_revenue|floatformat:"2g" }}</div>
                         </div>
                     </div>
                 </div>
@@ -200,7 +200,7 @@
                             <td>{{ payment.get_payment_method_display }}</td>
                             <td>{{ payment.created_at|date:"M d, Y" }}</td>
                             <td class="text-end fw-semibold">
-                                {{ payment.currency }} {{ payment.amount|floatformat:2 }}
+                                {{ payment.currency }} {{ payment.amount|floatformat:"2g" }}
                             </td>
                         </tr>
                         {% endfor %}

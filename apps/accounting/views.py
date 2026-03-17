@@ -454,7 +454,11 @@ class SalesReportView(LoginRequiredMixin, View):
             'sales_count': sales.count(),
             # Filter options
             'shops': Location.objects.filter(tenant=tenant, location_type='SHOP', is_active=True),
-            'attendants': CoreUser.objects.filter(tenant=tenant, role__name='SHOP_ATTENDANT', is_active=True),
+            'attendants': CoreUser.objects.filter(
+                tenant=tenant, 
+                role__name__in=['SHOP_ATTENDANT', 'SHOP_MANAGER'], 
+                is_active=True
+            ),
         }
         
         return render(request, self.template_name, context)
@@ -508,3 +512,205 @@ class PriceHistoryView(LoginRequiredMixin, View):
         }
         
         return render(request, self.template_name, context)
+
+
+class CashTransferExportView(LoginRequiredMixin, View):
+    """Export cash transfers to Excel."""
+
+    def dispatch(self, request, *args, **kwargs):
+        role_name = request.user.role.name if request.user.role else None
+        if role_name not in ['ACCOUNTANT', 'AUDITOR', 'ADMIN']:
+            messages.error(request, 'You do not have permission to export cash transfers.')
+            return redirect('accounting:cash_transfer_list')
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request):
+        from datetime import datetime
+        from apps.core.excel_utils import create_export_workbook, build_excel_response
+
+        user = request.user
+        queryset = CashTransfer.objects.filter(
+            tenant=user.tenant
+        ).select_related(
+            'from_user', 'to_user', 'from_location', 'to_location'
+        ).order_by('-created_at')
+
+        # Apply same filters as list view
+        date_from = request.GET.get('date_from')
+        date_to = request.GET.get('date_to')
+        if date_from:
+            try:
+                queryset = queryset.filter(created_at__date__gte=datetime.strptime(date_from, '%Y-%m-%d').date())
+            except ValueError:
+                pass
+        if date_to:
+            try:
+                queryset = queryset.filter(created_at__date__lte=datetime.strptime(date_to, '%Y-%m-%d').date())
+            except ValueError:
+                pass
+
+        status = request.GET.get('status')
+        if status:
+            queryset = queryset.filter(status=status)
+
+        shop = request.GET.get('shop')
+        if shop:
+            queryset = queryset.filter(
+                Q(from_location_id=shop) | Q(to_location_id=shop)
+            )
+
+        headers = ['Date', 'From User', 'From Location', 'To User', 'To Location',
+                    'Amount', 'Type', 'Status', 'Confirmed At', 'Notes']
+        rows = []
+        for t in queryset:
+            rows.append([
+                t.created_at.strftime('%Y-%m-%d %H:%M') if t.created_at else '',
+                t.from_user.get_full_name() or t.from_user.email if t.from_user else '',
+                t.from_location.name if t.from_location else '',
+                t.to_user.get_full_name() or t.to_user.email if t.to_user else '',
+                t.to_location.name if t.to_location else '',
+                float(t.amount) if t.amount else 0,
+                t.get_transfer_type_display() if hasattr(t, 'get_transfer_type_display') else t.transfer_type,
+                t.get_status_display() if hasattr(t, 'get_status_display') else t.status,
+                t.confirmed_at.strftime('%Y-%m-%d %H:%M') if t.confirmed_at else '',
+                t.notes or '',
+            ])
+
+        wb = create_export_workbook('Cash Transfers', headers, rows)
+        return build_excel_response(wb, 'cash_transfers_export.xlsx')
+
+
+class SalesReportExportView(LoginRequiredMixin, View):
+    """Export accountant's sales report to Excel."""
+
+    def dispatch(self, request, *args, **kwargs):
+        role_name = request.user.role.name if request.user.role else None
+        if role_name not in ['ACCOUNTANT', 'ADMIN']:
+            messages.error(request, 'Only accountants can export this report.')
+            return redirect('core:dashboard')
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request):
+        from apps.sales.models import Sale, SaleItem
+        from apps.core.excel_utils import create_export_workbook, add_sheet, build_excel_response
+
+        user = request.user
+        tenant = user.tenant
+
+        # Date filter (same as SalesReportView)
+        date_from = request.GET.get('date_from')
+        date_to = request.GET.get('date_to')
+        today = timezone.now().date()
+
+        if not date_from:
+            date_from = today - timedelta(days=7)
+        else:
+            try:
+                date_from = timezone.datetime.strptime(date_from, '%Y-%m-%d').date()
+            except ValueError:
+                date_from = today - timedelta(days=7)
+
+        if not date_to:
+            date_to = today
+        else:
+            try:
+                date_to = timezone.datetime.strptime(date_to, '%Y-%m-%d').date()
+            except ValueError:
+                date_to = today
+
+        sales = Sale.objects.filter(
+            tenant=tenant,
+            status='COMPLETED',
+            created_at__date__gte=date_from,
+            created_at__date__lte=date_to
+        ).select_related('shop', 'attendant')
+
+        shop_id = request.GET.get('shop')
+        if shop_id:
+            sales = sales.filter(shop_id=shop_id)
+
+        attendant_id = request.GET.get('attendant')
+        if attendant_id:
+            sales = sales.filter(attendant_id=attendant_id)
+
+        payment = request.GET.get('payment')
+        if payment:
+            sales = sales.filter(payment_method=payment)
+
+        # Sheet 1: Sales by Day
+        sales_by_day = sales.values('created_at__date').annotate(
+            revenue=Sum('total'),
+            count=Count('id')
+        ).order_by('-created_at__date')
+
+        day_headers = ['Date', 'Revenue', 'Sales Count']
+        day_rows = [
+            [str(d['created_at__date']), float(d['revenue'] or 0), d['count']]
+            for d in sales_by_day
+        ]
+        wb = create_export_workbook('Sales by Day', day_headers, day_rows)
+
+        # Sheet 2: Product Breakdown
+        all_products = SaleItem.objects.filter(
+            sale__in=sales
+        ).values('product__name').annotate(
+            qty_sold=Sum('quantity'),
+            revenue=Sum('total')
+        ).order_by('product__name')
+
+        prod_headers = ['Product', 'Qty Sold', 'Revenue']
+        prod_rows = [
+            [p['product__name'], float(p['qty_sold'] or 0), float(p['revenue'] or 0)]
+            for p in all_products
+        ]
+        add_sheet(wb, 'Product Breakdown', prod_headers, prod_rows)
+
+        return build_excel_response(wb, f'sales_report_{date_from}_to_{date_to}.xlsx')
+
+
+class PriceHistoryExportView(LoginRequiredMixin, View):
+    """Export price history to Excel."""
+
+    def dispatch(self, request, *args, **kwargs):
+        role_name = request.user.role.name if request.user.role else None
+        if role_name not in ['ACCOUNTANT', 'AUDITOR', 'ADMIN']:
+            messages.error(request, 'Only accountants and auditors can export price history.')
+            return redirect('core:dashboard')
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request):
+        from apps.inventory.models import ShopPrice
+        from apps.core.excel_utils import create_export_workbook, build_excel_response
+
+        user = request.user
+        tenant = user.tenant
+
+        prices = ShopPrice.objects.filter(
+            tenant=tenant
+        ).select_related('product', 'location').order_by('-created_at')
+
+        shop_id = request.GET.get('shop')
+        if shop_id:
+            prices = prices.filter(location_id=shop_id)
+
+        product_id = request.GET.get('product')
+        if product_id:
+            prices = prices.filter(product_id=product_id)
+
+        date_from = request.GET.get('date_from')
+        if date_from:
+            prices = prices.filter(created_at__date__gte=date_from)
+
+        headers = ['Date', 'Product', 'Location', 'Selling Price', 'Active']
+        rows = []
+        for p in prices:
+            rows.append([
+                p.created_at.strftime('%Y-%m-%d %H:%M') if p.created_at else '',
+                p.product.name if p.product else '',
+                p.location.name if p.location else '',
+                float(p.selling_price) if p.selling_price else 0,
+                'Yes' if p.is_active else 'No',
+            ])
+
+        wb = create_export_workbook('Price History', headers, rows)
+        return build_excel_response(wb, 'price_history_export.xlsx')

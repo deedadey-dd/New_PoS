@@ -24,7 +24,7 @@
                         <i class="bi bi-info-circle me-2 fs-5"></i>
                         <div>
                             <strong>Available E-Cash Balance:</strong>
-                            {{ currency_symbol }}{{ ecash_balance|floatformat:2 }}
+                            {{ currency_symbol }}{{ ecash_balance|floatformat:"2g" }}
                             <br><small>This amount will be converted to physical cash for your cash count.</small>
                         </div>
                     </div>

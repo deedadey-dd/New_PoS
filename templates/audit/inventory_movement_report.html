@@ -17,6 +17,9 @@
                     <p class="text-muted mb-0">Track all inventory movements across the system</p>
                 </div>
                 <div class="d-flex gap-2 mt-2 mt-md-0">
+                    <a href="{% url 'audit:inventory_movements_export' %}?{{ request.GET.urlencode }}" class="btn btn-outline-success">
+                        <i class="bi bi-file-earmark-spreadsheet me-1"></i>Export
+                    </a>
                     <a href="{% url 'audit:product_lifecycle' %}" class="btn btn-outline-primary">
                         <i class="bi bi-diagram-3 me-1"></i> Product Lifecycle
                     </a>
@@ -94,7 +97,7 @@
                         <div class="border-start ps-2">
                             <span
                                 class="{% if data.qty > 0 %}text-success{% elif data.qty < 0 %}text-danger{% endif %}">
-                                {% if data.qty > 0 %}+{% endif %}{{ data.qty|floatformat:0 }}
+                                {% if data.qty > 0 %}+{% endif %}{{ data.qty|floatformat:"0g" }}
                             </span>
                         </div>
                     </div>
@@ -167,11 +170,11 @@
                             </td>
                             <td
                                 class="text-end fw-semibold {% if entry.quantity > 0 %}text-success{% else %}text-danger{% endif %}">
-                                {% if entry.quantity > 0 %}+{% endif %}{{ entry.quantity|floatformat:2 }}
+                                {% if entry.quantity > 0 %}+{% endif %}{{ entry.quantity|floatformat:"2g" }}
                             </td>
                             <td class="text-end">
                                 {% if entry.unit_cost %}
-                                {{ currency_symbol }}{{ entry.unit_cost|floatformat:2 }}
+                                {{ currency_symbol }}{{ entry.unit_cost|floatformat:"2g" }}
                                 {% else %}
                                 <span class="text-muted">-</span>
                                 {% endif %}

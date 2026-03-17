@@ -37,5 +37,9 @@ urlpatterns = [
     # Stock Write-Offs
     path('write-offs/', views.StockWriteOffListView.as_view(), name='write_off_list'),
     path('write-offs/create/', views.StockWriteOffCreateView.as_view(), name='write_off_create'),
+
+    # Excel Exports
+    path('export/', views.TransferListExportView.as_view(), name='transfer_list_export'),
+    path('products/export/', views.TransferItemHistoryExportView.as_view(), name='transfer_item_history_export'),
 ]
 

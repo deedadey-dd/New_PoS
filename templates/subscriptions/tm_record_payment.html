@@ -44,7 +44,7 @@
                             </div>
                             <div class="col-md-2">
                                 <strong>Monthly:</strong> 
-                                <span class="fw-bold">{{ tenant.currency_symbol }}{{ tenant.get_monthly_subscription_price|floatformat:2|default:"N/A" }}</span>
+                                <span class="fw-bold">{{ tenant.currency_symbol }}{{ tenant.get_monthly_subscription_price|floatformat:"2g"|default:"N/A" }}</span>
                             </div>
                         </div>
                     </div>
@@ -101,7 +101,7 @@
                                         data-code="{{ plan.code }}"
                                         {% if tenant.subscription_plan.pk == plan.pk %}selected{% endif %}>
                                         {{ plan.name }} -
-                                        {{ tenant.currency_symbol }}{{ plan.base_price|floatformat:2 }}/mo
+                                        {{ tenant.currency_symbol }}{{ plan.base_price|floatformat:"2g" }}/mo
                                     </option>
                                     {% endfor %}
                                 </select>
@@ -189,17 +189,17 @@
                             </div>
                             <div class="col-md-4">
                                 <strong>Calculated Price:</strong> 
-                                <span class="text-primary fw-bold">{{ tenant.currency_symbol }}{{ tenant.get_monthly_subscription_price|floatformat:2 }}/mo</span>
+                                <span class="text-primary fw-bold">{{ tenant.currency_symbol }}{{ tenant.get_monthly_subscription_price|floatformat:"2g" }}/mo</span>
                             </div>
                         </div>
                         {% if tenant.subscription_plan.code == 'PREMIUM' and tenant.get_extra_shops_count > 0 %}
                         <hr class="my-2">
                         <small class="text-muted">
                             <i class="bi bi-calculator me-1"></i>
-                            Premium: {{ tenant.currency_symbol }}{{ tenant.subscription_plan.base_price|floatformat:2 }} base 
+                            Premium: {{ tenant.currency_symbol }}{{ tenant.subscription_plan.base_price|floatformat:"2g" }} base 
                             ({{ tenant.subscription_plan.max_shops }} shops included) 
-                            + {{ tenant.get_extra_shops_count }} extra shop(s) × {{ tenant.currency_symbol }}{{ tenant.subscription_plan.additional_shop_price|floatformat:2 }}
-                            = <strong>{{ tenant.currency_symbol }}{{ tenant.get_monthly_subscription_price|floatformat:2 }}</strong>
+                            + {{ tenant.get_extra_shops_count }} extra shop(s) × {{ tenant.currency_symbol }}{{ tenant.subscription_plan.additional_shop_price|floatformat:"2g" }}
+                            = <strong>{{ tenant.currency_symbol }}{{ tenant.get_monthly_subscription_price|floatformat:"2g" }}</strong>
                         </small>
                         {% endif %}
                     </div>
@@ -220,10 +220,10 @@
                                     <td>
                                         {{ plan.max_shops }} shops
                                         {% if plan.code == 'PREMIUM' %}
-                                        <small class="text-muted">(+{{ tenant.currency_symbol }}{{ plan.additional_shop_price|floatformat:0 }}/extra)</small>
+                                        <small class="text-muted">(+{{ tenant.currency_symbol }}{{ plan.additional_shop_price|floatformat:"0g" }}/extra)</small>
                                         {% endif %}
                                     </td>
-                                    <td class="text-end">{{ tenant.currency_symbol }}{{ plan.base_price|floatformat:2 }}
+                                    <td class="text-end">{{ tenant.currency_symbol }}{{ plan.base_price|floatformat:"2g" }}
                                     </td>
                                 </tr>
                                 {% endfor %}
