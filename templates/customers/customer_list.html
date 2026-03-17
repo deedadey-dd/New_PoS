@@ -73,11 +73,11 @@
                         <td>
                             {% if customer.current_balance > 0 %}
                             <span
-                                class="badge bg-danger fs-6">{{ currency_symbol }}{{ customer.current_balance }}</span>
+                                class="badge bg-danger fs-6">{{ currency_symbol }}{{ customer.current_balance|floatformat:"2g" }}</span>
                             <div class="small text-danger mt-1">Owes Shop</div>
                             {% elif customer.current_balance < 0 %}
                             <span
-                                class="badge bg-success fs-6">{{ currency_symbol }}{{ customer.current_balance }}</span>
+                                class="badge bg-success fs-6">{{ currency_symbol }}{{ customer.current_balance|floatformat:"2g" }}</span>
                             <div class="small text-success mt-1">Credit Balance</div>
                             {% else %}
                             <span class="badge bg-secondary">-</span>

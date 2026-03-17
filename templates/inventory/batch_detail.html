@@ -45,7 +45,7 @@
                     <dd class="col-7"><strong>{{ batch.current_quantity }}</strong></dd>
 
                     <dt class="col-5">Unit Cost</dt>
-                    <dd class="col-7">{{ currency_symbol }}{{ batch.unit_cost }}</dd>
+                    <dd class="col-7">{{ currency_symbol }}{{ batch.unit_cost|floatformat:"2g" }}</dd>
                 </dl>
             </div>
         </div>

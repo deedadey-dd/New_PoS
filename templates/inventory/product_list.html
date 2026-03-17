@@ -107,7 +107,7 @@
                             {% endwith %}
                         </td>
                         <td>{{ product.get_unit_of_measure_display }}</td>
-                        <td class="text-end">{{ currency_symbol }}{{ product.default_selling_price }}</td>
+                        <td class="text-end">{{ currency_symbol }}{{ product.default_selling_price|floatformat:"2g" }}</td>
                         <td>
                             {% if product.is_active %}
                             <span class="badge bg-success">Active</span>

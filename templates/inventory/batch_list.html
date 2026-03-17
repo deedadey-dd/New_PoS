@@ -80,7 +80,7 @@
                             </span>
                         </td>
                         <td class="text-end">{{ batch.current_quantity }}</td>
-                        <td class="text-end">{{ currency_symbol }}{{ batch.unit_cost }}</td>
+                        <td class="text-end">{{ currency_symbol }}{{ batch.unit_cost|floatformat:"2g" }}</td>
                         <td>
                             {% if batch.expiry_date %}
                             {{ batch.expiry_date }}

@@ -39,7 +39,7 @@
                     <dd class="col-7">{{ product.get_unit_of_measure_display }}</dd>
 
                     <dt class="col-5">Price</dt>
-                    <dd class="col-7">{{ currency_symbol }}{{ product.default_selling_price }}</dd>
+                    <dd class="col-7">{{ currency_symbol }}{{ product.default_selling_price|floatformat:"2g" }}</dd>
 
                     <dt class="col-5">Reorder Level</dt>
                     <dd class="col-7">{{ product.reorder_level }}</dd>
@@ -128,7 +128,7 @@
                         </td>
                         <td>{{ batch.location.name }}</td>
                         <td class="text-end">{{ batch.current_quantity }}</td>
-                        <td class="text-end">{{ currency_symbol }}{{ batch.unit_cost }}</td>
+                        <td class="text-end">{{ currency_symbol }}{{ batch.unit_cost|floatformat:"2g" }}</td>
                         <td>
                             {% if batch.expiry_date %}
                             {{ batch.expiry_date }}

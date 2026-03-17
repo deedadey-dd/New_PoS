@@ -244,8 +244,8 @@
                             <span class="badge bg-warning text-dark">-{{ item.discrepancy }}</span>
                             {% endif %}
                         </td>
-                        <td class="text-end">{{ currency_symbol }}{{ item.unit_cost }}</td>
-                        <td class="text-end">{{ currency_symbol }}{{ item.total_cost }}</td>
+                        <td class="text-end">{{ currency_symbol }}{{ item.unit_cost|floatformat:"2g" }}</td>
+                        <td class="text-end">{{ currency_symbol }}{{ item.total_cost|floatformat:"2g" }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>

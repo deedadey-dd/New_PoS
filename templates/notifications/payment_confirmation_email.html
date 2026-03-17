@@ -177,7 +177,7 @@
                     {% endif %}
                     <tr class="amount-row">
                         <td>Amount Paid</td>
-                        <td>{{ tenant.currency_symbol }}{{ payment.amount }}</td>
+                        <td>{{ tenant.currency_symbol }}{{ payment.amount|floatformat:"2g" }}</td>
                     </tr>
                 </table>
             </div>
