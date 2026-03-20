@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% load static %}
+{% load static sort_tags %}
 
 {% block title %}Stock Requests{% endblock %}
 
@@ -58,12 +58,12 @@
                 <table class="table table-hover mb-0">
                     <thead class="table-light">
                         <tr>
-                            <th>Request #</th>
-                            <th>{% if current_tab == 'incoming' %}From{% else %}To{% endif %}</th>
+                            <th>{% sort_link "Request #" "request_number" %}</th>
+                            <th>{% if current_tab == 'incoming' %}{% sort_link "From" "requesting_location__name" %}{% else %}{% sort_link "To" "supplying_location__name" %}{% endif %}</th>
                             <th>Items</th>
-                            <th>Status</th>
+                            <th>{% sort_link "Status" "status" %}</th>
                             <th>Requested By</th>
-                            <th>Date</th>
+                            <th>{% sort_link "Date" "created_at" %}</th>
                             <th class="text-end">Actions</th>
                         </tr>
                     </thead>

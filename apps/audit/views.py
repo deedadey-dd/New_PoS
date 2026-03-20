@@ -34,12 +34,16 @@ class AuditAccessMixin(PaginationMixin):
         return self.paginate_custom_queryset(queryset)
 
 
-class ProductLifecycleView(LoginRequiredMixin, AuditAccessMixin, View):
+from apps.core.mixins import SortableMixin
+
+class ProductLifecycleView(LoginRequiredMixin, AuditAccessMixin, SortableMixin, View):
     """
     Track a product's complete lifecycle from entry to exit.
     Shows: Entry points, distribution (transfers), and exits (sales, damage, etc.)
     """
     template_name = 'audit/product_lifecycle.html'
+    sortable_fields = ['created_at', 'transaction_type', 'quantity', 'location__name', 'batch__batch_number']
+    default_sort = '-created_at'
     
     def get(self, request, pk=None):
         tenant = request.user.tenant
@@ -66,7 +70,8 @@ class ProductLifecycleView(LoginRequiredMixin, AuditAccessMixin, View):
             
             ledger = InventoryLedger.objects.filter(filters).select_related(
                 'location', 'batch', 'created_by'
-            ).order_by('-created_at')
+            )
+            ledger = self.apply_sorting(ledger)
             
             # Group by transaction type for summary
             summary_data = ledger.values('transaction_type').annotate(
@@ -102,6 +107,8 @@ class ProductLifecycleView(LoginRequiredMixin, AuditAccessMixin, View):
                 'summary': summary,
                 'location_balances': location_balances,
                 'total_stock': total_stock,
+                'current_sort': self.request.GET.get('sort', ''),
+                'current_dir': self.request.GET.get('dir', 'asc'),
             })
         
         return render(request, self.template_name, context)
@@ -872,3 +879,51 @@ class InventoryMovementExportView(LoginRequiredMixin, AuditAccessMixin, View):
 
         wb = create_export_workbook('Inventory Movements', headers, rows)
         return build_excel_response(wb, 'inventory_movements_export.xlsx')
+
+class UserActivityListView(LoginRequiredMixin, AuditAccessMixin, View):
+    """
+    Log of users where auditors and admin can see when users are logged in and what they do.
+    """
+    template_name = 'audit/user_activity_log.html'
+    
+    def get(self, request):
+        from .models import UserActivity
+        tenant = request.user.tenant
+        
+        # Get filters
+        action = request.GET.get('action', '')
+        user_id = request.GET.get('user', '')
+        date_from = request.GET.get('date_from', '')
+        date_to = request.GET.get('date_to', '')
+        
+        filters = Q(tenant=tenant)
+        if action:
+            filters &= Q(action=action)
+        if user_id:
+            filters &= Q(user_id=user_id)
+        if date_from:
+            filters &= Q(timestamp__date__gte=date_from)
+        if date_to:
+            filters &= Q(timestamp__date__lte=date_to)
+            
+        activities = UserActivity.objects.filter(filters).select_related('user').order_by('-timestamp')
+        
+        paginated_activities, per_page = self.paginate_queryset(request, activities)
+        
+        users = User.objects.filter(tenant=tenant, is_active=True).order_by('first_name')
+        
+        context = {
+            'activities': paginated_activities,
+            'page_obj': paginated_activities,
+            'per_page': per_page,
+            'users': users,
+            'action_choices': UserActivity.ACTION_CHOICES,
+            'filters': {
+                'action': action,
+                'user': user_id,
+                'date_from': date_from,
+                'date_to': date_to,
+            }
+        }
+        
+        return render(request, self.template_name, context)

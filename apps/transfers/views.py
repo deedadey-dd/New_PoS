@@ -18,11 +18,15 @@ from apps.inventory.models import Batch, Product
 from apps.core.mixins import PaginationMixin
 
 
-class TransferListView(LoginRequiredMixin, ListView):
+from apps.core.mixins import SortableMixin
+
+class TransferListView(LoginRequiredMixin, SortableMixin, ListView):
     """List all transfers for the tenant."""
     model = Transfer
     template_name = 'transfers/transfer_list.html'
     context_object_name = 'transfers'
+    sortable_fields = ['created_at', 'transfer_number', 'source_location__name', 'destination_location__name', 'status']
+    default_sort = '-created_at'
     
     # Active statuses (still in progress)
     ACTIVE_STATUSES = ['DRAFT', 'SENT']
@@ -74,7 +78,7 @@ class TransferListView(LoginRequiredMixin, ListView):
             return base_queryset.filter(status=status)
         
         # By default, show active transfers in main list
-        return base_queryset.filter(status__in=self.ACTIVE_STATUSES)
+        return self.apply_sorting(base_queryset.filter(status__in=self.ACTIVE_STATUSES))
     
     def get_context_data(self, **kwargs):
         from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
@@ -89,7 +93,8 @@ class TransferListView(LoginRequiredMixin, ListView):
         # Get completed transfers (history) with pagination
         history_queryset = self.get_base_queryset().filter(
             status__in=self.COMPLETED_STATUSES
-        ).order_by('-received_at', '-created_at')
+        )
+        history_queryset = self.apply_sorting(history_queryset)
         
         # Pagination for history
         history_page = self.request.GET.get('history_page', 1)
@@ -696,11 +701,13 @@ from .models import StockRequest, StockRequestItem
 from .forms import StockRequestForm, StockRequestItemForm, StockRequestItemFormSet, StockRequestRejectForm
 
 
-class StockRequestListView(LoginRequiredMixin, PaginationMixin, ListView):
+class StockRequestListView(LoginRequiredMixin, SortableMixin, ListView):
     """List stock requests for the tenant."""
     model = StockRequest
     template_name = 'transfers/stock_request_list.html'
     context_object_name = 'requests'
+    sortable_fields = ['created_at', 'request_number', 'requesting_location__name', 'supplying_location__name', 'status']
+    default_sort = '-created_at'
     
     def get_queryset(self):
         from django.db.models import Q
@@ -737,9 +744,9 @@ class StockRequestListView(LoginRequiredMixin, PaginationMixin, ListView):
         if status:
             queryset = queryset.filter(status=status)
         
-        return queryset.select_related(
+        return self.apply_sorting(queryset.select_related(
             'requesting_location', 'supplying_location', 'requested_by'
-        )
+        ))
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1037,11 +1044,13 @@ from .models import StockWriteOff
 from .forms import StockWriteOffForm
 
 
-class StockWriteOffListView(LoginRequiredMixin, PaginationMixin, ListView):
+class StockWriteOffListView(LoginRequiredMixin, SortableMixin, ListView):
     """List stock write-offs."""
     model = StockWriteOff
     template_name = 'transfers/write_off_list.html'
     context_object_name = 'write_offs'
+    sortable_fields = ['created_at', 'writeoff_number', 'product__name', 'location__name', 'quantity', 'reason']
+    default_sort = '-created_at'
 
     def get_queryset(self):
         from django.db.models import Q
@@ -1084,7 +1093,7 @@ class StockWriteOffListView(LoginRequiredMixin, PaginationMixin, ListView):
         if date_to:
             queryset = queryset.filter(created_at__date__lte=date_to)
 
-        return queryset
+        return self.apply_sorting(queryset)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

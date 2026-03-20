@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load sort_tags %}
 
 {% block title %}Transfers - {{ current_tenant.name }}{% endblock %}
 
@@ -62,12 +63,12 @@
             <table class="table table-hover">
                 <thead>
                     <tr>
-                        <th>Transfer #</th>
-                        <th>From</th>
-                        <th>To</th>
+                        <th>{% sort_link "Transfer #" "transfer_number" %}</th>
+                        <th>{% sort_link "From" "source_location__name" %}</th>
+                        <th>{% sort_link "To" "destination_location__name" %}</th>
                         <th>Items</th>
-                        <th>Status</th>
-                        <th>Created</th>
+                        <th>{% sort_link "Status" "status" %}</th>
+                        <th>{% sort_link "Created" "created_at" %}</th>
                         <th class="text-end">Actions</th>
                     </tr>
                 </thead>
@@ -136,12 +137,12 @@
             <table class="table table-hover table-sm">
                 <thead class="table-light">
                     <tr>
-                        <th>Transfer #</th>
-                        <th>From</th>
-                        <th>To</th>
+                        <th>{% sort_link "Transfer #" "transfer_number" %}</th>
+                        <th>{% sort_link "From" "source_location__name" %}</th>
+                        <th>{% sort_link "To" "destination_location__name" %}</th>
                         <th>Items</th>
-                        <th>Status</th>
-                        <th>Completed</th>
+                        <th>{% sort_link "Status" "status" %}</th>
+                        <th>{% sort_link "Completed" "created_at" %}</th>
                         <th class="text-end">Actions</th>
                     </tr>
                 </thead>

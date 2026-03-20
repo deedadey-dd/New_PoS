@@ -16,6 +16,9 @@ urlpatterns = [
     # Inventory Movement Report
     path('inventory-movements/', views.InventoryMovementReportView.as_view(), name='inventory_movements'),
 
+    # User Activity Log
+    path('user-activity/', views.UserActivityListView.as_view(), name='user_activity_log'),
+
     # Excel Exports
     path('profit-loss/products/export/', views.ProductProfitLossExportView.as_view(), name='product_profit_loss_export'),
     path('profit-loss/locations/export/', views.LocationProfitLossExportView.as_view(), name='location_profit_loss_export'),

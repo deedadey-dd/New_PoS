@@ -19,7 +19,7 @@ from django.utils import timezone
 from .models import Sale, SaleItem, Shift, ShopSettings
 from apps.inventory.models import Product, ShopPrice
 from apps.core.models import Location
-from apps.core.mixins import PaginationMixin
+from apps.core.mixins import PaginationMixin, SortableMixin
 
 
 class POSView(LoginRequiredMixin, View):
@@ -310,11 +310,13 @@ class ShiftCloseView(LoginRequiredMixin, View):
         return redirect('core:dashboard')
 
 
-class SaleListView(LoginRequiredMixin, PaginationMixin, ListView):
+class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
     """List sales for the shop."""
     model = Sale
     template_name = 'sales/sale_list.html'
     context_object_name = 'sales'
+    sortable_fields = ['created_at', 'sale_number', 'total', 'amount_paid', 'status', 'payment_method', 'attendant__username']
+    default_sort = '-created_at'
     
     def get_queryset(self):
         from datetime import datetime
@@ -370,7 +372,7 @@ class SaleListView(LoginRequiredMixin, PaginationMixin, ListView):
         if payment:
             queryset = queryset.filter(payment_method=payment)
         
-        return queryset
+        return self.apply_sorting(queryset)
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

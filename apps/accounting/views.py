@@ -16,13 +16,17 @@ from decimal import Decimal
 from .models import CashTransfer
 from .forms import CashTransferForm
 from apps.core.models import User, Location
+from apps.core.mixins import SortableMixin
 
 
-class CashTransferListView(LoginRequiredMixin, ListView):
+class CashTransferListView(LoginRequiredMixin, SortableMixin, ListView):
     """List cash transfers for the current user."""
     model = CashTransfer
     template_name = 'accounting/cash_transfer_list.html'
     context_object_name = 'transfers'
+    paginate_by = 20
+    sortable_fields = ['created_at', 'amount', 'from_location__name', 'to_location__name', 'status']
+    default_sort = '-created_at'
     paginate_by = 20
     
     def get_queryset(self):
@@ -78,7 +82,7 @@ class CashTransferListView(LoginRequiredMixin, ListView):
                 Q(from_location_id=shop) | Q(to_location_id=shop)
             )
         
-        return queryset
+        return self.apply_sorting(queryset)
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -464,11 +468,15 @@ class SalesReportView(LoginRequiredMixin, View):
         return render(request, self.template_name, context)
 
 
-class PriceHistoryView(LoginRequiredMixin, View):
+from apps.core.mixins import SortableMixin
+
+class PriceHistoryView(LoginRequiredMixin, SortableMixin, View):
     """
     Audit trail of all shop price changes.
     """
     template_name = 'accounting/price_history.html'
+    sortable_fields = ['product__name', 'location__name', 'selling_price', 'created_at']
+    default_sort = '-created_at'
     
     def dispatch(self, request, *args, **kwargs):
         role_name = request.user.role.name if request.user.role else None
@@ -503,12 +511,16 @@ class PriceHistoryView(LoginRequiredMixin, View):
         date_from = request.GET.get('date_from')
         if date_from:
             prices = prices.filter(created_at__date__gte=date_from)
+            
+        prices = self.apply_sorting(prices)
         
         context = {
             'prices': prices[:100],  # Limit for performance
             'total_count': prices.count(),
             'shops': Location.objects.filter(tenant=tenant, location_type='SHOP', is_active=True),
             'products': Product.objects.filter(tenant=tenant, is_active=True)[:50],
+            'current_sort': self.request.GET.get('sort', ''),
+            'current_dir': self.request.GET.get('dir', 'asc'),
         }
         
         return render(request, self.template_name, context)

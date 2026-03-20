@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static sort_tags %}
 
 {% block title %}Stock Write-Offs{% endblock %}
 
@@ -55,12 +55,12 @@
                 <table class="table table-hover mb-0">
                     <thead>
                         <tr>
-                            <th>WO #</th>
-                            <th>Date</th>
-                            <th>Product</th>
+                            <th>{% sort_link "WO #" "writeoff_number" %}</th>
+                            <th>{% sort_link "Date" "created_at" %}</th>
+                            <th>{% sort_link "Product" "product__name" %}</th>
                             <th>Batch</th>
-                            <th class="text-center">Qty</th>
-                            <th>Reason</th>
+                            <th class="text-center">{% sort_link "Qty" "quantity" "justify-content-center" %}</th>
+                            <th>{% sort_link "Reason" "reason" %}</th>
                             <th>Notes</th>
                             <th>Performed By</th>
                         </tr>

@@ -320,6 +320,12 @@
                                         <i class="bi bi-arrow-left-right me-2"></i>Inventory Movements
                                     </a>
                                 </li>
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if 'user-activity' in request.path %}text-white{% endif %}"
+                                        href="{% url 'audit:user_activity_log' %}">
+                                        <i class="bi bi-person-lines-fill me-2"></i>User Activity Log
+                                    </a>
+                                </li>
                             </ul>
                         </div>
                     </li>

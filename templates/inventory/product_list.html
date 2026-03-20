@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% load transfer_filters %}
+{% load sort_tags %}
 
 {% block title %}Products - {{ current_tenant.name }}{% endblock %}
 
@@ -76,12 +77,12 @@
             <table class="table table-hover">
                 <thead>
                     <tr>
-                        <th>SKU</th>
-                        <th>Name</th>
-                        <th>Category</th>
-                        <th class="text-end">Stock</th>
+                        <th>{% sort_link "SKU" "sku" %}</th>
+                        <th>{% sort_link "Name" "name" %}</th>
+                        <th>{% sort_link "Category" "category__name" %}</th>
+                        <th class="text-end">{% sort_link "Stock" "total_stock" "justify-content-end" %}</th>
                         <th>Unit</th>
-                        <th class="text-end">Price</th>
+                        <th class="text-end">{% sort_link "Price" "default_selling_price" "justify-content-end" %}</th>
                         <th>Status</th>
                         <th class="text-end">Actions</th>
                     </tr>

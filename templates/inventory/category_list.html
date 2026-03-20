@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load sort_tags %}
 
 {% block title %}Categories - {{ current_tenant.name }}{% endblock %}
 
@@ -20,9 +21,9 @@
             <table class="table table-hover">
                 <thead>
                     <tr>
-                        <th>Name</th>
-                        <th>Parent</th>
-                        <th>Status</th>
+                        <th>{% sort_link "Name" "name" %}</th>
+                        <th>{% sort_link "Parent" "parent__name" %}</th>
+                        <th>{% sort_link "Status" "is_active" %}</th>
                         <th class="text-end">Actions</th>
                     </tr>
                 </thead>

@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load sort_tags %}
 
 {% block title %}Sales History{% endblock %}
 
@@ -86,13 +87,13 @@
             <table class="table table-hover">
                 <thead>
                     <tr>
-                        <th>Sale #</th>
-                        <th>Date</th>
+                        <th>{% sort_link "Sale #" "sale_number" %}</th>
+                        <th>{% sort_link "Date" "created_at" %}</th>
                         <th>Shop</th>
-                        <th>Attendant</th>
-                        <th>Payment</th>
-                        <th>Total</th>
-                        <th>Status</th>
+                        <th>{% sort_link "Attendant" "attendant__username" %}</th>
+                        <th>{% sort_link "Payment" "payment_method" %}</th>
+                        <th>{% sort_link "Total" "total" %}</th>
+                        <th>{% sort_link "Status" "status" %}</th>
                         <th class="text-end">Actions</th>
                     </tr>
                 </thead>

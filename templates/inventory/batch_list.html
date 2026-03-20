@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load sort_tags %}
 
 {% block title %}Batches - {{ current_tenant.name }}{% endblock %}
 
@@ -57,13 +58,13 @@
             <table class="table table-hover">
                 <thead>
                     <tr>
-                        <th>Batch #</th>
-                        <th>Product</th>
-                        <th>Location</th>
-                        <th class="text-end">Qty</th>
-                        <th class="text-end">Unit Cost</th>
-                        <th>Expiry</th>
-                        <th>Status</th>
+                        <th>{% sort_link "Batch #" "batch_number" %}</th>
+                        <th>{% sort_link "Product" "product__name" %}</th>
+                        <th>{% sort_link "Location" "location__name" %}</th>
+                        <th class="text-end">{% sort_link "Qty" "current_quantity" "justify-content-end" %}</th>
+                        <th class="text-end">{% sort_link "Unit Cost" "unit_cost" "justify-content-end" %}</th>
+                        <th>{% sort_link "Expiry" "expiry_date" %}</th>
+                        <th>{% sort_link "Status" "status" %}</th>
                         <th class="text-end">Actions</th>
                     </tr>
                 </thead>

@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load sort_tags %}
 
 {% block title %}Price History - {{ current_tenant.name }}{% endblock %}
 
@@ -66,10 +67,10 @@
             <table class="table table-hover">
                 <thead class="table-light">
                     <tr>
-                        <th>Date</th>
-                        <th>Product</th>
-                        <th>Shop</th>
-                        <th class="text-end">Price</th>
+                        <th>{% sort_link "Date" "created_at" %}</th>
+                        <th>{% sort_link "Product" "product__name" %}</th>
+                        <th>{% sort_link "Shop" "location__name" %}</th>
+                        <th class="text-end">{% sort_link "Price" "selling_price" "justify-content-end" %}</th>
                         <th>Status</th>
                     </tr>
                 </thead>

@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% load humanize %}
+{% load humanize sort_tags %}
 
 {% block title %}Product Lifecycle Tracking{% endblock %}
 
@@ -215,11 +215,11 @@
                 <table class="table table-hover table-striped mb-0">
                     <thead class="table-dark">
                         <tr>
-                            <th class="text-white">Date/Time</th>
-                            <th class="text-white">Type</th>
-                            <th class="text-white">Location</th>
-                            <th class="text-white">Batch</th>
-                            <th class="text-end text-white">Quantity</th>
+                            <th class="text-white">{% sort_link "Date/Time" "created_at" "text-white" %}</th>
+                            <th class="text-white">{% sort_link "Type" "transaction_type" "text-white" %}</th>
+                            <th class="text-white">{% sort_link "Location" "location__name" "text-white" %}</th>
+                            <th class="text-white">{% sort_link "Batch" "batch__batch_number" "text-white" %}</th>
+                            <th class="text-end text-white">{% sort_link "Quantity" "quantity" "justify-content-end text-white" %}</th>
                             <th class="text-end text-white">Unit Cost</th>
                             <th class="text-white">Reference</th>
                             <th class="text-white">By</th>

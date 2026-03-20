@@ -18,22 +18,25 @@ from apps.core.mixins import PaginationMixin # Added this line
 from .models import Category, Product, Batch, InventoryLedger, ShopPrice
 from .forms import CategoryForm, ProductForm, BatchForm, StockAdjustmentForm, ShopPriceForm
 from apps.core.models import Location
-from apps.core.mixins import PaginationMixin
+from apps.core.mixins import PaginationMixin, SortableMixin
 
 import openpyxl
 
 
 # ============ Category Views ============
-class CategoryListView(LoginRequiredMixin, PaginationMixin, ListView):
+class CategoryListView(LoginRequiredMixin, SortableMixin, ListView):
     """List all categories for the tenant."""
     model = Category
     template_name = 'inventory/category_list.html'
     context_object_name = 'categories'
+    sortable_fields = ['name', 'parent__name', 'created_at']
+    default_sort = 'name'
     
     def get_queryset(self):
-        return Category.objects.filter(
+        queryset = Category.objects.filter(
             tenant=self.request.user.tenant
         ).select_related('parent')
+        return self.apply_sorting(queryset)
 
 
 class CategoryCreateView(LoginRequiredMixin, CreateView):
@@ -85,11 +88,13 @@ class CategoryDeleteView(LoginRequiredMixin, DeleteView):
 
 
 # ============ Product Views ============
-class ProductListView(LoginRequiredMixin, PaginationMixin, ListView):
+class ProductListView(LoginRequiredMixin, SortableMixin, ListView):
     """List all products for the tenant."""
     model = Product
     template_name = 'inventory/product_list.html'
     context_object_name = 'products'
+    sortable_fields = ['name', 'sku', 'default_selling_price', 'total_stock', 'category__name']
+    default_sort = 'name'
     
     def get_queryset(self):
         queryset = Product.objects.filter(
@@ -110,7 +115,39 @@ class ProductListView(LoginRequiredMixin, PaginationMixin, ListView):
         if category:
             queryset = queryset.filter(category_id=category)
         
-        return queryset
+        # Annotate total_stock for sorting
+        from django.db.models import Sum, Subquery, OuterRef
+        from django.db.models.functions import Coalesce
+        from decimal import Decimal
+        from .models import InventoryLedger
+        
+        user = self.request.user
+        user_location = user.location
+        user_location_type = None
+        
+        if not user_location and user.role:
+            role_location_map = {
+                'PRODUCTION_MANAGER': 'PRODUCTION',
+                'STORES_MANAGER': 'STORES',
+                'SHOP_MANAGER': 'SHOP',
+            }
+            user_location_type = role_location_map.get(user.role.name)
+            
+        stock_filter = {'product': OuterRef('pk'), 'tenant': user.tenant}
+        if user_location:
+            stock_filter['location'] = user_location
+        elif user_location_type:
+            stock_filter['location__location_type'] = user_location_type
+            
+        stock_subquery = InventoryLedger.objects.filter(**stock_filter).order_by().values('product').annotate(
+            total=Sum('quantity')
+        ).values('total')
+        
+        queryset = queryset.annotate(
+            total_stock=Coalesce(Subquery(stock_subquery), Decimal('0.00'))
+        )
+        
+        return self.apply_sorting(queryset)
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -521,11 +558,15 @@ class InventoryExportView(LoginRequiredMixin, View):
 
 
 # ============ Batch Views ============
-class BatchListView(LoginRequiredMixin, PaginationMixin, ListView):
+from apps.core.mixins import SortableMixin
+
+class BatchListView(LoginRequiredMixin, SortableMixin, ListView):
     """List all batches for the tenant."""
     model = Batch
     template_name = 'inventory/batch_list.html'
     context_object_name = 'batches'
+    sortable_fields = ['created_at', 'product__name', 'batch_number', 'unit_cost', 'initial_quantity', 'current_quantity', 'expiry_date', 'status', 'location__name']
+    default_sort = '-created_at'
     
     def get_queryset(self):
         queryset = Batch.objects.filter(
@@ -542,7 +583,8 @@ class BatchListView(LoginRequiredMixin, PaginationMixin, ListView):
         if location:
             queryset = queryset.filter(location_id=location)
         
-        return queryset
+        
+        return self.apply_sorting(queryset)
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -667,7 +709,7 @@ class StockOverviewView(LoginRequiredMixin, View):
             current_quantity__gt=0,
             expiry_date__lte=timezone.now().date() + timedelta(days=30),
             expiry_date__gte=timezone.now().date()
-        ).select_related('product', 'location').order_by('expiry_date')
+        ).select_related('product', 'location').order_by('expiry_date')[:10]
         
         # Pagination for Stock Summary
         page_summary = request.GET.get('page_summary', 1)
@@ -676,7 +718,7 @@ class StockOverviewView(LoginRequiredMixin, View):
         
         # Pagination for Low Stock
         page_low_stock = request.GET.get('page_low_stock', 1)
-        paginator_low_stock = Paginator(low_stock_list, 25)
+        paginator_low_stock = Paginator(low_stock_list, 10)
         low_stock = paginator_low_stock.get_page(page_low_stock)
         
         context = {
@@ -725,7 +767,7 @@ class StockAdjustmentView(LoginRequiredMixin, View):
         return render(request, self.template_name, {'form': form})
 
 
-class InventoryLedgerListView(LoginRequiredMixin, PaginationMixin, ListView):
+class InventoryLedgerListView(LoginRequiredMixin, SortableMixin, ListView):
     """
     Complete audit trail of all inventory movements.
     Read-only view for Auditors and Admins.
@@ -733,6 +775,8 @@ class InventoryLedgerListView(LoginRequiredMixin, PaginationMixin, ListView):
     model = InventoryLedger
     template_name = 'inventory/inventory_ledger.html'
     context_object_name = 'entries'
+    sortable_fields = ['created_at', 'product__name', 'quantity', 'unit_cost', 'transaction_type', 'location__name', 'batch__batch_number']
+    default_sort = '-created_at'
     
     def get_queryset(self):
         from django.utils import timezone
@@ -774,7 +818,7 @@ class InventoryLedgerListView(LoginRequiredMixin, PaginationMixin, ListView):
                 Q(product__sku__icontains=product)
             )
         
-        return queryset
+        return self.apply_sorting(queryset)
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

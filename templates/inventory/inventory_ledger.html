@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load sort_tags %}
 
 {% block title %}Inventory Ledger - {{ current_tenant.name }}{% endblock %}
 
@@ -81,13 +82,13 @@
             <table class="table table-hover table-sm">
                 <thead class="table-light">
                     <tr>
-                        <th style="width: 140px;">Timestamp</th>
-                        <th style="width: 120px;">Type</th>
-                        <th>Product</th>
-                        <th>Batch</th>
-                        <th>Location</th>
-                        <th class="text-end" style="width: 100px;">Quantity</th>
-                        <th class="text-end" style="width: 100px;">Unit Cost</th>
+                        <th style="width: 140px;">{% sort_link "Timestamp" "created_at" %}</th>
+                        <th style="width: 120px;">{% sort_link "Type" "transaction_type" %}</th>
+                        <th>{% sort_link "Product" "product__name" %}</th>
+                        <th>{% sort_link "Batch" "batch__batch_number" %}</th>
+                        <th>{% sort_link "Location" "location__name" %}</th>
+                        <th class="text-end" style="width: 100px;">{% sort_link "Quantity" "quantity" %}</th>
+                        <th class="text-end" style="width: 100px;">{% sort_link "Unit Cost" "unit_cost" %}</th>
                         <th>User</th>
                         <th>Reference</th>
                     </tr>
