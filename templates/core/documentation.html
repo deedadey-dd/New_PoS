@@ -256,6 +256,12 @@
                         </li>
                         <li>Click <strong>Complete Setup</strong></li>
                     </ol>
+
+                    <h3>Data Tables & Navigation</h3>
+                    <ul>
+                        <li><strong>Sorting:</strong> Click any column header that displays a sorting icon to easily sort lists (e.g., inventory, sales, users) alphabetically or numerically. Clicking the header toggles between ascending and descending order.</li>
+                        <li><strong>Filtering:</strong> Use the filter panels above most data lists to search by date, name, status, and other fields efficiently.</li>
+                    </ul>
                 </section>
 
                 <!-- User Roles -->
@@ -608,23 +614,20 @@
                     </div>
                     <p class="text-muted small">Alternative: PARTIAL → DISPUTED → CLOSED</p>
 
-                    <h3>Creating a Transfer</h3>
+                    <h3>Creating & Editing a Transfer</h3>
                     <ol>
                         <li>Go to <strong>Transfers</strong></li>
                         <li>Click <strong>New Transfer</strong></li>
-                        <li>Select:
-                            <ul>
-                                <li><strong>Source Location</strong> - Where stock is coming from</li>
-                                <li><strong>Destination Location</strong> - Where stock is going</li>
-                            </ul>
-                        </li>
+                        <li>Select <strong>Source Location</strong> and <strong>Destination Location</strong></li>
                         <li>Add items:
                             <ul>
                                 <li>Search for products</li>
+                                <li>When selecting batches, the system <strong>automatically filters</strong> to show only valid available batches for that product</li>
                                 <li>Enter quantities to send</li>
                             </ul>
                         </li>
                         <li>Click <strong>Save as Draft</strong> or <strong>Send Transfer</strong></li>
+                        <li><strong>Editing Drafts:</strong> While a transfer is in <span class="badge bg-secondary">DRAFT</span> status, you can click on it at any time to open the edit page, where you can modify product quantities, add new products, or assign batches before sending.</li>
                     </ol>
 
                     <h3>Sending a Transfer</h3>
@@ -1043,6 +1046,20 @@
                         <i class="bi bi-shield-check me-2"></i>
                         <strong>Available to:</strong> AUDITOR, ACCOUNTANT, ADMIN
                     </div>
+
+                    <h3>User Activity Logs</h3>
+                    <p>Designed for comprehensive auditing and accountability, tracking user interactions across the system:</p>
+                    <ol>
+                        <li>Go to <strong>Tracking & Reports → User Activity Logs</strong></li>
+                        <li>View detailed logs indicating:
+                            <ul>
+                                <li><strong>User & Action:</strong> Identifies which staff member performed the action, mapped to action types (Logins, Record Creation, Updates, Deletes)</li>
+                                <li><strong>Endpoint:</strong> The system path that was accessed</li>
+                                <li><strong>Device Info:</strong> Displays device type and browser string for security verification</li>
+                            </ul>
+                        </li>
+                        <li>Use top filters to drill down into specific users' actions or specified date ranges</li>
+                    </ol>
 
                     <h3>Product Lifecycle</h3>
                     <p>Track a product's journey through the system:</p>

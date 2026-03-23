@@ -23,8 +23,27 @@
 
         .sa-sidebar {
             background: rgba(0, 0, 0, 0.3);
-            min-height: 100vh;
+            height: 100vh;
             border-right: 1px solid rgba(255, 255, 255, 0.1);
+            position: sticky;
+            top: 0;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sa-sidebar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .sa-sidebar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .sa-sidebar::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 3px;
+        }
+        .sa-sidebar::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.25);
         }
 
         .sa-sidebar .nav-link {
