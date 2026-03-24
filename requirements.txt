@@ -38,3 +38,6 @@ typing_extensions==4.15.0
 
 # PDF generation (for subscription receipts)
 reportlab>=4.0.0
+
+# User-Agent parsing (for audit logs)
+user-agents>=2.2.0
