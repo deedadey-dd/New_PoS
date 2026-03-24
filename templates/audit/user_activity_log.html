@@ -98,17 +98,18 @@
                         </td>
                         <td><small>{{ activity.path }}</small></td>
                         <td><small>{{ activity.ip_address|default:"-" }}</small></td>
-                        <td><small>{{ activity.device_info|default:"-"|truncatechars:30 }}</small></td>
+                        <td><small>{{ activity.device_info|default:"-" }}</small></td>
                         <td>
                             {% if activity.details %}
-                            <button type="button" class="btn btn-link btn-sm p-0 m-0" data-bs-toggle="collapse" data-bs-target="#details-{{ activity.id }}">
-                                View Details
-                            </button>
-                            <div class="collapse mt-1" id="details-{{ activity.id }}">
-                                <div class="card card-body bg-light p-2 small" style="word-break: break-all;">
-                                    {{ activity.details }}
-                                </div>
-                            </div>
+                            <span class="d-inline-block" tabindex="0"
+                                  data-bs-toggle="popover"
+                                  data-bs-trigger="hover focus"
+                                  data-bs-placement="left"
+                                  data-bs-html="true"
+                                  data-bs-title="Details"
+                                  data-details="{{ activity.details }}">
+                                <i class="bi bi-info-circle text-primary" style="cursor: pointer;"></i>
+                            </span>
                             {% else %}
                             <small class="text-muted">-</small>
                             {% endif %}
@@ -130,3 +131,36 @@
     </div>
 </div>
 {% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('[data-details]').forEach(function(el) {
+        var raw = el.getAttribute('data-details');
+        var html = '';
+        try {
+            var obj = JSON.parse(raw);
+            html = '<table class="table table-sm table-borderless mb-0" style="font-size: .8rem;">';
+            for (var key in obj) {
+                if (obj.hasOwnProperty(key)) {
+                    var val = obj[key];
+                    if (val === '***') val = '<em class="text-muted">hidden</em>';
+                    else if (typeof val === 'string' && val.length > 60) val = val.substring(0, 60) + '…';
+                    html += '<tr><td class="fw-bold text-nowrap pe-2">' + key + '</td><td>' + val + '</td></tr>';
+                }
+            }
+            html += '</table>';
+        } catch (e) {
+            html = '<span style="font-size: .85rem;">' + raw.substring(0, 200) + '</span>';
+        }
+        el.setAttribute('data-bs-content', html);
+    });
+
+    var popoverTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="popover"]'));
+    popoverTriggerList.forEach(function(el) {
+        new bootstrap.Popover(el, { sanitize: false });
+    });
+});
+</script>
+{% endblock %}
+

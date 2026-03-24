@@ -3,6 +3,50 @@ from django.utils.deprecation import MiddlewareMixin
 from django.urls import resolve
 from .models import UserActivity
 
+try:
+    from user_agents import parse as parse_ua
+except ImportError:
+    parse_ua = None
+
+
+def _friendly_device_info(ua_string):
+    """Parse a User-Agent string into a human-readable summary."""
+    if not ua_string:
+        return ''
+    if parse_ua is None:
+        return ua_string[:255]
+
+    ua = parse_ua(ua_string)
+    browser = ua.browser.family
+    if ua.browser.version_string:
+        browser += f' {ua.browser.version_string}'
+
+    os_name = ua.os.family
+    if ua.os.version_string:
+        os_name += f' {ua.os.version_string}'
+
+    if ua.is_mobile:
+        device_type = 'Mobile'
+    elif ua.is_tablet:
+        device_type = 'Tablet'
+    elif ua.is_pc:
+        device_type = 'Desktop'
+    elif ua.is_bot:
+        device_type = 'Bot'
+    else:
+        device_type = 'Unknown'
+
+    device_brand = ''
+    if ua.device.brand and ua.device.brand != 'Other':
+        device_brand = ua.device.brand
+        if ua.device.model and ua.device.model != 'Other':
+            device_brand += f' {ua.device.model}'
+
+    parts = [browser, os_name, device_type]
+    if device_brand:
+        parts.append(device_brand)
+    return ' / '.join(parts)[:255]
+
 class ActivityLoggingMiddleware(MiddlewareMixin):
     """
     Middleware to log user activity (POST/PUT/DELETE requests).
@@ -60,7 +104,7 @@ class ActivityLoggingMiddleware(MiddlewareMixin):
             else:
                 ip = request.META.get('REMOTE_ADDR')
                 
-            device_info = request.META.get('HTTP_USER_AGENT', '')[:255]
+            device_info = _friendly_device_info(request.META.get('HTTP_USER_AGENT', ''))
                 
             UserActivity.objects.create(
                 tenant=request.user.tenant,
