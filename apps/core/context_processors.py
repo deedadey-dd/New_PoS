@@ -30,6 +30,7 @@ def tenant_context(request):
         context['current_tenant'] = tenant
         context['currency_symbol'] = tenant.currency_symbol
         context['role_name'] = role_name
+        context['shops_can_see_other_stock'] = tenant.shops_can_see_other_stock
         
         # Add notification data
         from apps.notifications.models import Notification

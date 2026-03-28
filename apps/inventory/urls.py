@@ -40,4 +40,5 @@ urlpatterns = [
     # API
     path('api/batches/', views.get_batches_for_product, name='api_batches'),
     path('api/products/search/', views.search_products, name='api_product_search'),
+    path('api/products/<int:pk>/toggle-favorite/', views.ToggleFavoriteView.as_view(), name='api_toggle_favorite'),
 ]

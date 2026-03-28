@@ -39,23 +39,19 @@ class TransferListView(LoginRequiredMixin, SortableMixin, ListView):
         user = self.request.user
         queryset = Transfer.objects.filter(tenant=user.tenant)
         
-        # Non-admin users only see transfers they're involved in
-        if not (user.role and user.role.name == 'ADMIN'):
-            role_location_map = {
-                'PRODUCTION_MANAGER': 'PRODUCTION',
-                'STORES_MANAGER': 'STORES',
-                'SHOP_MANAGER': 'SHOP',
-            }
-            user_location_type = role_location_map.get(user.role.name if user.role else None)
-            
-            # Build filter: user's specific location OR matching location type
-            location_filter = Q()
+        # Role-based visibility filtering
+        role_name = user.role.name if user.role else None
+        
+        # Roles that see ALL tenant transfers (no location filtering)
+        full_access_roles = {'ADMIN', 'STORES_MANAGER', 'AUDITOR', 'ACCOUNTANT'}
+        
+        if role_name not in full_access_roles:
+            # Shop roles and others: only see transfers involving their specific location
             if user.location:
-                location_filter |= Q(source_location=user.location) | Q(destination_location=user.location)
-            if user_location_type:
-                location_filter |= Q(source_location__location_type=user_location_type) | Q(destination_location__location_type=user_location_type)
-            
-            queryset = queryset.filter(location_filter)
+                location_filter = (
+                    Q(source_location=user.location) | Q(destination_location=user.location)
+                )
+                queryset = queryset.filter(location_filter)
         
         # Filter by location (either source or destination)
         location = self.request.GET.get('location')
@@ -612,22 +608,17 @@ class TransferItemHistoryView(LoginRequiredMixin, ListView):
             'transfer__destination_location',
         ).order_by('-transfer__created_at')
         
-        # Apply role-based filtering (same logic as TransferListView)
-        if not (user.role and user.role.name == 'ADMIN'):
-            role_location_map = {
-                'PRODUCTION_MANAGER': 'PRODUCTION',
-                'STORES_MANAGER': 'STORES',
-                'SHOP_MANAGER': 'SHOP',
-            }
-            user_location_type = role_location_map.get(user.role.name if user.role else None)
-            
-            location_filter = Q()
+        # Role-based filtering (same logic as TransferListView)
+        role_name = user.role.name if user.role else None
+        full_access_roles = {'ADMIN', 'STORES_MANAGER', 'AUDITOR', 'ACCOUNTANT'}
+        
+        if role_name not in full_access_roles:
+            # Shop roles and others: only see transfers involving their specific location
             if user.location:
-                location_filter |= Q(transfer__source_location=user.location) | Q(transfer__destination_location=user.location)
-            if user_location_type:
-                location_filter |= Q(transfer__source_location__location_type=user_location_type) | Q(transfer__destination_location__location_type=user_location_type)
-            
-            queryset = queryset.filter(location_filter)
+                location_filter = (
+                    Q(transfer__source_location=user.location) | Q(transfer__destination_location=user.location)
+                )
+                queryset = queryset.filter(location_filter)
         
         # Filter by product search
         search = self.request.GET.get('search')
@@ -1171,21 +1162,15 @@ class TransferListExportView(LoginRequiredMixin, View):
         queryset = Transfer.objects.filter(tenant=user.tenant)
 
         # Role-based filtering (same as TransferListView)
-        if not (user.role and user.role.name == 'ADMIN'):
-            role_location_map = {
-                'PRODUCTION_MANAGER': 'PRODUCTION',
-                'STORES_MANAGER': 'STORES',
-                'SHOP_MANAGER': 'SHOP',
-            }
-            user_location_type = role_location_map.get(user.role.name if user.role else None)
+        role_name = user.role.name if user.role else None
+        full_access_roles = {'ADMIN', 'STORES_MANAGER', 'AUDITOR', 'ACCOUNTANT'}
 
-            location_filter = Q()
+        if role_name not in full_access_roles:
             if user.location:
-                location_filter |= Q(source_location=user.location) | Q(destination_location=user.location)
-            if user_location_type:
-                location_filter |= Q(source_location__location_type=user_location_type) | Q(destination_location__location_type=user_location_type)
-
-            queryset = queryset.filter(location_filter)
+                location_filter = (
+                    Q(source_location=user.location) | Q(destination_location=user.location)
+                )
+                queryset = queryset.filter(location_filter)
 
         # Location filter
         location_id = request.GET.get('location')
@@ -1240,21 +1225,15 @@ class TransferItemHistoryExportView(LoginRequiredMixin, View):
         ).order_by('-transfer__created_at')
 
         # Role-based filtering (same as TransferItemHistoryView)
-        if not (user.role and user.role.name == 'ADMIN'):
-            role_location_map = {
-                'PRODUCTION_MANAGER': 'PRODUCTION',
-                'STORES_MANAGER': 'STORES',
-                'SHOP_MANAGER': 'SHOP',
-            }
-            user_location_type = role_location_map.get(user.role.name if user.role else None)
+        role_name = user.role.name if user.role else None
+        full_access_roles = {'ADMIN', 'STORES_MANAGER', 'AUDITOR', 'ACCOUNTANT'}
 
-            location_filter = Q()
+        if role_name not in full_access_roles:
             if user.location:
-                location_filter |= Q(transfer__source_location=user.location) | Q(transfer__destination_location=user.location)
-            if user_location_type:
-                location_filter |= Q(transfer__source_location__location_type=user_location_type) | Q(transfer__destination_location__location_type=user_location_type)
-
-            queryset = queryset.filter(location_filter)
+                location_filter = (
+                    Q(transfer__source_location=user.location) | Q(transfer__destination_location=user.location)
+                )
+                queryset = queryset.filter(location_filter)
 
         # Search filter
         search = request.GET.get('search')

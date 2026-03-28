@@ -145,13 +145,13 @@
                     <!-- Inventory -->
                     {% if role_name == 'ADMIN' or role_name == 'STORES_MANAGER' or role_name == 'PRODUCTION_MANAGER' or role_name == 'SHOP_MANAGER' %}
                     <li class="nav-item">
-                        <a class="nav-link text-white d-flex justify-content-between align-items-center {% if 'inventory' in request.path or 'transfers' in request.path %}active{% endif %}"
+                        <a class="nav-link text-white d-flex justify-content-between align-items-center {% if 'inventory' in request.path or 'transfers' in request.path and 'cash-transfers' not in request.path %}active{% endif %}"
                             data-bs-toggle="collapse" href="#inventoryMenu" role="button">
                             <span><i class="bi bi-box-seam me-2"></i> Inventory</span>
                             <i class="bi bi-chevron-down"></i>
                         </a>
 
-                        <div class="collapse {% if 'inventory' in request.path or 'transfers' in request.path %}show{% endif %}"
+                        <div class="collapse {% if 'inventory' in request.path or 'transfers' in request.path and 'cash-transfers' not in request.path %}show{% endif %}"
                             id="inventoryMenu">
                             <ul class="nav flex-column ms-3">
                                 <li class="nav-item">
@@ -174,12 +174,14 @@
                                         Categories
                                     </a>
                                 </li>
+                                {% if shops_can_see_other_stock or role_name not in 'SHOP_MANAGER,SHOP_ATTENDANT' %}
                                 <li class="nav-item">
                                     <a class="nav-link text-white-50 py-1 {% if 'batches' in request.path %}active text-white{% endif %}"
                                         href="{% url 'inventory:batch_list' %}">
                                         Batches
                                     </a>
                                 </li>
+                                {% endif %}
                                 <li class="nav-item">
                                     <a class="nav-link text-white-50 py-1 {% if 'stock' in request.path %}active text-white{% endif %}"
                                         href="{% url 'inventory:stock_overview' %}">
@@ -341,13 +343,13 @@
                     </li>
                     <!-- Auditor Inventory Menu -->
                     <li class="nav-item">
-                        <a class="nav-link text-white d-flex justify-content-between align-items-center {% if 'ledger' in request.path or 'transfers' in request.path %}active{% endif %}"
+                        <a class="nav-link text-white d-flex justify-content-between align-items-center {% if 'ledger' in request.path or 'transfers' in request.path and 'cash-transfers' not in request.path %}active{% endif %}"
                             data-bs-toggle="collapse" href="#auditorInventoryMenu" role="button"
-                            aria-expanded="{% if 'ledger' in request.path or 'transfers' in request.path %}true{% else %}false{% endif %}">
+                            aria-expanded="{% if 'ledger' in request.path or 'transfers' in request.path and 'cash-transfers' not in request.path %}true{% else %}false{% endif %}">
                             <span><i class="bi bi-box-seam me-2"></i>Inventory</span>
                             <i class="bi bi-chevron-down small"></i>
                         </a>
-                        <div class="collapse {% if 'ledger' in request.path or 'transfers' in request.path %}show{% endif %}"
+                        <div class="collapse {% if 'ledger' in request.path or 'transfers' in request.path and 'cash-transfers' not in request.path %}show{% endif %}"
                             id="auditorInventoryMenu">
                             <ul class="nav flex-column ms-3 border-start border-secondary ps-2">
                                 <li class="nav-item">

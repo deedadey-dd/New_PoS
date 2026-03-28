@@ -77,6 +77,7 @@
             <table class="table table-hover">
                 <thead>
                     <tr>
+                        <th style="width: 36px;"></th>
                         <th>{% sort_link "SKU" "sku" %}</th>
                         <th>{% sort_link "Name" "name" %}</th>
                         <th>{% sort_link "Category" "category__name" %}</th>
@@ -89,7 +90,14 @@
                 </thead>
                 <tbody>
                     {% for product in products %}
-                    <tr>
+                    <tr{% if product.pk in favorite_ids %} class="table-warning table-active"{% endif %}>
+                        <td>
+                            <button class="btn btn-sm btn-link p-0 favorite-toggle"
+                                data-product-id="{{ product.pk }}"
+                                title="{% if product.pk in favorite_ids %}Remove from favorites{% else %}Add to favorites{% endif %}">
+                                <i class="bi {% if product.pk in favorite_ids %}bi-star-fill text-warning{% else %}bi-star text-muted{% endif %} fs-5"></i>
+                            </button>
+                        </td>
                         <td><code>{{ product.sku }}</code></td>
                         <td>
                             <a href="{% url 'inventory:product_detail' product.pk %}" class="text-decoration-none">
@@ -240,6 +248,39 @@
             if (this.value.length >= 2 && suggestions.children.length > 0) {
                 suggestions.style.display = 'block';
             }
+        });
+    });
+
+    // Favorite toggle
+    document.querySelectorAll('.favorite-toggle').forEach(btn => {
+        btn.addEventListener('click', function (e) {
+            e.preventDefault();
+            const productId = this.dataset.productId;
+            const icon = this.querySelector('i');
+            const row = this.closest('tr');
+            const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value
+                || '{{ csrf_token }}';
+
+            fetch(`/inventory/api/products/${productId}/toggle-favorite/`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': csrfToken,
+                    'Content-Type': 'application/json',
+                },
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.is_favorite) {
+                    icon.className = 'bi bi-star-fill text-warning fs-5';
+                    row.classList.add('table-warning', 'table-active');
+                    this.title = 'Remove from favorites';
+                } else {
+                    icon.className = 'bi bi-star text-muted fs-5';
+                    row.classList.remove('table-warning', 'table-active');
+                    this.title = 'Add to favorites';
+                }
+            })
+            .catch(() => {});
         });
     });
 </script>

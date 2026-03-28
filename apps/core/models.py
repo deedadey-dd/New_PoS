@@ -57,6 +57,10 @@ class Tenant(models.Model):
         default=False,
         help_text="Allow shop managers to receive stock (create batches)"
     )
+    shops_can_see_other_stock = models.BooleanField(
+        default=True,
+        help_text="Allow shops to see stock levels at other locations, batches, and the full stock breakdown"
+    )
     
     # Cash Transfer settings
     allow_accountant_to_shop_transfers = models.BooleanField(

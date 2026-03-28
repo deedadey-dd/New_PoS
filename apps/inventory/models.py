@@ -427,3 +427,36 @@ class ShopPrice(TenantModel):
             return is_warning, margin, highest_cost_batch.unit_cost
         
         return False, None, None
+
+
+class FavoriteProduct(TenantModel):
+    """
+    Per-location favorite products.
+    When a product is favorited at a location, all users at that location
+    see it as a favorite (displayed at the top of product lists).
+    """
+    location = models.ForeignKey(
+        Location,
+        on_delete=models.CASCADE,
+        related_name='favorite_products'
+    )
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name='favorited_at'
+    )
+    created_by = models.ForeignKey(
+        'core.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='+'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ['tenant', 'location', 'product']
+        ordering = ['product__name']
+
+    def __str__(self):
+        return f"★ {self.product.name} @ {self.location.name}"
+

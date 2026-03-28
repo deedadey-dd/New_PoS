@@ -2,7 +2,7 @@
 Admin configuration for inventory app.
 """
 from django.contrib import admin
-from .models import Category, Product, Batch, InventoryLedger, ShopPrice
+from .models import Category, Product, Batch, InventoryLedger, ShopPrice, FavoriteProduct
 
 
 @admin.register(Category)
@@ -48,3 +48,11 @@ class ShopPriceAdmin(admin.ModelAdmin):
     list_display = ['product', 'location', 'selling_price', 'min_margin_percent', 'is_active', 'effective_from']
     list_filter = ['is_active', 'location', 'tenant']
     search_fields = ['product__name', 'product__sku']
+
+
+@admin.register(FavoriteProduct)
+class FavoriteProductAdmin(admin.ModelAdmin):
+    list_display = ['product', 'location', 'created_by', 'created_at']
+    list_filter = ['location', 'tenant']
+    search_fields = ['product__name']
+

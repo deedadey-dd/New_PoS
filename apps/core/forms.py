@@ -203,6 +203,7 @@ class TenantSettingsForm(forms.ModelForm):
             'allow_negative_stock', 'require_refund_approval', 'require_return_approval',
             'credit_limit_warning_percent', 'backdating_allowed_days',
             'shop_manager_can_add_products', 'shop_manager_can_receive_stock',
+            'shops_can_see_other_stock',
             'allow_accountant_to_shop_transfers',
         ]
         widgets = {
@@ -218,6 +219,7 @@ class TenantSettingsForm(forms.ModelForm):
             'require_return_approval': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'shop_manager_can_add_products': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'shop_manager_can_receive_stock': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'shops_can_see_other_stock': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         }
 
 

@@ -96,9 +96,33 @@ class ProductListView(LoginRequiredMixin, SortableMixin, ListView):
     sortable_fields = ['name', 'sku', 'default_selling_price', 'total_stock', 'category__name']
     default_sort = 'name'
     
+    def _get_user_location(self):
+        """Get the user's effective location."""
+        user = self.request.user
+        if user.location:
+            return user.location
+        if user.role:
+            role_location_map = {
+                'PRODUCTION_MANAGER': 'PRODUCTION',
+                'STORES_MANAGER': 'STORES',
+                'SHOP_MANAGER': 'SHOP',
+            }
+            loc_type = role_location_map.get(user.role.name)
+            if loc_type:
+                return Location.objects.filter(
+                    tenant=user.tenant, is_active=True, location_type=loc_type
+                ).first()
+        return None
+    
     def get_queryset(self):
+        from django.db.models import Sum, Subquery, OuterRef, Value, IntegerField, Case, When
+        from django.db.models.functions import Coalesce
+        from decimal import Decimal
+        from .models import InventoryLedger, FavoriteProduct
+        
+        user = self.request.user
         queryset = Product.objects.filter(
-            tenant=self.request.user.tenant
+            tenant=user.tenant
         ).select_related('category')
         
         # Search filter
@@ -116,12 +140,6 @@ class ProductListView(LoginRequiredMixin, SortableMixin, ListView):
             queryset = queryset.filter(category_id=category)
         
         # Annotate total_stock for sorting
-        from django.db.models import Sum, Subquery, OuterRef
-        from django.db.models.functions import Coalesce
-        from decimal import Decimal
-        from .models import InventoryLedger
-        
-        user = self.request.user
         user_location = user.location
         user_location_type = None
         
@@ -147,17 +165,59 @@ class ProductListView(LoginRequiredMixin, SortableMixin, ListView):
             total_stock=Coalesce(Subquery(stock_subquery), Decimal('0.00'))
         )
         
-        return self.apply_sorting(queryset)
+        # Annotate favorites: is_favorite = 1 for favorites, 0 for others
+        effective_location = self._get_user_location()
+        if effective_location:
+            favorite_ids = set(FavoriteProduct.objects.filter(
+                tenant=user.tenant, location=effective_location
+            ).values_list('product_id', flat=True))
+            
+            if favorite_ids:
+                queryset = queryset.annotate(
+                    is_favorite=Case(
+                        When(pk__in=favorite_ids, then=Value(0)),
+                        default=Value(1),
+                        output_field=IntegerField(),
+                    )
+                )
+            else:
+                queryset = queryset.annotate(
+                    is_favorite=Value(1, output_field=IntegerField())
+                )
+        else:
+            favorite_ids = set()
+            queryset = queryset.annotate(
+                is_favorite=Value(1, output_field=IntegerField())
+            )
+        
+        # Apply sorting: favorites first, then the user's chosen sort
+        sorted_qs = self.apply_sorting(queryset)
+        # Prepend is_favorite to the ordering so favorites always come first
+        current_ordering = sorted_qs.query.order_by
+        sorted_qs = sorted_qs.order_by('is_favorite', *current_ordering)
+        
+        return sorted_qs
     
     def get_context_data(self, **kwargs):
+        from .models import FavoriteProduct
+        
         context = super().get_context_data(**kwargs)
+        user = self.request.user
+        
         context['categories'] = Category.objects.filter(
-            tenant=self.request.user.tenant,
-            is_active=True
+            tenant=user.tenant, is_active=True
         )
         
+        # Get favorite IDs for star rendering in template
+        effective_location = self._get_user_location()
+        if effective_location:
+            context['favorite_ids'] = set(FavoriteProduct.objects.filter(
+                tenant=user.tenant, location=effective_location
+            ).values_list('product_id', flat=True))
+        else:
+            context['favorite_ids'] = set()
+        
         # Determine user's location(s) for stock display
-        user = self.request.user
         user_location = user.location
         user_location_type = None
         
@@ -195,7 +255,6 @@ class ProductListView(LoginRequiredMixin, SortableMixin, ListView):
         if user_location:
             context['current_location'] = user_location
         elif user_location_type:
-            from apps.core.models import Location
             context['current_location'] = Location.objects.filter(
                 tenant=user.tenant,
                 is_active=True,
@@ -205,6 +264,47 @@ class ProductListView(LoginRequiredMixin, SortableMixin, ListView):
             context['current_location'] = None
         
         return context
+
+
+
+class ToggleFavoriteView(LoginRequiredMixin, View):
+    """Toggle favorite status of a product for the user's location."""
+    
+    def post(self, request, pk):
+        from .models import FavoriteProduct
+        
+        product = get_object_or_404(Product, pk=pk, tenant=request.user.tenant)
+        
+        # Determine user's effective location
+        location = request.user.location
+        if not location and request.user.role:
+            role_location_map = {
+                'PRODUCTION_MANAGER': 'PRODUCTION',
+                'STORES_MANAGER': 'STORES',
+                'SHOP_MANAGER': 'SHOP',
+            }
+            loc_type = role_location_map.get(request.user.role.name)
+            if loc_type:
+                location = Location.objects.filter(
+                    tenant=request.user.tenant, is_active=True, location_type=loc_type
+                ).first()
+        
+        if not location:
+            return JsonResponse({'error': 'No location assigned'}, status=400)
+        
+        # Toggle
+        favorite, created = FavoriteProduct.objects.get_or_create(
+            tenant=request.user.tenant,
+            location=location,
+            product=product,
+            defaults={'created_by': request.user}
+        )
+        
+        if not created:
+            favorite.delete()
+            return JsonResponse({'is_favorite': False})
+        
+        return JsonResponse({'is_favorite': True})
 
 
 class ProductDetailView(LoginRequiredMixin, DetailView):
@@ -676,17 +776,55 @@ class StockOverviewView(LoginRequiredMixin, View):
     
     def get(self, request):
         from django.core.paginator import Paginator
-        tenant = request.user.tenant
+        from .models import FavoriteProduct
         
-        # Stock by product and location
-        stock_summary_qs = InventoryLedger.objects.filter(
-            tenant=tenant
-        ).values(
-            'product__id', 'product__name', 'product__sku',
-            'location__id', 'location__name', 'location__location_type'
-        ).annotate(
-            total_stock=Sum('quantity')
-        ).filter(total_stock__gt=0).order_by('product__name', 'location__name')
+        tenant = request.user.tenant
+        user = request.user
+        role_name = user.role.name if user.role else ''
+        is_shop_role = role_name in ('SHOP_MANAGER', 'SHOP_ATTENDANT')
+        
+        # Determine if the user should see stock by location
+        show_stock_by_location = True
+        if is_shop_role and not tenant.shops_can_see_other_stock:
+            show_stock_by_location = False
+        
+        # Stock by product and location (only if allowed)
+        stock_summary = None
+        if show_stock_by_location:
+            stock_summary_qs = InventoryLedger.objects.filter(
+                tenant=tenant
+            ).values(
+                'product__id', 'product__name', 'product__sku',
+                'location__id', 'location__name', 'location__location_type'
+            ).annotate(
+                total_stock=Sum('quantity')
+            ).filter(total_stock__gt=0).order_by('product__name', 'location__name')
+            
+            # Pagination for Stock Summary
+            page_summary = request.GET.get('page_summary', 1)
+            paginator_summary = Paginator(stock_summary_qs, 25)
+            stock_summary = paginator_summary.get_page(page_summary)
+        
+        # Determine user's effective location for favorites
+        effective_location = user.location
+        if not effective_location and user.role:
+            role_location_map = {
+                'PRODUCTION_MANAGER': 'PRODUCTION',
+                'STORES_MANAGER': 'STORES',
+                'SHOP_MANAGER': 'SHOP',
+            }
+            loc_type = role_location_map.get(role_name)
+            if loc_type:
+                effective_location = Location.objects.filter(
+                    tenant=tenant, is_active=True, location_type=loc_type
+                ).first()
+        
+        # Get favorite product IDs for this location
+        favorite_product_ids = set()
+        if effective_location:
+            favorite_product_ids = set(FavoriteProduct.objects.filter(
+                tenant=tenant, location=effective_location
+            ).values_list('product_id', flat=True))
         
         # Low stock alerts
         low_stock_list = []
@@ -697,8 +835,12 @@ class StockOverviewView(LoginRequiredMixin, View):
                 low_stock_list.append({
                     'product': product,
                     'current_stock': total,
-                    'reorder_level': product.reorder_level
+                    'reorder_level': product.reorder_level,
+                    'is_favorite': product.pk in favorite_product_ids,
                 })
+        
+        # Sort low stock: favorites first, then by current stock ascending
+        low_stock_list.sort(key=lambda x: (0 if x['is_favorite'] else 1, x['current_stock']))
         
         # Expiring soon (within 30 days)
         from django.utils import timezone
@@ -711,11 +853,6 @@ class StockOverviewView(LoginRequiredMixin, View):
             expiry_date__gte=timezone.now().date()
         ).select_related('product', 'location').order_by('expiry_date')[:10]
         
-        # Pagination for Stock Summary
-        page_summary = request.GET.get('page_summary', 1)
-        paginator_summary = Paginator(stock_summary_qs, 25)
-        stock_summary = paginator_summary.get_page(page_summary)
-        
         # Pagination for Low Stock
         page_low_stock = request.GET.get('page_low_stock', 1)
         paginator_low_stock = Paginator(low_stock_list, 10)
@@ -725,6 +862,8 @@ class StockOverviewView(LoginRequiredMixin, View):
             'stock_summary': stock_summary,
             'low_stock': low_stock,
             'expiring_batches': expiring_batches,
+            'show_stock_by_location': show_stock_by_location,
+            'favorite_product_ids': favorite_product_ids,
         }
         
         return render(request, self.template_name, context)

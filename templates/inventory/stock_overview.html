@@ -31,6 +31,7 @@
                     <table class="table table-sm mb-0">
                         <thead>
                             <tr>
+                                <th style="width: 28px;"></th>
                                 <th>Product</th>
                                 <th class="text-end">Current</th>
                                 <th class="text-end">Reorder</th>
@@ -38,7 +39,12 @@
                         </thead>
                         <tbody>
                             {% for item in low_stock %}
-                            <tr>
+                            <tr{% if item.is_favorite %} class="table-warning"{% endif %}>
+                                <td>
+                                    {% if item.is_favorite %}
+                                    <i class="bi bi-star-fill text-warning" title="Favorite"></i>
+                                    {% endif %}
+                                </td>
                                 <td>
                                     <a
                                         href="{% url 'inventory:product_detail' item.product.pk %}">{{ item.product.name }}</a>
@@ -97,6 +103,7 @@
     {% endif %}
 </div>
 
+{% if show_stock_by_location %}
 <!-- Stock by Product/Location -->
 <div class="card mt-4">
     <div class="card-header">
@@ -150,4 +157,5 @@
         {% endif %}
     </div>
 </div>
+{% endif %}
 {% endblock %}

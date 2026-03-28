@@ -97,11 +97,17 @@
                         <small class="d-block text-muted mt-1">Allow shop managers to add new products to the
                             catalog</small>
                     </div>
-                    <div class="form-check form-switch mb-0">
+                    <div class="form-check form-switch mb-3">
                         {{ form.shop_manager_can_receive_stock }}
                         <label class="form-check-label ms-2">Can Receive Stock</label>
                         <small class="d-block text-muted mt-1">Allow shop managers to receive stock and create
                             batches</small>
+                    </div>
+                    <div class="form-check form-switch mb-0">
+                        {{ form.shops_can_see_other_stock }}
+                        <label class="form-check-label ms-2">Can See Other Locations' Stock</label>
+                        <small class="d-block text-muted mt-1">Allow shops to view stock levels at other locations,
+                            batch details, and the full stock-by-location breakdown</small>
                     </div>
                 </div>
             </div>
