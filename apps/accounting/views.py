@@ -10,7 +10,7 @@ from django.views.generic import ListView
 from django.db.models import Q, Sum, Count
 from django.core.exceptions import ValidationError
 from django.utils import timezone
-from datetime import timedelta
+from datetime import timedelta, datetime
 from decimal import Decimal
 
 from .models import CashTransfer
@@ -252,25 +252,49 @@ class AccountantDashboardView(LoginRequiredMixin, View):
         
         # Date range filter
         date_range = request.GET.get('range', 'today')
+        date_from_str = request.GET.get('date_from')
+        date_to_str = request.GET.get('date_to')
         today = timezone.now().date()
         
-        if date_range == 'week':
-            start_date = today - timedelta(days=7)
-        elif date_range == 'month':
-            start_date = today - timedelta(days=30)
+        # Custom date range takes priority
+        if date_from_str and date_to_str:
+            try:
+                start_date = datetime.strptime(date_from_str, '%Y-%m-%d').date()
+                end_date = datetime.strptime(date_to_str, '%Y-%m-%d').date()
+                date_range = 'custom'
+            except ValueError:
+                start_date = today
+                end_date = today
+                date_range = 'today'
         else:
-            start_date = today
+            end_date = today
+            if date_range == 'week':
+                start_date = today - timedelta(days=7)
+            elif date_range == 'month':
+                start_date = today - timedelta(days=30)
+            elif date_range == 'all':
+                start_date = None
+                end_date = None
+            else:
+                start_date = today
+                date_range = 'today'
+        
+        def get_date_filter(field_name='created_at__date'):
+            q = Q()
+            if start_date:
+                q &= Q(**{f'{field_name}__gte': start_date})
+            if end_date:
+                q &= Q(**{f'{field_name}__lte': end_date})
+            return q
         
         context = {
             'current_range': date_range,
+            'date_from': start_date,
+            'date_to': end_date,
         }
         
         # ===== SALES SUMMARY =====
-        sales_filter = Q(
-            tenant=tenant,
-            status='COMPLETED',
-            created_at__date__gte=start_date
-        )
+        sales_filter = Q(tenant=tenant, status='COMPLETED') & get_date_filter()
         
         context['sales_summary'] = Sale.objects.filter(sales_filter).aggregate(
             total_revenue=Sum('total'),
@@ -288,11 +312,7 @@ class AccountantDashboardView(LoginRequiredMixin, View):
         ).order_by('-revenue')
         
         # ===== CASH DEPOSITS =====
-        deposit_filter = Q(
-            tenant=tenant,
-            transfer_type='DEPOSIT',
-            created_at__date__gte=start_date
-        )
+        deposit_filter = Q(tenant=tenant, transfer_type='DEPOSIT') & get_date_filter()
         
         context['deposits_summary'] = CashTransfer.objects.filter(deposit_filter).aggregate(
             pending_amount=Sum('amount', filter=Q(status='PENDING')),
@@ -338,10 +358,7 @@ class AccountantDashboardView(LoginRequiredMixin, View):
         location_summary = []
         for shop in shops:
             shop_sales = Sale.objects.filter(
-                tenant=tenant,
-                shop=shop,
-                status='COMPLETED',
-                created_at__date__gte=start_date
+                Q(tenant=tenant, shop=shop, status='COMPLETED') & get_date_filter()
             )
             
             sales_agg = shop_sales.aggregate(
@@ -360,20 +377,12 @@ class AccountantDashboardView(LoginRequiredMixin, View):
             
             # Deposits from this shop (confirmed)
             deposits = CashTransfer.objects.filter(
-                tenant=tenant,
-                from_location=shop,
-                transfer_type='DEPOSIT',
-                status='CONFIRMED',
-                created_at__date__gte=start_date
+                Q(tenant=tenant, from_location=shop, transfer_type='DEPOSIT', status='CONFIRMED') & get_date_filter()
             ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
             
             # Floats sent TO this shop
             floats_received = CashTransfer.objects.filter(
-                tenant=tenant,
-                to_location=shop,
-                transfer_type='FLOAT',
-                status='CONFIRMED',
-                created_at__date__gte=start_date
+                Q(tenant=tenant, to_location=shop, transfer_type='FLOAT', status='CONFIRMED') & get_date_filter()
             ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
             
             est_cash_on_hand = cash_sales + floats_received - deposits
@@ -404,10 +413,7 @@ class AccountantDashboardView(LoginRequiredMixin, View):
         sales_by_user = []
         for u in shop_users:
             user_sales = Sale.objects.filter(
-                tenant=tenant,
-                attendant=u,
-                status='COMPLETED',
-                created_at__date__gte=start_date
+                Q(tenant=tenant, attendant=u, status='COMPLETED') & get_date_filter()
             )
             
             user_agg = user_sales.aggregate(

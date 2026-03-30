@@ -117,9 +117,23 @@
                             <ul class="nav flex-column ms-3">
                                 {% if role_name == 'ACCOUNTANT' or role_name == 'ADMIN' %}
                                 <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if request.resolver_match.url_name == 'accountant_dashboard' %}active text-white{% endif %}"
+                                        href="{% url 'accounting:accountant_dashboard' %}">
+                                        <i class="bi bi-graph-up-arrow me-1"></i>Accountant Dashboard
+                                    </a>
+                                </li>
+                                <li class="nav-item">
                                     <a class="nav-link text-white-50 py-1 {% if 'sales-report' in request.path %}active text-white{% endif %}"
                                         href="{% url 'accounting:sales_report' %}">
                                         <i class="bi bi-bar-chart me-1"></i>Accountant Sales Report
+                                    </a>
+                                </li>
+                                {% endif %}
+                                {% if role_name == 'AUDITOR' or role_name == 'ADMIN' %}
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if request.resolver_match.url_name == 'auditor_dashboard' %}active text-white{% endif %}"
+                                        href="{% url 'core:auditor_dashboard' %}">
+                                        <i class="bi bi-shield-check me-1"></i>Auditor Dashboard
                                     </a>
                                 </li>
                                 {% endif %}
