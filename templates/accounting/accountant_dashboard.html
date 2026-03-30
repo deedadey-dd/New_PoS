@@ -184,4 +184,133 @@
         {% endif %}
     </div>
 </div>
+
+<!-- Location Activity Summary -->
+<div class="card mt-4">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-geo-alt me-2 text-primary"></i>Location Activity Summary</h5>
+        <small class="text-muted">Click column headers to sort</small>
+    </div>
+    <div class="card-body">
+        {% if location_summary %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover" id="location-summary-table">
+                <thead class="table-light">
+                    <tr>
+                        <th class="sortable" data-sort="text" style="cursor:pointer">Shop <i class="bi bi-arrow-down-up text-muted small"></i></th>
+                        <th class="text-center sortable" data-sort="num" style="cursor:pointer"># Sales <i class="bi bi-arrow-down-up text-muted small"></i></th>
+                        <th class="text-end sortable" data-sort="num" style="cursor:pointer">Total Revenue <i class="bi bi-arrow-down-up text-muted small"></i></th>
+                        <th class="text-end sortable" data-sort="num" style="cursor:pointer">Cash <i class="bi bi-arrow-down-up text-muted small"></i></th>
+                        <th class="text-end sortable" data-sort="num" style="cursor:pointer">E-Cash <i class="bi bi-arrow-down-up text-muted small"></i></th>
+                        <th class="text-end sortable" data-sort="num" style="cursor:pointer">Credit <i class="bi bi-arrow-down-up text-muted small"></i></th>
+                        <th class="text-end sortable" data-sort="num" style="cursor:pointer">Deposited <i class="bi bi-arrow-down-up text-muted small"></i></th>
+                        <th class="text-end sortable" data-sort="num" style="cursor:pointer">Est. Cash on Hand <i class="bi bi-arrow-down-up text-muted small"></i></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for loc in location_summary %}
+                    <tr>
+                        <td><i class="bi bi-shop me-1 text-muted"></i>{{ loc.shop_name }}</td>
+                        <td class="text-center"><span class="badge bg-secondary">{{ loc.sale_count }}</span></td>
+                        <td class="text-end fw-bold text-success">{{ currency_symbol }}{{ loc.total_revenue|floatformat:"2g" }}</td>
+                        <td class="text-end">{{ currency_symbol }}{{ loc.cash_sales|floatformat:"2g" }}</td>
+                        <td class="text-end">{{ currency_symbol }}{{ loc.ecash_sales|floatformat:"2g" }}</td>
+                        <td class="text-end">{{ currency_symbol }}{{ loc.credit_sales|floatformat:"2g" }}</td>
+                        <td class="text-end text-primary">{{ currency_symbol }}{{ loc.deposits|floatformat:"2g" }}</td>
+                        <td class="text-end fw-bold {% if loc.est_cash_on_hand > 0 %}text-warning{% elif loc.est_cash_on_hand < 0 %}text-danger{% endif %}">
+                            {{ currency_symbol }}{{ loc.est_cash_on_hand|floatformat:"2g" }}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="form-text mt-1"><i class="bi bi-info-circle me-1"></i>Est. Cash on Hand = Cash Sales + Floats Received − Deposits Made. Does not include opening cash balances.</div>
+        {% else %}
+        <p class="text-muted text-center py-4">No location data available</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- User Activity Summary -->
+<div class="card mt-4">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-people me-2 text-info"></i>User Activity Summary</h5>
+        <small class="text-muted">Click column headers to sort</small>
+    </div>
+    <div class="card-body">
+        {% if sales_by_user %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover" id="user-summary-table">
+                <thead class="table-light">
+                    <tr>
+                        <th class="sortable" data-sort="text" style="cursor:pointer">User <i class="bi bi-arrow-down-up text-muted small"></i></th>
+                        <th class="sortable" data-sort="text" style="cursor:pointer">Location <i class="bi bi-arrow-down-up text-muted small"></i></th>
+                        <th class="sortable" data-sort="text" style="cursor:pointer">Role <i class="bi bi-arrow-down-up text-muted small"></i></th>
+                        <th class="text-center sortable" data-sort="num" style="cursor:pointer"># Sales <i class="bi bi-arrow-down-up text-muted small"></i></th>
+                        <th class="text-end sortable" data-sort="num" style="cursor:pointer">Total Revenue <i class="bi bi-arrow-down-up text-muted small"></i></th>
+                        <th class="text-end sortable" data-sort="num" style="cursor:pointer">Cash <i class="bi bi-arrow-down-up text-muted small"></i></th>
+                        <th class="text-end sortable" data-sort="num" style="cursor:pointer">E-Cash <i class="bi bi-arrow-down-up text-muted small"></i></th>
+                        <th class="text-end sortable" data-sort="num" style="cursor:pointer">Credit <i class="bi bi-arrow-down-up text-muted small"></i></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for u in sales_by_user %}
+                    <tr>
+                        <td><i class="bi bi-person me-1 text-muted"></i>{{ u.user_name }}</td>
+                        <td>{{ u.location }}</td>
+                        <td><span class="badge bg-outline-secondary border">{{ u.role }}</span></td>
+                        <td class="text-center"><span class="badge bg-secondary">{{ u.sale_count }}</span></td>
+                        <td class="text-end fw-bold text-success">{{ currency_symbol }}{{ u.total_revenue|floatformat:"2g" }}</td>
+                        <td class="text-end">{{ currency_symbol }}{{ u.cash_sales|floatformat:"2g" }}</td>
+                        <td class="text-end">{{ currency_symbol }}{{ u.ecash_sales|floatformat:"2g" }}</td>
+                        <td class="text-end">{{ currency_symbol }}{{ u.credit_sales|floatformat:"2g" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted text-center py-4">No user sales data available</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Client-side table sorting script -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('#location-summary-table .sortable, #user-summary-table .sortable').forEach(function(th) {
+        th.addEventListener('click', function() {
+            const table = this.closest('table');
+            const tbody = table.querySelector('tbody');
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+            const colIndex = Array.from(this.parentNode.children).indexOf(this);
+            const sortType = this.dataset.sort;
+            const isAsc = this.dataset.dir !== 'asc';
+            this.dataset.dir = isAsc ? 'asc' : 'desc';
+            
+            // Reset other headers' direction indicators
+            this.parentNode.querySelectorAll('.sortable').forEach(function(h) {
+                if (h !== th) h.dataset.dir = '';
+            });
+            
+            rows.sort(function(a, b) {
+                let aText = a.children[colIndex].textContent.trim();
+                let bText = b.children[colIndex].textContent.trim();
+                
+                if (sortType === 'num') {
+                    // Extract numeric value (remove currency symbols, commas)
+                    aText = parseFloat(aText.replace(/[^0-9.\-]/g, '')) || 0;
+                    bText = parseFloat(bText.replace(/[^0-9.\-]/g, '')) || 0;
+                    return isAsc ? aText - bText : bText - aText;
+                } else {
+                    return isAsc ? aText.localeCompare(bText) : bText.localeCompare(aText);
+                }
+            });
+            
+            rows.forEach(function(row) { tbody.appendChild(row); });
+        });
+    });
+});
+</script>
 {% endblock %}

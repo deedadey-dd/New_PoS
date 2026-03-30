@@ -4,7 +4,9 @@ Forms for inventory app.
 from django import forms
 from django.core.exceptions import ValidationError
 from django.utils import timezone
+from django.core.files.uploadedfile import InMemoryUploadedFile
 from decimal import Decimal
+from io import BytesIO
 
 from .models import Category, Product, Batch, InventoryLedger, ShopPrice
 from apps.core.models import Location
@@ -38,6 +40,8 @@ class CategoryForm(forms.ModelForm):
 class ProductForm(forms.ModelForm):
     """Form for creating/editing products."""
     
+    clear_image = forms.BooleanField(required=False, label='Remove current image')
+    
     class Meta:
         model = Product
         fields = ['sku', 'name', 'description', 'category', 'unit_of_measure', 
@@ -50,7 +54,7 @@ class ProductForm(forms.ModelForm):
             'unit_of_measure': forms.Select(attrs={'class': 'form-select'}),
             'default_selling_price': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0'}),
             'reorder_level': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0'}),
-            'image': forms.FileInput(attrs={'class': 'form-control'}),
+            'image': forms.FileInput(attrs={'class': 'form-control', 'accept': 'image/*'}),
             'is_active': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         }
     
@@ -60,6 +64,77 @@ class ProductForm(forms.ModelForm):
             self.fields['category'].queryset = Category.objects.filter(tenant=tenant, is_active=True)
         else:
             self.fields['category'].queryset = Category.objects.none()
+    
+    def clean_image(self):
+        """Compress uploaded image to WebP format at 150x150px (center-cropped square)."""
+        image = self.cleaned_data.get('image')
+        
+        if not image:
+            return image
+        
+        # If it's False (clear checkbox), or an existing unchanged file, skip
+        if image is False or not hasattr(image, 'read'):
+            return image
+        
+        try:
+            from PIL import Image
+            
+            img = Image.open(image)
+            
+            # Convert to RGB if necessary (RGBA/P modes can't save as WebP easily)
+            if img.mode in ('RGBA', 'LA', 'P'):
+                # Create white background for transparent images
+                background = Image.new('RGB', img.size, (255, 255, 255))
+                if img.mode == 'P':
+                    img = img.convert('RGBA')
+                background.paste(img, mask=img.split()[-1] if 'A' in img.mode else None)
+                img = background
+            elif img.mode != 'RGB':
+                img = img.convert('RGB')
+            
+            # Center-crop to square
+            width, height = img.size
+            min_dim = min(width, height)
+            left = (width - min_dim) // 2
+            top = (height - min_dim) // 2
+            img = img.crop((left, top, left + min_dim, top + min_dim))
+            
+            # Resize to 150x150 (sufficient for 2x retina on ~120px POS tiles)
+            img = img.resize((150, 150), Image.LANCZOS)
+            
+            # Save as WebP with low quality for smallest file size
+            buffer = BytesIO()
+            img.save(buffer, format='WEBP', quality=60, method=6)
+            buffer.seek(0)
+            
+            # Create new file with .webp extension
+            import os
+            name_base = os.path.splitext(image.name)[0]
+            new_name = f"{name_base}.webp"
+            
+            new_file = InMemoryUploadedFile(
+                file=buffer,
+                field_name='image',
+                name=new_name,
+                content_type='image/webp',
+                size=buffer.tell(),
+                charset=None,
+            )
+            
+            return new_file
+            
+        except Exception:
+            # If compression fails, return original
+            return image
+    
+    def save(self, commit=True):
+        """Handle image clearing."""
+        instance = super().save(commit=False)
+        if self.cleaned_data.get('clear_image') and not self.cleaned_data.get('image'):
+            instance.image = None
+        if commit:
+            instance.save()
+        return instance
 
 
 class BatchForm(forms.ModelForm):

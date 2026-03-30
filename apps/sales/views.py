@@ -94,6 +94,7 @@ class POSView(LoginRequiredMixin, View):
                     'unit': product.unit_of_measure,
                     'quantity': float(quantity),
                     'threshold': float(product.reorder_level),
+                    'image': product.image.url if getattr(product, 'image', None) and product.image.name else '',
                 })
         
         # Get categories for filtering

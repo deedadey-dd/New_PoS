@@ -327,6 +327,112 @@ class AccountantDashboardView(LoginRequiredMixin, View):
             to_user=user
         ).select_related('from_user', 'from_location').order_by('-created_at')
         
+        # ===== LOCATION ACTIVITY SUMMARY =====
+        # Per-shop breakdown: total sales, cash/ecash/credit, deposits, est. cash on hand
+        shops = Location.objects.filter(
+            tenant=tenant, location_type='SHOP', is_active=True
+        )
+        
+        from apps.sales.models import Sale
+        
+        location_summary = []
+        for shop in shops:
+            shop_sales = Sale.objects.filter(
+                tenant=tenant,
+                shop=shop,
+                status='COMPLETED',
+                created_at__date__gte=start_date
+            )
+            
+            sales_agg = shop_sales.aggregate(
+                total_revenue=Sum('total'),
+                cash_sales=Sum('total', filter=Q(payment_method='CASH')),
+                ecash_sales=Sum('total', filter=Q(payment_method='ECASH')),
+                credit_sales=Sum('total', filter=Q(payment_method='CREDIT')),
+                mixed_paid=Sum('amount_paid', filter=Q(payment_method='MIXED')),
+                sale_count=Count('id'),
+            )
+            
+            total_revenue = sales_agg['total_revenue'] or Decimal('0')
+            cash_sales = (sales_agg['cash_sales'] or Decimal('0')) + (sales_agg['mixed_paid'] or Decimal('0'))
+            ecash_sales = sales_agg['ecash_sales'] or Decimal('0')
+            credit_sales = sales_agg['credit_sales'] or Decimal('0')
+            
+            # Deposits from this shop (confirmed)
+            deposits = CashTransfer.objects.filter(
+                tenant=tenant,
+                from_location=shop,
+                transfer_type='DEPOSIT',
+                status='CONFIRMED',
+                created_at__date__gte=start_date
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+            
+            # Floats sent TO this shop
+            floats_received = CashTransfer.objects.filter(
+                tenant=tenant,
+                to_location=shop,
+                transfer_type='FLOAT',
+                status='CONFIRMED',
+                created_at__date__gte=start_date
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+            
+            est_cash_on_hand = cash_sales + floats_received - deposits
+            
+            location_summary.append({
+                'shop_name': shop.name,
+                'total_revenue': total_revenue,
+                'cash_sales': cash_sales,
+                'ecash_sales': ecash_sales,
+                'credit_sales': credit_sales,
+                'deposits': deposits,
+                'floats_received': floats_received,
+                'est_cash_on_hand': est_cash_on_hand,
+                'sale_count': sales_agg['sale_count'] or 0,
+            })
+        
+        context['location_summary'] = location_summary
+        
+        # ===== USER ACTIVITY SUMMARY =====
+        from apps.core.models import User as TenantUser
+        
+        shop_users = TenantUser.objects.filter(
+            tenant=tenant,
+            role__name__in=['SHOP_MANAGER', 'SHOP_ATTENDANT'],
+            is_active=True
+        ).select_related('role', 'location')
+        
+        sales_by_user = []
+        for u in shop_users:
+            user_sales = Sale.objects.filter(
+                tenant=tenant,
+                attendant=u,
+                status='COMPLETED',
+                created_at__date__gte=start_date
+            )
+            
+            user_agg = user_sales.aggregate(
+                total_revenue=Sum('total'),
+                cash_sales=Sum('total', filter=Q(payment_method='CASH')),
+                ecash_sales=Sum('total', filter=Q(payment_method='ECASH')),
+                credit_sales=Sum('total', filter=Q(payment_method='CREDIT')),
+                sale_count=Count('id'),
+            )
+            
+            total_rev = user_agg['total_revenue'] or Decimal('0')
+            if total_rev > 0 or user_agg['sale_count'] > 0:
+                sales_by_user.append({
+                    'user_name': u.get_full_name() or u.email,
+                    'location': u.location.name if u.location else '-',
+                    'role': u.role.get_name_display() if u.role else '-',
+                    'total_revenue': total_rev,
+                    'cash_sales': user_agg['cash_sales'] or Decimal('0'),
+                    'ecash_sales': user_agg['ecash_sales'] or Decimal('0'),
+                    'credit_sales': user_agg['credit_sales'] or Decimal('0'),
+                    'sale_count': user_agg['sale_count'] or 0,
+                })
+        
+        context['sales_by_user'] = sales_by_user
+        
         return render(request, self.template_name, context)
 
 

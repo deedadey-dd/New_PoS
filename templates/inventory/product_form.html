@@ -76,7 +76,23 @@
 
                     <div class="mb-3">
                         <label for="id_image" class="form-label">Product Image</label>
+                        {% if object and object.image %}
+                        <div class="card mb-2" style="max-width: 200px;">
+                            <img src="{{ object.image.url }}" alt="{{ object.name }}" 
+                                 class="card-img-top" style="width: 150px; height: 150px; object-fit: cover; border-radius: 4px;">
+                            <div class="card-body py-2 px-2">
+                                <div class="form-check">
+                                    {{ form.clear_image }}
+                                    <label class="form-check-label small text-danger" for="id_clear_image">
+                                        <i class="bi bi-trash me-1"></i>Remove image
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        <label class="form-label small text-muted">Upload new image to replace:</label>
+                        {% endif %}
                         {{ form.image }}
+                        <div class="form-text">Image will be auto-compressed to 150×150px WebP format for optimal performance.</div>
                     </div>
 
                     {% if object %}
