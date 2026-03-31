@@ -1,0 +1,235 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Demo - Demo Company</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: #333;
+        }
+        .header-section {
+            background: linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%);
+            color: #fff;
+            padding: 3rem 0;
+            text-align: center;
+            margin-bottom: 2rem;
+            border-bottom: 4px solid #1e3a8a;
+        }
+        .org-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2rem;
+            position: relative;
+        }
+        .org-row {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            margin-bottom: 3rem;
+            position: relative;
+            width: 100%;
+        }
+        .org-node {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            padding: 1.5rem;
+            text-align: center;
+            width: 260px;
+            border-top: 5px solid #4f46e5;
+            transition: all 0.3s ease;
+            position: relative;
+            z-index: 2;
+            cursor: pointer;
+            text-decoration: none !important;
+            color: inherit;
+            display: block;
+        }
+        .org-node:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 15px 35px rgba(79, 70, 229, 0.2);
+            border-top-color: #2563eb;
+        }
+        .org-node-icon {
+            font-size: 2.5rem;
+            color: #4f46e5;
+            margin-bottom: 1rem;
+        }
+        .org-node-title {
+            font-weight: bold;
+            font-size: 1.2rem;
+            margin-bottom: 0.5rem;
+            color: #1f2937;
+        }
+        .org-node-subtitle {
+            font-size: 0.9rem;
+            color: #6b7280;
+            margin-bottom: 1rem;
+        }
+        .btn-login {
+            border-radius: 50px;
+            text-transform: uppercase;
+            font-size: 0.8rem;
+            font-weight: bold;
+            letter-spacing: 1px;
+            transition: all 0.2s;
+        }
+        
+        /* Drawing the lines */
+        .org-row::before {
+            content: '';
+            position: absolute;
+            top: -2rem;
+            left: 50%;
+            width: 2px;
+            height: 2rem;
+            background-color: #cbd5e1;
+            z-index: 1;
+        }
+        .org-row.first-row::before {
+            display: none;
+        }
+        .connector {
+            position: absolute;
+            top: -2rem;
+            height: 2px;
+            background-color: #cbd5e1;
+            z-index: 1;
+        }
+        .dept-production { border-top-color: #059669; }
+        .dept-production .org-node-icon { color: #059669; }
+        .dept-stores { border-top-color: #d97706; }
+        .dept-stores .org-node-icon { color: #d97706; }
+        .dept-shop { border-top-color: #dc2626; }
+        .dept-shop .org-node-icon { color: #dc2626; }
+        .dept-finance { border-top-color: #7c3aed; }
+        .dept-finance .org-node-icon { color: #7c3aed; }
+
+        .back-link {
+            position: absolute;
+            top: 1rem;
+            left: 1rem;
+            color: #fff;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        .back-link:hover { color: #d1d5db; }
+
+        @media (max-width: 992px) {
+            .org-row { flex-wrap: wrap; gap: 1rem; }
+            .org-row::before, .connector { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header-section">
+        <a href="{% url 'core:home' %}" class="back-link"><i class="bi bi-arrow-left me-1"></i> Back to Homepage</a>
+        <div class="container">
+            <h1 class="display-5 fw-bold"><i class="bi bi-diagram-3 me-2"></i>Interactive Demo</h1>
+            <p class="lead mb-0">Explore our platform as any role within "Demo Company". Hover over a role to see what it can do, and click to log in instantly!</p>
+        </div>
+    </div>
+
+    <div class="container">
+        {% if messages %}
+        <div class="row justify-content-center mb-4">
+            <div class="col-md-8">
+                {% for message in messages %}
+                <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="org-container">
+            
+            <!-- Tier 1: Admin / Executive -->
+            <div class="org-row first-row">
+                <a href="{% url 'core:demo_login' 'admin' %}" class="org-node" data-bs-toggle="tooltip" data-bs-placement="right" title="Has full access to all settings, system configuration, user management, and global reports.">
+                    <div class="org-node-icon"><i class="bi bi-person-workspace"></i></div>
+                    <div class="org-node-title">Owner / Admin</div>
+                    <div class="org-node-subtitle">HQ</div>
+                    <span class="btn btn-outline-primary btn-login">Login as Admin</span>
+                </a>
+            </div>
+
+            <!-- Tier 2: Finance -->
+            <div class="org-row">
+                <div class="connector" style="width: 300px; left: calc(50% - 150px);"></div>
+                <a href="{% url 'core:demo_login' 'auditor' %}" class="org-node dept-finance" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Monitors system activity, reviews discrepancy logs, analyzes comprehensive audit reports across operations.">
+                    <div class="org-node-icon"><i class="bi bi-shield-check"></i></div>
+                    <div class="org-node-title">Auditor</div>
+                    <div class="org-node-subtitle">Finance Dept</div>
+                    <span class="btn btn-outline-primary btn-login">Login as Auditor</span>
+                </a>
+                
+                <a href="{% url 'core:demo_login' 'accountant' %}" class="org-node dept-finance" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Manages floats assigned to shops, confirms incoming deposits, analyzes total revenue and payment methods.">
+                    <div class="org-node-icon"><i class="bi bi-bank"></i></div>
+                    <div class="org-node-title">Accountant</div>
+                    <div class="org-node-subtitle">Finance Dept</div>
+                    <span class="btn btn-outline-primary btn-login">Login as Accountant</span>
+                </a>
+            </div>
+
+            <!-- Tier 3: Operations Hierarchy -->
+            <div class="org-row">
+                <div class="connector" style="width: 800px; left: calc(50% - 400px);"></div>
+                
+                <a href="{% url 'core:demo_login' 'production' %}" class="org-node dept-production" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Creates products, oversees stock manufacturing, and initiates transfers of raw/finished goods to the warehouse.">
+                    <div class="org-node-icon"><i class="bi bi-gear-wide-connected"></i></div>
+                    <div class="org-node-title">Production Manager</div>
+                    <div class="org-node-subtitle">Main Production</div>
+                    <span class="btn btn-outline-success btn-login">Explore Production</span>
+                </a>
+
+                <a href="{% url 'core:demo_login' 'stores' %}" class="org-node dept-stores" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Receives goods from production, strictly manages inventory ledgers, and dispatches stock to retail shops.">
+                    <div class="org-node-icon"><i class="bi bi-box-seam"></i></div>
+                    <div class="org-node-title">Stores Manager</div>
+                    <div class="org-node-subtitle">Central Warehouse</div>
+                    <span class="btn btn-outline-warning btn-login">Explore Stores</span>
+                </a>
+
+                <a href="{% url 'core:demo_login' 'manager1' %}" class="org-node dept-shop" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Receives items from Stores, manages shop attendants, handles local inventory, and deposits daily cash to Accountant.">
+                    <div class="org-node-icon"><i class="bi bi-shop"></i></div>
+                    <div class="org-node-title">Shop Manager</div>
+                    <div class="org-node-subtitle">Downtown Shop</div>
+                    <span class="btn btn-outline-danger btn-login">Explore Shop Mgt</span>
+                </a>
+            </div>
+
+            <!-- Tier 4: Attendant Level -->
+            <div class="org-row">
+                <div class="connector" style="width: 300px; left: calc(50%);"></div>
+                <a href="{% url 'core:demo_login' 'attendant1' %}" class="org-node dept-shop" data-bs-toggle="tooltip" data-bs-placement="right" title="Operates the Point of Sale terminal, handles shifts, processes walk-in customers and e-cash payments.">
+                    <div class="org-node-icon"><i class="bi bi-cart-check"></i></div>
+                    <div class="org-node-title">Shop Attendant</div>
+                    <div class="org-node-subtitle">Downtown Shop</div>
+                    <span class="btn btn-outline-danger btn-login">Open POS Terminal</span>
+                </a>
+            </div>
+            
+        </div>
+    </div>
+
+    <!-- Bootstrap JS Bundle for Tooltips -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+            var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+                return new bootstrap.Tooltip(tooltipTriggerEl)
+            })
+        });
+    </script>
+</body>
+</html>

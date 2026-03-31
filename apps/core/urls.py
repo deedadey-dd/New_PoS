@@ -9,7 +9,10 @@ app_name = 'core'
 urlpatterns = [
     # Home / Landing page
     path('', views.HomePageView.as_view(), name='home'),
-    
+    # Demo
+    path('demo/', views.DemoHubView.as_view(), name='demo_hub'),
+    path('demo/login/<str:role>/', views.DemoAutoLoginView.as_view(), name='demo_login'),
+
     # Authentication
     path('login/', views.LoginView.as_view(), name='login'),
     path('logout/', views.LogoutView.as_view(), name='logout'),

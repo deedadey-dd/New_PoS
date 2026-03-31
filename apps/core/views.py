@@ -52,6 +52,61 @@ class HomePageView(View):
         
         return render(request, self.template_name, {'form': form})
 
+class DemoHubView(View):
+    """Public facing view showing the organogram for the Demo Company."""
+    template_name = 'core/demo_organogram.html'
+    
+    def get(self, request):
+        if request.user.is_authenticated:
+            # Maybe log them out so they can see the demo fresh? Or just let them see it.
+            logout(request)
+        return render(request, self.template_name)
+
+class DemoAutoLoginView(View):
+    """Automatically logs the user in as a specific demo role."""
+    def get(self, request, role):
+        email_map = {
+            'admin': 'admin@demo.com',
+            'auditor': 'auditor@demo.com',
+            'accountant': 'accountant@demo.com',
+            'production': 'production@demo.com',
+            'stores': 'stores@demo.com',
+            'manager1': 'manager1@demo.com',
+            'attendant1': 'attendant1@demo.com',
+            'manager2': 'manager2@demo.com',
+            'attendant2': 'attendant2@demo.com',
+        }
+        
+        email = email_map.get(role)
+        if not email:
+            messages.error(request, "Invalid demo role selected.")
+            return redirect('core:demo_hub')
+            
+        try:
+            user = User.objects.get(email=email, tenant__name="Demo Company")
+            # Log the user in bypassing backend authentication requirements
+            # We specify the backend explicitly
+            # The standard ModelBackend requires a password cheek, so we mock authenticate via login
+            # Actually, `login(request, user)` works natively if we supply a backend
+            from django.contrib.auth.backends import ModelBackend
+            user.backend = 'django.contrib.auth.backends.ModelBackend'
+            login(request, user)
+            messages.success(request, f'Logged in successfully as {user.get_full_name()} ({user.role.name}) in Demo Company!')
+            
+            # Redirect to the appropriate dashboard
+            if user.role.name == 'SHOP_ATTENDANT':
+                return redirect('sales:pos')
+            elif user.role.name == 'AUDITOR':
+                return redirect('core:auditor_dashboard')
+            elif user.role.name == 'ACCOUNTANT':
+                return redirect('accounting:accountant_dashboard')
+            
+            return redirect('core:dashboard')
+            
+        except User.DoesNotExist:
+            messages.error(request, "The demo environment is currently being reset or is unavailable. Please try again later.")
+            return redirect('core:home')
+
 class LoginView(View):
     """Handle user login."""
     template_name = 'core/login.html'

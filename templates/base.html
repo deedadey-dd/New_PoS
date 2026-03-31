@@ -428,6 +428,15 @@
         <!-- Main Content -->
         <div class="flex-grow-1 main-content">
             {% if user.is_authenticated %}
+            {% if user.tenant.name == 'Demo Company' %}
+            <div class="bg-warning text-dark text-center py-2 px-3 fw-bold shadow-sm d-flex justify-content-center align-items-center flex-wrap gap-2">
+                <span>
+                    <i class="bi bi-info-circle-fill me-1"></i> You are exploring the demo as 
+                    <span class="badge bg-dark text-white rounded-pill px-2">{{ user.role.name }}</span>
+                </span>
+                <a href="{% url 'core:demo_hub' %}" class="btn btn-sm btn-outline-dark rounded-pill fw-bold px-3">Switch Role / Go to Organogram</a>
+            </div>
+            {% endif %}
             <nav class="navbar navbar-light bg-white shadow-sm px-4">
                 <button class="btn btn-link d-lg-none me-2 p-0" id="sidebarToggle" type="button">
                     <i class="bi bi-list fs-4"></i>
