@@ -1839,6 +1839,7 @@
                     alert('E-Cash payment successful!');
 
                     // Open appropriate receipt
+                    {% if shop_settings.receipt_printer_type != 'NO_PRINT' %}
                     if (data.is_payment_on_account && data.transaction_id) {
                         // Payment on account receipt
                         window.open(`/customers/payment/${data.transaction_id}/receipt/`, '_blank');
@@ -1846,6 +1847,7 @@
                         // Sale receipt
                         window.open(`/sales/${data.sale_id}/receipt/`, '_blank');
                     }
+                    {% endif %}
                 } else {
                     alert(data.error || 'Payment verification failed. Please contact support.');
                 }
@@ -1949,11 +1951,13 @@
                     } else {
                         // Sale completed online
                         // Open receipt for printing
+                        {% if shop_settings.receipt_printer_type != 'NO_PRINT' %}
                         if (isPaymentOnAccount && result.transaction_id) {
                             window.open(`/customers/payment/${result.transaction_id}/receipt/`, '_blank');
                         } else if (result.sale_id) {
                             window.open(`/sales/${result.sale_id}/receipt/`, '_blank');
                         }
+                        {% endif %}
 
                         // Reload window to update stock
                         setTimeout(() => location.reload(), 500);

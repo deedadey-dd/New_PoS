@@ -1,11 +1,13 @@
+import os
 import random
 from decimal import Decimal
 from datetime import timedelta
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from django.db import transaction
+from django.conf import settings
+from django.core.files import File
 from django.contrib.auth import get_user_model
-
 from apps.core.models import Tenant, Location, Role
 from apps.inventory.models import Category, Product, Batch, Inventory, ShopPrice
 from apps.sales.models import Sale, SaleItem, Shift
@@ -90,18 +92,25 @@ class Command(BaseCommand):
 
             products = []
             demo_items = [
-                ("Blue Ink Pen", cat_stationery, '2.50', '200'),
-                ("Exercise Book (80 pages)", cat_stationery, '5.00', '12'),
-                ("Action Figure Toy", cat_toys, '45.00', '30'),
-                ("Chocolate Biscuit", cat_snacks, '6.00', '5'),
-                ("Fresh Cola 500ml", cat_snacks, '5.00', '120')
+                ("Blue Ink Pen", cat_stationery, '2.50', '200', 'blue_pen.png'),
+                ("Exercise Book (80 pages)", cat_stationery, '5.00', '12', 'exercise_book.png'),
+                ("Action Figure Toy", cat_toys, '45.00', '30', 'action_toy.png'),
+                ("Chocolate Biscuit", cat_snacks, '6.00', '5', 'chocolate_biscuit.png'),
+                ("Fresh Cola 500ml", cat_snacks, '5.00', '120', 'fresh_cola.png')
             ]
             
-            for name, cat, price, stock in demo_items:
+            for name, cat, price, stock, user_image in demo_items:
                 p = Product.objects.create(
                     tenant=tenant, category=cat, name=name, sku=name.replace(" ", "").upper()[:8],
                     default_selling_price=Decimal(price), is_active=True
                 )
+                
+                # Attach generated image if available
+                img_path = os.path.join(settings.STATICFILES_DIRS[0], 'images', 'demo', user_image)
+                if os.path.exists(img_path):
+                    with open(img_path, 'rb') as f:
+                        p.image.save(user_image, File(f), save=True)
+                        
                 products.append((p, stock))
 
             # 7. Stock balances and Shop Prices

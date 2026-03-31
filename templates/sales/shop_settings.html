@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+
+{% block title %}Shop Settings - {{ current_tenant.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-shop me-2"></i>Shop Settings</h2>
+        <p class="text-muted mb-0">Configure receipt printing and layout for this shop.</p>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-8 mx-auto">
+        <div class="card shadow-sm">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-printer me-2"></i>Printing Settings</h5>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+                    
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">Receipt Printer Type</label>
+                        {{ form.receipt_printer_type }}
+                        <div class="form-text">Select the type of printer connected to this shop's terminal.</div>
+                    </div>
+                    
+                    <div class="mb-4 form-check form-switch">
+                        {{ form.show_logo_on_receipt }}
+                        <label class="form-check-label ms-2 fw-bold" for="{{ form.show_logo_on_receipt.id_for_label }}">
+                            Show Logo on Receipt
+                        </label>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">Receipt Header Text</label>
+                        {{ form.receipt_header }}
+                        <div class="form-text">Optional custom text printed at the top of receipts. Leave blank to use defaults.</div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">Receipt Footer Text</label>
+                        {{ form.receipt_footer }}
+                        <div class="form-text">Optional custom text printed at the bottom of receipts (e.g. "Thank you!").</div>
+                    </div>
+
+                    <div class="text-end mt-4 pt-3 border-top">
+                        <button type="submit" class="btn btn-primary px-4">
+                            <i class="bi bi-save me-2"></i>Save Settings
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

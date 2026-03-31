@@ -10,6 +10,10 @@ urlpatterns = [
     # POS Interface
     path('pos/', views.POSView.as_view(), name='pos'),
     
+    # Shop Settings
+    path('shop-settings/', views.ShopSettingsUpdateView.as_view(), name='shop_settings'),
+    path('shop-payments/<int:shop_id>/', views.AdminShopPaymentConfigView.as_view(), name='admin_shop_payment_settings'),
+    
     # Shift Management
     path('shift/open/', views.ShiftOpenView.as_view(), name='shift_open'),
     path('shift/<int:pk>/close/', views.ShiftCloseView.as_view(), name='shift_close'),

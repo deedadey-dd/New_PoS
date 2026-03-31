@@ -199,12 +199,13 @@ class PaystackProvider(BasePaymentProvider):
             )
 
 
-def get_payment_provider(tenant):
+def get_payment_provider(tenant, shop=None):
     """
     Factory function to get the active payment provider for a tenant.
     
     Args:
         tenant: Tenant model instance
+        shop: Optional Location model instance for shop-specific overrides
         
     Returns:
         Payment provider instance or None
@@ -218,11 +219,38 @@ def get_payment_provider(tenant):
     
     if not settings:
         return None
+        
+    # Check for shop-specific override
+    if shop:
+        try:
+            from apps.sales.models import ShopSettings
+            shop_settings = ShopSettings.objects.get(tenant=tenant, shop=shop)
+            # Only use override if e-cash is enabled for shop and secret key provided
+            if shop_settings.enable_ecash_payment and shop_settings.paystack_secret_key:
+                class OverrideSettings:
+                    def __init__(self, base, public, secret):
+                        self.base = base
+                        self.public_key = public
+                        self.secret_key = secret
+                        self.test_mode = getattr(base, 'test_mode', False)
+                        self.webhook_secret = getattr(base, 'webhook_secret', '')
+                
+                settings = OverrideSettings(
+                    settings, 
+                    shop_settings.paystack_public_key, 
+                    shop_settings.paystack_secret_key
+                )
+        except Exception:
+            pass
+            
+    provider = getattr(settings, 'provider', None)
+    if not provider and hasattr(settings, 'base'):
+        provider = settings.base.provider
     
-    if settings.provider == 'PAYSTACK':
+    if provider == 'PAYSTACK':
         return PaystackProvider(settings)
     # Add more providers here as they're implemented
-    # elif settings.provider == 'FLUTTERWAVE':
+    # elif provider == 'FLUTTERWAVE':
     #     return FlutterwaveProvider(settings)
     
     return None

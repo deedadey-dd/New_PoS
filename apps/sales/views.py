@@ -7,7 +7,8 @@ from decimal import Decimal
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from django.views.generic import ListView, DetailView, View
+from django.views.generic import ListView, DetailView, View, UpdateView
+from django.urls import reverse_lazy
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -20,6 +21,8 @@ from .models import Sale, SaleItem, Shift, ShopSettings
 from apps.inventory.models import Product, ShopPrice
 from apps.core.models import Location
 from apps.core.mixins import PaginationMixin, SortableMixin
+from apps.core.decorators import AdminOrManagerRequiredMixin, AdminRequiredMixin
+from .forms import ShopManagerSettingsForm, AdminShopPaymentSettingsForm
 
 
 class POSView(LoginRequiredMixin, View):
@@ -898,18 +901,30 @@ def initialize_ecash_payment(request):
         user = request.user
         tenant = user.tenant
         
-        # Get payment provider settings
-        from apps.payments.models import PaymentProviderSettings
-        provider_settings = PaymentProviderSettings.objects.filter(
-            tenant=tenant,
-            provider='PAYSTACK',
-            is_active=True
-        ).first()
+        # Get shop
+        shop = user.location
+        if not shop or shop.location_type != 'SHOP':
+            from apps.core.models import Location
+            shop = Location.objects.filter(
+                tenant=tenant,
+                location_type='SHOP',
+                is_active=True
+            ).first()
         
-        if not provider_settings:
+        if not shop:
             return JsonResponse({
                 'success': False,
-                'error': 'E-Cash payment is not configured. Please contact admin.'
+                'error': 'No shop location configured.'
+            }, status=400)
+        
+        # Get active payment provider (handles shop-level overrides)
+        from apps.payments.services.paystack import get_payment_provider
+        provider = get_payment_provider(tenant, shop=shop)
+        
+        if not provider or not provider.public_key:
+            return JsonResponse({
+                'success': False,
+                'error': 'E-Cash payment is not configured for this shop. Please contact admin.'
             }, status=400)
         
         items = data.get('items', [])
@@ -936,20 +951,7 @@ def initialize_ecash_payment(request):
                 'error': 'Invalid cart data.'
             }, status=400)
         
-        # Get shop
-        shop = user.location
-        if not shop or shop.location_type != 'SHOP':
-            shop = Location.objects.filter(
-                tenant=tenant,
-                location_type='SHOP',
-                is_active=True
-            ).first()
-        
-        if not shop:
-            return JsonResponse({
-                'success': False,
-                'error': 'No shop location configured.'
-            }, status=400)
+        # Shop is already retrieved up top
         
         # Get customer if specified
         customer = None
@@ -974,7 +976,7 @@ def initialize_ecash_payment(request):
                 'sale_id': None,  # No sale for payment on account
                 'sale_number': None,
                 'reference': reference,
-                'paystack_public_key': provider_settings.public_key,
+                'paystack_public_key': provider.public_key,
                 'customer_email': customer_email,
                 'tenant_id': tenant.pk,
                 'total': str(total),
@@ -1029,7 +1031,7 @@ def initialize_ecash_payment(request):
             'sale_id': sale.pk,
             'sale_number': sale.sale_number,
             'reference': reference,
-            'paystack_public_key': provider_settings.public_key,
+            'paystack_public_key': provider.public_key,
             'customer_email': customer_email,
             'tenant_id': tenant.pk,
             'total': str(sale.total)
@@ -1065,9 +1067,14 @@ def verify_ecash_payment(request):
                 'error': 'Missing payment reference.'
             }, status=400)
         
-        # Verify with Paystack
+        # Get shop and provider
+        shop = user.location
+        if not shop or shop.location_type != 'SHOP':
+            from apps.core.models import Location
+            shop = Location.objects.filter(tenant=tenant, location_type='SHOP', is_active=True).first()
+            
         from apps.payments.services.paystack import get_payment_provider
-        provider = get_payment_provider(tenant)
+        provider = get_payment_provider(tenant, shop=shop)
         
         if not provider:
             return JsonResponse({
@@ -1587,3 +1594,61 @@ class ShopSalesReportExportView(LoginRequiredMixin, View):
         add_sheet(wb, 'Product Breakdown', prod_headers, prod_rows)
 
         return build_excel_response(wb, f'shop_sales_report_{shop.name}_{date_from}_to_{date_to}.xlsx')
+
+
+class ShopSettingsUpdateView(LoginRequiredMixin, AdminOrManagerRequiredMixin, UpdateView):
+    """
+    Shop Manager view to configure print layouts and receipts.
+    (Excludes payment API keys to enforce separation of concerns).
+    """
+    model = ShopSettings
+    form_class = ShopManagerSettingsForm
+    template_name = 'sales/shop_settings.html'
+    success_url = reverse_lazy('sales:shop_settings')
+    
+    def get_object(self, queryset=None):
+        shop = self.request.user.location
+        settings, _ = ShopSettings.objects.get_or_create(
+            tenant=self.request.user.tenant,
+            shop=shop,
+            defaults={'receipt_printer_type': 'THERMAL_80MM'}
+        )
+        return settings
+
+    def form_valid(self, form):
+        messages.success(self.request, "Shop settings have been updated.")
+        return super().form_valid(form)
+
+
+class AdminShopPaymentConfigView(LoginRequiredMixin, AdminRequiredMixin, UpdateView):
+    """
+    Admin view to inject API Keys securely for specific shops to override 
+    the Global Tenant API keys for E-Cash.
+    """
+    model = ShopSettings
+    form_class = AdminShopPaymentSettingsForm
+    template_name = 'sales/admin_shop_payment_settings.html'
+    
+    def get_object(self, queryset=None):
+        shop_id = self.kwargs.get('shop_id')
+        shop = get_object_or_404(Location, id=shop_id, tenant=self.request.user.tenant, location_type='SHOP')
+        self.shop_name = shop.name
+        settings, _ = ShopSettings.objects.get_or_create(
+            tenant=self.request.user.tenant,
+            shop=shop,
+            defaults={'receipt_printer_type': 'THERMAL_80MM'}
+        )
+        return settings
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['shop_name'] = self.shop_name
+        return context
+
+    def get_success_url(self):
+        return reverse_lazy('core:location_list')
+
+    def form_valid(self, form):
+        messages.success(self.request, f"Payment settings for {self.shop_name} updated.")
+        return super().form_valid(form)
+

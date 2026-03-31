@@ -21,6 +21,7 @@ class ShopSettings(TenantModel):
         ('THERMAL_80MM', '80mm Thermal Printer'),
         ('THERMAL_58MM', '58mm Thermal Printer'),
         ('A4_STANDARD', 'A4 Standard Printer'),
+        ('A5_STANDARD', 'A5 Standard Printer'),
         ('NO_PRINT', 'No Printing (Digital Only)'),
     ]
     

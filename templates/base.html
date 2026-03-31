@@ -228,6 +228,16 @@
                     </li>
                     {% endif %}
 
+                    <!-- Shop Manager Settings -->
+                    {% if role_name == 'SHOP_MANAGER' or role_name == 'ADMIN' %}
+                    <li class="nav-item mt-2">
+                        <a class="nav-link text-white {% if 'shop-settings' in request.path %}active{% endif %}"
+                            href="{% url 'sales:shop_settings' %}">
+                            <i class="bi bi-printer me-2"></i> Shop Settings
+                        </a>
+                    </li>
+                    {% endif %}
+
                     <!-- Admin -->
                     {% if role_name == 'ADMIN' %}
                     <li class="nav-item mt-3 border-top border-secondary pt-3">

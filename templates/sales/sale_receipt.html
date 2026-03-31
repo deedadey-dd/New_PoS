@@ -13,38 +13,47 @@
         }
 
         @page {
-            size: 80mm auto;
+            {% if shop_settings.receipt_printer_type == 'THERMAL_80MM' %}
+            size: 80mm min-content;
             margin: 0 !important;
+            {% elif shop_settings.receipt_printer_type == 'THERMAL_58MM' %}
+            size: 58mm min-content;
+            margin: 0 !important;
+            {% elif shop_settings.receipt_printer_type == 'A4_STANDARD' %}
+            size: a4 portrait;
+            margin: 10mm;
+            {% elif shop_settings.receipt_printer_type == 'A5_STANDARD' %}
+            size: a5 portrait;
+            margin: 10mm;
+            {% else %}
+            size: auto;
+            {% endif %}
         }
 
         body {
             font-family: 'Courier New', monospace;
-            font-size: 12px;
             line-height: 1.4;
-
-                {
-                % if shop_settings.receipt_printer_type=='THERMAL_80MM' %
-            }
-
-            width: 280px;
-
-                {
-                % elif shop_settings.receipt_printer_type=='THERMAL_58MM' %
-            }
-
-            width: 200px;
+            {% if shop_settings.receipt_printer_type == 'THERMAL_80MM' %}
+            font-size: 12px;
+            width: 78mm;
+            margin: 0 auto;
+            {% elif shop_settings.receipt_printer_type == 'THERMAL_58MM' %}
             font-size: 10px;
-
-                {
-                % else %
-            }
-
+            width: 56mm;
+            margin: 0 auto;
+            {% elif shop_settings.receipt_printer_type == 'A4_STANDARD' %}
+            font-size: 14px;
+            max-width: 180mm;
+            margin: 0 auto;
+            {% elif shop_settings.receipt_printer_type == 'A5_STANDARD' %}
+            font-size: 12px;
+            max-width: 120mm;
+            margin: 0 auto;
+            {% else %}
+            font-size: 12px;
             max-width: 400px;
             margin: 0 auto;
-
-                {
-                % endif %
-            }
+            {% endif %}
         }
 
         .receipt-header {
