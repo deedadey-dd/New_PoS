@@ -706,7 +706,7 @@
                                     class="text-end fw-bold {% if entry.quantity > 0 %}text-success{% else %}text-danger{% endif %}">
                                     {% if entry.quantity > 0 %}+{% endif %}{{ entry.quantity|floatformat:"0g" }}
                                 </td>
-                                <td><small>{{ entry.created_by.get_full_name|default:entry.created_by.email|default:"-" }}</small>
+                                <td><small>{% if entry.created_by %}{{ entry.created_by.get_full_name|default:entry.created_by.email }}{% else %}-{% endif %}</small>
                                 </td>
                                 <td>{% if entry.reference_type %}<small class="text-muted">{{ entry.reference_type }}
                                         #{{ entry.reference_id }}</small>{% else %}<small

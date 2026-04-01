@@ -9,9 +9,10 @@ from django.conf import settings
 from django.core.files import File
 from django.contrib.auth import get_user_model
 from apps.core.models import Tenant, Location, Role
-from apps.inventory.models import Category, Product, Batch, Inventory, ShopPrice
+from apps.inventory.models import Category, Product, Batch, Inventory, InventoryLedger, ShopPrice
 from apps.sales.models import Sale, SaleItem, Shift
 from apps.accounting.models import CashTransfer
+from apps.customers.models import Customer, CustomerTransaction
 
 User = get_user_model()
 
@@ -27,10 +28,13 @@ class Command(BaseCommand):
             tenants = Tenant.objects.filter(name="Demo Company")
             if tenants.exists():
                 tenant = tenants.first()
+                CustomerTransaction.objects.filter(tenant=tenant).delete()
+                Customer.objects.filter(tenant=tenant).delete()
                 SaleItem.objects.filter(tenant=tenant).delete()
                 Sale.objects.filter(tenant=tenant).delete()
                 CashTransfer.objects.filter(tenant=tenant).delete()
                 Shift.objects.filter(tenant=tenant).delete()
+                InventoryLedger.objects.filter(tenant=tenant).delete()
                 Inventory.objects.filter(tenant=tenant).delete()
                 User.objects.filter(tenant=tenant).delete()
                 tenant.delete()
@@ -85,43 +89,116 @@ class Command(BaseCommand):
                 )
                 created_users[email] = u
 
-            # 6. Create Products
+            # 6. Create Products with varying reorder_levels
             cat_stationery = Category.objects.create(tenant=tenant, name="Stationery")
             cat_toys = Category.objects.create(tenant=tenant, name="Toys")
             cat_snacks = Category.objects.create(tenant=tenant, name="Snacks")
 
-            products = []
+            # (name, category, price, shop1_stock, shop2_stock, reorder_level, image)
             demo_items = [
-                ("Blue Ink Pen", cat_stationery, '2.50', '200', 'blue_pen.png'),
-                ("Exercise Book (80 pages)", cat_stationery, '5.00', '12', 'exercise_book.png'),
-                ("Action Figure Toy", cat_toys, '45.00', '30', 'action_toy.png'),
-                ("Chocolate Biscuit", cat_snacks, '6.00', '5', 'chocolate_biscuit.png'),
-                ("Fresh Cola 500ml", cat_snacks, '5.00', '120', 'fresh_cola.png')
+                # Well stocked (GREEN badge)
+                ("Blue Ink Pen", cat_stationery, '2.50', 200, 150, 20, 'blue_pen.png'),
+                ("Fresh Cola 500ml", cat_snacks, '5.00', 120, 95, 15, 'fresh_cola.png'),
+                # Approaching low stock (YELLOW badge: qty < threshold * 2)
+                ("Exercise Book (80 pages)", cat_stationery, '5.00', 18, 25, 10, 'exercise_book.png'),
+                ("Action Figure Toy", cat_toys, '45.00', 14, 20, 8, 'action_toy.png'),
+                # Low / critical stock (RED badge: qty <= threshold)
+                ("Chocolate Biscuit", cat_snacks, '6.00', 3, 5, 10, 'chocolate_biscuit.png'),
             ]
-            
-            for name, cat, price, stock, user_image in demo_items:
+
+            products = []
+            for name, cat, price, stock1, stock2, reorder, user_image in demo_items:
                 p = Product.objects.create(
                     tenant=tenant, category=cat, name=name, sku=name.replace(" ", "").upper()[:8],
-                    default_selling_price=Decimal(price), is_active=True
+                    default_selling_price=Decimal(price), is_active=True,
+                    reorder_level=Decimal(str(reorder))
                 )
-                
+
                 # Attach generated image if available
                 img_path = os.path.join(settings.STATICFILES_DIRS[0], 'images', 'demo', user_image)
                 if os.path.exists(img_path):
                     with open(img_path, 'rb') as f:
                         p.image.save(user_image, File(f), save=True)
-                        
-                products.append((p, stock))
 
-            # 7. Stock balances and Shop Prices
-            for shop in [loc_shop1, loc_shop2]:
-                for p, stock in products:
-                    Inventory.objects.create(tenant=tenant, location=shop, product=p, quantity=Decimal(stock))
-                    ShopPrice.objects.create(tenant=tenant, location=shop, product=p, selling_price=p.default_selling_price)
+                products.append((p, stock1, stock2))
 
-            # 8. Create Mock Sales and Cash transfers
+            # 7. Stock balances, Ledger entries and Shop Prices
+            self.stdout.write("Creating inventory ledger entries and shop prices...")
+            for p, stock1, stock2 in products:
+                for shop, stock_qty in [(loc_shop1, stock1), (loc_shop2, stock2)]:
+                    # Create InventoryLedger entry (this is what the POS reads)
+                    InventoryLedger.objects.create(
+                        tenant=tenant,
+                        product=p,
+                        location=shop,
+                        transaction_type='IN',
+                        quantity=Decimal(str(stock_qty)),
+                        reference_type=f'DEMO-SEED-{p.pk}',
+                        notes='Initial demo stock'
+                    )
+                    # Create Inventory snapshot (denormalized cache)
+                    Inventory.objects.create(
+                        tenant=tenant, location=shop, product=p, quantity=Decimal(str(stock_qty))
+                    )
+                    # Create ShopPrice
+                    ShopPrice.objects.create(
+                        tenant=tenant, location=shop, product=p,
+                        selling_price=p.default_selling_price
+                    )
+
+                # Also stock the warehouse and production
+                for loc, qty in [(loc_stores, stock1 + stock2), (loc_production, stock1 * 2)]:
+                    InventoryLedger.objects.create(
+                        tenant=tenant, product=p, location=loc,
+                        transaction_type='IN', quantity=Decimal(str(qty)),
+                        reference_type=f'DEMO-SEED-{p.pk}', notes='Initial demo stock'
+                    )
+                    Inventory.objects.create(
+                        tenant=tenant, location=loc, product=p, quantity=Decimal(str(qty))
+                    )
+
+            # 8. Create Customers with credit balances
+            self.stdout.write("Creating demo customers...")
+            demo_customers = [
+                # (name, phone, shop, balance, credit_limit)
+                ("Kwame Asante", "0241111111", loc_shop1, Decimal('120.00'), Decimal('500.00')),
+                ("Ama Serwah", "0242222222", loc_shop1, Decimal('45.50'), Decimal('200.00')),
+                ("Kofi Mensah", "0243333333", loc_shop1, Decimal('0.00'), Decimal('300.00')),
+                ("Akua Boateng", "0244444444", loc_shop2, Decimal('230.00'), Decimal('500.00')),
+                ("Yaw Darko", "0245555555", loc_shop2, Decimal('15.00'), Decimal('100.00')),
+                ("Efua Nyarko", "0246666666", loc_shop2, Decimal('0.00'), Decimal('150.00')),
+            ]
+
+            attendant1 = created_users['attendant1@demo.com']
+            attendant2 = created_users['attendant2@demo.com']
+
+            for cname, cphone, cshop, balance, limit in demo_customers:
+                customer = Customer.objects.create(
+                    tenant=tenant,
+                    name=cname,
+                    phone=cphone,
+                    shop=cshop,
+                    current_balance=balance,
+                    credit_limit=limit,
+                    is_active=True
+                )
+                # Create a transaction record for customers who owe money
+                if balance > 0:
+                    CustomerTransaction.objects.create(
+                        tenant=tenant,
+                        customer=customer,
+                        transaction_type='DEBIT',
+                        amount=balance,
+                        description='Credit purchase (demo data)',
+                        balance_before=Decimal('0.00'),
+                        balance_after=balance,
+                        performed_by=attendant1 if cshop == loc_shop1 else attendant2
+                    )
+
+            # 9. Create Mock Sales and Cash transfers
+            self.stdout.write("Creating mock sales...")
             now = timezone.now()
-            
+
             # Create a shift
             shift = Shift.objects.create(
                 tenant=tenant,
@@ -136,23 +213,31 @@ class Command(BaseCommand):
             for i in range(25):
                 days_ago = random.randint(0, 15)
                 sale_time = now - timedelta(days=days_ago, hours=random.randint(1, 10))
-                
+
                 shop = random.choice([loc_shop1, loc_shop2])
                 attendant = created_users['attendant1@demo.com'] if shop == loc_shop1 else created_users['attendant2@demo.com']
                 payment_method = random.choice(['CASH', 'CASH', 'ECASH', 'CREDIT'])
 
+                # Pick a customer for credit sales
+                sale_customer = None
+                if payment_method == 'CREDIT':
+                    shop_customers = Customer.objects.filter(tenant=tenant, shop=shop, is_active=True)
+                    if shop_customers.exists():
+                        sale_customer = random.choice(list(shop_customers))
+
                 sale = Sale.objects.create(
                     tenant=tenant, shop=shop, attendant=attendant, shift=shift if shop == loc_shop1 else None,
                     status='COMPLETED', payment_method=payment_method, amount_paid=Decimal('0'),
-                    sale_number=f"DEMO-SL-{random.randint(10000, 99999)}"
+                    sale_number=f"DEMO-SL-{random.randint(10000, 99999)}",
+                    customer=sale_customer
                 )
                 # Ensure created_at override
                 Sale.objects.filter(pk=sale.pk).update(created_at=sale_time)
-                
+
                 # Add items
                 sale_total = Decimal('0')
                 for _ in range(random.randint(1, 4)):
-                    p, _stock = random.choice(products)
+                    p, _stock1, _stock2 = random.choice(products)
                     qty = Decimal(str(random.randint(1, 5)))
                     item_total = p.default_selling_price * qty
                     SaleItem.objects.create(
@@ -160,13 +245,14 @@ class Command(BaseCommand):
                         unit_price=p.default_selling_price, total=item_total
                     )
                     sale_total += item_total
-                
+
                 sale.total = sale_total
                 sale.subtotal = sale_total
                 sale.amount_paid = sale_total if payment_method in ['CASH', 'ECASH'] else Decimal('0')
                 sale.save()
 
-            # Create some mock cash transfers (Deposits)
+            # 10. Create some mock cash transfers (Deposits)
+            self.stdout.write("Creating mock cash transfers...")
             for _ in range(5):
                 days_ago = random.randint(1, 15)
                 transfer_time = now - timedelta(days=days_ago)
