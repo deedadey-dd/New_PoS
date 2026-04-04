@@ -265,7 +265,7 @@ class BatchForm(forms.ModelForm):
 
 
 class StockAdjustmentForm(forms.Form):
-    """Form for stock adjustments."""
+    """Form for stock adjustments with role-based location filtering."""
     ADJUSTMENT_TYPES = [
         ('ADJUST', 'Adjustment'),
         ('DAMAGE', 'Damage/Write-off'),
@@ -299,11 +299,39 @@ class StockAdjustmentForm(forms.Form):
         required=True
     )
     
-    def __init__(self, *args, tenant=None, **kwargs):
+    def __init__(self, *args, tenant=None, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         if tenant:
             self.fields['product'].queryset = Product.objects.filter(tenant=tenant, is_active=True)
-            self.fields['location'].queryset = Location.objects.filter(tenant=tenant, is_active=True)
+            
+            # Role-based location filtering
+            if user and hasattr(user, 'role') and user.role:
+                role_name = user.role.name
+                if role_name in ('SHOP_MANAGER', 'SHOP_ATTENDANT'):
+                    # Shop staff can only adjust their own location
+                    if user.location:
+                        self.fields['location'].queryset = Location.objects.filter(
+                            pk=user.location.pk
+                        )
+                    else:
+                        self.fields['location'].queryset = Location.objects.none()
+                elif role_name == 'PRODUCTION_MANAGER':
+                    # Production Managers can only adjust their own location
+                    if user.location:
+                        self.fields['location'].queryset = Location.objects.filter(
+                            pk=user.location.pk
+                        )
+                    else:
+                        self.fields['location'].queryset = Location.objects.none()
+                elif role_name in ('STORES_MANAGER', 'ADMIN'):
+                    # Stores Manager and Admin can see all locations
+                    self.fields['location'].queryset = Location.objects.filter(
+                        tenant=tenant, is_active=True
+                    )
+                else:
+                    self.fields['location'].queryset = Location.objects.none()
+            else:
+                self.fields['location'].queryset = Location.objects.filter(tenant=tenant, is_active=True)
 
 
 class ShopPriceForm(forms.ModelForm):

@@ -16,6 +16,7 @@ class Notification(TenantModel):
         ('TRANSFER_SENT', 'Transfer Sent'),
         ('TRANSFER_RECEIVED', 'Transfer Received'),
         ('TRANSFER_DISPUTED', 'Transfer Disputed'),
+        ('STOCK_ADJUSTMENT', 'Stock Adjustment'),
         ('LOW_STOCK', 'Low Stock Alert'),
         ('EXPIRY_WARNING', 'Expiry Warning'),
         ('SUBSCRIPTION_EXPIRY', 'Subscription Expiry'),

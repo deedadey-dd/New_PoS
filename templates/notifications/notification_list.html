@@ -20,8 +20,11 @@
         {% if notifications %}
         <div class="list-group list-group-flush">
             {% for notification in notifications %}
-            <a href="{% if notification.reference_type == 'Transfer' %}{% url 'transfers:transfer_detail' notification.reference_id %}{% else %}#{% endif %}?mark_read={{ notification.pk }}"
-                class="list-group-item list-group-item-action {% if not notification.is_read %}bg-light{% endif %} py-3">
+            <a href="{% if notification.reference_type == 'Transfer' %}{% url 'transfers:transfer_detail' notification.reference_id %}{% elif notification.notification_type == 'STOCK_ADJUSTMENT' %}{% url 'inventory:adjustment_history' %}{% else %}#{% endif %}"
+                class="list-group-item list-group-item-action notification-item {% if not notification.is_read %}bg-light{% endif %} py-3"
+                data-notification-id="{{ notification.pk }}"
+                data-notification-type="{{ notification.notification_type }}"
+                data-reference-id="{{ notification.reference_id }}">
                 <div class="d-flex align-items-start">
                     <div class="notification-icon me-3 fs-4">
                         {% if notification.notification_type == 'TRANSFER_SENT' %}
@@ -34,6 +37,8 @@
                         <i class="bi bi-exclamation-circle text-warning"></i>
                         {% elif notification.notification_type == 'EXPIRY_WARNING' %}
                         <i class="bi bi-calendar-x text-warning"></i>
+                        {% elif notification.notification_type == 'STOCK_ADJUSTMENT' %}
+                        <i class="bi bi-sliders text-info"></i>
                         {% else %}
                         <i class="bi bi-info-circle text-info"></i>
                         {% endif %}
@@ -43,7 +48,7 @@
                             <h6 class="mb-1 {% if not notification.is_read %}fw-bold{% endif %}">
                                 {{ notification.title }}
                                 {% if not notification.is_read %}
-                                <span class="badge bg-primary ms-2">New</span>
+                                <span class="badge bg-primary ms-2 badge-new">New</span>
                                 {% endif %}
                             </h6>
                             <small class="text-muted">{{ notification.created_at|timesince }} ago</small>

@@ -460,3 +460,122 @@ class FavoriteProduct(TenantModel):
     def __str__(self):
         return f"★ {self.product.name} @ {self.location.name}"
 
+
+class StockAdjustment(TenantModel):
+    """
+    Stock adjustment request with approval workflow.
+    
+    - Shop Managers adjusting own location: auto-approved.
+    - Stores Managers adjusting another location: PENDING, requires approval.
+    - Admin adjusting any location: auto-approved.
+    """
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending Approval'),
+        ('APPROVED', 'Approved'),
+        ('REJECTED', 'Rejected'),
+    ]
+    
+    ADJUSTMENT_TYPES = [
+        ('ADJUST', 'Adjustment (Add Stock)'),
+        ('DAMAGE', 'Damage/Write-off (Remove Stock)'),
+    ]
+    
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name='adjustments'
+    )
+    batch = models.ForeignKey(
+        Batch,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='adjustments'
+    )
+    location = models.ForeignKey(
+        Location,
+        on_delete=models.CASCADE,
+        related_name='stock_adjustments'
+    )
+    
+    adjustment_type = models.CharField(max_length=20, choices=ADJUSTMENT_TYPES)
+    quantity = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        help_text="Positive to add, negative to remove"
+    )
+    reason = models.TextField()
+    
+    # Status tracking
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    
+    # Audit: who requested
+    requested_by = models.ForeignKey(
+        'core.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='adjustment_requests'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    # Audit: who reviewed
+    reviewed_by = models.ForeignKey(
+        'core.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='adjustment_reviews'
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    review_notes = models.TextField(blank=True)
+    
+    # Link to ledger entry if approved
+    ledger_entry = models.ForeignKey(
+        InventoryLedger,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='adjustment_source'
+    )
+    
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Stock Adjustment'
+        verbose_name_plural = 'Stock Adjustments'
+    
+    def __str__(self):
+        return f"{self.get_adjustment_type_display()}: {self.product.name} x {self.quantity} ({self.get_status_display()})"
+    
+    def approve(self, user, notes=''):
+        """Approve the adjustment and create ledger entry."""
+        self.status = 'APPROVED'
+        self.reviewed_by = user
+        self.reviewed_at = timezone.now()
+        self.review_notes = notes
+        
+        # Create the actual inventory ledger entry
+        ledger = InventoryLedger.objects.create(
+            tenant=self.tenant,
+            product=self.product,
+            batch=self.batch,
+            location=self.location,
+            transaction_type=self.adjustment_type,
+            quantity=self.quantity,
+            unit_cost=self.batch.unit_cost if self.batch else None,
+            notes=f"Adjustment approved by {user.get_full_name() or user.email}. Reason: {self.reason}",
+            reference_type='StockAdjustment',
+            reference_id=self.pk,
+            created_by=self.requested_by,
+        )
+        self.ledger_entry = ledger
+        self.save()
+        return ledger
+    
+    def reject(self, user, notes=''):
+        """Reject the adjustment."""
+        self.status = 'REJECTED'
+        self.reviewed_by = user
+        self.reviewed_at = timezone.now()
+        self.review_notes = notes
+        self.save()
+

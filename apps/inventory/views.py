@@ -3,6 +3,7 @@ Views for inventory app.
 Handles products, categories, batches, and stock management.
 """
 from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib import messages
 from django.views import View
@@ -15,7 +16,7 @@ import decimal
 
 from apps.core.mixins import PaginationMixin # Added this line
 
-from .models import Category, Product, Batch, InventoryLedger, ShopPrice
+from .models import Category, Product, Batch, InventoryLedger, ShopPrice, StockAdjustment
 from .forms import CategoryForm, ProductForm, BatchForm, StockAdjustmentForm, ShopPriceForm
 from apps.core.models import Location
 from apps.core.mixins import PaginationMixin, SortableMixin
@@ -870,15 +871,15 @@ class StockOverviewView(LoginRequiredMixin, View):
 
 
 class StockAdjustmentView(LoginRequiredMixin, View):
-    """Create stock adjustments."""
+    """Create stock adjustments with role-based restrictions."""
     template_name = 'inventory/stock_adjustment.html'
     
     def get(self, request):
-        form = StockAdjustmentForm(tenant=request.user.tenant)
+        form = StockAdjustmentForm(tenant=request.user.tenant, user=request.user)
         return render(request, self.template_name, {'form': form})
     
     def post(self, request):
-        form = StockAdjustmentForm(request.POST, tenant=request.user.tenant)
+        form = StockAdjustmentForm(request.POST, tenant=request.user.tenant, user=request.user)
         if form.is_valid():
             product = form.cleaned_data['product']
             location = form.cleaned_data['location']
@@ -887,23 +888,219 @@ class StockAdjustmentView(LoginRequiredMixin, View):
             adjustment_type = form.cleaned_data['adjustment_type']
             reason = form.cleaned_data['reason']
             
-            # Create ledger entry
-            InventoryLedger.objects.create(
-                tenant=request.user.tenant,
+            user = request.user
+            role_name = user.role.name if hasattr(user, 'role') and user.role else ''
+            is_own_location = (user.location_id == location.pk)
+            
+            # Determine if this needs approval
+            needs_approval = False
+            if role_name == 'STORES_MANAGER' and not is_own_location:
+                needs_approval = True
+            
+            # Admin always auto-approves
+            if role_name == 'ADMIN':
+                needs_approval = False
+            
+            # Create the StockAdjustment record
+            adjustment = StockAdjustment.objects.create(
+                tenant=user.tenant,
                 product=product,
                 batch=batch,
                 location=location,
-                transaction_type=adjustment_type,
+                adjustment_type=adjustment_type,
                 quantity=quantity,
-                unit_cost=batch.unit_cost if batch else None,
-                notes=reason,
-                created_by=request.user
+                reason=reason,
+                requested_by=user,
+                status='PENDING' if needs_approval else 'APPROVED',
             )
             
-            messages.success(request, f'Stock adjustment recorded for {product.name}.')
-            return redirect('inventory:stock_overview')
+            if needs_approval:
+                # Notify the target location's manager(s) and admins
+                from apps.notifications.models import Notification
+                from apps.core.models import User
+                
+                # Find managers of the target location + admins
+                target_users = User.objects.filter(
+                    tenant=user.tenant,
+                    is_active=True,
+                ).filter(
+                    Q(location=location, role__name='SHOP_MANAGER') |
+                    Q(role__name='ADMIN')
+                ).exclude(pk=user.pk)
+                
+                for target_user in target_users:
+                    Notification.objects.create(
+                        tenant=user.tenant,
+                        user=target_user,
+                        title='Stock Adjustment Pending Approval',
+                        message=f'{user.get_full_name() or user.email} has requested a stock adjustment of {quantity} '
+                                f'for {product.name} at {location.name}. Reason: {reason}',
+                        notification_type='STOCK_ADJUSTMENT',
+                        reference_type='StockAdjustment',
+                        reference_id=adjustment.pk,
+                    )
+                
+                messages.info(request, 
+                    f'Stock adjustment for {product.name} at {location.name} has been submitted for approval.'
+                )
+            else:
+                # Auto-approve: create ledger entry immediately
+                adjustment.approve(user, notes='Auto-approved (own location or admin)')
+                messages.success(request, f'Stock adjustment recorded for {product.name}.')
+            
+            return redirect('inventory:adjustment_history')
         
         return render(request, self.template_name, {'form': form})
+
+
+class AdjustmentHistoryView(LoginRequiredMixin, SortableMixin, ListView):
+    """Standalone adjustment history showing all adjustments."""
+    model = StockAdjustment
+    template_name = 'inventory/adjustment_history.html'
+    context_object_name = 'adjustments'
+    sortable_fields = ['created_at', 'product__name', 'quantity', 'adjustment_type', 'location__name', 'status']
+    default_sort = '-created_at'
+    paginate_by = 25
+    
+    def get_queryset(self):
+        user = self.request.user
+        queryset = StockAdjustment.objects.filter(
+            tenant=user.tenant
+        ).select_related(
+            'product', 'location', 'batch', 'requested_by', 'reviewed_by'
+        )
+        
+        # Role-based filtering
+        role_name = user.role.name if hasattr(user, 'role') and user.role else ''
+        if role_name in ('SHOP_MANAGER', 'SHOP_ATTENDANT'):
+            # See own location adjustments only
+            queryset = queryset.filter(location=user.location)
+        elif role_name == 'PRODUCTION_MANAGER':
+            queryset = queryset.filter(location=user.location)
+        # Stores Manager, Admin, Auditor, Accountant: see all
+        
+        # Filter by status
+        status = self.request.GET.get('status')
+        if status:
+            queryset = queryset.filter(status=status)
+        
+        # Filter by location
+        location_id = self.request.GET.get('location')
+        if location_id:
+            queryset = queryset.filter(location_id=location_id)
+        
+        # Search
+        search = self.request.GET.get('q')
+        if search:
+            queryset = queryset.filter(
+                Q(product__name__icontains=search) |
+                Q(reason__icontains=search) |
+                Q(requested_by__first_name__icontains=search) |
+                Q(requested_by__last_name__icontains=search)
+            )
+        
+        return self.apply_sorting(queryset)
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        user = self.request.user
+        role_name = user.role.name if hasattr(user, 'role') and user.role else ''
+        
+        context['current_status'] = self.request.GET.get('status', '')
+        context['current_location'] = self.request.GET.get('location', '')
+        context['current_search'] = self.request.GET.get('q', '')
+        context['status_choices'] = StockAdjustment.STATUS_CHOICES
+        
+        # Pending count for the user's location (for the badge)
+        if role_name in ('SHOP_MANAGER', 'ADMIN'):
+            if role_name == 'SHOP_MANAGER' and user.location:
+                context['pending_count'] = StockAdjustment.objects.filter(
+                    tenant=user.tenant,
+                    location=user.location,
+                    status='PENDING'
+                ).count()
+            elif role_name == 'ADMIN':
+                context['pending_count'] = StockAdjustment.objects.filter(
+                    tenant=user.tenant,
+                    status='PENDING'
+                ).count()
+        
+        # Locations for filter dropdown
+        if role_name in ('STORES_MANAGER', 'ADMIN', 'AUDITOR', 'ACCOUNTANT'):
+            context['locations'] = Location.objects.filter(
+                tenant=user.tenant, is_active=True
+            )
+        
+        return context
+
+
+class ReviewAdjustmentView(LoginRequiredMixin, View):
+    """Approve or reject a pending stock adjustment."""
+    
+    def post(self, request, pk):
+        adjustment = get_object_or_404(
+            StockAdjustment,
+            pk=pk,
+            tenant=request.user.tenant,
+            status='PENDING'
+        )
+        
+        user = request.user
+        role_name = user.role.name if hasattr(user, 'role') and user.role else ''
+        
+        # Only Shop Manager of that location or Admin can review
+        can_review = False
+        if role_name == 'ADMIN':
+            can_review = True
+        elif role_name == 'SHOP_MANAGER' and user.location_id == adjustment.location_id:
+            can_review = True
+        
+        if not can_review:
+            messages.error(request, 'You do not have permission to review this adjustment.')
+            return redirect('inventory:adjustment_history')
+        
+        action = request.POST.get('action')
+        review_notes = request.POST.get('review_notes', '')
+        
+        from apps.notifications.models import Notification
+        
+        if action == 'approve':
+            adjustment.approve(user, notes=review_notes)
+            messages.success(request, 
+                f'Adjustment for {adjustment.product.name} at {adjustment.location.name} has been approved.'
+            )
+            # Notify the requester
+            if adjustment.requested_by and adjustment.requested_by != user:
+                Notification.objects.create(
+                    tenant=user.tenant,
+                    user=adjustment.requested_by,
+                    title='Stock Adjustment Approved',
+                    message=f'Your stock adjustment of {adjustment.quantity} for {adjustment.product.name} '
+                            f'at {adjustment.location.name} has been approved by {user.get_full_name() or user.email}.',
+                    notification_type='STOCK_ADJUSTMENT',
+                    reference_type='StockAdjustment',
+                    reference_id=adjustment.pk,
+                )
+        elif action == 'reject':
+            adjustment.reject(user, notes=review_notes)
+            messages.warning(request, 
+                f'Adjustment for {adjustment.product.name} at {adjustment.location.name} has been rejected.'
+            )
+            # Notify the requester
+            if adjustment.requested_by and adjustment.requested_by != user:
+                Notification.objects.create(
+                    tenant=user.tenant,
+                    user=adjustment.requested_by,
+                    title='Stock Adjustment Rejected',
+                    message=f'Your stock adjustment of {adjustment.quantity} for {adjustment.product.name} '
+                            f'at {adjustment.location.name} has been rejected by {user.get_full_name() or user.email}.'
+                            f'{" Reason: " + review_notes if review_notes else ""}',
+                    notification_type='STOCK_ADJUSTMENT',
+                    reference_type='StockAdjustment',
+                    reference_id=adjustment.pk,
+                )
+        
+        return redirect('inventory:adjustment_history')
 
 
 class InventoryLedgerListView(LoginRequiredMixin, SortableMixin, ListView):
@@ -1274,3 +1471,38 @@ class ProductTemplateDownloadView(LoginRequiredMixin, View):
         
         wb.save(response)
         return response
+
+
+@login_required
+def get_adjustment_details_api(request, pk):
+    """AJAX endpoint to get stock adjustment details for review modal."""
+    from .models import StockAdjustment
+    
+    adjustment = get_object_or_404(
+        StockAdjustment, 
+        pk=pk, 
+        tenant=request.user.tenant
+    )
+    
+    # Check if the user has permission to review this adjustment
+    role_name = request.user.role.name if hasattr(request.user, 'role') and request.user.role else ''
+    can_review = False
+    if role_name == 'ADMIN':
+        can_review = True
+    elif role_name == 'SHOP_MANAGER' and request.user.location_id == adjustment.location_id:
+        can_review = True
+    
+    data = {
+        'id': adjustment.id,
+        'product_name': adjustment.product.name,
+        'quantity': float(adjustment.quantity),
+        'location_name': adjustment.location.name,
+        'reason': adjustment.get_adjustment_type_display(),
+        'notes': adjustment.reason,
+        'status': adjustment.status,
+        'requested_by': adjustment.requested_by.get_full_name() or adjustment.requested_by.email if adjustment.requested_by else 'System',
+        'created_at': adjustment.created_at.strftime('%Y-%m-%d %H:%M'),
+        'can_review': can_review and adjustment.status == 'PENDING',
+    }
+    
+    return JsonResponse(data)

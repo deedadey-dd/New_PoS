@@ -58,3 +58,15 @@ def mark_as_read(request, pk):
         return redirect('transfers:transfer_detail', pk=notification.reference_id)
     
     return redirect('notifications:notification_list')
+
+
+@login_required
+def mark_notification_read_api(request, pk):
+    """AJAX endpoint to mark a single notification as read."""
+    from django.http import JsonResponse
+    notification = get_object_or_404(Notification, pk=pk, user=request.user)
+    notification.mark_as_read()
+    return JsonResponse({
+        'status': 'success', 
+        'unread_count': Notification.get_unread_count(request.user)
+    })

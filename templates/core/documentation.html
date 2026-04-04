@@ -120,6 +120,7 @@
                             <a class="nav-link" href="#transfers">Stock Transfers</a>
                             <a class="nav-link sub-link" href="#transfer-discrepancies">Discrepancies</a>
                             <a class="nav-link sub-link" href="#product-transfer-history">Product Transfer History</a>
+                            <a class="nav-link sub-link" href="#stock-adjustments">Stock Adjustments</a>
                             <a class="nav-link sub-link" href="#stock-write-offs">Stock Write-Offs</a>
                             <a class="nav-link" href="#stock-requests">Stock Requests</a>
                             <a class="nav-link" href="#customers">Customer Management</a>
@@ -128,6 +129,8 @@
                             <a class="nav-link" href="#tracking">Tracking & Audit</a>
                             <a class="nav-link" href="#notifications-section">Notifications</a>
                             <a class="nav-link" href="#settings">Settings & Admin</a>
+                            <a class="nav-link sub-link" href="#shop-settings">Shop Settings</a>
+                            <a class="nav-link sub-link" href="#ecash-config">E-Cash API Config</a>
                             <a class="nav-link" href="#subscription">Subscription Management</a>
                             <a class="nav-link" href="#troubleshooting">Troubleshooting</a>
                             <a class="nav-link" href="#glossary">Glossary</a>
@@ -157,6 +160,18 @@
                     <a href="{% url 'core:help' %}" class="btn btn-outline-primary">
                         <i class="bi bi-arrow-left me-1"></i>Quick Help
                     </a>
+                </div>
+
+                <!-- Documentation Search -->
+                <div class="card shadow-sm mb-4">
+                    <div class="card-body p-2">
+                        <div class="input-group">
+                            <span class="input-group-text bg-white border-end-0">
+                                <i class="bi bi-search text-muted"></i>
+                            </span>
+                            <input type="text" id="docsSearch" class="form-control border-start-0 ps-0" placeholder="Search documentation... (e.g. printer, adjustment, credit)">
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Introduction -->
@@ -722,6 +737,41 @@
                         </li>
                         <li>View details including quantities sent/received and any discrepancies</li>
                     </ol>
+
+                    <section id="stock-adjustments">
+                        <h3><i class="bi bi-sliders me-2"></i>Stock Adjustments & Approval Workflow</h3>
+                        <p>Stock adjustments allow for manual correction of inventory levels due to counting errors, damage, or other discrepancies that are not captured by sales or transfers.</p>
+                        
+                        <h4>New Security Policy (v1.2)</h4>
+                        <div class="alert alert-warning">
+                            <i class="bi bi-shield-lock me-2"></i>
+                            <strong>Important:</strong> To ensure inventory integrity, the following restrictions are now in place:
+                            <ul class="mb-0">
+                                <li><strong>Shop Managers</strong> can only adjust stock for their assigned location.</li>
+                                <li><strong>Stores Managers</strong> can request adjustments for any location, but cross-location adjustments require approval.</li>
+                            </ul>
+                        </div>
+
+                        <h4>Adjustment Workflow</h4>
+                        <ol>
+                            <li>Navigate to <strong>Inventory &rarr; Adjustment</strong>.</li>
+                            <li>Select the <strong>Location</strong> and <strong>Product</strong>.</li>
+                            <li>The system will display the current <strong>Available Stock</strong>.</li>
+                            <li>Enter the <strong>Adjustment Quantity</strong> (positive to add, negative to deduct).</li>
+                            <li>Select a <strong>Reason</strong> (e.g., Counting Error, Damaged, Expired).</li>
+                            <li>Click <strong>Submit Adjustment</strong>.</li>
+                        </ol>
+
+                        <h4>Approval Process</h4>
+                        <p>If a Stores Manager adjusts stock for a shop, it enters a <span class="badge bg-warning text-dark">PENDING</span> state:</p>
+                        <ul>
+                            <li>A notification is sent to the <strong>Shop Manager</strong> of that location.</li>
+                            <li>The Shop Manager must go to <strong>Inventory &rarr; Adjustment History</strong>.</li>
+                            <li>Click <strong>Review</strong> on the pending record to <strong>Approve</strong> or <strong>Reject</strong>.</li>
+                            <li>Stock levels are updated <strong>only after approval</strong>.</li>
+                            <li>The <strong>Inventory Ledger</strong> is automatically updated with the authorized entry.</li>
+                        </ul>
+                    </section>
 
                     <h3 id="stock-write-offs">Stock Write-Offs</h3>
                     <p>Stores Managers can write off stock that is no longer usable:</p>
@@ -1557,6 +1607,33 @@
                         <li>Contact your Administrator</li>
                         <li>Note any error messages for troubleshooting</li>
                     </ol>
+
+                    <section id="shop-settings">
+                        <h3><i class="bi bi-printer me-2"></i>Shop Settings & Printer Configuration</h3>
+                        <p>Each shop can have unique configurations for receipts and stationery.</p>
+                        <ol>
+                            <li>Go to <strong>Settings &rarr; Shop Settings</strong>.</li>
+                            <li><strong>Printer Type:</strong> Choose between Thermal (80mm/58mm), A4, or A5.</li>
+                            <li><strong>Stationery:</strong> Upload shop-specific logos or headers.</li>
+                            <li><strong>Receipt Customization:</strong> Add custom "Thank You" messages or return policies to the footer.</li>
+                        </ol>
+                    </section>
+
+                    <section id="ecash-config">
+                        <h3><i class="bi bi-wallet2 me-2"></i>E-Cash API Configuration (Admin Only)</h3>
+                        <p>To accept digital payments, each shop can be configured with its own Paystack or mobile money API keys.</p>
+                        <div class="alert alert-danger">
+                            <i class="bi bi-exclamation-octagon me-2"></i>
+                            <strong>Security:</strong> API keys should never be shared and are encrypted in the database.
+                        </div>
+                        <ol>
+                            <li>Go to <strong>Admin &rarr; Locations</strong>.</li>
+                            <li>Edit a specific Shop location.</li>
+                            <li>Enter the <strong>E-Cash Public Key</strong> and <strong>Secret Key</strong>.</li>
+                            <li>Toggle <strong>Enable E-Cash Checkout</strong>.</li>
+                            <li>Sales at this location will now show the E-Cash payment option in the POS.</li>
+                        </ol>
+                    </section>
                 </section>
 
                 <!-- Keyboard Shortcuts -->
@@ -1720,7 +1797,7 @@
                 <div class="border-top pt-4 mt-5 text-center text-muted">
                     <p class="mb-0">
                         <i class="bi bi-book me-2"></i>
-                        POS System User Manual | Version 1.1 | Last Updated: February 2026
+                        POS System User Manual | Version 1.2 | Last Updated: April 2026
                     </p>
                 </div>
             </div>
@@ -1765,5 +1842,38 @@
             }
         });
     });
+
+    // Documentation Search Functionality
+    const docsSearch = document.getElementById('docsSearch');
+    if (docsSearch) {
+        docsSearch.addEventListener('input', function(e) {
+            const query = e.target.value.toLowerCase().trim();
+            const sections = document.querySelectorAll('.docs-content section');
+            const navLinks = document.querySelectorAll('.docs-sidebar .nav-link');
+            
+            sections.forEach(section => {
+                const text = section.innerText.toLowerCase();
+                const isMatch = text.includes(query);
+                
+                if (isMatch || query === '') {
+                    section.style.display = 'block';
+                } else {
+                    section.style.display = 'none';
+                }
+            });
+            
+            navLinks.forEach(link => {
+                 const href = link.getAttribute('href');
+                 if (href && href.startsWith('#')) {
+                     const sectionId = href.substring(1);
+                     const section = document.getElementById(sectionId);
+                     if (section) {
+                         const parentSectionDisplay = section.style.display;
+                         link.style.display = parentSectionDisplay;
+                     }
+                 }
+            });
+        });
+    }
 </script>
 {% endblock %}
