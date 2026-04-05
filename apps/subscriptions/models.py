@@ -17,6 +17,7 @@ class SubscriptionPlan(models.Model):
     Plans: Starter, Standard, Premium
     """
     PLAN_CODES = [
+        ('LITE', 'Lite'),
         ('STARTER', 'Starter'),
         ('STANDARD', 'Standard'),
         ('PREMIUM', 'Premium'),
@@ -87,7 +88,7 @@ class SubscriptionPlan(models.Model):
         For Premium: base_price + (additional_shops * additional_shop_price)
         If annual=True, uses discounted annual pricing.
         """
-        if annual:
+        if annual and self.code != 'LITE':
             base = self.annual_base_price if self.annual_base_price else self.base_price
             shop_extra = self.annual_additional_shop_price if self.annual_additional_shop_price else self.additional_shop_price
         else:

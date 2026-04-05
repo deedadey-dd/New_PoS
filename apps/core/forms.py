@@ -154,6 +154,12 @@ class UserCreateForm(UserCreationForm):
         
         self.fields['role'].queryset = Role.objects.exclude(name__in=excluded_roles)
         
+        # Plan-based role restrictions
+        if tenant and tenant.subscription_plan and tenant.subscription_plan.code == 'LITE':
+            # Lite plan only allows Admin, Shop Manager, Shop Attendant
+            allowed_lite_roles = ['ADMIN', 'SHOP_MANAGER', 'SHOP_ATTENDANT']
+            self.fields['role'].queryset = self.fields['role'].queryset.filter(name__in=allowed_lite_roles)
+        
         # Filter locations by tenant
         if tenant:
             self.fields['location'].queryset = Location.objects.filter(tenant=tenant)
@@ -188,6 +194,12 @@ class UserEditForm(forms.ModelForm):
             excluded_roles.append('ADMIN')
         
         self.fields['role'].queryset = Role.objects.exclude(name__in=excluded_roles)
+        
+        # Plan-based role restrictions
+        if tenant and tenant.subscription_plan and tenant.subscription_plan.code == 'LITE':
+            # Lite plan only allows Admin, Shop Manager, Shop Attendant
+            allowed_lite_roles = ['ADMIN', 'SHOP_MANAGER', 'SHOP_ATTENDANT']
+            self.fields['role'].queryset = self.fields['role'].queryset.filter(name__in=allowed_lite_roles)
         
         if tenant:
             self.fields['location'].queryset = Location.objects.filter(tenant=tenant)

@@ -294,7 +294,9 @@
 
                         <h3 class="plan-name">{{ plan.name }}</h3>
                         <p class="plan-description">
-                            {% if plan.code == 'STARTER' %}
+                            {% if plan.code == 'LITE' %}
+                            Ideal for individual shop owners with a single location
+                            {% elif plan.code == 'STARTER' %}
                             Perfect for small businesses just getting started
                             {% elif plan.code == 'STANDARD' %}
                             For growing businesses with multiple locations
@@ -305,11 +307,11 @@
 
                         <div class="plan-price">
                             <span class="currency">GH₵</span>
-                            <span class="amount monthly-price">{{ plan.base_price|floatformat:"0g" }}</span>
+                            <span class="amount monthly-price">{{ plan.base_price|floatformat:"2g" }}</span>
                             <span
-                                class="amount annual-price d-none">{% if plan.annual_base_price %}{{ plan.annual_base_price|floatformat:"0g" }}{% else %}{{ plan.base_price|floatformat:"0g" }}{% endif %}</span>
+                                class="amount annual-price d-none">{% if plan.annual_base_price %}{{ plan.annual_base_price|floatformat:"2g" }}{% else %}{{ plan.base_price|floatformat:"2g" }}{% endif %}</span>
                             <span class="period">/month</span>
-                            {% if plan.annual_base_price %}
+                            {% if plan.annual_base_price and plan.get_annual_savings_percent > 0 %}
                             <div class="savings-badge d-none" style="margin-top: 0.5rem;">
                                 <span class="badge bg-success">Save {{ plan.get_annual_savings_percent|floatformat:"0g" }}%
                                     annually</span>
