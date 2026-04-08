@@ -44,5 +44,8 @@ user-agents>=2.2.0
 
 # Database Backups
 django-dbbackup==4.2.1
-django-storages==1.15.0
+django-storages==1.14.6
 boto3==1.36.26
+
+# Error Tracking
+sentry-sdk[django]>=2.0.0

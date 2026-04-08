@@ -5,9 +5,19 @@ Multi-tenant POS, Inventory, and Accounting Platform.
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+import sentry_sdk
 
 # Load environment variables
 load_dotenv()
+
+# Sentry Error Tracking
+sentry_dsn = os.getenv('SENTRY_DSN')
+if sentry_dsn:
+    sentry_sdk.init(
+        dsn=sentry_dsn,
+        traces_sample_rate=1.0,
+        profiles_sample_rate=1.0,
+    )
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
