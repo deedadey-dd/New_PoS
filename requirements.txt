@@ -41,3 +41,8 @@ reportlab>=4.0.0
 
 # User-Agent parsing (for audit logs)
 user-agents>=2.2.0
+
+# Database Backups
+django-dbbackup==4.2.1
+django-storages==1.15.0
+boto3==1.36.26

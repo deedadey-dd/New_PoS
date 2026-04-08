@@ -49,6 +49,9 @@ INSTALLED_APPS = [
     'rest_framework',
     'pwa',
     'corsheaders',
+    
+    # Backup
+    'dbbackup',
 ]
 
 MIDDLEWARE = [
@@ -324,3 +327,20 @@ REST_FRAMEWORK = {
 }
 
 
+
+# Database Backup Configuration
+# Using S3-compatible storage (Backblaze B2 Object Storage)
+DBBACKUP_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
+DBBACKUP_STORAGE_OPTIONS = {
+    'access_key': os.getenv('BACKUP_S3_ACCESS_KEY'),
+    'secret_key': os.getenv('BACKUP_S3_SECRET_KEY'),
+    'bucket_name': os.getenv('BACKUP_S3_BUCKET_NAME'),
+    'endpoint_url': os.getenv('BACKUP_S3_ENDPOINT_URL'),  # e.g., https://s3.us-west-004.backblazeb2.com
+    'region_name': os.getenv('BACKUP_S3_REGION', 'us-west-004'), # Backblaze region
+}
+
+# Optional: Cleanup old backups (keep last 30 days)
+# Note: It's better to use S3 Lifecycle Policies, but we can also do it via command
+DBBACKUP_CLEANUP_KEEP = 30
+DBBACKUP_FILENAME_TEMPLATE = '{datetime}-pos-db-backup.{extension}'
+DBBACKUP_MEDIA_FILENAME_TEMPLATE = '{datetime}-pos-media-backup.{extension}'
