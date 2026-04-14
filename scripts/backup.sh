@@ -4,8 +4,9 @@
 # This script runs a database and media backup and uploads them to S3.
 # Designed for use with Cron.
 
-# Load environment variables (adjust path if needed)
-source /var/www/pos/.env
+# Load environment variables
+# (Handled automatically by Django's python-dotenv in settings.py)
+# source /var/www/pos/.env
 
 echo "--- Starting Backup: $(date) ---"
 
