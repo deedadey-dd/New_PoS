@@ -234,7 +234,7 @@
                     {% endif %}
 
                     <!-- Shop Manager Settings -->
-                    {% if role_name == 'SHOP_MANAGER' or role_name == 'ADMIN' %}
+                    {% if role_name == 'SHOP_MANAGER' %}
                     <li class="nav-item mt-2">
                         <a class="nav-link text-white {% if 'shop-settings' in request.path %}active{% endif %}"
                             href="{% url 'sales:shop_settings' %}">

@@ -1607,9 +1607,23 @@ class ShopSettingsUpdateView(LoginRequiredMixin, AdminOrManagerRequiredMixin, Up
     success_url = reverse_lazy('sales:shop_settings')
     
     def get_object(self, queryset=None):
-        shop = self.request.user.location
+        user = self.request.user
+        shop = user.location
+        
+        if not shop or shop.location_type != 'SHOP':
+            from apps.core.models import Location
+            shop = Location.objects.filter(
+                tenant=user.tenant,
+                location_type='SHOP',
+                is_active=True
+            ).first()
+            
+        if not shop:
+            from django.http import Http404
+            raise Http404("No shop found for this tenant.")
+            
         settings, _ = ShopSettings.objects.get_or_create(
-            tenant=self.request.user.tenant,
+            tenant=user.tenant,
             shop=shop,
             defaults={'receipt_printer_type': 'THERMAL_80MM'}
         )

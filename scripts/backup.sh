@@ -5,15 +5,15 @@
 # Designed for use with Cron.
 
 # Load environment variables (adjust path if needed)
-# source /var/www/pos/.env
+source /var/www/pos/.env
 
 echo "--- Starting Backup: $(date) ---"
 
 # Navigate to project directory
-# cd /var/www/pos
+cd /var/www/pos
 
 # Activate virtual environment
-# source venv/bin/activate
+source venv/bin/activate
 
 # 1. Database Backup
 echo "Backing up database..."
