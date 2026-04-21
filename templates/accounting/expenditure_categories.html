@@ -1,0 +1,83 @@
+{% extends 'base.html' %}
+
+{% block title %}Expenditure Categories - {{ current_tenant.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-tags me-2"></i>Expenditure Categories</h2>
+        <p class="text-muted mb-0">Manage expenditure categories available to your team</p>
+    </div>
+    <a href="{% url 'accounting:expenditure_list' %}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left me-2"></i>Back to Expenditures
+    </a>
+</div>
+
+<div class="row">
+    <!-- Add New Category -->
+    <div class="col-lg-4 mb-4">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-plus-circle me-2"></i>Add Category</h5>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="create">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Category Name</label>
+                        {{ form.name }}
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Add Category</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Existing Categories -->
+    <div class="col-lg-8 mb-4">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white">
+                <h5 class="mb-0 fw-bold">Existing Categories</h5>
+            </div>
+            <div class="list-group list-group-flush">
+                {% for cat in categories %}
+                <div class="list-group-item d-flex justify-content-between align-items-center py-3">
+                    <div>
+                        <span class="fw-semibold">{{ cat.name }}</span>
+                        {% if cat.is_default %}<span class="badge bg-light text-secondary ms-2">Default</span>{% endif %}
+                        {% if not cat.is_active %}<span class="badge bg-secondary ms-1">Inactive</span>{% endif %}
+                    </div>
+                    <div class="d-flex gap-2">
+                        <!-- Toggle Active -->
+                        <form method="post" class="d-inline">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="toggle">
+                            <input type="hidden" name="pk" value="{{ cat.pk }}">
+                            <button type="submit" class="btn btn-sm {% if cat.is_active %}btn-outline-warning{% else %}btn-outline-success{% endif %}"
+                                title="{% if cat.is_active %}Deactivate{% else %}Activate{% endif %}">
+                                <i class="bi {% if cat.is_active %}bi-pause-circle{% else %}bi-play-circle{% endif %}"></i>
+                                {% if cat.is_active %}Deactivate{% else %}Activate{% endif %}
+                            </button>
+                        </form>
+                        <!-- Delete -->
+                        {% if not cat.is_default %}
+                        <form method="post" class="d-inline" onsubmit="return confirm('Delete category \'{{ cat.name }}\'?')">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="delete">
+                            <input type="hidden" name="pk" value="{{ cat.pk }}">
+                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </form>
+                        {% endif %}
+                    </div>
+                </div>
+                {% empty %}
+                <div class="list-group-item text-muted py-3">No categories found.</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

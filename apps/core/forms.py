@@ -151,6 +151,9 @@ class UserCreateForm(UserCreationForm):
             # Non-superusers (including tenant Admins) cannot create Admin users
             excluded_roles.append('ADMIN')
             excluded_roles.append('TENANT_MANAGER')
+            
+        if tenant and not getattr(tenant, 'use_strict_sales_workflow', False):
+            excluded_roles.append('SHOP_CASHIER')
         
         self.fields['role'].queryset = Role.objects.exclude(name__in=excluded_roles)
         
@@ -158,6 +161,8 @@ class UserCreateForm(UserCreationForm):
         if tenant and tenant.subscription_plan and tenant.subscription_plan.code == 'LITE':
             # Lite plan only allows Admin, Shop Manager, Shop Attendant
             allowed_lite_roles = ['ADMIN', 'SHOP_MANAGER', 'SHOP_ATTENDANT']
+            if getattr(tenant, 'use_strict_sales_workflow', False):
+                allowed_lite_roles.append('SHOP_CASHIER')
             self.fields['role'].queryset = self.fields['role'].queryset.filter(name__in=allowed_lite_roles)
         
         # Filter locations by tenant
@@ -192,6 +197,9 @@ class UserEditForm(forms.ModelForm):
         if current_user and not current_user.is_superuser:
             # Non-superusers cannot assign Admin role
             excluded_roles.append('ADMIN')
+            
+        if tenant and not getattr(tenant, 'use_strict_sales_workflow', False):
+            excluded_roles.append('SHOP_CASHIER')
         
         self.fields['role'].queryset = Role.objects.exclude(name__in=excluded_roles)
         
@@ -199,6 +207,8 @@ class UserEditForm(forms.ModelForm):
         if tenant and tenant.subscription_plan and tenant.subscription_plan.code == 'LITE':
             # Lite plan only allows Admin, Shop Manager, Shop Attendant
             allowed_lite_roles = ['ADMIN', 'SHOP_MANAGER', 'SHOP_ATTENDANT']
+            if getattr(tenant, 'use_strict_sales_workflow', False):
+                allowed_lite_roles.append('SHOP_CASHIER')
             self.fields['role'].queryset = self.fields['role'].queryset.filter(name__in=allowed_lite_roles)
         
         if tenant:
@@ -217,6 +227,12 @@ class TenantSettingsForm(forms.ModelForm):
             'shop_manager_can_add_products', 'shop_manager_can_receive_stock',
             'shops_can_see_other_stock',
             'allow_accountant_to_shop_transfers',
+            'allow_shop_to_shop_transfers',
+            # Workflow feature flags
+            'use_strict_sales_workflow',
+            'require_customer_on_invoice',
+            'use_bulk_inventory_receiving',
+            'require_accountant_for_bulk_receiving',
         ]
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control'}),
@@ -232,7 +248,13 @@ class TenantSettingsForm(forms.ModelForm):
             'shop_manager_can_add_products': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'shop_manager_can_receive_stock': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'shops_can_see_other_stock': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'allow_shop_to_shop_transfers': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'use_strict_sales_workflow': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'require_customer_on_invoice': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'use_bulk_inventory_receiving': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'require_accountant_for_bulk_receiving': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         }
+
 
 
 class AdminPasswordResetForm(forms.Form):

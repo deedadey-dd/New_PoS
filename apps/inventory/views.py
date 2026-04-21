@@ -1506,3 +1506,115 @@ def get_adjustment_details_api(request, pk):
     }
     
     return JsonResponse(data)
+
+
+# ============ Goods Receipt Views ============
+from django.db import transaction
+from django.urls import reverse
+from .models import GoodsReceipt, GoodsReceiptItem
+from .forms import GoodsReceiptForm, GoodsReceiptItemFormSet
+
+class GoodsReceiptListView(LoginRequiredMixin, ListView):
+    """List all goods receipts for the tenant."""
+    model = GoodsReceipt
+    template_name = 'inventory/goods_receipt_list.html'
+    context_object_name = 'receipts'
+
+    def get_queryset(self):
+        qs = GoodsReceipt.objects.filter(tenant=self.request.user.tenant).order_by('-created_at')
+        if getattr(self.request.user, 'role', None) and self.request.user.role.name == 'SHOP_MANAGER':
+            qs = qs.filter(location=self.request.user.location)
+        return qs
+
+class GoodsReceiptCreateView(LoginRequiredMixin, CreateView):
+    model = GoodsReceipt
+    form_class = GoodsReceiptForm
+    template_name = 'inventory/goods_receipt_form.html'
+    success_url = reverse_lazy('inventory:goods_receipt_list')
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['tenant'] = self.request.user.tenant
+        kwargs['user'] = self.request.user
+        return kwargs
+
+    def get_context_data(self, **kwargs):
+        data = super().get_context_data(**kwargs)
+        if self.request.POST:
+            data['items'] = GoodsReceiptItemFormSet(self.request.POST, tenant=self.request.user.tenant)
+        else:
+            data['items'] = GoodsReceiptItemFormSet(tenant=self.request.user.tenant)
+        return data
+
+    def form_valid(self, form):
+        context = self.get_context_data()
+        items = context['items']
+        with transaction.atomic():
+            form.instance.tenant = self.request.user.tenant
+            form.instance.created_by = self.request.user
+            self.object = form.save()
+            if items.is_valid():
+                items.instance = self.object
+                # Set tenant on each unsaved item before saving the formset
+                for item_form in items:
+                    if item_form.cleaned_data and not item_form.cleaned_data.get('DELETE', False):
+                        item_form.instance.tenant = self.request.user.tenant
+                items.save()
+                messages.success(self.request, f"Goods Receipt created successfully (Status: Pending Verification).")
+                return redirect('inventory:goods_receipt_list')
+            else:
+                return self.render_to_response(self.get_context_data(form=form))
+
+class GoodsReceiptDetailView(LoginRequiredMixin, DetailView):
+    model = GoodsReceipt
+    template_name = 'inventory/goods_receipt_detail.html'
+    context_object_name = 'receipt'
+
+    def get_queryset(self):
+        return GoodsReceipt.objects.filter(tenant=self.request.user.tenant)
+
+@login_required
+def verify_goods_receipt(request, pk):
+    receipt = get_object_or_404(GoodsReceipt, pk=pk, tenant=request.user.tenant)
+    if receipt.status != 'PENDING':
+        messages.error(request, "Receipt is already verified or cancelled.")
+        return redirect('inventory:goods_receipt_detail', pk=pk)
+
+    # Check restriction
+    if request.user.tenant.require_accountant_for_bulk_receiving:
+        # User must be an ACCOUNTANT or ADMIN
+        if request.user.role and request.user.role.name not in ['ACCOUNTANT', 'ADMIN']:
+            messages.error(request, "Verification requires an Accountant or Admin.")
+            return redirect('inventory:goods_receipt_detail', pk=pk)
+    else:
+        # Shop manager is enough
+        if request.user.role and request.user.role.name not in ['SHOP_MANAGER', 'ADMIN', 'STORES_MANAGER']:
+            messages.error(request, "You do not have permission to verify.")
+            return redirect('inventory:goods_receipt_detail', pk=pk)
+
+    if request.method == 'POST':
+        try:
+            with transaction.atomic():
+                receipt.verify(verified_by=request.user)
+            messages.success(request, f"Goods Receipt #{receipt.id} verified and stock updated.")
+        except Exception as e:
+            messages.error(request, f"Verification failed: {str(e)}")
+            
+    return redirect('inventory:goods_receipt_detail', pk=pk)
+
+
+@login_required
+def api_product_autocomplete(request):
+    """Return JSON list of products matching query string for autocomplete inputs."""
+    query = request.GET.get('q', '').strip()
+    if not query or len(query) < 2:
+        return JsonResponse({'results': []})
+
+    products = Product.objects.filter(
+        tenant=request.user.tenant,
+        is_active=True
+    ).filter(
+        Q(name__icontains=query) | Q(sku__icontains=query)
+    ).values('id', 'name', 'sku', 'unit_of_measure')[:15]
+
+    return JsonResponse({'results': list(products)})

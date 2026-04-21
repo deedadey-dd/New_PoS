@@ -71,6 +71,18 @@ class Command(BaseCommand):
                 'can_view_audit_logs': False,
             },
             {
+                'name': 'SHOP_CASHIER',
+                'description': 'Receives payments and can natively create invoices at a shop',
+                'can_manage_users': False,
+                'can_manage_inventory': False,
+                'can_manage_sales': True,
+                'can_view_reports': False,
+                'can_approve_refunds': False,
+                'can_approve_returns': False,
+                'can_manage_accounting': True,
+                'can_view_audit_logs': False,
+            },
+            {
                 'name': 'SHOP_ATTENDANT',
                 'description': 'Handles sales at a shop',
                 'can_manage_users': False,

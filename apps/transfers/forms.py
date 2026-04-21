@@ -71,6 +71,8 @@ class TransferForm(forms.ModelForm):
                     is_active=True,
                     location_type=location_type
                 ).first()
+                
+        self.allowed_dest_types_cache = {}
         
         # If we found a source location, set it up
         if source_location:
@@ -79,7 +81,14 @@ class TransferForm(forms.ModelForm):
             
             # Get allowed destination types based on source location type
             source_type = source_location.location_type
-            allowed_dest_types = self.TRANSFER_RULES.get(source_type, [])
+            allowed_dest_types = list(self.TRANSFER_RULES.get(source_type, []))
+            
+            # Check tenant settings for Shop-to-Shop transfers
+            if tenant and source_type == 'SHOP' and tenant.allow_shop_to_shop_transfers:
+                if 'SHOP' not in allowed_dest_types:
+                    allowed_dest_types.append('SHOP')
+                    
+            self.allowed_dest_types_cache[source_type] = allowed_dest_types
             
             # Filter destinations to valid types only
             if tenant and allowed_dest_types:
@@ -104,8 +113,12 @@ class TransferForm(forms.ModelForm):
             if source == destination:
                 raise forms.ValidationError("Source and destination locations must be different.")
             
-            # Validate transfer direction
-            allowed_dest_types = self.TRANSFER_RULES.get(source.location_type, [])
+            # Validate transfer direction using tenant settings if available
+            allowed_dest_types = list(self.TRANSFER_RULES.get(source.location_type, []))
+            if hasattr(self, 'tenant') and self.tenant and source.location_type == 'SHOP' and self.tenant.allow_shop_to_shop_transfers:
+                if 'SHOP' not in allowed_dest_types:
+                    allowed_dest_types.append('SHOP')
+                    
             if destination.location_type not in allowed_dest_types:
                 allowed_names = ', '.join(allowed_dest_types) or 'none'
                 raise forms.ValidationError(

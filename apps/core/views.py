@@ -336,6 +336,13 @@ class DashboardView(LoginRequiredMixin, View):
             )['total'] or 0
             
             context['today_sales'] = today_sales
+
+            # For attendants, add their recent invoices to the dashboard
+            if is_attendant:
+                context['recent_invoices'] = Sale.objects.filter(
+                    tenant=user.tenant,
+                    attendant=user
+                ).select_related('customer', 'shop').order_by('-created_at')[:10]
         
         return render(request, self.template_name, context)
 
@@ -827,9 +834,18 @@ class SettingsView(LoginRequiredMixin, View):
         if not tenant:
             messages.error(request, 'No tenant associated with your account.')
             return redirect('core:dashboard')
+            
+        from apps.accounting.models import ExpenditureCategory
+        expenditure_categories = ExpenditureCategory.objects.filter(
+            tenant=tenant, is_active=True
+        ).order_by('name')
         
         form = TenantSettingsForm(instance=tenant)
-        return render(request, self.template_name, {'form': form, 'tenant': tenant})
+        return render(request, self.template_name, {
+            'form': form, 
+            'tenant': tenant,
+            'expenditure_categories': expenditure_categories
+        })
     
     def post(self, request):
         tenant = request.user.tenant

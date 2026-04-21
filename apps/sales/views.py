@@ -15,6 +15,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from django.utils.decorators import method_decorator
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from .models import Sale, SaleItem, Shift, ShopSettings
@@ -34,6 +35,11 @@ class POSView(LoginRequiredMixin, View):
         from apps.inventory.models import InventoryLedger, Category
         from apps.customers.models import Customer
         
+        # Strict workflow manager restriction
+        if request.user.tenant.use_strict_sales_workflow and request.user.role and request.user.role.name == 'SHOP_MANAGER':
+            messages.warning(request, "Shop Managers cannot access the POS when Strict Sales Workflow is enabled. Please use the Dispatch view.")
+            return redirect('core:dashboard')
+            
         # Get user's shop location
         user_shop = request.user.location
         
@@ -337,6 +343,10 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
         if role_name not in ['AUDITOR', 'ACCOUNTANT', 'ADMIN']:
             if user.location and user.location.location_type == 'SHOP':
                 queryset = queryset.filter(shop=user.location)
+            
+            # Shop Attendants only see their OWN invoices
+            if role_name == 'SHOP_ATTENDANT':
+                queryset = queryset.filter(attendant=user)
         else:
             # Shop filter for Auditor/Accountant/Admin
             shop_id = self.request.GET.get('shop')
@@ -370,6 +380,13 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
         status = self.request.GET.get('status')
         if status:
             queryset = queryset.filter(status=status)
+            
+        # Dispatched filter
+        dispatched = self.request.GET.get('dispatched')
+        if dispatched == '1':
+            queryset = queryset.filter(is_dispatched=True)
+        elif dispatched == '0':
+            queryset = queryset.filter(is_dispatched=False)
         
         # Payment method filter
         payment = self.request.GET.get('payment')
@@ -408,6 +425,7 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
         context['selected_attendant'] = self.request.GET.get('attendant', '')
         context['selected_status'] = self.request.GET.get('status', '')
         context['selected_payment'] = self.request.GET.get('payment', '')
+        context['selected_dispatched'] = self.request.GET.get('dispatched', '')
         
         return context
 
@@ -519,8 +537,245 @@ def api_product_search(request):
                 'price': str(shop_price.selling_price),
                 'unit': product.unit_of_measure,
             })
-    
+    # Limit to 15
     return JsonResponse({'products': results})
+
+@login_required
+def api_customer_search(request):
+    """
+    Search customers (CRM + historical walk-ins) by name or phone
+    """
+    query = request.GET.get('q', '').strip()
+    if len(query) < 2:
+        return JsonResponse({'results': []})
+        
+    tenant = request.user.tenant
+    results = []
+    
+    # 1. Search CRM Customers
+    from apps.customers.models import Customer
+    customers = Customer.objects.filter(
+        tenant=tenant,
+        is_active=True
+    ).filter(
+        Q(name__icontains=query) |
+        Q(phone__icontains=query) |
+        Q(email__icontains=query)
+    )[:10]
+    
+    for c in customers:
+        results.append({
+            'type': 'Registered',
+            'id': c.id,
+            'name': c.name,
+            'phone': c.phone or '',
+            'balance': str(c.financial_balance)
+        })
+        
+    # 2. Search historical walk-ins from sales
+    walkins = Sale.objects.filter(
+        tenant=tenant,
+        customer__isnull=True
+    ).filter(
+        Q(walkin_customer_name__icontains=query) | 
+        Q(walkin_customer_phone__icontains=query)
+    ).values('walkin_customer_name', 'walkin_customer_phone').distinct()[:10]
+    
+    existing_phones = {r['phone'] for r in results if r['phone']}
+    
+    for w in walkins:
+        phone = w['walkin_customer_phone']
+        if phone and phone not in existing_phones:
+            results.append({
+                'type': 'Walk-in',
+                'id': '',
+                'name': w['walkin_customer_name'] or 'Walk-in Customer',
+                'phone': phone,
+            })
+            existing_phones.add(phone)
+            
+    # Limit to 15
+    return JsonResponse({'results': results[:15]})
+
+
+class CashierPendingInvoicesView(LoginRequiredMixin, ListView):
+    template_name = 'sales/cashier_invoices.html'
+    context_object_name = 'invoices'
+
+    def get_queryset(self):
+        tenant = self.request.user.tenant
+        qs = Sale.objects.filter(
+            tenant=tenant,
+            status='PENDING'
+        ).select_related('attendant', 'customer', 'shop').prefetch_related('items__product').order_by('-created_at')
+
+        q = self.request.GET.get('q', '').strip()
+        if q:
+            qs = qs.filter(
+                Q(sale_number__icontains=q) |
+                Q(walkin_customer_name__icontains=q) |
+                Q(walkin_customer_phone__icontains=q) |
+                Q(customer__name__icontains=q)
+            )
+        return qs
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx['q'] = self.request.GET.get('q', '')
+        return ctx
+
+
+class ManagerDispatchView(LoginRequiredMixin, AdminOrManagerRequiredMixin, ListView):
+    template_name = 'sales/dispatch_invoices.html'
+    context_object_name = 'invoices'
+    
+    def get_queryset(self):
+        tenant = self.request.user.tenant
+        return Sale.objects.filter(
+            tenant=tenant, 
+            status='COMPLETED',
+            is_dispatched=False
+        ).select_related('attendant', 'customer').order_by('created_at')
+
+
+@login_required
+@require_POST
+def api_pay_invoice(request):
+    try:
+        data = json.loads(request.body)
+        sale_id = data.get('sale_id')
+        payment_method = data.get('payment_method', 'CASH')
+        amount_paid = Decimal(str(data.get('amount_paid', 0)))
+        paystack_ref = data.get('paystack_reference', '')
+        
+        sale = Sale.objects.get(pk=sale_id, tenant=request.user.tenant, status='PENDING')
+        
+        with transaction.atomic():
+            if payment_method == 'CREDIT' and not sale.customer:
+                 return JsonResponse({'error': 'Credit sales require a registered customer.'}, status=400)
+                 
+            sale.complete(amount_paid, payment_method, paystack_ref)
+            
+        return JsonResponse({'success': True, 'sale_id': sale_id})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@login_required
+@require_POST
+def api_dispatch_invoice(request):
+    try:
+        data = json.loads(request.body)
+        sale_id = data.get('sale_id')
+        
+        if request.user.role.name not in ['SHOP_MANAGER', 'ADMIN']:
+             return JsonResponse({'error': 'Permission denied.'}, status=403)
+             
+        sale = Sale.objects.get(pk=sale_id, tenant=request.user.tenant, status='COMPLETED', is_dispatched=False)
+        
+        with transaction.atomic():
+            sale.dispatch(request.user)
+            
+        return JsonResponse({'success': True, 'sale_id': sale_id})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@login_required
+@require_POST
+def api_delete_invoices(request):
+    """Bulk delete PENDING invoices."""
+    try:
+        data = json.loads(request.body)
+        invoice_ids = data.get('invoice_ids', [])
+        
+        if not invoice_ids:
+            return JsonResponse({'error': 'No invoices selected.'}, status=400)
+            
+        role_name = request.user.role.name if request.user.role else None
+        if role_name not in ['SHOP_CASHIER', 'SHOP_MANAGER', 'ADMIN', 'ACCOUNTANT']:
+            return JsonResponse({'error': 'Permission denied.'}, status=403)
+            
+        deleted_count = Sale.objects.filter(
+            pk__in=invoice_ids, 
+            tenant=request.user.tenant, 
+            status='PENDING'
+        ).delete()[0]
+        
+        return JsonResponse({'success': True, 'deleted': deleted_count})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+class InvoiceEditView(LoginRequiredMixin, DetailView):
+    """View to load an editable interface for a PENDING invoice."""
+    model = Sale
+    template_name = 'sales/invoice_edit.html'
+    context_object_name = 'invoice'
+    
+    def get_queryset(self):
+        return Sale.objects.filter(tenant=self.request.user.tenant, status='PENDING')
+
+
+@login_required
+@require_POST
+def api_update_invoice(request, pk):
+    """Update a PENDING invoice with new items/quantities."""
+    try:
+        data = json.loads(request.body)
+        sale = get_object_or_404(Sale, pk=pk, tenant=request.user.tenant, status='PENDING')
+        
+        role_name = request.user.role.name if request.user.role else None
+        if role_name not in ['SHOP_CASHIER', 'SHOP_MANAGER', 'ADMIN', 'ACCOUNTANT']:
+            return JsonResponse({'error': 'Permission denied.'}, status=403)
+            
+        cart_items = data.get('items', [])
+        if not cart_items:
+            return JsonResponse({'error': 'Invoice cannot be empty.'}, status=400)
+            
+        with transaction.atomic():
+            # Delete existing items
+            sale.items.all().delete()
+            
+            # Recreate items
+            for item in cart_items:
+                product = Product.objects.get(pk=item['product_id'], tenant=request.user.tenant)
+                quantity = Decimal(str(item['quantity']))
+                unit_price = Decimal(str(item['unit_price']))
+                
+                SaleItem.objects.create(
+                    tenant=request.user.tenant,
+                    sale=sale,
+                    product=product,
+                    quantity=quantity,
+                    unit_price=unit_price,
+                )
+                
+            sale.calculate_totals()
+            
+            return JsonResponse({
+                'success': True, 
+                'total': str(sale.total)
+            })
+            
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@login_required
+def invoice_print_view(request, pk):
+    """Printable view for a PENDING invoice."""
+    sale = get_object_or_404(Sale, pk=pk, tenant=request.user.tenant, status='PENDING')
+    
+    # Get shop settings for receipt header/footer
+    shop_settings = None
+    if getattr(sale.shop, 'shop_settings', None):
+        shop_settings = sale.shop.shop_settings
+        
+    return render(request, 'sales/invoice_print.html', {
+        'sale': sale,
+        'shop_settings': shop_settings
+    })
 
 
 @login_required
@@ -546,6 +801,8 @@ def api_complete_sale(request):
     paystack_ref = data.get('paystack_reference', '')
     customer_id = data.get('customer_id')
     is_payment_on_account = data.get('is_payment_on_account', False)
+    walkin_customer_name = data.get('walkin_customer_name', '')
+    walkin_customer_phone = data.get('walkin_customer_phone', '')
     
     shop = request.user.location
     
@@ -648,6 +905,28 @@ def api_complete_sale(request):
             
             # Calculate totals
             sale.calculate_totals()
+            
+            tenant = request.user.tenant
+            role_name = request.user.role.name if request.user.role else None
+            if tenant.use_strict_sales_workflow and role_name in ('SHOP_ATTENDANT', 'SHOP_CASHIER'):
+                # Attendant/Cashier creates PENDING invoice — validate customer info first
+                if not customer and (not walkin_customer_name or not walkin_customer_phone):
+                    return JsonResponse({
+                        'error': 'Customer name and phone number are required in strict sales mode.'
+                    }, status=400)
+                # Save walk-in info on the sale
+                sale.walkin_customer_name = walkin_customer_name
+                sale.walkin_customer_phone = walkin_customer_phone
+                sale.save(update_fields=['walkin_customer_name', 'walkin_customer_phone'])
+                # Stay PENDING — Cashier handles payment separately
+                return JsonResponse({
+                    'success': True,
+                    'sale_id': sale.pk,
+                    'sale_number': sale.sale_number,
+                    'status': 'PENDING',
+                    'total': str(sale.total),
+                    'message': 'Invoice created. Give the code to the customer and direct them to the Cashier.'
+                })
             
             # Handle overpayment for customer (reduces their balance)
             if customer and amount_paid > sale.total:

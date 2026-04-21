@@ -28,6 +28,12 @@ urlpatterns = [
     path('batches/receive/', views.BatchCreateView.as_view(), name='batch_create'),
     path('batches/<int:pk>/', views.BatchDetailView.as_view(), name='batch_detail'),
     
+    # Goods Receipts (Bulk Receiving)
+    path('goods-receipts/', views.GoodsReceiptListView.as_view(), name='goods_receipt_list'),
+    path('goods-receipts/create/', views.GoodsReceiptCreateView.as_view(), name='goods_receipt_create'),
+    path('goods-receipts/<int:pk>/', views.GoodsReceiptDetailView.as_view(), name='goods_receipt_detail'),
+    path('goods-receipts/<int:pk>/verify/', views.verify_goods_receipt, name='goods_receipt_verify'),
+    
     # Stock
     path('stock/', views.StockOverviewView.as_view(), name='stock_overview'),
     path('stock/adjustment/', views.StockAdjustmentView.as_view(), name='stock_adjustment'),
@@ -42,6 +48,7 @@ urlpatterns = [
     # API
     path('api/batches/', views.get_batches_for_product, name='api_batches'),
     path('api/products/search/', views.search_products, name='api_product_search'),
+    path('api/products/autocomplete/', views.api_product_autocomplete, name='api_product_autocomplete'),
     path('api/products/<int:pk>/toggle-favorite/', views.ToggleFavoriteView.as_view(), name='api_toggle_favorite'),
     path('api/stock/adjustment/<int:pk>/details/', views.get_adjustment_details_api, name='api_adjustment_details'),
 ]

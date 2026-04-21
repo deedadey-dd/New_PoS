@@ -9,6 +9,8 @@ app_name = 'sales'
 urlpatterns = [
     # POS Interface
     path('pos/', views.POSView.as_view(), name='pos'),
+    path('cashier/', views.CashierPendingInvoicesView.as_view(), name='cashier_invoices'),
+    path('dispatch/', views.ManagerDispatchView.as_view(), name='dispatch_invoices'),
     
     # Shop Settings
     path('shop-settings/', views.ShopSettingsUpdateView.as_view(), name='shop_settings'),
@@ -25,8 +27,17 @@ urlpatterns = [
     
     # API Endpoints
     path('api/products/search/', views.api_product_search, name='api_product_search'),
+    path('api/customer-search/', views.api_customer_search, name='api_customer_search'),
     path('api/checkout/', views.api_complete_sale, name='api_checkout'),
+    path('api/pay-invoice/', views.api_pay_invoice, name='api_pay_invoice'),
+    path('api/dispatch-invoice/', views.api_dispatch_invoice, name='api_dispatch_invoice'),
+    path('api/invoices/delete/', views.api_delete_invoices, name='api_delete_invoices'),
+    path('api/invoices/<int:pk>/update/', views.api_update_invoice, name='api_update_invoice'),
     path('api/<int:pk>/void/', views.api_void_sale, name='api_void_sale'),
+    
+    # Invoice Management (Cashier)
+    path('invoices/<int:pk>/edit/', views.InvoiceEditView.as_view(), name='invoice_edit'),
+    path('invoices/<int:pk>/print/', views.invoice_print_view, name='invoice_print'),
     
     # E-Cash Payment
     path('api/ecash/initialize/', views.initialize_ecash_payment, name='initialize_ecash_payment'),

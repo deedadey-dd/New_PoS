@@ -61,6 +61,28 @@ class Tenant(models.Model):
         default=True,
         help_text="Allow shops to see stock levels at other locations, batches, and the full stock breakdown"
     )
+    allow_shop_to_shop_transfers = models.BooleanField(
+        default=False,
+        help_text="Allow shops to transfer stock directly to other shops"
+    )
+    
+    # Custom Workflow Settings
+    use_strict_sales_workflow = models.BooleanField(
+        default=False,
+        help_text="Enforce Attendant(Invoice) -> Cashier(Pay) -> Manager(Dispatch) workflow"
+    )
+    require_customer_on_invoice = models.BooleanField(
+        default=False,
+        help_text="Require a customer profile (with a valid phone number) when creating sales/invoices"
+    )
+    use_bulk_inventory_receiving = models.BooleanField(
+        default=False,
+        help_text="Enable bulk Goods Receipt receiving instead of one-by-one receiving"
+    )
+    require_accountant_for_bulk_receiving = models.BooleanField(
+        default=False,
+        help_text="If enabled, bulk Goods Receipts must be approved by an accountant before converting to batches"
+    )
     
     # Cash Transfer settings
     allow_accountant_to_shop_transfers = models.BooleanField(
@@ -362,6 +384,7 @@ class Role(models.Model):
         ('PRODUCTION_MANAGER', 'Production Manager'),
         ('STORES_MANAGER', 'Stores Manager'),
         ('SHOP_MANAGER', 'Shop Manager'),
+        ('SHOP_CASHIER', 'Shop Cashier'),
         ('SHOP_ATTENDANT', 'Shop Attendant'),
         ('ACCOUNTANT', 'Accountant'),
         ('AUDITOR', 'Auditor'),

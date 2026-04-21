@@ -1,0 +1,113 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Proforma Invoice #{{ sale.sale_number }}</title>
+    <style>
+        body { font-family: 'Courier New', Courier, monospace; font-size: 14px; margin: 0; padding: 20px; color: #000; }
+        .receipt-container { width: 80mm; margin: 0 auto; background: #fff; }
+        .header { text-align: center; margin-bottom: 15px; border-bottom: 1px dashed #000; padding-bottom: 10px; }
+        .header h2 { margin: 0 0 5px 0; font-size: 18px; }
+        .info { margin-bottom: 15px; font-size: 12px; }
+        .items { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
+        .items th, .items td { padding: 4px 0; border-bottom: 1px dashed #ddd; text-align: left; }
+        .items .qty { width: 15%; text-align: center; }
+        .items .price, .items .total { text-align: right; }
+        .totals { border-top: 1px dashed #000; padding-top: 10px; margin-bottom: 20px; }
+        .total-row { display: flex; justify-content: space-between; margin-bottom: 5px; font-weight: bold; }
+        .footer { text-align: center; font-size: 12px; border-top: 1px dashed #000; padding-top: 10px; }
+        .status-badge { display: inline-block; padding: 3px 8px; border: 1px solid #000; margin-bottom: 10px; font-weight: bold; }
+        
+        @media print {
+            body { padding: 0; }
+            .no-print { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="receipt-container">
+        <div class="no-print" style="text-align: center; margin-bottom: 20px;">
+            <button onclick="window.print()" style="padding: 10px 20px; cursor: pointer;">Print Invoice</button>
+            <button onclick="window.close()" style="padding: 10px 20px; cursor: pointer;">Close</button>
+        </div>
+
+        <div class="header">
+            <h2>{{ current_tenant.name }}</h2>
+            {% if sale.shop %}<div>{{ sale.shop.name }}</div>{% endif %}
+            {% if shop_settings.receipt_header %}
+                <div style="font-size:12px; margin-top:5px; white-space:pre-line;">{{ shop_settings.receipt_header }}</div>
+            {% endif %}
+            <div style="margin-top:10px;">
+                <span class="status-badge">PROFORMA INVOICE</span>
+            </div>
+        </div>
+
+        <div class="info">
+            <div><strong>Invoice #:</strong> {{ sale.sale_number }}</div>
+            <div><strong>Date:</strong> {{ sale.created_at|date:"d M Y H:i" }}</div>
+            <div><strong>Attendant:</strong> {{ sale.attendant.get_full_name|default:sale.attendant.email }}</div>
+            {% if sale.customer %}
+                <div><strong>Customer:</strong> {{ sale.customer.name }}</div>
+            {% elif sale.walkin_customer_name or sale.walkin_customer_phone %}
+                <div><strong>Customer:</strong> {{ sale.walkin_customer_name }} ({{ sale.walkin_customer_phone }})</div>
+            {% endif %}
+        </div>
+
+        <table class="items">
+            <thead>
+                <tr>
+                    <th>Item</th>
+                    <th class="qty">Qty</th>
+                    <th class="price">Price</th>
+                    <th class="total">Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in sale.items.all %}
+                <tr>
+                    <td>{{ item.product.name }}</td>
+                    <td class="qty">{{ item.quantity }}</td>
+                    <td class="price">{{ item.unit_price|floatformat:"2g" }}</td>
+                    <td class="total">{{ item.subtotal|floatformat:"2g" }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <div class="totals">
+            <div class="total-row" style="font-size: 16px;">
+                <span>GRAND TOTAL:</span>
+                <span>{{ current_tenant.currency_symbol|default:'GHC' }} {{ sale.total|floatformat:"2g" }}</span>
+            </div>
+        </div>
+
+        <div class="footer">
+            <div>Please present this invoice at the cashier desk to complete your payment.</div>
+            {% if shop_settings.receipt_footer %}
+                <div style="margin-top: 10px; white-space:pre-line;">{{ shop_settings.receipt_footer }}</div>
+            {% endif %}
+            <br>
+            <svg id="barcode"></svg>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+    <script>
+        JsBarcode("#barcode", "{{ sale.sale_number }}", {
+            format: "CODE128",
+            width: 1.5,
+            height: 40,
+            displayValue: true,
+            fontSize: 12,
+            margin: 0
+        });
+        
+        window.onload = function() {
+            // Uncomment to auto-print
+            // window.print();
+        };
+    </script>
+</body>
+</html>

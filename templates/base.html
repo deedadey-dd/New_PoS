@@ -50,7 +50,7 @@
                     {% with role_name=user.role.name %}
 
                     <!-- POS -->
-                    {% if role_name == 'ADMIN' or role_name == 'SHOP_MANAGER' or role_name == 'SHOP_ATTENDANT' %}
+                    {% if role_name in 'ADMIN,SHOP_ATTENDANT,SHOP_CASHIER' or role_name == 'SHOP_MANAGER' and not current_tenant.use_strict_sales_workflow %}
                     <li class="nav-item">
                         <a class="nav-link text-white {% if 'pos' in request.path %}active{% endif %}"
                             href="{% url 'sales:pos' %}">
@@ -59,9 +59,37 @@
                     </li>
                     <li class="nav-item">
                         <a href="{% url 'customers:customer_list' %}"
-                            class="nav-link {% if '/customers/' in request.path %}active{% endif %}">
-                            <i class="bi bi-people"></i>
-                            <span>Customers</span>
+                            class="nav-link text-white {% if '/customers/' in request.path %}active{% endif %}">
+                            <i class="bi bi-people me-2"></i> Customers
+                        </a>
+                    </li>
+                    {% endif %}
+                    
+                    {% if role_name == 'SHOP_ATTENDANT' %}
+                    <li class="nav-item">
+                        <a class="nav-link text-white {% if request.resolver_match.url_name == 'sale_list' %}active{% endif %}"
+                            href="{% url 'sales:sale_list' %}">
+                            <i class="bi bi-clock-history me-2"></i> My Invoices
+                        </a>
+                    </li>
+                    {% endif %}
+
+                    <!-- Cashier Interface -->
+                    {% if current_tenant.use_strict_sales_workflow and role_name in 'CASHIER,SHOP_MANAGER,ADMIN' %}
+                    <li class="nav-item">
+                        <a class="nav-link text-white {% if 'cashier' in request.path %}active{% endif %}"
+                            href="{% url 'sales:cashier_invoices' %}">
+                            <i class="bi bi-cash-coin me-2"></i> {% if role_name == 'SHOP_MANAGER' %}Pending Invoices{% else %}Cashier (Receive){% endif %}
+                        </a>
+                    </li>
+                    {% endif %}
+
+                    <!-- Dispatch Interface -->
+                    {% if current_tenant.use_strict_sales_workflow and role_name in 'SHOP_MANAGER,ADMIN' %}
+                    <li class="nav-item">
+                        <a class="nav-link text-white {% if 'dispatch' in request.path %}active{% endif %}"
+                            href="{% url 'sales:dispatch_invoices' %}">
+                            <i class="bi bi-boxes me-2"></i> Dispatch Items
                         </a>
                     </li>
                     {% endif %}
@@ -69,13 +97,13 @@
                     <!-- Sales Menu (Shop Manager, Accountant, Auditor, Admin) -->
                     {% if role_name == 'SHOP_MANAGER' or role_name == 'ACCOUNTANT' or role_name == 'AUDITOR' or role_name == 'ADMIN' %}
                     <li class="nav-item">
-                        <a class="nav-link text-white d-flex justify-content-between align-items-center {% if 'sales' in request.path or 'price-history' in request.path %}active{% endif %}"
+                        <a class="nav-link text-white d-flex justify-content-between align-items-center {% if 'sales' in request.path and 'cashier' not in request.path and 'dispatch' not in request.path or 'price-history' in request.path %}active{% endif %}"
                             data-bs-toggle="collapse" href="#salesMenu" role="button"
-                            aria-expanded="{% if 'sales' in request.path or 'price-history' in request.path %}true{% else %}false{% endif %}">
+                            aria-expanded="{% if 'sales' in request.path and 'cashier' not in request.path and 'dispatch' not in request.path or 'price-history' in request.path %}true{% else %}false{% endif %}">
                             <span><i class="bi bi-receipt me-2"></i>Sales</span>
                             <i class="bi bi-chevron-down small"></i>
                         </a>
-                        <div class="collapse {% if 'sales' in request.path or 'price-history' in request.path %}show{% endif %}"
+                        <div class="collapse {% if 'sales' in request.path and 'cashier' not in request.path and 'dispatch' not in request.path or 'price-history' in request.path %}show{% endif %}"
                             id="salesMenu">
                             <ul class="nav flex-column ms-3 border-start border-secondary ps-2">
                                 <li class="nav-item">
@@ -143,11 +171,31 @@
                                         <i class="bi bi-cash-stack me-1"></i>Cash Transfers
                                     </a>
                                 </li>
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if 'expenditures' in request.path %}active text-white{% endif %}"
+                                        href="{% url 'accounting:expenditure_list' %}">
+                                        <i class="bi bi-receipt-cutoff me-1"></i>Expenditures
+                                    </a>
+                                </li>
                             </ul>
                         </div>
                     </li>
-                    {% elif role_name == 'SHOP_MANAGER' %}
-                    <!-- Shop Manager Cash Transfers (standalone) -->
+                    {% elif role_name == 'SHOP_MANAGER' or role_name == 'SHOP_CASHIER' %}
+                    <!-- Shop Manager/Cashier Cash Transfers & Expenditures (standalone) -->
+                    <li class="nav-item">
+                        <a class="nav-link text-white {% if 'cash-transfers' in request.path %}active{% endif %}"
+                            href="{% url 'accounting:cash_transfer_list' %}">
+                            <i class="bi bi-cash-stack me-2"></i>Cash Transfers
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link text-white {% if 'expenditures' in request.path %}active{% endif %}"
+                            href="{% url 'accounting:expenditure_list' %}">
+                            <i class="bi bi-receipt-cutoff me-2"></i>Expenditures
+                        </a>
+                    </li>
+                    {% elif role_name == 'SHOP_ATTENDANT' and not current_tenant.use_strict_sales_workflow %}
+                    <!-- Attendants only see Cash Transfers if NOT in strict mode -->
                     <li class="nav-item">
                         <a class="nav-link text-white {% if 'cash-transfers' in request.path %}active{% endif %}"
                             href="{% url 'accounting:cash_transfer_list' %}">
@@ -193,6 +241,14 @@
                                     <a class="nav-link text-white-50 py-1 {% if 'batches' in request.path %}active text-white{% endif %}"
                                         href="{% url 'inventory:batch_list' %}">
                                         Batches
+                                    </a>
+                                </li>
+                                {% endif %}
+                                {% if current_tenant.use_bulk_inventory_receiving and role_name not in 'SHOP_ATTENDANT' %}
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if 'goods-receipts' in request.path %}active text-white{% endif %}"
+                                        href="{% url 'inventory:goods_receipt_list' %}">
+                                        Bulk Receiving
                                     </a>
                                 </li>
                                 {% endif %}
@@ -464,7 +520,7 @@
                     </div>
 
                     <!-- Cash on Hand Badge (exclude ADMIN) -->
-                    {% if role_name == 'SHOP_ATTENDANT' or role_name == 'SHOP_MANAGER' or role_name == 'ACCOUNTANT' %}
+                    {% if role_name == 'SHOP_MANAGER' or role_name == 'ACCOUNTANT' or role_name == 'SHOP_CASHIER' or role_name == 'SHOP_ATTENDANT' and not current_tenant.use_strict_sales_workflow %}
                     <a href="{% url 'accounting:cash_transfer_list' %}" class="me-3 text-decoration-none"
                         title="Cash on Hand - Click to manage transfers">
                         <span class="badge bg-success fs-6">

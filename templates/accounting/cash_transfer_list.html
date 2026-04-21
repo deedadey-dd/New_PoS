@@ -150,7 +150,10 @@
                             <small class="text-danger d-block"><i class="bi bi-x-circle me-1"></i>{{ transfer.cancellation_reason }}</small>
                             {% endif %}
                         </td>
-                        <td>
+                        <td class="text-nowrap">
+                            <a href="{% url 'accounting:cash_transfer_print' transfer.pk %}" target="_blank" class="btn btn-sm btn-outline-info" title="Print Slip">
+                                <i class="bi bi-printer"></i>
+                            </a>
                             {% if transfer.status == 'PENDING' %}
                             {% if transfer.to_user == user %}
                             <form method="post" action="{% url 'accounting:cash_transfer_confirm' transfer.pk %}"

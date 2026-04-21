@@ -68,6 +68,14 @@
                     <option value="PENDING" {% if selected_status == 'PENDING' %}selected{% endif %}>Pending</option>
                 </select>
             </div>
+            <div class="col-md-2">
+                <label class="form-label">Dispatch</label>
+                <select name="dispatched" class="form-select">
+                    <option value="">All</option>
+                    <option value="1" {% if selected_dispatched == '1' %}selected{% endif %}>Dispatched</option>
+                    <option value="0" {% if selected_dispatched == '0' %}selected{% endif %}>Pending Dispatch</option>
+                </select>
+            </div>
             <div class="col-md-2 d-flex align-items-end gap-2">
                 <button type="submit" class="btn btn-primary flex-grow-1">
                     <i class="bi bi-filter me-1"></i>Filter
@@ -110,7 +118,9 @@
                         <td>{{ sale.shop.name }}</td>
                         <td>{{ sale.attendant.get_full_name|default:sale.attendant.email }}</td>
                         <td>
-                            {% if sale.payment_method == 'CASH' %}
+                            {% if current_tenant.use_strict_sales_workflow and sale.status == 'PENDING' and role_name == 'SHOP_ATTENDANT' %}
+                            <span class="badge bg-secondary">Pending Payment</span>
+                            {% elif sale.payment_method == 'CASH' %}
                             <span class="badge bg-success">Cash</span>
                             {% elif sale.payment_method == 'ECASH' %}
                             <span class="badge bg-primary">E-Cash</span>
@@ -123,7 +133,11 @@
                         <td>{{ current_tenant.currency_symbol|default:'$' }} {{ sale.total|floatformat:"2g" }}</td>
                         <td>
                             {% if sale.status == 'COMPLETED' %}
-                            <span class="badge bg-success">Completed</span>
+                                {% if sale.is_dispatched %}
+                                <span class="badge bg-success">Completed <i class="bi bi-box-seam ms-1"></i></span>
+                                {% else %}
+                                <span class="badge bg-info text-dark">Pending Dispatch</span>
+                                {% endif %}
                             {% elif sale.status == 'VOIDED' %}
                             <span class="badge bg-danger">Voided</span>
                             {% elif sale.status == 'PENDING' %}
@@ -199,6 +213,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const contentEl = document.getElementById('saleDetailContent');
     const printBtn = document.getElementById('saleDetailPrintBtn');
     const currencySymbol = '{{ current_tenant.currency_symbol|default:"$" }}';
+    const roleName = '{{ role_name }}';
+    const useStrictWorkflow = {{ current_tenant.use_strict_sales_workflow|yesno:"true,false" }};
 
     document.querySelectorAll('.sale-detail-link').forEach(function(link) {
         link.addEventListener('click', function(e) {
@@ -286,7 +302,11 @@ document.addEventListener('DOMContentLoaded', function() {
         html += '<div class="row mb-3">';
         html += '<div class="col-sm-6">';
         html += '<small class="text-muted d-block">Payment Method</small>';
-        html += getPaymentBadge(data.payment_method_code, data.payment_method);
+        if (useStrictWorkflow && data.status_code === 'PENDING' && roleName === 'SHOP_ATTENDANT') {
+            html += '<span class="badge bg-secondary">Pending Payment</span>';
+        } else {
+            html += getPaymentBadge(data.payment_method_code, data.payment_method);
+        }
         html += '</div>';
         if (data.customer) {
             html += '<div class="col-sm-6">';
@@ -337,14 +357,20 @@ document.addEventListener('DOMContentLoaded', function() {
         html += '<span>Total</span><span>' + currencySymbol + parseFloat(data.total).toFixed(2) + '</span>';
         html += '</div>';
 
-        html += '<div class="d-flex justify-content-between mt-1 text-muted">';
-        html += '<span>Amount Paid</span><span>' + currencySymbol + parseFloat(data.amount_paid).toFixed(2) + '</span>';
-        html += '</div>';
-
-        if (data.change_given && parseFloat(data.change_given) > 0) {
-            html += '<div class="d-flex justify-content-between text-success">';
-            html += '<span>Change</span><span>' + currencySymbol + parseFloat(data.change_given).toFixed(2) + '</span>';
+        if (useStrictWorkflow && data.status_code === 'PENDING' && roleName === 'SHOP_ATTENDANT') {
+            html += '<div class="d-flex justify-content-between mt-1 text-muted">';
+            html += '<span>Amount Paid</span><span>-</span>';
             html += '</div>';
+        } else {
+            html += '<div class="d-flex justify-content-between mt-1 text-muted">';
+            html += '<span>Amount Paid</span><span>' + currencySymbol + parseFloat(data.amount_paid).toFixed(2) + '</span>';
+            html += '</div>';
+
+            if (data.change_given && parseFloat(data.change_given) > 0) {
+                html += '<div class="d-flex justify-content-between text-success">';
+                html += '<span>Change</span><span>' + currencySymbol + parseFloat(data.change_given).toFixed(2) + '</span>';
+                html += '</div>';
+            }
         }
 
         html += '</div>';

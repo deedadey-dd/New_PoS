@@ -922,6 +922,11 @@
             </div>
 
             <div class="cart-actions">
+                {% if current_tenant.use_strict_sales_workflow and user.role.name in 'SHOP_ATTENDANT,SHOP_CASHIER' %}
+                <button class="btn-pay btn-pay-cash w-100" id="btn-pay-cash" style="background: var(--primary);" disabled>
+                    <i class="bi bi-file-earmark-plus"></i> Create Invoice
+                </button>
+                {% else %}
                 <button class="btn-pay btn-pay-cash" id="btn-pay-cash" disabled>
                     <i class="bi bi-cash"></i> Pay Cash
                 </button>
@@ -933,6 +938,7 @@
                 <button class="btn-pay btn-pay-ecash" id="btn-pay-ecash" disabled>
                     <i class="bi bi-credit-card"></i> Pay E-Cash
                 </button>
+                {% endif %}
                 {% endif %}
                 <div class="d-flex gap-2">
                     <button class="btn btn-outline-warning flex-fill" id="btn-discount">
@@ -968,6 +974,26 @@
                 <div class="small mt-2" id="credit-limit-warning"></div>
             </div>
 
+            {% if current_tenant.use_strict_sales_workflow and user.role.name in 'SHOP_ATTENDANT,SHOP_CASHIER' %}
+            <div id="strict-workflow-fields" class="mb-4">
+                <div class="alert alert-info py-2 mb-3">
+                    <i class="bi bi-info-circle me-1"></i> Creating a pending invoice. Payment is handled in the Cashier view.
+                </div>
+                <!-- Walk-in Customer Fields -->
+                <div id="walkin-customer-fields">
+                    <div class="mb-3">
+                        <label class="form-label text-muted">Walk-in Customer Name</label>
+                        <input type="text" class="form-control bg-dark text-white border-secondary" id="walkin-name" placeholder="Leave empty if CRM customer selected above">
+                    </div>
+                    <div class="mb-3 position-relative">
+                        <label class="form-label text-muted">Walk-in Phone Number <span class="text-danger" id="walkin-phone-asterisk">*</span></label>
+                        <input type="tel" class="form-control bg-dark text-white border-secondary" id="walkin-phone" placeholder="Required for invoice tracking" required autocomplete="off">
+                        <div class="customer-suggestions" id="phone-suggestions" style="width: 100%; top: 100%; left: 0; position: absolute; border-color: #444; background: #333; z-index: 1050; border-radius: 0 0 8px 8px; max-height: 200px; overflow-y: auto; display: none;"></div>
+                    </div>
+                </div>
+            </div>
+            <input type="hidden" id="amount-received" value="0">
+            {% else %}
             <div class="mb-4" id="amount-received-container">
                 <label class="form-label">Amount Received</label>
                 <input type="number" class="checkout-input" id="amount-received" step="0.01" min="0" autofocus>
@@ -976,9 +1002,13 @@
                 <label class="form-label">Change</label>
                 <div class="h3" id="modal-change">{{ currency_symbol }}0.00</div>
             </div>
+            {% endif %}
+
             <div class="d-flex gap-2">
                 <button class="btn btn-secondary flex-fill" onclick="closeCheckoutModal()">Cancel</button>
-                <button class="btn btn-success flex-fill" id="btn-complete-sale">Complete Sale</button>
+                <button class="btn btn-success flex-fill" id="btn-complete-sale">
+                    {% if current_tenant.use_strict_sales_workflow and user.role.name in 'SHOP_ATTENDANT,SHOP_CASHIER' %}Create Invoice{% else %}Complete Sale{% endif %}
+                </button>
             </div>
         </div>
     </div>
@@ -1268,8 +1298,10 @@
             const total = calculateTotal();
 
             document.getElementById('modal-total').textContent = CURRENCY + total.toFixed(2);
-            document.getElementById('amount-received').value = '';
-            document.getElementById('modal-change').textContent = CURRENCY + '0.00';
+            const amtRec = document.getElementById('amount-received');
+            if (amtRec) amtRec.value = amtRec.type === 'hidden' ? '0' : '';
+            const mc1 = document.getElementById('modal-change');
+            if (mc1) mc1.textContent = CURRENCY + '0.00';
 
             // UI Toggle based on mode
             const title = document.getElementById('checkout-title');
@@ -1281,8 +1313,8 @@
                 // Payment on account mode - paying into customer's account
                 title.innerHTML = '<i class="bi bi-wallet me-2"></i>Payment on Account';
                 creditInfo.style.display = 'block';
-                amountContainer.style.display = 'block';
-                changeContainer.style.display = 'none';
+                if (amountContainer) amountContainer.style.display = 'block';
+                if (changeContainer) changeContainer.style.display = 'none';
 
                 document.getElementById('credit-current-balance').textContent = CURRENCY + parseFloat(selectedCustomer.current_balance).toFixed(2);
                 document.getElementById('credit-new-balance').textContent = '(Will update based on payment)';
@@ -1293,8 +1325,8 @@
             } else if (mode === 'CREDIT') {
                 title.innerHTML = '<i class="bi bi-credit-card-2-front me-2"></i>Pay on Credit';
                 creditInfo.style.display = 'block';
-                amountContainer.style.display = 'none';
-                changeContainer.style.display = 'none';
+                if (amountContainer) amountContainer.style.display = 'none';
+                if (changeContainer) changeContainer.style.display = 'none';
 
                 // Show balance impact
                 document.getElementById('credit-current-balance').textContent = CURRENCY + parseFloat(selectedCustomer.current_balance).toFixed(2);
@@ -1315,9 +1347,13 @@
                 document.getElementById('amount-received').value = 0;
             } else {
                 // CASH payment mode
+                {% if current_tenant.use_strict_sales_workflow and user.role.name in 'SHOP_ATTENDANT,SHOP_CASHIER' %}
+                title.innerHTML = '<i class="bi bi-file-earmark-plus me-2"></i>Create Invoice';
+                {% else %}
                 title.innerHTML = '<i class="bi bi-cash-coin me-2"></i>Cash Payment';
-                amountContainer.style.display = 'block';
-                changeContainer.style.display = 'block';
+                {% endif %}
+                if (amountContainer) amountContainer.style.display = 'block';
+                if (changeContainer) changeContainer.style.display = 'block';
                 document.getElementById('btn-complete-sale').disabled = false;
 
                 // Show customer info if selected (for partial payments / overpayments)
@@ -1337,8 +1373,10 @@
                 // Use setTimeout to ensure focus after modal is fully rendered
                 setTimeout(() => {
                     const amountInput = document.getElementById('amount-received');
-                    amountInput.focus();
-                    amountInput.select(); // Also select any existing value
+                    if (amountInput && amountInput.type !== 'hidden') {
+                        amountInput.focus();
+                        amountInput.select(); // Also select any existing value
+                    }
                 }, 100);
             }
         }
@@ -1627,10 +1665,12 @@
         function openCashCheckout() {
             const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0) - discountAmount;
             document.getElementById('modal-total').textContent = CURRENCY + total.toFixed(2);
-            document.getElementById('amount-received').value = '';
-            document.getElementById('modal-change').textContent = CURRENCY + '0.00';
+            const amtRec = document.getElementById('amount-received');
+            if (amtRec) amtRec.value = amtRec.type === 'hidden' ? '0' : '';
+            const mc2 = document.getElementById('modal-change');
+            if (mc2) mc2.textContent = CURRENCY + '0.00';
             document.getElementById('checkout-modal').classList.add('active');
-            document.getElementById('amount-received').focus();
+            if (amtRec && amtRec.type !== 'hidden') amtRec.focus();
         }
 
         function closeCheckoutModal() {
@@ -1664,7 +1704,8 @@
 
         // Check shift before allowing payment - called by payment buttons
         function checkShiftBeforePayment(mode) {
-            if (!HAS_SHIFT) {
+            const isStrictWorkflow = {% if current_tenant.use_strict_sales_workflow %}true{% else %}false{% endif %};
+            if (!HAS_SHIFT && !isStrictWorkflow) {
                 openShiftPromptModal(mode);
                 return false;
             }
@@ -1857,7 +1898,8 @@
             const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0) - discountAmount;
             const received = parseFloat(document.getElementById('amount-received').value) || 0;
             const change = Math.max(0, received - total);
-            document.getElementById('modal-change').textContent = CURRENCY + change.toFixed(2);
+            const mc3 = document.getElementById('modal-change');
+            if (mc3) mc3.textContent = CURRENCY + change.toFixed(2);
 
             // Update new balance display if customer selected
             if (selectedCustomer) {
@@ -1890,8 +1932,21 @@
             const received = parseFloat(document.getElementById('amount-received').value) || 0;
             const total = calculateTotal();
 
-            // For CASH without customer, require full payment
-            if (paymentMode === 'CASH' && received < total && !selectedCustomer) {
+            // Check for strict workflow walk-in fields
+            let walkinName = '';
+            let walkinPhone = '';
+            const walkinPhoneEl = document.getElementById('walkin-phone');
+            if (walkinPhoneEl && !selectedCustomer && !isPaymentOnAccount) {
+                walkinPhone = walkinPhoneEl.value.trim();
+                walkinName = document.getElementById('walkin-name').value.trim();
+                if (!walkinPhone) {
+                    alert('Walk-in phone number is required for tracking the pending invoice.');
+                    return;
+                }
+            }
+
+            // For CASH without customer, require full payment (Skip if in strict mode where walkinPhoneEl exists)
+            if (paymentMode === 'CASH' && received < total && !selectedCustomer && !walkinPhoneEl) {
                 alert('Amount received is less than total!');
                 return;
             }
@@ -1918,6 +1973,8 @@
                 payment_method: isPaymentOnAccount ? 'PAYMENT_ON_ACCOUNT' : paymentMode,
                 discount_amount: discountAmount,
                 customer_id: selectedCustomer ? selectedCustomer.id : null,
+                walkin_customer_name: walkinName,
+                walkin_customer_phone: walkinPhone,
                 is_payment_on_account: isPaymentOnAccount
             };
 
@@ -1934,10 +1991,14 @@
                     saveCartToStorage();
 
                     // Reset customer UI
-                    document.getElementById('customer-search').value = '';
-                    document.getElementById('btn-clear-customer').style.display = 'none';
-                    document.getElementById('selected-customer-info').style.display = 'none';
-                    document.getElementById('btn-pay-credit').style.display = 'none';
+                    const customerSearch = document.getElementById('customer-search');
+                    if (customerSearch) customerSearch.value = '';
+                    const btnClear = document.getElementById('btn-clear-customer');
+                    if (btnClear) btnClear.style.display = 'none';
+                    const selectedInfo = document.getElementById('selected-customer-info');
+                    if (selectedInfo) selectedInfo.style.display = 'none';
+                    const btnCredit = document.getElementById('btn-pay-credit');
+                    if (btnCredit) btnCredit.style.display = 'none';
 
                     closeCheckoutModal();
 
@@ -1995,6 +2056,70 @@
                     .catch(err => console.warn('[PWA] Service worker registration failed:', err));
             });
         }
+    </script>
+    <script>
+        // Walk-in phone autocomplete logic
+        document.addEventListener('DOMContentLoaded', function() {
+            const phoneInput = document.getElementById('walkin-phone');
+            const nameInput = document.getElementById('walkin-name');
+            const suggestions = document.getElementById('phone-suggestions');
+
+            if (phoneInput && suggestions) {
+                let debounceTimeout = null;
+
+                phoneInput.addEventListener('input', function() {
+                    const query = this.value.trim();
+                    if (query.length < 2) {
+                        suggestions.style.display = 'none';
+                        return;
+                    }
+
+                    clearTimeout(debounceTimeout);
+                    debounceTimeout = setTimeout(() => {
+                        fetch(`{% url "sales:api_customer_search" %}?q=${encodeURIComponent(query)}`)
+                            .then(res => res.json())
+                            .then(data => {
+                                suggestions.innerHTML = '';
+                                if (data.results && data.results.length > 0) {
+                                    data.results.forEach(customer => {
+                                        const div = document.createElement('div');
+                                        div.className = 'suggestion-item text-white';
+                                        div.style.padding = '0.5rem';
+                                        div.style.cursor = 'pointer';
+                                        div.style.borderBottom = '1px solid #444';
+                                        
+                                        const badge = customer.type === 'CRM' ? '<span class="badge bg-info ms-2">CRM</span>' : '<span class="badge bg-secondary ms-2">History</span>';
+                                        div.innerHTML = `<strong>${customer.phone}</strong> - ${customer.name || 'Unknown'} ${badge}`;
+                                        
+                                        div.onclick = function() {
+                                            phoneInput.value = customer.phone;
+                                            nameInput.value = customer.name || '';
+                                            suggestions.style.display = 'none';
+                                        };
+                                        
+                                        // add hover effect
+                                        div.addEventListener('mouseenter', () => div.style.background = '#4f46e5');
+                                        div.addEventListener('mouseleave', () => div.style.background = 'transparent');
+                                        
+                                        suggestions.appendChild(div);
+                                    });
+                                    suggestions.style.display = 'block';
+                                } else {
+                                    suggestions.style.display = 'none';
+                                }
+                            })
+                            .catch(err => console.error('Error fetching customer suggestions:', err));
+                    }, 300);
+                });
+
+                // Hide on click outside
+                document.addEventListener('click', function(e) {
+                    if (e.target !== phoneInput && e.target !== suggestions) {
+                        suggestions.style.display = 'none';
+                    }
+                });
+            }
+        });
     </script>
 </body>
 

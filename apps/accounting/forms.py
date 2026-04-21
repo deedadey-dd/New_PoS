@@ -219,3 +219,58 @@ class CashTransferForm(forms.ModelForm):
         
         return amount
 
+from .models import ExpenditureRequest, ExpenditureItem, ExpenditureCategory
+
+class ExpenditureCategoryForm(forms.ModelForm):
+    """Form for managing expenditure categories."""
+    class Meta:
+        model = ExpenditureCategory
+        fields = ['name']
+        widgets = {
+            'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Category name'}),
+        }
+
+
+class ExpenditureRequestForm(forms.ModelForm):
+    """Form for the parent expenditure voucher."""
+    class Meta:
+        model = ExpenditureRequest
+        fields = ['notes']
+        widgets = {
+            'notes': forms.Textarea(attrs={
+                'class': 'form-control',
+                'rows': 2,
+                'placeholder': 'Overall notes for this voucher (optional)...'
+            }),
+        }
+
+
+class ExpenditureItemForm(forms.ModelForm):
+    """Form for individual items in a voucher."""
+    class Meta:
+        model = ExpenditureItem
+        fields = ['category', 'amount', 'description']
+        widgets = {
+            'category': forms.Select(attrs={'class': 'form-select'}),
+            'amount': forms.NumberInput(attrs={'class': 'form-control item-amount', 'step': '0.01', 'min': '0.01'}),
+            'description': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'What was this for?'}),
+        }
+
+    def __init__(self, *args, tenant=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if tenant:
+            self.fields['category'].queryset = ExpenditureCategory.objects.filter(
+                tenant=tenant, is_active=True
+            )
+        self.fields['category'].empty_label = '— Category —'
+
+
+# Inline formset for expenditure items
+ExpenditureItemFormSet = forms.inlineformset_factory(
+    ExpenditureRequest,
+    ExpenditureItem,
+    form=ExpenditureItemForm,
+    extra=1,
+    can_delete=True
+)
+

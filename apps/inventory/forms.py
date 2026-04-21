@@ -8,7 +8,8 @@ from django.core.files.uploadedfile import InMemoryUploadedFile
 from decimal import Decimal
 from io import BytesIO
 
-from .models import Category, Product, Batch, InventoryLedger, ShopPrice
+from django.forms.models import inlineformset_factory
+from .models import Category, Product, Batch, InventoryLedger, ShopPrice, GoodsReceipt, GoodsReceiptItem
 from apps.core.models import Location
 
 
@@ -357,3 +358,68 @@ class ShopPriceForm(forms.ModelForm):
                 is_active=True,
                 location_type='SHOP'
             )
+
+class GoodsReceiptForm(forms.ModelForm):
+    """Form for receiving bulk goods from a supplier directly to a location."""
+    
+    class Meta:
+        model = GoodsReceipt
+        fields = ['location', 'supplier_name', 'supplier_reference']
+        widgets = {
+            'location': forms.Select(attrs={'class': 'form-select'}),
+            'supplier_name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Supplier Name'}),
+            'supplier_reference': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Optional ID or Receipt No.'}),
+        }
+
+    def __init__(self, *args, tenant=None, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if tenant:
+            # All locations are valid for direct goods receipt, but we filter based on role later if needed
+            self.fields['location'].queryset = Location.objects.filter(tenant=tenant, is_active=True)
+        else:
+            self.fields['location'].queryset = Location.objects.none()
+
+        if user and user.location:
+            self.initial['location'] = user.location.pk
+            # If shop manager, lock it to their shop
+            if user.role and user.role.name == 'SHOP_MANAGER':
+                self.fields['location'].queryset = Location.objects.filter(pk=user.location.pk)
+
+
+class GoodsReceiptItemForm(forms.ModelForm):
+    """Form for individual items inside a Goods Receipt."""
+    
+    class Meta:
+        model = GoodsReceiptItem
+        fields = ['product', 'quantity', 'unit_cost', 'expiry_date']
+        widgets = {
+            'product': forms.Select(attrs={'class': 'form-select product-select'}),
+            'quantity': forms.NumberInput(attrs={'class': 'form-control qty-input', 'step': '0.01', 'min': '0.01'}),
+            'unit_cost': forms.NumberInput(attrs={'class': 'form-control cost-input', 'step': '0.01', 'min': '0'}),
+            'expiry_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
+        }
+
+    def __init__(self, *args, tenant=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if tenant:
+            self.fields['product'].queryset = Product.objects.filter(tenant=tenant, is_active=True)
+
+
+_GoodsReceiptItemFormSet = inlineformset_factory(
+    GoodsReceipt,
+    GoodsReceiptItem,
+    form=GoodsReceiptItemForm,
+    extra=1,
+    can_delete=True
+)
+
+class GoodsReceiptItemFormSet(_GoodsReceiptItemFormSet):
+    """Custom formset that passes `tenant` kwarg down to each child form."""
+
+    def __init__(self, *args, tenant=None, **kwargs):
+        self.tenant = tenant
+        super().__init__(*args, **kwargs)
+
+    def _construct_form(self, i, **kwargs):
+        kwargs['tenant'] = self.tenant
+        return super()._construct_form(i, **kwargs)

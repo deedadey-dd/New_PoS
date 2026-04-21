@@ -1,0 +1,122 @@
+{% extends 'base.html' %}
+
+{% block title %}Expenditures - {{ current_tenant.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-wallet2 me-2"></i>Expenditures</h2>
+        <p class="text-muted mb-0">Track and manage expenditure requests</p>
+    </div>
+    <div class="d-flex gap-2">
+        {% if request.user.role.name in 'ADMIN,ACCOUNTANT' %}
+        <a href="{% url 'accounting:expenditure_categories' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-tags me-1"></i>Categories
+        </a>
+        <a href="{% url 'accounting:expenditure_report' %}" class="btn btn-outline-info">
+            <i class="bi bi-bar-chart me-1"></i>Report
+        </a>
+        {% endif %}
+        {% if request.user.role.name in 'SHOP_MANAGER,SHOP_CASHIER,ACCOUNTANT,ADMIN' %}
+        <a href="{% url 'accounting:expenditure_create' %}" class="btn btn-primary">
+            <i class="bi bi-plus-lg me-1"></i>New Expenditure
+        </a>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card mb-4 border-0 shadow-sm">
+    <div class="card-body py-2">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-auto">
+                <label class="form-label small mb-1">Status</label>
+                <select name="status" class="form-select form-select-sm">
+                    <option value="">All Statuses</option>
+                    <option value="PENDING" {% if selected_status == 'PENDING' %}selected{% endif %}>Pending</option>
+                    <option value="APPROVED" {% if selected_status == 'APPROVED' %}selected{% endif %}>Approved</option>
+                    <option value="REJECTED" {% if selected_status == 'REJECTED' %}selected{% endif %}>Rejected</option>
+                </select>
+            </div>
+            <div class="col-auto">
+                <label class="form-label small mb-1">Category</label>
+                <select name="category" class="form-select form-select-sm">
+                    <option value="">All Categories</option>
+                    {% for cat in categories %}
+                    <option value="{{ cat.pk }}" {% if selected_category == cat.pk|stringformat:"s" %}selected{% endif %}>{{ cat.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-sm btn-secondary">Filter</button>
+                <a href="{% url 'accounting:expenditure_list' %}" class="btn btn-sm btn-link">Clear</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Voucher #</th>
+                        <th>Location</th>
+                        <th>Items</th>
+                        <th>Total Amount</th>
+                        <th>Requested By</th>
+                        <th>Date</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for voucher in vouchers %}
+                    <tr>
+                        <td class="fw-bold">{{ voucher.voucher_number }}</td>
+                        <td>{{ voucher.location.name }}</td>
+                        <td><span class="badge bg-secondary">{{ voucher.items.count }} item{{ voucher.items.count|pluralize }}</span></td>
+                        <td class="fw-bold">{{ current_tenant.currency }} {{ voucher.total_amount|floatformat:"2g" }}</td>
+                        <td>{{ voucher.requested_by.get_full_name }}</td>
+                        <td class="small text-muted">{{ voucher.created_at|date:"d M Y H:i" }}</td>
+                        <td>
+                            {% if voucher.status == 'PENDING' %}
+                            <span class="badge bg-warning text-dark">Pending</span>
+                            {% elif voucher.status == 'PARTIAL' %}
+                            <span class="badge bg-info text-dark">Partial</span>
+                            {% elif voucher.status == 'FULLY_APPROVED' %}
+                            <span class="badge bg-success">Approved</span>
+                            {% else %}
+                            <span class="badge bg-danger">Rejected</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a href="{% url 'accounting:expenditure_detail' voucher.pk %}" class="btn btn-sm btn-outline-primary" title="View Details">
+                                <i class="bi bi-eye me-1"></i>View
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="8" class="text-center py-4 text-muted">No vouchers found.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% if page_obj.has_other_pages %}
+<nav class="mt-3">
+    <ul class="pagination pagination-sm justify-content-center">
+        {% if page_obj.has_previous %}<li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}&status={{ selected_status }}">«</a></li>{% endif %}
+        <li class="page-item disabled"><span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span></li>
+        {% if page_obj.has_next %}<li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}&status={{ selected_status }}">»</a></li>{% endif %}
+    </ul>
+</nav>
+{% endif %}
+
+{% endblock %}
+{% block extra_js %}
+{% endblock %}
+

@@ -190,6 +190,64 @@
 </div>
 {% endif %}
 
+{% if user.role.name == 'SHOP_ATTENDANT' %}
+<!-- Recent Invoices for Attendants -->
+<div class="row g-4">
+    <div class="col-12">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 fw-bold">My Recent Invoices</h5>
+                <a href="{% url 'sales:sale_list' %}" class="btn btn-sm btn-outline-primary">View All</a>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Inv #</th>
+                                <th>Date</th>
+                                <th>Customer</th>
+                                <th>Total</th>
+                                <th>Status</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for sale in recent_invoices %}
+                            <tr>
+                                <td class="fw-bold">{{ sale.sale_number }}</td>
+                                <td class="text-muted small">{{ sale.created_at|date:"d M, H:i" }}</td>
+                                <td>{{ sale.customer.name|default:"Walking Customer" }}</td>
+                                <td class="fw-bold">{{ currency_symbol }}{{ sale.total|floatformat:"2g" }}</td>
+                                <td>
+                                    {% if sale.status == 'COMPLETED' %}
+                                    <span class="badge bg-success">Paid</span>
+                                    {% elif sale.status == 'PENDING' %}
+                                    <span class="badge bg-warning text-dark">Pending</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">{{ sale.status }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <a href="{% url 'sales:sale_receipt' sale.pk %}" class="btn btn-sm btn-outline-primary me-1" target="_blank">
+                                        <i class="bi bi-eye"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="6" class="text-center py-4 text-muted">No invoices found.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <!-- Quick Actions - Admin Only -->
 {% if user.role.name == 'ADMIN' %}
 <div class="row g-4 mb-4">

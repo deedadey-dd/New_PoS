@@ -1,0 +1,114 @@
+{% extends 'base.html' %}
+
+{% block title %}Expenditure Report - {{ current_tenant.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-bar-chart me-2"></i>Expenditure Report</h2>
+        <p class="text-muted mb-0">Approved expenditures by category</p>
+    </div>
+    <a href="{% url 'accounting:expenditure_list' %}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left me-2"></i>Back
+    </a>
+</div>
+
+<!-- Filters -->
+<div class="card mb-4 shadow-sm border-0">
+    <div class="card-body">
+        <form method="get" class="row g-3 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label fw-semibold">From</label>
+                <input type="date" name="date_from" class="form-control" value="{{ date_from|date:'Y-m-d' }}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label fw-semibold">To</label>
+                <input type="date" name="date_to" class="form-control" value="{{ date_to|date:'Y-m-d' }}">
+            </div>
+            {% if locations %}
+            <div class="col-md-3">
+                <label class="form-label fw-semibold">Location</label>
+                <select name="location" class="form-select">
+                    <option value="">All Locations</option>
+                    {% for loc in locations %}
+                    <option value="{{ loc.pk }}" {% if location_id == loc.pk|stringformat:"s" %}selected{% endif %}>{{ loc.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+            <div class="col-auto">
+                <button type="submit" class="btn btn-primary">Generate Report</button>
+                <a href="{% url 'accounting:expenditure_report' %}" class="btn btn-link">Reset</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Summary cards -->
+<div class="row mb-4">
+    {% for row in by_category %}
+    <div class="col-md-3 col-sm-6 mb-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <p class="text-muted small mb-1">{{ row.category__name|default:"Uncategorised" }}</p>
+                <h4 class="fw-bold mb-0">{{ current_tenant.currency }} {{ row.total|floatformat:"2g" }}</h4>
+                <small class="text-muted">{{ row.count }} expenditure{{ row.count|pluralize }}</small>
+                {% if grand_total %}
+                <div class="progress mt-2" style="height: 4px;">
+                    <div class="progress-bar bg-primary" style="width: {% widthratio row.total grand_total 100 %}%"></div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% empty %}
+    <div class="col-12">
+        <div class="alert alert-info">No approved expenditures found for the selected period.</div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Grand total -->
+{% if by_category %}
+<div class="alert alert-primary d-flex justify-content-between align-items-center mb-4">
+    <strong><i class="bi bi-calculator me-2"></i>Grand Total (Approved)</strong>
+    <strong class="fs-5">{{ current_tenant.currency }} {{ grand_total|floatformat:"2g" }}</strong>
+</div>
+{% endif %}
+
+<!-- Detail table -->
+{% if expenditures %}
+<div class="card shadow-sm border-0">
+    <div class="card-header bg-white fw-bold">Expenditure Detail</div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 small">
+                <thead class="table-light">
+                    <tr>
+                        <th>Date</th>
+                        <th>Category</th>
+                        <th>Amount</th>
+                        <th>Reason</th>
+                        <th>Location</th>
+                        <th>By</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for exp in expenditures %}
+                    <tr>
+                        <td>{{ exp.created_at|date:"d M Y" }}</td>
+                        <td><span class="badge bg-secondary">{{ exp.category.name|default:"—" }}</span></td>
+                        <td class="fw-semibold">{{ current_tenant.currency }} {{ exp.amount|floatformat:"2g" }}</td>
+                        <td class="text-muted">{{ exp.description|truncatechars:60 }}</td>
+                        <td>{{ exp.request.location.name }}</td>
+                        <td>{{ exp.request.requested_by.get_full_name }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}

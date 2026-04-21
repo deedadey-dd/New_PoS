@@ -103,11 +103,16 @@
                         <small class="d-block text-muted mt-1">Allow shop managers to receive stock and create
                             batches</small>
                     </div>
-                    <div class="form-check form-switch mb-0">
+                    <div class="form-check form-switch mb-3">
                         {{ form.shops_can_see_other_stock }}
                         <label class="form-check-label ms-2">Can See Other Locations' Stock</label>
                         <small class="d-block text-muted mt-1">Allow shops to view stock levels at other locations,
                             batch details, and the full stock-by-location breakdown</small>
+                    </div>
+                    <div class="form-check form-switch mb-0">
+                        {{ form.allow_shop_to_shop_transfers }}
+                        <label class="form-check-label ms-2">Can Transfer Between Shops</label>
+                        <small class="d-block text-muted mt-1">Allow shop managers to transfer stock directly to other active shops within the organization.</small>
                     </div>
                 </div>
             </div>
@@ -120,11 +125,137 @@
                     <h5 class="mb-0"><i class="bi bi-cash-stack me-2"></i>Cash Transfer Settings</h5>
                 </div>
                 <div class="card-body">
-                    <div class="form-check form-switch mb-0">
+                    <div class="form-check form-switch mb-3">
                         {{ form.allow_accountant_to_shop_transfers }}
                         <label class="form-check-label ms-2">Allow Accountant → Shop Transfers</label>
                         <small class="d-block text-muted mt-1">Allow accountants to send float/change money to shops. If
                             disabled, cash only flows from shops to accountants.</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Workflow Feature Flags -->
+    <div class="row">
+        <div class="col-12 mb-4">
+            <div class="card border-primary">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="bi bi-diagram-3 me-2"></i>Workflow Feature Flags</h5>
+                    <small class="text-white-50">Enable or disable specialized workflows for this tenant's operations</small>
+                </div>
+                <div class="card-body">
+                    <div class="row g-4">
+                        <!-- Strict Sales Workflow -->
+                        <div class="col-md-6">
+                            <div class="card h-100 border-0 bg-light">
+                                <div class="card-body">
+                                    <div class="form-check form-switch">
+                                        {{ form.use_strict_sales_workflow }}
+                                        <label class="form-check-label ms-2 fw-bold">Strict Sales Workflow</label>
+                                    </div>
+                                    <p class="text-muted small mt-2 mb-0">
+                                        Enforces a 3-step sales process: <br>
+                                        <strong>Attendant</strong> creates invoice → <strong>Cashier</strong> collects payment & prints receipt → <strong>Manager</strong> dispatches stock.
+                                        <br>Without this, any authorised role can complete a sale in one step.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Require Customer on Invoice -->
+                        <div class="col-md-6">
+                            <div class="card h-100 border-0 bg-light">
+                                <div class="card-body">
+                                    <div class="form-check form-switch">
+                                        {{ form.require_customer_on_invoice }}
+                                        <label class="form-check-label ms-2 fw-bold">Require Customer on Invoice</label>
+                                    </div>
+                                    <p class="text-muted small mt-2 mb-0">
+                                        When enabled, all sales/invoices must have a customer name and phone number recorded.
+                                        Walk-in customer details will still be captured but not saved as a credit customer.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Bulk Inventory Receiving -->
+                        <div class="col-md-6">
+                            <div class="card h-100 border-0 bg-light">
+                                <div class="card-body">
+                                    <div class="form-check form-switch">
+                                        {{ form.use_bulk_inventory_receiving }}
+                                        <label class="form-check-label ms-2 fw-bold">Bulk Inventory Receiving</label>
+                                    </div>
+                                    <p class="text-muted small mt-2 mb-0">
+                                        Enables the <strong>Goods Receipt</strong> module, allowing shop managers to receive
+                                        multiple products from a supplier in a single transaction instead of item by item.
+                                        Replaces the need for a Central Stores location.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Require Accountant for Bulk Receiving -->
+                        <div class="col-md-6">
+                            <div class="card h-100 border-0 bg-light">
+                                <div class="card-body">
+                                    <div class="form-check form-switch">
+                                        {{ form.require_accountant_for_bulk_receiving }}
+                                        <label class="form-check-label ms-2 fw-bold">Accountant Must Verify Bulk Receipts</label>
+                                    </div>
+                                    <p class="text-muted small mt-2 mb-0">
+                                        If enabled, bulk Goods Receipts submitted by a shop manager will sit in
+                                        <strong>Pending Approval</strong> status until an Accountant or Admin logs in to
+                                        verify and finalize the stock into inventory. Requires "Bulk Inventory Receiving" above.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Expenditure Categories -->
+    <div class="row">
+        <div class="col-12 mb-4">
+            <div class="card border-primary">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="mb-0"><i class="bi bi-tags me-2"></i>Expenditure Categories</h5>
+                        <small class="text-white-50">Manage the categories used for logging expenditures</small>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6 border-end pe-4">
+                            <h6>Add New Category</h6>
+                            <div class="input-group mb-3">
+                                <input type="text" id="newCategoryName" class="form-control" placeholder="E.g. Marketing, Cleaning...">
+                                <button class="btn btn-outline-primary" type="button" id="btnAddCategory">
+                                    <i class="bi bi-plus-lg"></i> Add
+                                </button>
+                            </div>
+                            <div id="categoryAlert" class="small mt-2"></div>
+                        </div>
+                        <div class="col-md-6 ps-4">
+                            <h6>Current Categories</h6>
+                            <ul class="list-group" id="categoriesList" style="max-height: 250px; overflow-y: auto;">
+                                {% for category in expenditure_categories %}
+                                <li class="list-group-item d-flex justify-content-between align-items-center" id="cat-{{ category.id }}">
+                                    {{ category.name }}
+                                    {% if not category.is_default %}
+                                    <button type="button" class="btn btn-sm btn-outline-danger border-0 delete-cat-btn" data-id="{{ category.id }}">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                    {% else %}
+                                    <span class="badge bg-secondary">System Default</span>
+                                    {% endif %}
+                                </li>
+                                {% empty %}
+                                <li class="list-group-item text-muted">No categories configured.</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -138,4 +269,102 @@
         </button>
     </div>
 </form>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const btnAdd = document.getElementById('btnAddCategory');
+    const inputName = document.getElementById('newCategoryName');
+    const catList = document.getElementById('categoriesList');
+    const alertDiv = document.getElementById('categoryAlert');
+    
+    // Get csrf token from the main form
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    
+    if (btnAdd) {
+        btnAdd.addEventListener('click', function() {
+            const name = inputName.value.trim();
+            if(!name) return;
+            
+            btnAdd.disabled = true;
+            
+            fetch("{% url 'accounting:api_add_category' %}", {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': csrfToken,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({name: name})
+            })
+            .then(response => response.json())
+            .then(data => {
+                btnAdd.disabled = false;
+                if(data.success) {
+                    inputName.value = '';
+                    alertDiv.innerHTML = '<span class="text-success">Category added!</span>';
+                    setTimeout(() => alertDiv.innerHTML='', 3000);
+                    
+                    // Add to list
+                    const li = document.createElement('li');
+                    li.className = 'list-group-item d-flex justify-content-between align-items-center';
+                    li.id = 'cat-' + data.category.id;
+                    
+                    let btnHtml = '';
+                    if(!data.category.is_default) {
+                        btnHtml = `<button type="button" class="btn btn-sm btn-outline-danger border-0 delete-cat-btn" data-id="${data.category.id}"><i class="bi bi-trash"></i></button>`;
+                    } else {
+                        btnHtml = `<span class="badge bg-secondary">System Default</span>`;
+                    }
+                    
+                    li.innerHTML = `${data.category.name} ${btnHtml}`;
+                    
+                    // remove empty state if exists
+                    if(catList.firstElementChild && catList.firstElementChild.classList.contains('text-muted')) {
+                        catList.innerHTML = '';
+                    }
+                    catList.appendChild(li);
+                    
+                    attachDeleteEvents();
+                } else {
+                    alertDiv.innerHTML = `<span class="text-danger">${data.error}</span>`;
+                }
+            })
+            .catch(err => {
+                btnAdd.disabled = false;
+                alertDiv.innerHTML = `<span class="text-danger">An error occurred</span>`;
+            });
+        });
+    }
+    
+    function attachDeleteEvents() {
+        document.querySelectorAll('.delete-cat-btn').forEach(btn => {
+            // Remove old listener to avoid duplicates
+            const newBtn = btn.cloneNode(true);
+            btn.parentNode.replaceChild(newBtn, btn);
+            
+            newBtn.onclick = function(e) {
+                e.preventDefault();
+                if(!confirm('Are you sure you want to remove this category?')) return;
+                
+                const id = this.getAttribute('data-id');
+                // Use the standard URL structure since there isn't a reverse easy way here without template tags iteration
+                fetch(`/accounting/expenditures/categories/api/${id}/delete/`, {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': csrfToken }
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if(data.success) {
+                        const li = document.getElementById('cat-' + id);
+                        if(li) li.remove();
+                    } else {
+                        alert(data.error);
+                    }
+                });
+            };
+        });
+    }
+    
+    attachDeleteEvents();
+});
+</script>
 {% endblock %}

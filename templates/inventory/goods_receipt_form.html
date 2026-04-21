@@ -1,0 +1,310 @@
+{% extends 'base.html' %}
+
+{% block title %}Receive Bulk Goods - {{ current_tenant.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1">Receive Bulk Goods</h2>
+        <p class="text-muted mb-0">Record a new bulk goods delivery from a supplier.</p>
+    </div>
+    <a href="{% url 'inventory:goods_receipt_list' %}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left me-2"></i>Back to Receipts
+    </a>
+</div>
+
+{% if form.errors or items.errors %}
+<div class="alert alert-danger mb-4">
+    <strong>Please fix the errors below before submitting.</strong>
+    <ul class="mb-0 mt-1">
+        {% for field in form %}{% for error in field.errors %}<li>{{ field.label }}: {{ error }}</li>{% endfor %}{% endfor %}
+        {% for error in form.non_field_errors %}<li>{{ error }}</li>{% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+<form method="post" id="goods-receipt-form">
+    {% csrf_token %}
+
+    <!-- Receipt Header -->
+    <div class="card mb-4 shadow-sm">
+        <div class="card-header bg-dark text-white">
+            <h5 class="mb-0">Receipt Details</h5>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label fw-semibold">Receiving Location <span class="text-danger">*</span></label>
+                    {{ form.location }}
+                    {% if form.location.errors %}<div class="text-danger small mt-1">{{ form.location.errors|join:", " }}</div>{% endif %}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label fw-semibold">Supplier Name</label>
+                    {{ form.supplier_name }}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label fw-semibold">Supplier Reference / Waybill #</label>
+                    {{ form.supplier_reference }}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Items Table -->
+    <div class="card mb-4 shadow-sm border-primary">
+        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Items Received</h5>
+            <button type="button" class="btn btn-light btn-sm" id="add-item-btn">
+                <i class="bi bi-plus-circle me-1"></i>Add Item
+            </button>
+        </div>
+        <div class="card-body p-0">
+            {{ items.management_form }}
+            <div class="table-responsive">
+                <table class="table table-bordered mb-0 align-middle" id="items-table">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width:28%">Product <span class="text-danger">*</span></th>
+                            <th style="width:12%">Qty <span class="text-danger">*</span></th>
+                            <th style="width:15%">Unit Cost</th>
+                            <th style="width:15%">Total Cost <small class="text-muted fw-normal">(auto-fills unit cost)</small></th>
+                            <th style="width:15%">Expiry Date</th>
+                            <th style="width:10%">Line Total</th>
+                            <th style="width:5%" class="text-center">×</th>
+                        </tr>
+                    </thead>
+                    <tbody id="items-tbody">
+                        {% for item_form in items %}
+                        <tr class="item-form-row">
+                            {% for hidden in item_form.hidden_fields %}{{ hidden }}{% endfor %}
+                            <td>
+                                <!-- Hidden product id input -->
+                                <input type="hidden" name="{{ item_form.product.html_name }}"
+                                       id="id_{{ item_form.prefix }}-product"
+                                       value="{{ item_form.product.value|default:'' }}"
+                                       class="product-id-input">
+                                <!-- Visible autocomplete text input -->
+                                <input type="text"
+                                       class="form-control product-search-input"
+                                       placeholder="Type product name or SKU…"
+                                       autocomplete="off"
+                                       data-target="id_{{ item_form.prefix }}-product"
+                                       value="{{ item_form.instance.product.name|default:'' }}">
+                                <div class="autocomplete-dropdown list-group shadow-sm" style="display:none;position:absolute;z-index:999;width:300px;max-height:200px;overflow-y:auto;"></div>
+                                <div class="text-danger small mt-1">{{ item_form.product.errors.as_text }}</div>
+                            </td>
+                            <td>
+                                <input type="number" name="{{ item_form.quantity.html_name }}"
+                                       class="form-control qty-input" step="0.01" min="0.01"
+                                       value="{{ item_form.quantity.value|default:'' }}" placeholder="0">
+                                <div class="text-danger small mt-1">{{ item_form.quantity.errors.as_text }}</div>
+                            </td>
+                            <td>
+                                <input type="number" name="{{ item_form.unit_cost.html_name }}"
+                                       class="form-control unit-cost-input" step="0.01" min="0"
+                                       value="{{ item_form.unit_cost.value|default:'' }}" placeholder="0.00">
+                            </td>
+                            <td>
+                                <input type="number" class="form-control total-cost-input" step="0.01" min="0"
+                                       placeholder="0.00" title="Enter total cost to auto-calculate unit cost">
+                            </td>
+                            <td>
+                                <input type="date" name="{{ item_form.expiry_date.html_name }}"
+                                       class="form-control"
+                                       value="{{ item_form.expiry_date.value|default:'' }}">
+                            </td>
+                            <td class="line-total fw-semibold text-end pe-2">0.00</td>
+                            <td class="text-center">
+                                {% if item_form.instance.pk %}
+                                    <label class="text-danger">
+                                        {{ item_form.DELETE }}
+                                        <i class="bi bi-trash" title="Mark for removal"></i>
+                                    </label>
+                                {% else %}
+                                    <button type="button" class="btn btn-sm btn-outline-danger remove-item-btn">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot class="table-light">
+                        <tr>
+                            <td colspan="5" class="text-end fw-bold">Grand Total:</td>
+                            <td class="fw-bold text-end pe-2 fs-6" id="grand-total">0.00</td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="d-flex justify-content-end gap-2 mb-5">
+        <a href="{% url 'inventory:goods_receipt_list' %}" class="btn btn-secondary">Cancel</a>
+        <button type="submit" class="btn btn-success btn-lg">
+            <i class="bi bi-save me-2"></i>Save &amp; Submit for Verification
+        </button>
+    </div>
+</form>
+
+<!-- Empty row template (hidden) -->
+<table style="display:none;">
+    <tbody id="empty-form-template">
+        <tr class="item-form-row">
+            {% for hidden in items.empty_form.hidden_fields %}{{ hidden }}{% endfor %}
+            <td>
+                <input type="hidden" name="{{ items.empty_form.product.html_name }}"
+                       id="id_{{ items.empty_form.prefix }}-product"
+                       class="product-id-input">
+                <input type="text" class="form-control product-search-input"
+                       placeholder="Type product name or SKU…" autocomplete="off"
+                       data-target="id_{{ items.empty_form.prefix }}-product">
+                <div class="autocomplete-dropdown list-group shadow-sm"
+                     style="display:none;position:absolute;z-index:999;width:300px;max-height:200px;overflow-y:auto;"></div>
+            </td>
+            <td><input type="number" name="{{ items.empty_form.quantity.html_name }}"
+                       class="form-control qty-input" step="0.01" min="0.01" placeholder="0"></td>
+            <td><input type="number" name="{{ items.empty_form.unit_cost.html_name }}"
+                       class="form-control unit-cost-input" step="0.01" min="0" placeholder="0.00"></td>
+            <td><input type="number" class="form-control total-cost-input" step="0.01" min="0"
+                       placeholder="0.00"></td>
+            <td><input type="date" name="{{ items.empty_form.expiry_date.html_name }}" class="form-control"></td>
+            <td class="line-total fw-semibold text-end pe-2">0.00</td>
+            <td class="text-center">
+                <button type="button" class="btn btn-sm btn-outline-danger remove-item-btn">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </td>
+        </tr>
+    </tbody>
+</table>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const AUTOCOMPLETE_URL = "{% url 'inventory:api_product_autocomplete' %}";
+
+document.addEventListener('DOMContentLoaded', function () {
+    const addBtn = document.getElementById('add-item-btn');
+    const tbody = document.getElementById('items-tbody');
+    const totalFormsInput = document.getElementById('id_items-TOTAL_FORMS');
+
+    let formCount = parseInt(totalFormsInput.value);
+
+    // ── Add row ───────────────────────────────────────────────────────────
+    addBtn.addEventListener('click', function () {
+        const template = document.getElementById('empty-form-template').innerHTML
+            .replace(/__prefix__/g, formCount);
+        tbody.insertAdjacentHTML('beforeend', template);
+        const newRow = tbody.lastElementChild;
+        initRow(newRow);
+        formCount++;
+        totalFormsInput.value = formCount;
+    });
+
+    // ── Remove row ────────────────────────────────────────────────────────
+    tbody.addEventListener('click', function (e) {
+        if (e.target.closest('.remove-item-btn')) {
+            e.target.closest('.item-form-row').remove();
+            recalcGrand();
+        }
+    });
+
+    // ── Init existing rows ────────────────────────────────────────────────
+    document.querySelectorAll('.item-form-row').forEach(initRow);
+
+    function initRow(row) {
+        const searchInput = row.querySelector('.product-search-input');
+        const qtyInput = row.querySelector('.qty-input');
+        const unitCostInput = row.querySelector('.unit-cost-input');
+        const totalCostInput = row.querySelector('.total-cost-input');
+        const lineTotal = row.querySelector('.line-total');
+        const dropdown = row.querySelector('.autocomplete-dropdown');
+
+        // ── Autocomplete ──────────────────────────────────────────────────
+        let debounceTimer;
+        searchInput && searchInput.addEventListener('input', function () {
+            const q = this.value.trim();
+            clearTimeout(debounceTimer);
+            if (q.length < 2) { dropdown.style.display = 'none'; return; }
+            debounceTimer = setTimeout(() => {
+                fetch(`${AUTOCOMPLETE_URL}?q=${encodeURIComponent(q)}`)
+                    .then(r => r.json())
+                    .then(data => {
+                        dropdown.innerHTML = '';
+                        if (!data.results.length) { dropdown.style.display = 'none'; return; }
+                        data.results.forEach(p => {
+                            const item = document.createElement('button');
+                            item.type = 'button';
+                            item.className = 'list-group-item list-group-item-action py-2 px-3 small';
+                            item.innerHTML = `<strong>${p.name}</strong>${p.sku ? ' <span class="text-muted">(' + p.sku + ')</span>' : ''}`;
+                            item.addEventListener('click', () => {
+                                searchInput.value = p.name;
+                                const hiddenId = searchInput.dataset.target;
+                                document.getElementById(hiddenId).value = p.id;
+                                dropdown.style.display = 'none';
+                            });
+                            dropdown.appendChild(item);
+                        });
+                        dropdown.style.display = 'block';
+                    }).catch(() => { dropdown.style.display = 'none'; });
+            }, 250);
+        });
+
+        // Close dropdown on outside click
+        document.addEventListener('click', (e) => {
+            if (!row.contains(e.target)) dropdown.style.display = 'none';
+        }, { capture: false });
+
+        // ── Live calculations ──────────────────────────────────────────────
+        function calcLine() {
+            const qty = parseFloat(qtyInput ? qtyInput.value : 0) || 0;
+            const unit = parseFloat(unitCostInput ? unitCostInput.value : 0) || 0;
+            const lt = qty * unit;
+            if (lineTotal) lineTotal.textContent = lt.toFixed(2);
+            recalcGrand();
+        }
+
+        // If user types total cost → back-calculate unit cost
+        totalCostInput && totalCostInput.addEventListener('input', function () {
+            const qty = parseFloat(qtyInput ? qtyInput.value : 0) || 0;
+            const total = parseFloat(this.value) || 0;
+            if (qty > 0 && unitCostInput) {
+                unitCostInput.value = (total / qty).toFixed(4);
+            }
+            calcLine();
+        });
+
+        qtyInput && qtyInput.addEventListener('input', function () {
+            // Also re-derive unit cost if total cost is filled
+            const totalVal = parseFloat(totalCostInput ? totalCostInput.value : 0) || 0;
+            const qty = parseFloat(this.value) || 0;
+            if (totalVal > 0 && qty > 0 && unitCostInput) {
+                unitCostInput.value = (totalVal / qty).toFixed(4);
+            }
+            calcLine();
+        });
+
+        unitCostInput && unitCostInput.addEventListener('input', function () {
+            // If unit cost is edited directly, clear total cost override
+            if (totalCostInput) totalCostInput.value = '';
+            calcLine();
+        });
+
+        // Initial calc for pre-filled rows
+        calcLine();
+    }
+
+    function recalcGrand() {
+        let grand = 0;
+        document.querySelectorAll('#items-tbody .line-total').forEach(el => {
+            grand += parseFloat(el.textContent) || 0;
+        });
+        document.getElementById('grand-total').textContent = grand.toFixed(2);
+    }
+});
+</script>
+{% endblock %}

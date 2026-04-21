@@ -579,3 +579,149 @@ class StockAdjustment(TenantModel):
         self.review_notes = notes
         self.save()
 
+
+class GoodsReceipt(TenantModel):
+    """
+    Records a bulk receiving of inventory items.
+    """
+    STATUS_CHOICES = [
+        ('DRAFT', 'Draft'),
+        ('PENDING_APPROVAL', 'Pending Approval'),
+        ('FINALIZED', 'Finalized'),
+    ]
+    
+    receipt_id = models.CharField(max_length=50) # Auto-generated GR-xxx
+    supplier_name = models.CharField(max_length=255, blank=True)
+    supplier_reference = models.CharField(max_length=255, blank=True) # e.g. invoice number
+    
+    location = models.ForeignKey(
+        'core.Location',
+        on_delete=models.PROTECT,
+        related_name='goods_receipts'
+    )
+    
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='DRAFT')
+    
+    total_expected_cost = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal('0')
+    )
+    
+    created_by = models.ForeignKey(
+        'core.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='created_receipts'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    approved_by = models.ForeignKey(
+        'core.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='approved_receipts'
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+        unique_together = ['tenant', 'receipt_id']
+        
+    def __str__(self):
+        return f"Goods Receipt {self.receipt_id} - {self.get_status_display()}"
+        
+    def save(self, *args, **kwargs):
+        if not self.receipt_id:
+            today = timezone.now().strftime('%Y%m%d')
+            last_receipt = GoodsReceipt.objects.filter(
+                tenant=self.tenant,
+                receipt_id__startswith=f"GR{today}"
+            ).order_by('-receipt_id').first()
+            if last_receipt:
+                try:
+                    last_num = int(last_receipt.receipt_id[-4:])
+                    self.receipt_id = f"GR{today}{last_num + 1:04d}"
+                except ValueError:
+                    self.receipt_id = f"GR{today}0001"
+            else:
+                self.receipt_id = f"GR{today}0001"
+        super().save(*args, **kwargs)
+
+    def calculate_total(self):
+        self.total_expected_cost = self.items.aggregate(
+            total=models.Sum('total_cost')
+        )['total'] or Decimal('0')
+        self.save(update_fields=['total_expected_cost'])
+        
+    def finalize(self, user):
+        """Finalize the receipt and create batches."""
+        if self.status == 'FINALIZED':
+            raise ValidationError("Already finalized.")
+            
+        for item in self.items.all():
+            # Create the batch
+            batch_number = f"{self.receipt_id}-{item.product.pk}"
+            
+            # Use expiry date if provided, otherwise default to far future or null
+            batch = Batch.objects.create(
+                tenant=self.tenant,
+                batch_number=batch_number,
+                product=item.product,
+                location=self.location,
+                initial_quantity=item.quantity,
+                current_quantity=item.quantity,
+                unit_cost=item.unit_cost,
+                production_date=item.production_date,
+                expiry_date=item.expiry_date,
+            )
+            
+            # Also create inventory ledger entry
+            InventoryLedger.objects.create(
+                tenant=self.tenant,
+                product=item.product,
+                batch=batch,
+                location=self.location,
+                transaction_type='RECEIPT',
+                quantity=item.quantity,
+                unit_cost=item.unit_cost,
+                reference_type='GoodsReceipt',
+                reference_id=self.pk,
+                notes=f"Received via {self.receipt_id}",
+                created_by=user
+            )
+
+        self.status = 'FINALIZED'
+        self.approved_by = user
+        self.approved_at = timezone.now()
+        self.save()
+
+
+class GoodsReceiptItem(TenantModel):
+    receipt = models.ForeignKey(
+        GoodsReceipt,
+        on_delete=models.CASCADE,
+        related_name='items'
+    )
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.PROTECT,
+        related_name='goods_receipt_items'
+    )
+    quantity = models.DecimalField(
+        max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))]
+    )
+    unit_cost = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal('0')
+    )
+    total_cost = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal('0')
+    )
+    
+    production_date = models.DateField(null=True, blank=True)
+    expiry_date = models.DateField(null=True, blank=True)
+    
+    def save(self, *args, **kwargs):
+        self.total_cost = self.quantity * self.unit_cost
+        super().save(*args, **kwargs)
+        self.receipt.calculate_total()
+

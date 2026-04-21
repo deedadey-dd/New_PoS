@@ -1,0 +1,294 @@
+{% extends 'base.html' %}
+
+{% block title %}Edit Invoice #{{ invoice.sale_number }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1">Edit Invoice: <span class="text-primary">{{ invoice.sale_number }}</span></h2>
+        <p class="text-muted mb-0">Modify items before payment. Status: <span class="badge bg-warning text-dark">{{ invoice.status }}</span></p>
+    </div>
+    <a href="{% url 'sales:cashier_invoices' %}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Back
+    </a>
+</div>
+
+<div class="row">
+    <!-- Edit Cart -->
+    <div class="col-lg-8">
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 fw-bold">Invoice Items</h5>
+                <div class="position-relative w-50">
+                    <input type="text" id="productSearch" class="form-control form-control-sm" placeholder="Type to add a product..." autocomplete="off">
+                    <div id="productResults" class="list-group position-absolute w-100 shadow-sm" style="display:none; z-index:1000; max-height: 250px; overflow-y: auto;"></div>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0" id="cartTable">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Product</th>
+                                <th style="width:120px;">Price</th>
+                                <th style="width:120px;">Qty</th>
+                                <th style="width:120px;">Total</th>
+                                <th style="width:60px;" class="text-center"><i class="bi bi-trash"></i></th>
+                            </tr>
+                        </thead>
+                        <tbody id="cartBody">
+                            <!-- Items populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Summary Panel -->
+    <div class="col-lg-4">
+        <div class="card shadow-sm border-0 mb-4 position-sticky" style="top:20px;">
+            <div class="card-header bg-dark text-white">
+                <h5 class="mb-0">Summary</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="text-muted">Customer:</span>
+                    <span class="fw-bold text-end">
+                        {% if invoice.customer %}
+                            {{ invoice.customer.name }}
+                        {% elif invoice.walkin_customer_name %}
+                            {{ invoice.walkin_customer_name }}
+                        {% else %}
+                            Walk-in
+                        {% endif %}
+                    </span>
+                </div>
+                <hr>
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <span class="fs-5">Grand Total:</span>
+                    <span class="fs-4 fw-bold text-success" id="cartTotalDisplay">0.00</span>
+                </div>
+                <button type="button" class="btn btn-primary btn-lg w-100" id="btnSaveInvoice">
+                    <i class="bi bi-save me-2"></i>Save Changes
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const API_UPDATE_URL = "{% url 'sales:api_update_invoice' invoice.id %}";
+    const API_SEARCH_URL = "{% url 'inventory:api_product_autocomplete' %}";
+    const CURRENCY = "{{ current_tenant.currency_symbol|default:'GHC' }}";
+    
+    // Initialize cart from existing invoice items
+    let cart = [
+        {% for item in invoice.items.all %}
+        {
+            id: "{{ item.product.id }}",
+            name: "{{ item.product.name|escapejs }}",
+            price: parseFloat("{{ item.unit_price }}"),
+            quantity: parseFloat("{{ item.quantity }}")
+        }{% if not forloop.last %},{% endif %}
+        {% endfor %}
+    ];
+
+    const cartBody = document.getElementById('cartBody');
+    const searchInput = document.getElementById('productSearch');
+    const searchResults = document.getElementById('productResults');
+    const totalDisplay = document.getElementById('cartTotalDisplay');
+    const btnSave = document.getElementById('btnSaveInvoice');
+
+    function renderCart() {
+        cartBody.innerHTML = '';
+        let total = 0;
+
+        if (cart.length === 0) {
+            cartBody.innerHTML = `<tr><td colspan="5" class="text-center text-muted py-4">Invoice is empty. Search above to add items.</td></tr>`;
+        } else {
+            cart.forEach((item, index) => {
+                const subtotal = item.price * item.quantity;
+                total += subtotal;
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="fw-semibold">${item.name}</td>
+                    <td>
+                        <input type="number" step="0.01" class="form-control form-control-sm price-input" data-index="${index}" value="${item.price.toFixed(2)}">
+                    </td>
+                    <td>
+                        <div class="input-group input-group-sm">
+                            <button class="btn btn-outline-secondary qty-btn" data-index="${index}" data-change="-1">-</button>
+                            <input type="number" class="form-control text-center qty-input" data-index="${index}" value="${item.quantity}">
+                            <button class="btn btn-outline-secondary qty-btn" data-index="${index}" data-change="1">+</button>
+                        </div>
+                    </td>
+                    <td class="fw-bold">${CURRENCY} ${subtotal.toFixed(2)}</td>
+                    <td class="text-center">
+                        <button class="btn btn-sm btn-outline-danger remove-btn" data-index="${index}"><i class="bi bi-trash"></i></button>
+                    </td>
+                `;
+                cartBody.appendChild(tr);
+            });
+        }
+
+        totalDisplay.textContent = `${CURRENCY} ${total.toFixed(2)}`;
+        attachEvents();
+    }
+
+    function attachEvents() {
+        // Quantity Buttons
+        document.querySelectorAll('.qty-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const idx = parseInt(e.target.dataset.index);
+                const change = parseInt(e.target.dataset.change);
+                if (cart[idx].quantity + change > 0) {
+                    cart[idx].quantity += change;
+                    renderCart();
+                }
+            });
+        });
+        
+        // Quantity Inputs
+        document.querySelectorAll('.qty-input').forEach(input => {
+            input.addEventListener('change', (e) => {
+                const idx = parseInt(e.target.dataset.index);
+                const val = parseFloat(e.target.value);
+                if (val > 0) { cart[idx].quantity = val; } 
+                renderCart();
+            });
+        });
+
+        // Price Inputs
+        document.querySelectorAll('.price-input').forEach(input => {
+            input.addEventListener('change', (e) => {
+                const idx = parseInt(e.target.dataset.index);
+                const val = parseFloat(e.target.value);
+                if (val >= 0) { cart[idx].price = val; }
+                renderCart();
+            });
+        });
+
+        // Remove Buttons
+        document.querySelectorAll('.remove-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const idx = parseInt(e.currentTarget.dataset.index);
+                cart.splice(idx, 1);
+                renderCart();
+            });
+        });
+    }
+
+    // --- Product Search Autocomplete ---
+    let debounceTimer;
+    searchInput.addEventListener('input', (e) => {
+        const query = e.target.value.trim();
+        clearTimeout(debounceTimer);
+        
+        if (query.length < 2) {
+            searchResults.style.display = 'none';
+            return;
+        }
+
+        debounceTimer = setTimeout(() => {
+            fetch(`${API_SEARCH_URL}?q=${encodeURIComponent(query)}`)
+            .then(res => res.json())
+            .then(data => {
+                searchResults.innerHTML = '';
+                if (data.results.length > 0) {
+                    data.results.forEach(p => {
+                        const btn = document.createElement('button');
+                        btn.type = 'button';
+                        btn.className = 'list-group-item list-group-item-action py-2 d-flex justify-content-between align-items-center';
+                        btn.innerHTML = `
+                            <div>
+                                <div class="fw-bold">${p.name}</div>
+                                <small class="text-muted">${p.sku || ''}</small>
+                            </div>
+                        `;
+                        
+                        btn.addEventListener('click', () => {
+                            // Fetch shop price API here if strictly needed,
+                            // but for simplicity let's prompt or set to 0 to be manually filled
+                            // Ideally, the autocomplete should return price too.
+                            // I'll set default to 0 and user edits it.
+                            cart.push({
+                                id: p.id,
+                                name: p.name,
+                                price: 0,
+                                quantity: 1
+                            });
+                            renderCart();
+                            searchInput.value = '';
+                            searchResults.style.display = 'none';
+                        });
+                        searchResults.appendChild(btn);
+                    });
+                    searchResults.style.display = 'block';
+                } else {
+                    searchResults.innerHTML = '<div class="list-group-item text-muted">No products found.</div>';
+                    searchResults.style.display = 'block';
+                }
+            }).catch(console.error);
+        }, 300);
+    });
+
+    document.addEventListener('click', (e) => {
+        if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
+            searchResults.style.display = 'none';
+        }
+    });
+
+    // --- Save Invoice ---
+    btnSave.addEventListener('click', () => {
+        if (cart.length === 0) {
+            alert('Cannot save an empty invoice.');
+            return;
+        }
+
+        btnSave.disabled = true;
+        btnSave.innerHTML = '<i class="bi bi-hourglass text-white"></i> Saving...';
+
+        const payload = {
+            items: cart.map(c => ({
+                product_id: c.id,
+                quantity: c.quantity,
+                unit_price: c.price
+            }))
+        };
+
+        fetch(API_UPDATE_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}'
+            },
+            body: JSON.stringify(payload)
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                window.location.href = "{% url 'sales:cashier_invoices' %}";
+            } else {
+                alert(data.error || 'Failed to update invoice.');
+                btnSave.disabled = false;
+                btnSave.innerHTML = '<i class="bi bi-save me-2"></i>Save Changes';
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            alert('A network error occurred.');
+            btnSave.disabled = false;
+            btnSave.innerHTML = '<i class="bi bi-save me-2"></i>Save Changes';
+        });
+    });
+
+    // Initial render
+    renderCart();
+
+</script>
+{% endblock %}

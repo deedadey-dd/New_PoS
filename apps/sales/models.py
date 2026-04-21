@@ -153,6 +153,8 @@ class Sale(TenantModel):
         ('CASH', 'Cash'),
         ('CREDIT', 'Credit (Customer Account)'),
         ('ECASH', 'E-Cash (Paystack)'),
+        ('CHEQUE', 'Cheque'),
+        ('MOMO', 'Mobile Money'),
         ('MIXED', 'Mixed Payment'),
     ]
     
@@ -201,6 +203,21 @@ class Sale(TenantModel):
         choices=STATUS_CHOICES,
         default='PENDING'
     )
+    
+    # Walk-in customer tracking
+    walkin_customer_name = models.CharField(max_length=255, blank=True)
+    walkin_customer_phone = models.CharField(max_length=20, blank=True)
+    
+    # Strict workflow status
+    is_dispatched = models.BooleanField(default=False)
+    dispatched_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='dispatched_sales'
+    )
+    dispatched_at = models.DateTimeField(null=True, blank=True)
     
     # Amounts
     subtotal = models.DecimalField(
@@ -386,9 +403,20 @@ class Sale(TenantModel):
 
         self.status = 'COMPLETED'
         self.completed_at = timezone.now()
+        
+        # If not using strict workflow, auto-dispatch
+        if not self.tenant.use_strict_sales_workflow:
+            self.is_dispatched = True
+            self.dispatched_at = timezone.now()
+            
         self.save()
         
-        # Deduct inventory and capture cost for profit tracking
+        # In strict workflow, manager dispatches later. Otherwise deduct now.
+        if not self.tenant.use_strict_sales_workflow:
+            self._deduct_inventory(self.attendant)
+            
+    def _deduct_inventory(self, user):
+        """Helper to deduct inventory and capture cost for profit tracking"""
         for item in self.items.all():
             # Get the actual unit cost from batch for profit tracking
             actual_cost = Decimal('0')
@@ -427,8 +455,22 @@ class Sale(TenantModel):
                 reference_type='Sale',
                 reference_id=self.pk,
                 notes=f"Sale {self.sale_number}",
-                created_by=self.attendant
+                created_by=user
             )
+
+    def dispatch(self, manager):
+        """Manager dispatches the products, officially deducting stock."""
+        if self.status != 'COMPLETED':
+            raise ValidationError("Sale must be completed before dispatching.")
+        if self.is_dispatched:
+            raise ValidationError("Sale is already dispatched.")
+            
+        self.is_dispatched = True
+        self.dispatched_by = manager
+        self.dispatched_at = timezone.now()
+        self.save()
+        
+        self._deduct_inventory(manager)
     
     def void(self, reason=''):
         """Void the sale."""
