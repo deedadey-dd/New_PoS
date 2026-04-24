@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+{% load humanize %}
+
+{% block content %}
+<div class="container-fluid px-4 py-4">
+
+    <!-- Header -->
+    <div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+        <div>
+            <h2 class="fw-bold mb-0"><i class="bi bi-truck me-2 text-primary"></i>Dispatch Summary</h2>
+            <p class="text-muted mb-0 small">All dispatched sales for the selected period</p>
+        </div>
+        <a href="{% url 'core:dashboard' %}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left me-1"></i> Back to Dashboard
+        </a>
+    </div>
+
+    <!-- Date Filter -->
+    <div class="card shadow-sm mb-4 border-0">
+        <div class="card-body">
+            <form method="get" class="row g-3 align-items-end">
+                <div class="col-sm-4 col-md-3">
+                    <label class="form-label fw-semibold small text-muted">From Date</label>
+                    <input type="date" name="date_from" class="form-control"
+                           value="{{ date_from|date:'Y-m-d' }}">
+                </div>
+                <div class="col-sm-4 col-md-3">
+                    <label class="form-label fw-semibold small text-muted">To Date</label>
+                    <input type="date" name="date_to" class="form-control"
+                           value="{{ date_to|date:'Y-m-d' }}">
+                </div>
+                <input type="hidden" name="sort" value="{{ sort }}">
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-search me-1"></i> Apply
+                    </button>
+                </div>
+                <!-- Quick range pills -->
+                <div class="col-12 d-flex flex-wrap gap-2 mt-1">
+                    <a href="?date_from={{ today_str }}&date_to={{ today_str }}"
+                       class="btn btn-sm btn-outline-secondary rounded-pill">Today</a>
+                    <a href="?date_from={{ month_start }}&date_to={{ today_str }}"
+                       class="btn btn-sm btn-outline-secondary rounded-pill">This Month</a>
+                    <a href="?date_from={{ week_start }}&date_to={{ today_str }}"
+                       class="btn btn-sm btn-outline-secondary rounded-pill">This Week</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Summary Totals -->
+    <div class="row g-3 mb-4">
+        <div class="col-sm-6 col-md-3">
+            <div class="card border-0 shadow-sm text-center py-3">
+                <div class="display-6 fw-bold text-primary">{{ total_count }}</div>
+                <div class="text-muted small mt-1">Orders Dispatched</div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-md-3">
+            <div class="card border-0 shadow-sm text-center py-3">
+                <div class="display-6 fw-bold text-success">{{ currency_symbol }} {{ total_value|floatformat:"2g"|intcomma }}</div>
+                <div class="text-muted small mt-1">Total Value</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Table -->
+    <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
+            <h5 class="mb-0 fw-bold">Dispatched Orders</h5>
+            <span class="badge bg-secondary rounded-pill">{{ page_obj.paginator.count }} total</span>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>
+                            <a href="?date_from={{ date_from|date:'Y-m-d' }}&date_to={{ date_to|date:'Y-m-d' }}&sort={% if sort == 'sale_number' %}-sale_number{% else %}sale_number{% endif %}"
+                               class="text-decoration-none text-dark">
+                                Invoice #
+                                {% if sort == 'sale_number' %}<i class="bi bi-sort-alpha-down ms-1"></i>
+                                {% elif sort == '-sale_number' %}<i class="bi bi-sort-alpha-up ms-1"></i>{% endif %}
+                            </a>
+                        </th>
+                        <th>Customer</th>
+                        <th>Shop</th>
+                        <th>Attendant</th>
+                        <th>
+                            <a href="?date_from={{ date_from|date:'Y-m-d' }}&date_to={{ date_to|date:'Y-m-d' }}&sort={% if sort == 'dispatched_at' %}-dispatched_at{% else %}dispatched_at{% endif %}"
+                               class="text-decoration-none text-dark">
+                                Dispatched At
+                                {% if sort == 'dispatched_at' %}<i class="bi bi-sort-up ms-1"></i>
+                                {% elif sort == '-dispatched_at' %}<i class="bi bi-sort-down ms-1"></i>{% endif %}
+                            </a>
+                        </th>
+                        <th>Items</th>
+                        <th class="text-end">
+                            <a href="?date_from={{ date_from|date:'Y-m-d' }}&date_to={{ date_to|date:'Y-m-d' }}&sort={% if sort == 'total' %}-total{% else %}total{% endif %}"
+                               class="text-decoration-none text-dark">
+                                Total
+                                {% if sort == 'total' %}<i class="bi bi-sort-numeric-up ms-1"></i>
+                                {% elif sort == '-total' %}<i class="bi bi-sort-numeric-down ms-1"></i>{% endif %}
+                            </a>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for sale in page_obj %}
+                    <tr>
+                        <td class="fw-bold">
+                            <a href="{% url 'sales:sale_receipt' sale.pk %}" class="text-decoration-none" target="_blank">
+                                {{ sale.sale_number }}
+                            </a>
+                        </td>
+                        <td>
+                            {% if sale.customer %}
+                                <span class="badge bg-info text-dark">{{ sale.customer.name }}</span>
+                            {% elif sale.walkin_customer_name %}
+                                {{ sale.walkin_customer_name }}
+                                {% if sale.walkin_customer_phone %}
+                                <br><small class="text-muted">{{ sale.walkin_customer_phone }}</small>
+                                {% endif %}
+                            {% else %}
+                                <span class="text-muted">Walk-in</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <i class="bi bi-shop text-success me-1"></i>{{ sale.shop.name|default:"—" }}
+                        </td>
+                        <td class="text-muted small">
+                            {{ sale.attendant.get_full_name|default:"—" }}
+                        </td>
+                        <td class="text-muted small">
+                            {{ sale.dispatched_at|date:"d M Y, H:i" }}
+                        </td>
+                        <td>
+                            <span class="badge bg-light text-dark border">
+                                {{ sale.items.count }} item{{ sale.items.count|pluralize }}
+                            </span>
+                        </td>
+                        <td class="text-end fw-semibold text-success">
+                            {{ currency_symbol }} {{ sale.total|floatformat:"2g"|intcomma }}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="text-center py-5 text-muted">
+                            <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+                            No dispatched orders found for this period.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                {% if page_obj %}
+                <tfoot class="table-light fw-bold">
+                    <tr>
+                        <td colspan="6" class="text-end">Period Total</td>
+                        <td class="text-end text-success">{{ currency_symbol }} {{ total_value|floatformat:"2g"|intcomma }}</td>
+                    </tr>
+                </tfoot>
+                {% endif %}
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if page_obj.has_other_pages %}
+        <div class="card-footer bg-white d-flex justify-content-center py-3">
+            <nav>
+                <ul class="pagination pagination-sm mb-0">
+                    {% if page_obj.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?date_from={{ date_from|date:'Y-m-d' }}&date_to={{ date_to|date:'Y-m-d' }}&sort={{ sort }}&page={{ page_obj.previous_page_number }}">
+                            <i class="bi bi-chevron-left"></i>
+                        </a>
+                    </li>
+                    {% endif %}
+                    <li class="page-item disabled">
+                        <span class="page-link">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>
+                    </li>
+                    {% if page_obj.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?date_from={{ date_from|date:'Y-m-d' }}&date_to={{ date_to|date:'Y-m-d' }}&sort={{ sort }}&page={{ page_obj.next_page_number }}">
+                            <i class="bi bi-chevron-right"></i>
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
+    </div>
+
+</div>
+{% endblock %}

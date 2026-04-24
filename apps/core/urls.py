@@ -24,6 +24,7 @@ urlpatterns = [
     # Dashboard
     path('dashboard/', views.DashboardView.as_view(), name='dashboard'),
     path('auditor/', views.AuditorDashboardView.as_view(), name='auditor_dashboard'),
+    path('dispatch-summary/', views.DispatchSummaryView.as_view(), name='dispatch_summary'),
     path('settings/', views.SettingsView.as_view(), name='settings'),
     
     # Locations

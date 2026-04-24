@@ -4,28 +4,71 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Interactive Demo - Demo Company</title>
+    <title>Interactive Demo - Synergy Mall POS</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
     <style>
         body {
-            background-color: #f8f9fa;
+            background-color: #f1f5f9;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            color: #333;
+            color: #1e293b;
         }
         .header-section {
             background: linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%);
             color: #fff;
-            padding: 3rem 0;
+            padding: 2.5rem 0 0;
             text-align: center;
-            margin-bottom: 2rem;
             border-bottom: 4px solid #1e3a8a;
         }
+        .header-section h1 { font-size: 2rem; font-weight: 700; }
+        .header-section .lead { opacity: 0.9; }
+
+        /* Mode toggle tabs */
+        .mode-tabs {
+            display: flex;
+            justify-content: center;
+            gap: 0;
+            margin-top: 1.5rem;
+        }
+        .mode-tab {
+            padding: 0.6rem 2rem;
+            font-weight: 600;
+            font-size: 0.9rem;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s;
+            letter-spacing: 0.03em;
+        }
+        .mode-tab.standard {
+            background: rgba(255,255,255,0.15);
+            color: #fff;
+            border-radius: 8px 0 0 0;
+        }
+        .mode-tab.strict {
+            background: rgba(255,255,255,0.15);
+            color: #fff;
+            border-radius: 0 8px 0 0;
+        }
+        .mode-tab.active {
+            background: #fff;
+            color: #4f46e5;
+        }
+        .mode-tab.strict.active { color: #dc2626; }
+
+        /* Workflow banner */
+        .workflow-banner {
+            border-radius: 12px;
+            padding: 1rem 1.5rem;
+            margin-bottom: 2rem;
+            font-size: 0.92rem;
+        }
+
+        /* Org nodes */
         .org-container {
             display: flex;
             flex-direction: column;
             align-items: center;
-            padding: 2rem;
+            padding: 2rem 1rem;
             position: relative;
         }
         .org-row {
@@ -39,12 +82,12 @@
         .org-node {
             background: white;
             border-radius: 12px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-            padding: 1.5rem;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.09);
+            padding: 1.4rem 1rem;
             text-align: center;
-            width: 260px;
+            width: 240px;
             border-top: 5px solid #4f46e5;
-            transition: all 0.3s ease;
+            transition: all 0.25s ease;
             position: relative;
             z-index: 2;
             cursor: pointer;
@@ -53,56 +96,38 @@
             display: block;
         }
         .org-node:hover {
-            transform: translateY(-10px);
-            box-shadow: 0 15px 35px rgba(79, 70, 229, 0.2);
-            border-top-color: #2563eb;
+            transform: translateY(-8px);
+            box-shadow: 0 16px 36px rgba(79, 70, 229, 0.18);
         }
-        .org-node-icon {
-            font-size: 2.5rem;
-            color: #4f46e5;
-            margin-bottom: 1rem;
-        }
-        .org-node-title {
-            font-weight: bold;
-            font-size: 1.2rem;
-            margin-bottom: 0.5rem;
-            color: #1f2937;
-        }
-        .org-node-subtitle {
-            font-size: 0.9rem;
-            color: #6b7280;
-            margin-bottom: 1rem;
-        }
+        .org-node-icon { font-size: 2.2rem; color: #4f46e5; margin-bottom: 0.75rem; }
+        .org-node-title { font-weight: 700; font-size: 1.05rem; margin-bottom: 0.3rem; color: #1f2937; }
+        .org-node-subtitle { font-size: 0.82rem; color: #6b7280; margin-bottom: 0.9rem; }
         .btn-login {
             border-radius: 50px;
             text-transform: uppercase;
-            font-size: 0.8rem;
-            font-weight: bold;
-            letter-spacing: 1px;
-            transition: all 0.2s;
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
         }
-        
-        /* Drawing the lines */
+
+        /* Connector lines */
         .org-row::before {
             content: '';
             position: absolute;
-            top: -2rem;
-            left: 50%;
-            width: 2px;
-            height: 2rem;
+            top: -2rem; left: 50%;
+            width: 2px; height: 2rem;
             background-color: #cbd5e1;
             z-index: 1;
         }
-        .org-row.first-row::before {
-            display: none;
-        }
+        .org-row.first-row::before { display: none; }
         .connector {
             position: absolute;
-            top: -2rem;
-            height: 2px;
+            top: -2rem; height: 2px;
             background-color: #cbd5e1;
             z-index: 1;
         }
+
+        /* Dept colours */
         .dept-production { border-top-color: #059669; }
         .dept-production .org-node-icon { color: #059669; }
         .dept-stores { border-top-color: #d97706; }
@@ -111,125 +136,318 @@
         .dept-shop .org-node-icon { color: #dc2626; }
         .dept-finance { border-top-color: #7c3aed; }
         .dept-finance .org-node-icon { color: #7c3aed; }
+        .dept-cashier { border-top-color: #0891b2; }
+        .dept-cashier .org-node-icon { color: #0891b2; }
+
+        /* Strict badge */
+        .strict-badge {
+            display: inline-block;
+            background: #fef2f2;
+            color: #dc2626;
+            border: 1px solid #fecaca;
+            border-radius: 50px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            padding: 0.1rem 0.5rem;
+            margin-top: 0.25rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        /* Step arrows for strict workflow diagram */
+        .workflow-steps {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            margin: 0.75rem 0 0.25rem;
+        }
+        .workflow-step {
+            background: white;
+            border-radius: 8px;
+            padding: 0.4rem 0.9rem;
+            font-size: 0.8rem;
+            font-weight: 600;
+            border: 2px solid #e5e7eb;
+            color: #374151;
+        }
+        .workflow-step.attendant { border-color: #dc2626; color: #dc2626; }
+        .workflow-step.cashier { border-color: #0891b2; color: #0891b2; }
+        .workflow-step.manager { border-color: #4f46e5; color: #4f46e5; }
+        .workflow-arrow { color: #9ca3af; font-size: 1rem; }
 
         .back-link {
             position: absolute;
-            top: 1rem;
-            left: 1rem;
-            color: #fff;
+            top: 1rem; left: 1rem;
+            color: rgba(255,255,255,0.85);
             text-decoration: none;
-            font-weight: bold;
+            font-weight: 600;
+            font-size: 0.9rem;
         }
-        .back-link:hover { color: #d1d5db; }
+        .back-link:hover { color: #fff; }
 
         @media (max-width: 992px) {
             .org-row { flex-wrap: wrap; gap: 1rem; }
             .org-row::before, .connector { display: none; }
+            .org-node { width: 200px; }
         }
     </style>
 </head>
 <body>
-    <div class="header-section">
-        <a href="{% url 'core:home' %}" class="back-link"><i class="bi bi-arrow-left me-1"></i> Back to Homepage</a>
+
+    <div class="header-section position-relative">
+        <a href="{% url 'core:home' %}" class="back-link"><i class="bi bi-arrow-left me-1"></i> Back</a>
         <div class="container">
-            <h1 class="display-5 fw-bold"><i class="bi bi-diagram-3 me-2"></i>Interactive Demo</h1>
-            <p class="lead mb-0">Explore our platform as any role within "Demo Company". Hover over a role to see what it can do, and click to log in instantly!</p>
+            <h1><i class="bi bi-diagram-3 me-2"></i>Interactive Demo</h1>
+            <p class="lead mb-0">Explore the platform as any role. Click a card to log in instantly.</p>
+        </div>
+
+        <!-- Mode toggle tabs -->
+        <div class="mode-tabs">
+            <button class="mode-tab standard active" id="tab-standard" onclick="switchMode('standard')">
+                <i class="bi bi-shop me-1"></i> Standard Workflow
+            </button>
+            <button class="mode-tab strict" id="tab-strict" onclick="switchMode('strict')">
+                <i class="bi bi-shield-lock me-1"></i> Strict Workflow
+            </button>
         </div>
     </div>
 
-    <div class="container">
+    <div class="container py-4">
+
         {% if messages %}
-        <div class="row justify-content-center mb-4">
+        <div class="row justify-content-center mb-3">
             <div class="col-md-8">
                 {% for message in messages %}
                 <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
                     {{ message }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                 </div>
                 {% endfor %}
             </div>
         </div>
         {% endif %}
 
-        <div class="org-container">
-            
-            <!-- Tier 1: Admin / Executive -->
-            <div class="org-row first-row">
-                <a href="{% url 'core:demo_login' 'admin' %}" class="org-node" data-bs-toggle="tooltip" data-bs-placement="right" title="Has full access to all settings, system configuration, user management, and global reports.">
-                    <div class="org-node-icon"><i class="bi bi-person-workspace"></i></div>
-                    <div class="org-node-title">Owner / Admin</div>
-                    <div class="org-node-subtitle">HQ</div>
-                    <span class="btn btn-outline-primary btn-login">Login as Admin</span>
-                </a>
+        <!-- ═══════════════════════════════════════════════════════ -->
+        <!-- STANDARD WORKFLOW                                      -->
+        <!-- ═══════════════════════════════════════════════════════ -->
+        <div id="panel-standard">
+            <div class="row justify-content-center mb-3">
+                <div class="col-lg-9">
+                    <div class="workflow-banner bg-white border">
+                        <div class="d-flex align-items-start gap-3">
+                            <i class="bi bi-info-circle-fill text-primary fs-5 mt-1"></i>
+                            <div>
+                                <strong>Standard Workflow</strong> — The default mode. Any sales attendant handles the full sale in one step: add items → checkout → complete.
+                                No separate cashier or dispatch step is required.
+                                <div class="workflow-steps mt-2">
+                                    <span class="workflow-step attendant">Attendant</span>
+                                    <span class="workflow-arrow">→</span>
+                                    <span class="workflow-step">Add Items</span>
+                                    <span class="workflow-arrow">→</span>
+                                    <span class="workflow-step">Checkout + Pay</span>
+                                    <span class="workflow-arrow">→</span>
+                                    <span class="workflow-step" style="border-color:#059669;color:#059669;">COMPLETED ✓</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
-            <!-- Tier 2: Finance -->
-            <div class="org-row">
-                <div class="connector" style="width: 300px; left: calc(50% - 150px);"></div>
-                <a href="{% url 'core:demo_login' 'auditor' %}" class="org-node dept-finance" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Monitors system activity, reviews discrepancy logs, analyzes comprehensive audit reports across operations.">
-                    <div class="org-node-icon"><i class="bi bi-shield-check"></i></div>
-                    <div class="org-node-title">Auditor</div>
-                    <div class="org-node-subtitle">Finance Dept</div>
-                    <span class="btn btn-outline-primary btn-login">Login as Auditor</span>
-                </a>
-                
-                <a href="{% url 'core:demo_login' 'accountant' %}" class="org-node dept-finance" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Manages floats assigned to shops, confirms incoming deposits, analyzes total revenue and payment methods.">
-                    <div class="org-node-icon"><i class="bi bi-bank"></i></div>
-                    <div class="org-node-title">Accountant</div>
-                    <div class="org-node-subtitle">Finance Dept</div>
-                    <span class="btn btn-outline-primary btn-login">Login as Accountant</span>
-                </a>
+            <div class="org-container">
+                <!-- Tier 1: Admin -->
+                <div class="org-row first-row">
+                    <a href="{% url 'core:demo_login' 'admin' %}" class="org-node"
+                       data-bs-toggle="tooltip" title="Full access to all settings, users, and reports.">
+                        <div class="org-node-icon"><i class="bi bi-person-workspace"></i></div>
+                        <div class="org-node-title">Owner / Admin</div>
+                        <div class="org-node-subtitle">HQ</div>
+                        <span class="btn btn-outline-primary btn-login">Login as Admin</span>
+                    </a>
+                </div>
+
+                <!-- Tier 2: Finance -->
+                <div class="org-row">
+                    <div class="connector" style="width:320px;left:calc(50% - 160px);"></div>
+                    <a href="{% url 'core:demo_login' 'auditor' %}" class="org-node dept-finance"
+                       data-bs-toggle="tooltip" title="Read-only audit access to all reports and ledgers.">
+                        <div class="org-node-icon"><i class="bi bi-shield-check"></i></div>
+                        <div class="org-node-title">Auditor</div>
+                        <div class="org-node-subtitle">Finance Dept</div>
+                        <span class="btn btn-outline-primary btn-login">Login as Auditor</span>
+                    </a>
+                    <a href="{% url 'core:demo_login' 'accountant' %}" class="org-node dept-finance"
+                       data-bs-toggle="tooltip" title="Manages floats, confirms deposits, and reviews financial reports.">
+                        <div class="org-node-icon"><i class="bi bi-bank"></i></div>
+                        <div class="org-node-title">Accountant</div>
+                        <div class="org-node-subtitle">Finance Dept</div>
+                        <span class="btn btn-outline-primary btn-login">Login as Accountant</span>
+                    </a>
+                </div>
+
+                <!-- Tier 3: Operations -->
+                <div class="org-row">
+                    <div class="connector" style="width:820px;left:calc(50% - 410px);"></div>
+                    <a href="{% url 'core:demo_login' 'production' %}" class="org-node dept-production"
+                       data-bs-toggle="tooltip" title="Creates products, manages production, initiates transfers to warehouse.">
+                        <div class="org-node-icon"><i class="bi bi-gear-wide-connected"></i></div>
+                        <div class="org-node-title">Production Manager</div>
+                        <div class="org-node-subtitle">Main Production</div>
+                        <span class="btn btn-outline-success btn-login">Explore Production</span>
+                    </a>
+                    <a href="{% url 'core:demo_login' 'stores' %}" class="org-node dept-stores"
+                       data-bs-toggle="tooltip" title="Manages central warehouse, approves stock requests, dispatches to shops.">
+                        <div class="org-node-icon"><i class="bi bi-box-seam"></i></div>
+                        <div class="org-node-title">Stores Manager</div>
+                        <div class="org-node-subtitle">Central Warehouse</div>
+                        <span class="btn btn-outline-warning btn-login">Explore Stores</span>
+                    </a>
+                    <a href="{% url 'core:demo_login' 'manager1' %}" class="org-node dept-shop"
+                       data-bs-toggle="tooltip" title="Manages local shop inventory, staff, and cash deposits.">
+                        <div class="org-node-icon"><i class="bi bi-shop"></i></div>
+                        <div class="org-node-title">Shop Manager</div>
+                        <div class="org-node-subtitle">Downtown Shop</div>
+                        <span class="btn btn-outline-danger btn-login">Explore Shop Mgt</span>
+                    </a>
+                </div>
+
+                <!-- Tier 4: Attendant -->
+                <div class="org-row">
+                    <div class="connector" style="width:300px;left:calc(50%);"></div>
+                    <a href="{% url 'core:demo_login' 'attendant1' %}" class="org-node dept-shop"
+                       data-bs-toggle="tooltip" title="Operates the POS — adds items, collects payment, completes sale in one step.">
+                        <div class="org-node-icon"><i class="bi bi-cart-check"></i></div>
+                        <div class="org-node-title">Shop Attendant</div>
+                        <div class="org-node-subtitle">Downtown Shop</div>
+                        <span class="btn btn-outline-danger btn-login">Open POS Terminal</span>
+                    </a>
+                </div>
             </div>
-
-            <!-- Tier 3: Operations Hierarchy -->
-            <div class="org-row">
-                <div class="connector" style="width: 800px; left: calc(50% - 400px);"></div>
-                
-                <a href="{% url 'core:demo_login' 'production' %}" class="org-node dept-production" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Creates products, oversees stock manufacturing, and initiates transfers of raw/finished goods to the warehouse.">
-                    <div class="org-node-icon"><i class="bi bi-gear-wide-connected"></i></div>
-                    <div class="org-node-title">Production Manager</div>
-                    <div class="org-node-subtitle">Main Production</div>
-                    <span class="btn btn-outline-success btn-login">Explore Production</span>
-                </a>
-
-                <a href="{% url 'core:demo_login' 'stores' %}" class="org-node dept-stores" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Receives goods from production, strictly manages inventory ledgers, and dispatches stock to retail shops.">
-                    <div class="org-node-icon"><i class="bi bi-box-seam"></i></div>
-                    <div class="org-node-title">Stores Manager</div>
-                    <div class="org-node-subtitle">Central Warehouse</div>
-                    <span class="btn btn-outline-warning btn-login">Explore Stores</span>
-                </a>
-
-                <a href="{% url 'core:demo_login' 'manager1' %}" class="org-node dept-shop" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Receives items from Stores, manages shop attendants, handles local inventory, and deposits daily cash to Accountant.">
-                    <div class="org-node-icon"><i class="bi bi-shop"></i></div>
-                    <div class="org-node-title">Shop Manager</div>
-                    <div class="org-node-subtitle">Downtown Shop</div>
-                    <span class="btn btn-outline-danger btn-login">Explore Shop Mgt</span>
-                </a>
-            </div>
-
-            <!-- Tier 4: Attendant Level -->
-            <div class="org-row">
-                <div class="connector" style="width: 300px; left: calc(50%);"></div>
-                <a href="{% url 'core:demo_login' 'attendant1' %}" class="org-node dept-shop" data-bs-toggle="tooltip" data-bs-placement="right" title="Operates the Point of Sale terminal, handles shifts, processes walk-in customers and e-cash payments.">
-                    <div class="org-node-icon"><i class="bi bi-cart-check"></i></div>
-                    <div class="org-node-title">Shop Attendant</div>
-                    <div class="org-node-subtitle">Downtown Shop</div>
-                    <span class="btn btn-outline-danger btn-login">Open POS Terminal</span>
-                </a>
-            </div>
-            
         </div>
+
+        <!-- ═══════════════════════════════════════════════════════ -->
+        <!-- STRICT WORKFLOW                                        -->
+        <!-- ═══════════════════════════════════════════════════════ -->
+        <div id="panel-strict" style="display:none;">
+            <div class="row justify-content-center mb-3">
+                <div class="col-lg-10">
+                    <div class="workflow-banner border border-danger" style="background:#fff5f5;">
+                        <div class="d-flex align-items-start gap-3">
+                            <i class="bi bi-shield-lock-fill text-danger fs-5 mt-1"></i>
+                            <div>
+                                <strong class="text-danger">Strict Workflow</strong> — Responsibilities are split across three roles for full accountability.
+                                <div class="workflow-steps mt-2">
+                                    <span class="workflow-step attendant"><i class="bi bi-person me-1"></i>Attendant creates invoice</span>
+                                    <span class="workflow-arrow">→</span>
+                                    <span class="workflow-step cashier"><i class="bi bi-cash-coin me-1"></i>Cashier records payment</span>
+                                    <span class="workflow-arrow">→</span>
+                                    <span class="workflow-step manager"><i class="bi bi-box-arrow-right me-1"></i>Manager dispatches goods</span>
+                                </div>
+                                <p class="mb-0 mt-2 text-muted" style="font-size:0.82rem;">
+                                    This demo also has <strong>Bulk Goods Receiving</strong> enabled — Shop Managers can receive stock directly and verify Goods Receipts.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="org-container">
+                <!-- Tier 1: Admin -->
+                <div class="org-row first-row">
+                    <a href="{% url 'core:demo_login' 'admin' %}?mode=strict" class="org-node"
+                       data-bs-toggle="tooltip" title="Full access. Can manage all workflow settings from the Settings menu.">
+                        <div class="org-node-icon"><i class="bi bi-person-workspace"></i></div>
+                        <div class="org-node-title">Owner / Admin</div>
+                        <div class="org-node-subtitle">HQ</div>
+                        <span class="strict-badge">Strict Mode</span><br>
+                        <span class="btn btn-outline-primary btn-login mt-2">Login as Admin</span>
+                    </a>
+                </div>
+
+                <!-- Tier 2: Finance -->
+                <div class="org-row">
+                    <div class="connector" style="width:320px;left:calc(50% - 160px);"></div>
+                    <a href="{% url 'core:demo_login' 'accountant' %}?mode=strict" class="org-node dept-finance"
+                       data-bs-toggle="tooltip" title="Confirms cash deposits from shops and reviews financial reports.">
+                        <div class="org-node-icon"><i class="bi bi-bank"></i></div>
+                        <div class="org-node-title">Accountant</div>
+                        <div class="org-node-subtitle">Finance Dept</div>
+                        <span class="btn btn-outline-primary btn-login">Login as Accountant</span>
+                    </a>
+                </div>
+
+                <!-- Tier 3: Shop Manager -->
+                <div class="org-row">
+                    <div class="connector" style="width:2px;left:50%;"></div>
+                    <a href="{% url 'core:demo_login' 'manager1' %}?mode=strict" class="org-node dept-shop"
+                       data-bs-toggle="tooltip" title="Views Pending Dispatch list, dispatches completed sales, verifies Goods Receipts.">
+                        <div class="org-node-icon"><i class="bi bi-shop"></i></div>
+                        <div class="org-node-title">Shop Manager</div>
+                        <div class="org-node-subtitle">Downtown Shop</div>
+                        <div class="mb-1" style="font-size:0.78rem;color:#6b7280;">
+                            <i class="bi bi-check2 text-success"></i> Dispatch goods
+                            &nbsp;|&nbsp;
+                            <i class="bi bi-check2 text-success"></i> Verify stock receipts
+                        </div>
+                        <span class="btn btn-outline-danger btn-login">Explore Shop Mgt</span>
+                    </a>
+                </div>
+
+                <!-- Tier 4: Cashier + Attendant -->
+                <div class="org-row">
+                    <div class="connector" style="width:320px;left:calc(50% - 160px);"></div>
+
+                    <a href="{% url 'core:demo_login' 'attendant1' %}?mode=strict" class="org-node dept-shop"
+                       data-bs-toggle="tooltip" title="Creates invoices only — enters items and customer details. Does NOT collect payment.">
+                        <div class="org-node-icon"><i class="bi bi-receipt"></i></div>
+                        <div class="org-node-title">Shop Attendant</div>
+                        <div class="org-node-subtitle">Downtown Shop</div>
+                        <div class="mb-1" style="font-size:0.78rem;color:#6b7280;">
+                            Creates invoices &amp; directs to cashier
+                        </div>
+                        <span class="btn btn-outline-danger btn-login">Create Invoice</span>
+                    </a>
+
+                    <a href="{% url 'core:demo_login' 'cashier1' %}?mode=strict" class="org-node dept-cashier"
+                       data-bs-toggle="tooltip" title="Receives payment for pending invoices. Marks invoice as COMPLETED after payment.">
+                        <div class="org-node-icon"><i class="bi bi-cash-coin"></i></div>
+                        <div class="org-node-title">Cashier</div>
+                        <div class="org-node-subtitle">Payment Desk</div>
+                        <div class="mb-1" style="font-size:0.78rem;color:#6b7280;">
+                            Collects payment from customer
+                        </div>
+                        <span class="btn btn-outline-info btn-login">Handle Payment</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+
     </div>
 
-    <!-- Bootstrap JS Bundle for Tooltips -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        // Init tooltips
         document.addEventListener('DOMContentLoaded', function () {
-            var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
-            var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-                return new bootstrap.Tooltip(tooltipTriggerEl)
-            })
+            [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]')).forEach(function (el) {
+                new bootstrap.Tooltip(el);
+            });
+
+            // Restore last-used tab from URL hash or sessionStorage
+            const savedMode = sessionStorage.getItem('demoMode') || 'standard';
+            switchMode(savedMode);
         });
+
+        function switchMode(mode) {
+            const isStrict = mode === 'strict';
+            document.getElementById('panel-standard').style.display = isStrict ? 'none' : '';
+            document.getElementById('panel-strict').style.display = isStrict ? '' : 'none';
+            document.getElementById('tab-standard').classList.toggle('active', !isStrict);
+            document.getElementById('tab-strict').classList.toggle('active', isStrict);
+            sessionStorage.setItem('demoMode', mode);
+        }
     </script>
 </body>
 </html>

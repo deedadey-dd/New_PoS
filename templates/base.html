@@ -57,6 +57,10 @@
                             <i class="bi bi-cart3 me-2"></i> Point of Sale
                         </a>
                     </li>
+                    {% endif %}
+
+                    <!-- Customers: visible to attendants, cashiers, managers, accountants, and admins -->
+                    {% if role_name in 'ADMIN,SHOP_ATTENDANT,SHOP_CASHIER,SHOP_MANAGER,ACCOUNTANT' %}
                     <li class="nav-item">
                         <a href="{% url 'customers:customer_list' %}"
                             class="nav-link text-white {% if '/customers/' in request.path %}active{% endif %}">
@@ -519,13 +523,23 @@
         <!-- Main Content -->
         <div class="flex-grow-1 main-content">
             {% if user.is_authenticated %}
-            {% if user.tenant.name == 'Demo Company' %}
+            {% if user.tenant.name == 'Demo Company' or user.tenant.name == 'Demo Company (Strict Workflow)' %}
             <div class="bg-warning text-dark text-center py-2 px-3 fw-bold shadow-sm d-flex justify-content-center align-items-center flex-wrap gap-2">
                 <span>
-                    <i class="bi bi-info-circle-fill me-1"></i> You are exploring the demo as 
-                    <span class="badge bg-dark text-white rounded-pill px-2">{{ user.role.name }}</span>
+                    <i class="bi bi-info-circle-fill me-1"></i> Demo
+                    {% if user.tenant.name == 'Demo Company (Strict Workflow)' %}
+                        <span class="badge bg-danger text-white rounded-pill px-2 ms-1">Strict Workflow</span>
+                    {% else %}
+                        <span class="badge bg-dark text-white rounded-pill px-2 ms-1">Standard Workflow</span>
+                    {% endif %}
+                    — exploring as <span class="badge bg-dark text-white rounded-pill px-2">{{ user.role.name }}</span>
                 </span>
-                <a href="{% url 'core:demo_hub' %}" class="btn btn-sm btn-outline-dark rounded-pill fw-bold px-3">Switch Role / Go to Organogram</a>
+                <a href="{% url 'core:demo_hub' %}" class="btn btn-sm btn-outline-dark rounded-pill fw-bold px-3">
+                    <i class="bi bi-diagram-3 me-1"></i> Switch Role
+                </a>
+                <a href="{% url 'core:home' %}" class="btn btn-sm btn-dark rounded-pill fw-bold px-3">
+                    <i class="bi bi-house me-1"></i> Home
+                </a>
             </div>
             {% endif %}
             <nav class="navbar navbar-light bg-white shadow-sm px-4">

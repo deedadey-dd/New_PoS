@@ -65,47 +65,64 @@ class DemoHubView(View):
 class DemoAutoLoginView(View):
     """Automatically logs the user in as a specific demo role."""
     def get(self, request, role):
-        email_map = {
-            'admin': 'admin@demo.com',
-            'auditor': 'auditor@demo.com',
-            'accountant': 'accountant@demo.com',
-            'production': 'production@demo.com',
-            'stores': 'stores@demo.com',
-            'manager1': 'manager1@demo.com',
-            'attendant1': 'attendant1@demo.com',
-            'manager2': 'manager2@demo.com',
-            'attendant2': 'attendant2@demo.com',
-        }
-        
+        mode = request.GET.get('mode', 'standard')
+
+        # Standard demo uses @demo.com, strict demo uses @strict-demo.com
+        if mode == 'strict':
+            email_map = {
+                'admin':       'admin@strict-demo.com',
+                'auditor':     'auditor@strict-demo.com',
+                'accountant':  'accountant@strict-demo.com',
+                'production':  'production@strict-demo.com',
+                'stores':      'stores@strict-demo.com',
+                'manager1':    'manager1@strict-demo.com',
+                'attendant1':  'attendant1@strict-demo.com',
+                'manager2':    'manager2@strict-demo.com',
+                'attendant2':  'attendant2@strict-demo.com',
+                'cashier1':    'cashier1@strict-demo.com',
+            }
+            tenant_name = "Demo Company (Strict Workflow)"
+        else:
+            email_map = {
+                'admin':       'admin@demo.com',
+                'auditor':     'auditor@demo.com',
+                'accountant':  'accountant@demo.com',
+                'production':  'production@demo.com',
+                'stores':      'stores@demo.com',
+                'manager1':    'manager1@demo.com',
+                'attendant1':  'attendant1@demo.com',
+                'manager2':    'manager2@demo.com',
+                'attendant2':  'attendant2@demo.com',
+            }
+            tenant_name = "Demo Company"
+
         email = email_map.get(role)
         if not email:
             messages.error(request, "Invalid demo role selected.")
             return redirect('core:demo_hub')
-            
+
         try:
-            user = User.objects.get(email=email, tenant__name="Demo Company")
-            # Log the user in bypassing backend authentication requirements
-            # We specify the backend explicitly
-            # The standard ModelBackend requires a password cheek, so we mock authenticate via login
-            # Actually, `login(request, user)` works natively if we supply a backend
-            from django.contrib.auth.backends import ModelBackend
+            user = User.objects.get(email=email, tenant__name=tenant_name)
             user.backend = 'django.contrib.auth.backends.ModelBackend'
             login(request, user)
-            messages.success(request, f'Logged in successfully as {user.get_full_name()} ({user.role.name}) in Demo Company!')
-            
-            # Redirect to the appropriate dashboard
+            workflow_label = "Strict Workflow" if mode == 'strict' else "Standard Workflow"
+            messages.success(request, f'Logged in as {user.get_full_name()} ({user.role.name}) — {workflow_label}')
+
             if user.role.name == 'SHOP_ATTENDANT':
                 return redirect('sales:pos')
             elif user.role.name == 'AUDITOR':
                 return redirect('core:auditor_dashboard')
             elif user.role.name == 'ACCOUNTANT':
                 return redirect('accounting:accountant_dashboard')
-            
+            elif user.role.name == 'SHOP_CASHIER':
+                return redirect('core:dashboard')
+
             return redirect('core:dashboard')
-            
+
         except User.DoesNotExist:
             messages.error(request, "The demo environment is currently being reset or is unavailable. Please try again later. (Run `python manage.py setup_demo` on your server)")
             return redirect('core:demo_hub')
+
 
 class LoginView(View):
     """Handle user login."""
@@ -375,7 +392,22 @@ class DashboardView(LoginRequiredMixin, View):
                 
                 context['pending_dispatch_invoices'] = Paginator(pending_dispatch_qs, 10).get_page(request.GET.get('d_page', 1))
                 context['recent_dispatch_invoices'] = Paginator(recent_dispatch_qs, 10).get_page(request.GET.get('r_page', 1))
-        
+
+            # Today's dispatched summary for Shop Manager (shown regardless of strict mode)
+            if role_name == 'SHOP_MANAGER':
+                today_dispatched_filter = {
+                    'tenant': user.tenant,
+                    'status': 'COMPLETED',
+                    'is_dispatched': True,
+                    'dispatched_at__date': today,
+                }
+                if user.location:
+                    today_dispatched_filter['shop'] = user.location
+                today_dispatched_qs = Sale.objects.filter(**today_dispatched_filter)
+                context['today_dispatched_count'] = today_dispatched_qs.count()
+                context['today_dispatched_value'] = today_dispatched_qs.aggregate(t=Sum('total'))['t'] or 0
+
+        context['currency_symbol'] = getattr(user.tenant, 'currency', 'GHS') if user.tenant else 'GHS'
         return render(request, self.template_name, context)
 
 
@@ -513,6 +545,86 @@ class UserDeleteView(LoginRequiredMixin, DeleteView):
     def form_valid(self, form):
         messages.success(self.request, 'User deleted successfully!')
         return super().form_valid(form)
+
+
+class DispatchSummaryView(LoginRequiredMixin, View):
+    """
+    Date-filtered dispatch summary for Shop Managers and Admins.
+    Shows all dispatched sales in a given period with totals.
+    """
+    template_name = 'core/dispatch_summary.html'
+
+    def get(self, request):
+        from django.db.models import Sum, Count
+        from django.utils import timezone
+        from apps.sales.models import Sale, SaleItem
+        import datetime
+
+        user = request.user
+        role_name = user.role.name if user.role else None
+
+        # Only managers and admins
+        if role_name not in ('SHOP_MANAGER', 'ADMIN', 'STORES_MANAGER'):
+            messages.error(request, "You don't have permission to view this page.")
+            return redirect('core:dashboard')
+
+        # Date range from GET params, default to today
+        today = timezone.localdate()
+        date_from_str = request.GET.get('date_from', today.strftime('%Y-%m-%d'))
+        date_to_str = request.GET.get('date_to', today.strftime('%Y-%m-%d'))
+
+        try:
+            date_from = datetime.date.fromisoformat(date_from_str)
+        except (ValueError, TypeError):
+            date_from = today
+        try:
+            date_to = datetime.date.fromisoformat(date_to_str)
+        except (ValueError, TypeError):
+            date_to = today
+
+        # Build query
+        qs_filter = {
+            'tenant': user.tenant,
+            'status': 'COMPLETED',
+            'is_dispatched': True,
+            'dispatched_at__date__gte': date_from,
+            'dispatched_at__date__lte': date_to,
+        }
+        if role_name == 'SHOP_MANAGER' and user.location:
+            qs_filter['shop'] = user.location
+
+        sales = Sale.objects.filter(**qs_filter).select_related(
+            'customer', 'shop', 'attendant', 'cashier'
+        ).prefetch_related('items__product').order_by('-dispatched_at')
+
+        # Aggregates
+        totals = sales.aggregate(
+            total_value=Sum('total'),
+            total_count=Count('id'),
+        )
+
+        # Sort
+        sort = request.GET.get('sort', '-dispatched_at')
+        allowed_sorts = ['dispatched_at', '-dispatched_at', 'total', '-total', 'sale_number', '-sale_number']
+        if sort in allowed_sorts:
+            sales = sales.order_by(sort)
+
+        from django.core.paginator import Paginator
+        page_obj = Paginator(sales, 25).get_page(request.GET.get('page', 1))
+
+        context = {
+            'page_obj': page_obj,
+            'date_from': date_from,
+            'date_to': date_to,
+            'sort': sort,
+            'total_value': totals['total_value'] or 0,
+            'total_count': totals['total_count'] or 0,
+            'currency_symbol': getattr(user.tenant, 'currency', 'GHS'),
+            'today_str': today.strftime('%Y-%m-%d'),
+            'month_start': today.replace(day=1).strftime('%Y-%m-%d'),
+            'week_start': (today - datetime.timedelta(days=today.weekday())).strftime('%Y-%m-%d'),
+        }
+        return render(request, self.template_name, context)
 
 
 class AuditorDashboardView(LoginRequiredMixin, View):

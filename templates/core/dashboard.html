@@ -285,8 +285,74 @@
 </div>
 {% endif %}
 
-<!-- Locations Overview - Hidden from Shop Attendants and Cashiers -->
-{% if locations_by_type and user.role.name != 'SHOP_ATTENDANT' and user.role.name != 'SHOP_CASHIER' %}
+<!-- Dispatch Summary for Shop Managers -->
+{% if user.role.name == 'SHOP_MANAGER' %}
+<div class="row g-4">
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm border-top border-primary border-3 h-100">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
+                <h5 class="mb-0 fw-bold"><i class="bi bi-truck me-2 text-primary"></i>Today's Dispatched Orders</h5>
+                <a href="{% url 'core:dispatch_summary' %}" class="btn btn-sm btn-primary">
+                    <i class="bi bi-bar-chart-line me-1"></i> Full Report
+                </a>
+            </div>
+            <div class="card-body">
+                <div class="row g-3 text-center">
+                    <div class="col-6">
+                        <div class="p-3 rounded-3" style="background:#f0f9ff;">
+                            <div class="fs-2 fw-bold text-primary">{{ today_dispatched_count|default:"0" }}</div>
+                            <div class="text-muted small mt-1">Orders Dispatched</div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="p-3 rounded-3" style="background:#f0fdf4;">
+                            <div class="fs-4 fw-bold text-success">
+                                {{ currency_symbol }} {{ today_dispatched_value|floatformat:"2g"|default:"0.00" }}
+                            </div>
+                            <div class="text-muted small mt-1">Total Value</div>
+                        </div>
+                    </div>
+                </div>
+                <hr class="my-3">
+                <div class="d-flex gap-2 flex-wrap">
+                    <a href="{% url 'core:dispatch_summary' %}?date_from={% now "Y-m-d" %}&date_to={% now "Y-m-d" %}"
+                       class="btn btn-outline-primary btn-sm flex-grow-1">
+                        <i class="bi bi-calendar-day me-1"></i> Today's Detail
+                    </a>
+                    <a href="{% url 'core:dispatch_summary' %}"
+                       class="btn btn-outline-secondary btn-sm flex-grow-1">
+                        <i class="bi bi-calendar-range me-1"></i> Custom Period
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white py-3">
+                <h5 class="mb-0 fw-bold"><i class="bi bi-buildings me-2 text-muted"></i>Locations Overview</h5>
+            </div>
+            <div class="card-body">
+                <ul class="list-group list-group-flush">
+                    {% for loc in locations_by_type %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                        <span>
+                            {% if loc.location_type == 'PRODUCTION' %}<i class="bi bi-gear text-primary me-2"></i>Production
+                            {% elif loc.location_type == 'STORES' %}<i class="bi bi-box-seam text-info me-2"></i>Stores/Warehouse
+                            {% else %}<i class="bi bi-shop text-success me-2"></i>Shops{% endif %}
+                        </span>
+                        <span class="badge bg-secondary rounded-pill">{{ loc.count }}</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% elif locations_by_type and user.role.name != 'SHOP_ATTENDANT' and user.role.name != 'SHOP_CASHIER' %}
+<!-- Locations Overview for non-manager roles -->
 <div class="row g-4">
     <div class="col-md-6">
         <div class="card">
@@ -327,6 +393,7 @@
     </div>
 </div>
 {% endif %}
+
 
 {% if user.role.name == 'SHOP_CASHIER' %}
 <!-- Dashbaord elements for Cashiers -->

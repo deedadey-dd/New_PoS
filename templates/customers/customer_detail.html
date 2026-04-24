@@ -54,6 +54,14 @@
 
                 <hr>
 
+                <!-- Payment Form — restricted in strict workflow to Cashier & Accountant only -->
+                {% if current_tenant.use_strict_sales_workflow and user.role.name in 'SHOP_ATTENDANT,SHOP_MANAGER' %}
+                <div class="alert alert-info py-2 mb-0 small">
+                    <i class="bi bi-info-circle me-1"></i>
+                    In <strong>Strict Workflow</strong> mode, payments are recorded by the <strong>Cashier</strong> or <strong>Accountant</strong>.
+                    Direct the customer to the payment desk.
+                </div>
+                {% else %}
                 <!-- Payment Form -->
                 <button class="btn btn-success w-100 py-2" type="button" data-bs-toggle="collapse"
                     data-bs-target="#paymentForm">
@@ -84,6 +92,7 @@
                         </form>
                     </div>
                 </div>
+                {% endif %}
             </div>
         </div>
     </div>

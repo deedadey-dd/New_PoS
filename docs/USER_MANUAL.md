@@ -15,9 +15,10 @@
 11. [Reports & Analytics](#reports--analytics)
 12. [Tracking & Audit Features](#tracking--audit-features)
 13. [Notifications](#notifications)
-14. [Settings & Administration](#settings--administration)
-15. [Subscription Management](#subscription-management)
-16. [Troubleshooting](#troubleshooting)
+14. [Workflow Settings & Modes](#workflow-settings--modes)
+15. [Settings & Administration](#settings--administration)
+16. [Subscription Management](#subscription-management)
+17. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -628,7 +629,196 @@ A dedicated **Stock Alerts** panel appears in the sidebar showing:
 
 ---
 
+---
+
+## Workflow Settings & Modes
+
+The system supports multiple operating modes controlled by **Tenant Settings** (Admin only). These settings change which screens appear, who can perform which actions, and how the sales and inventory workflows behave.
+
+---
+
+### All Tenant Settings Reference
+
+| Setting | Default | Effect When Enabled |
+|---|---|---|
+| **use_strict_sales_workflow** | OFF | Splits sales into 3 steps: Attendant (Invoice) → Cashier (Payment) → Manager (Dispatch) |
+| **require_customer_on_invoice** | OFF | Every sale/invoice must have a customer name and phone number |
+| **shop_manager_can_receive_stock** | OFF | Shop Manager can create and verify Goods Receipts at their shop |
+| **shop_manager_can_add_products** | OFF | Shop Manager can add new products to the catalogue |
+| **shops_can_see_other_stock** | ON | Shop staff can view stock levels at other locations |
+| **allow_shop_to_shop_transfers** | OFF | Shops can transfer stock directly between each other (without going through Stores) |
+| **use_bulk_inventory_receiving** | OFF | Enables the **Bulk Receiving** menu for Goods Receipts |
+| **require_accountant_for_bulk_receiving** | OFF | Goods Receipts must be verified by an Accountant before stock is added |
+| **allow_shop_to_accountant_transfers** | ON | Shop Managers can deposit cash to the Accountant |
+| **allow_shop_to_bank_transfers** | ON | Shop Managers can transfer cash directly to Bank |
+| **allow_accountant_to_shop_transfers** | OFF | Accountant can send cash floats back to shops |
+
+---
+
+### Sales Workflow Modes
+
+#### Standard Workflow (default)
+
+The simplest mode. One person handles the full sale.
+
+```
+Attendant / Cashier / Manager
+         │
+         ▼
+    Add items to cart
+         │
+         ▼
+    Checkout (select payment, enter amount)
+         │
+         ▼
+    Sale COMPLETED ✓ (stock deducted, cash recorded)
+```
+
+- Any user with POS access completes the full sale in one step.
+- No dispatch step required.
+- Receipt is printed immediately.
+
+#### Strict Sales Workflow (`use_strict_sales_workflow = ON`)
+
+Splits responsibilities across three roles for accountability. Required when there is a separate cashier desk and goods are collected after payment.
+
+```
+ATTENDANT             CASHIER              SHOP MANAGER
+    │                    │                      │
+    ▼                    │                      │
+ Create Invoice           │                      │
+ (PENDING_PAYMENT)        │                      │
+    │                    │                      │
+    └──────────────────► │                      │
+                     Record Payment             │
+                     (COMPLETED)                │
+                         │                      │
+                         └─────────────────────►│
+                                           Dispatch Goods
+                                           (DISPATCHED ✓)
+```
+
+**Attendant responsibilities (Strict mode):**
+- Adds items to cart
+- Enters customer name + phone (required)
+- Clicks **Create Invoice** — does NOT complete the sale
+- Gives the invoice code to the customer to take to the Cashier
+
+**Cashier responsibilities (Strict mode):**
+- Scans/enters the invoice code
+- Records payment method and amount
+- Completes the payment — sale status moves to COMPLETED
+- Cannot see or change item details
+
+**Shop Manager responsibilities (Strict mode):**
+- Views the **Pending Dispatch** list
+- Physically verifies that items are being handed over
+- Clicks **Dispatch** to mark goods as collected — final step
+
+> **Note:** If your business doesn't have a dedicated cashier role, the Shop Manager can handle payment and dispatch from their dashboard.
+
+---
+
+### Bulk Goods Receipt Workflow (`use_bulk_inventory_receiving = ON`)
+
+Instead of receiving stock item by item, you can receive a full supplier delivery in one form. The receipt must be **verified** before stock is added to inventory — this prevents accidental bulk entries.
+
+```
+Shop/Stores Manager
+        │
+        ▼
+  Create Goods Receipt
+  (enter supplier, items, quantities, unit costs)
+        │
+        ▼
+  Receipt saved as PENDING
+        │
+        ├─── require_accountant_for_bulk_receiving = OFF ──►
+        │         Verified by: Shop Manager / Stores Manager / Admin
+        │
+        └─── require_accountant_for_bulk_receiving = ON ───►
+                  Verified by: Accountant / Admin only
+                  (Shop Manager sees "Waiting for Accountant" message)
+        │
+        ▼
+  Verify & Add to Stock
+        │
+        ▼
+  Batches created per item ✓
+  Inventory ledger updated ✓
+  Stock visible in Stock Overview ✓
+```
+
+**Who can see the Bulk Receiving menu?**
+
+| Role | Condition to see menu |
+|---|---|
+| Admin | Always |
+| Stores Manager | Always (when feature is enabled) |
+| Shop Manager | Only when `shop_manager_can_receive_stock = ON` |
+| Accountant | Only when `require_accountant_for_bulk_receiving = ON` |
+| Shop Attendant | Never |
+
+**Who can verify (approve) a receipt?**
+
+| `require_accountant_for_bulk_receiving` | Who can verify |
+|---|---|
+| OFF | Shop Manager, Stores Manager, Admin |
+| ON | Accountant, Admin only |
+
+> **Tip:** Use `require_accountant_for_bulk_receiving = ON` if you want a financial check before stock is committed. Use `OFF` for faster, manager-only approval.
+
+---
+
+### Quick Reference: Settings by Business Type
+
+**Small single-shop retail (simple):**
+- All defaults (strict workflow OFF, bulk receiving OFF)
+- One attendant handles everything
+
+**Multi-role shop with cashier desk:**
+- `use_strict_sales_workflow = ON`
+- `require_customer_on_invoice = ON`
+
+**Business with warehouse and multiple shops:**
+- `use_bulk_inventory_receiving = ON`
+- `shop_manager_can_receive_stock = ON` (if shops receive direct from suppliers)
+- `allow_shop_to_shop_transfers = OFF` (enforce Stores as the hub)
+
+**High-accountability environment:**
+- `use_strict_sales_workflow = ON`
+- `require_accountant_for_bulk_receiving = ON`
+- `require_customer_on_invoice = ON`
+
+---
+
+### Updated Daily Task Checklists (Strict Workflow)
+
+**Daily Tasks — Shop Attendant (Strict Workflow)**
+1. ☐ Open shift (enter opening cash)
+2. ☐ Create invoices for each customer (enter customer name + phone)
+3. ☐ Hand invoice code to customer — direct them to Cashier
+4. ☐ Close shift at end of day
+
+**Daily Tasks — Shop Cashier (Strict Workflow)**
+1. ☐ Open shift
+2. ☐ Receive invoice code from customer
+3. ☐ Pull up invoice, confirm items
+4. ☐ Record payment (cash or mobile money)
+5. ☐ Inform customer goods are ready for collection
+6. ☐ Close shift
+
+**Daily Tasks — Shop Manager (Strict Workflow)**
+1. ☐ Review Pending Dispatch list
+2. ☐ Dispatch collected invoices as customers collect goods
+3. ☐ Check low stock alerts
+4. ☐ Verify any pending Goods Receipts (if bulk receiving enabled)
+5. ☐ Submit cash transfers to Accountant
+
+---
+
 ## Settings & Administration
+
 
 ### General Settings (Admin Only)
 

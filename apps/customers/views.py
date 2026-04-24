@@ -24,6 +24,7 @@ class CustomerListView(LoginRequiredMixin, PaginationMixin, ListView):
         if role_name == 'SHOP_MANAGER':
              # Shop managers only see their shop's customers
              queryset = queryset.filter(shop=user.location)
+        # ACCOUNTANT, ADMIN, AUDITOR see all customers (no filter)
         
         search_query = self.request.GET.get('search')
         if search_query:
@@ -153,6 +154,13 @@ class CustomerDetailView(LoginRequiredMixin, DetailView):
 
 class CustomerPaymentView(LoginRequiredMixin, View):
     def post(self, request, pk):
+        # In strict workflow, only Cashiers and Accountants can record payments
+        role_name = request.user.role.name if request.user.role else None
+        restricted_roles = ('SHOP_ATTENDANT', 'SHOP_MANAGER')
+        if role_name in restricted_roles and getattr(request.user.tenant, 'use_strict_sales_workflow', False):
+            messages.error(request, "In Strict Workflow mode, only Cashiers and Accountants can record customer payments.")
+            return redirect('customers:customer_detail', pk=pk)
+
         customer = get_object_or_404(Customer, pk=pk, tenant=request.user.tenant)
         form = CustomerPaymentForm(request.POST)
         
