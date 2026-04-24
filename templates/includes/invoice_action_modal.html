@@ -1,0 +1,451 @@
+<!-- Invoice Action Modal -->
+<div class="modal fade" id="invoiceActionModal" tabindex="-1" aria-labelledby="invoiceActionModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="invoiceActionModalLabel">
+                    <i class="bi bi-receipt-cutoff me-2"></i>Invoice Details
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="invoiceActionBody">
+                <!-- Loading spinner -->
+                <div class="text-center py-5" id="invoiceActionLoading">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="text-muted mt-2">Loading invoice details...</p>
+                </div>
+                <!-- Content (populated by JS) -->
+                <div id="invoiceActionContent" style="display:none;"></div>
+            </div>
+            <div class="modal-footer bg-light" id="invoiceActionFooter">
+                <!-- Buttons dynamically populated by JS based on role and status -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Payment Modal (Triggered from Invoice Action Modal) -->
+<div class="modal fade" id="invoicePaymentModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="bi bi-cash me-2"></i>Receive Payment</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="invoicePaymentForm">
+                    <input type="hidden" id="invoicePaySaleId">
+                    <div class="mb-3 text-center">
+                        <h2 class="display-4 text-success mb-0" id="invoicePayAmountDisplay">0.00</h2>
+                        <p class="text-muted">Total Amount Due</p>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Payment Method</label>
+                        <select class="form-select" id="invoicePayMethod" required>
+                            <option value="CASH">Cash</option>
+                            <option value="ECASH">E-Cash</option>
+                            <option value="MOMO">Mobile Money</option>
+                            <option value="CREDIT">Store Credit</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Amount Tendered</label>
+                        <div class="input-group">
+                            <span class="input-group-text">{{ current_tenant.currency_symbol|default:"$" }}</span>
+                            <input type="number" step="0.01" class="form-control" id="invoicePayAmountTendered" required>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3" id="invoicePayChangeContainer" style="display: none;">
+                        <label class="form-label fw-bold text-danger">Change Required</label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-danger text-white">{{ current_tenant.currency_symbol|default:"$" }}</span>
+                            <input type="text" class="form-control text-danger fw-bold bg-white" id="invoicePayChangeAmount" readonly>
+                        </div>
+                    </div>
+                    
+                    <p class="small text-muted mb-0"><i class="bi bi-info-circle me-1"></i>If store credit is selected, the invoice will be marked as completed but the amount will be added to the customer's balance.</p>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" id="invoiceConfirmPaymentBtn">Confirm Payment</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    let actionModalEl = document.getElementById('invoiceActionModal');
+    let paymentModalEl = document.getElementById('invoicePaymentModal');
+    
+    if (!actionModalEl) return;
+    
+    const actionModal = new bootstrap.Modal(actionModalEl);
+    let paymentModal = null;
+    if (paymentModalEl) paymentModal = new bootstrap.Modal(paymentModalEl);
+    
+    const loadingEl = document.getElementById('invoiceActionLoading');
+    const contentEl = document.getElementById('invoiceActionContent');
+    const footerEl = document.getElementById('invoiceActionFooter');
+    
+    const currencySymbol = '{{ current_tenant.currency_symbol|default:"$" }}';
+    const roleName = '{{ user.role.name }}';
+    const useStrictWorkflow = {{ current_tenant.use_strict_sales_workflow|yesno:"true,false" }};
+    
+    // Set up click listeners for all invoice links
+    function bindInvoiceLinks() {
+        document.querySelectorAll('.invoice-action-link, .sale-detail-link').forEach(function(link) {
+            // Prevent multiple bindings
+            if (link.dataset.bound) return;
+            link.dataset.bound = "true";
+            
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                const saleId = this.dataset.saleId;
+                openInvoiceModal(saleId);
+            });
+        });
+    }
+    
+    bindInvoiceLinks(); // Initial bind
+    
+    // Sometimes elements are rendered dynamically
+    const observer = new MutationObserver(function() {
+        bindInvoiceLinks();
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    
+    function openInvoiceModal(saleId) {
+        // Show loading, hide content
+        loadingEl.style.display = 'block';
+        contentEl.style.display = 'none';
+        footerEl.innerHTML = '';
+        
+        // Open modal
+        actionModal.show();
+        
+        // Fetch sale detail
+        fetch('/sales/api/' + saleId + '/detail/')
+            .then(r => r.json())
+            .then(data => {
+                renderInvoiceDetail(data);
+                buildActionButtons(data);
+                loadingEl.style.display = 'none';
+                contentEl.style.display = 'block';
+            })
+            .catch(err => {
+                console.error(err);
+                contentEl.innerHTML = '<div class="alert alert-danger">Failed to load details.</div>';
+                loadingEl.style.display = 'none';
+                contentEl.style.display = 'block';
+            });
+    }
+
+    function getStatusBadge(statusCode, statusDisplay) {
+        const colors = {
+            'COMPLETED': 'success',
+            'VOIDED': 'danger',
+            'PENDING': 'warning',
+        };
+        const color = colors[statusCode] || 'secondary';
+        return '<span class="badge bg-' + color + '">' + statusDisplay + '</span>';
+    }
+
+    function getPaymentBadge(code, display) {
+        const colors = {
+            'CASH': 'success',
+            'ECASH': 'primary',
+            'CREDIT': 'warning',
+        };
+        const color = colors[code] || 'secondary';
+        return '<span class="badge bg-' + color + '">' + display + '</span>';
+    }
+
+    function renderInvoiceDetail(data) {
+        let html = '';
+        html += '<div class="row mb-3">';
+        html += '<div class="col-sm-6">';
+        html += '<h6 class="text-muted mb-1">Invoice Number</h6>';
+        html += '<p class="fw-bold fs-5 mb-2">' + data.sale_number + '</p>';
+        html += '</div>';
+        html += '<div class="col-sm-6 text-sm-end">';
+        html += '<h6 class="text-muted mb-1">Status</h6>';
+        html += '<p class="mb-2">' + getStatusBadge(data.status_code, data.status) + '</p>';
+        if (data.status_code === 'COMPLETED' && useStrictWorkflow) {
+            if (data.is_dispatched) {
+                html += '<span class="badge bg-success mt-1"><i class="bi bi-check2-all me-1"></i>Dispatched</span>';
+            } else {
+                html += '<span class="badge bg-warning text-dark mt-1"><i class="bi bi-hourglass me-1"></i>Waiting Dispatch</span>';
+            }
+        }
+        html += '</div>';
+        html += '</div>';
+
+        html += '<div class="row mb-3 py-2 bg-light rounded">';
+        html += '<div class="col-sm-4">';
+        html += '<small class="text-muted d-block">Date</small>';
+        html += '<span class="fw-medium">' + data.created_at + '</span>';
+        html += '</div>';
+        html += '<div class="col-sm-4">';
+        html += '<small class="text-muted d-block">Shop</small>';
+        html += '<span class="fw-medium">' + data.shop + '</span>';
+        html += '</div>';
+        html += '<div class="col-sm-4">';
+        html += '<small class="text-muted d-block">Attendant</small>';
+        html += '<span class="fw-medium">' + data.attendant + '</span>';
+        html += '</div>';
+        html += '</div>';
+
+        html += '<div class="row mb-3">';
+        html += '<div class="col-sm-6">';
+        html += '<small class="text-muted d-block">Payment Method</small>';
+        if (useStrictWorkflow && data.status_code === 'PENDING') {
+            html += '<span class="badge bg-secondary">Pending Payment</span>';
+        } else {
+            html += getPaymentBadge(data.payment_method_code, data.payment_method);
+        }
+        html += '</div>';
+        if (data.customer) {
+            html += '<div class="col-sm-6">';
+            html += '<small class="text-muted d-block">Customer</small>';
+            let phoneStr = data.customer_phone ? ' <span class="text-muted small">(' + data.customer_phone + ')</span>' : '';
+            html += '<span class="fw-medium">' + data.customer + phoneStr + '</span>';
+            html += '</div>';
+        } else if (data.walkin_customer_name) {
+            html += '<div class="col-sm-6">';
+            html += '<small class="text-muted d-block">Customer (Walk-in)</small>';
+            let walkinPhoneStr = data.walkin_customer_phone ? ' <span class="text-muted small">(' + data.walkin_customer_phone + ')</span>' : '';
+            html += '<span class="fw-medium">' + data.walkin_customer_name + walkinPhoneStr + '</span>';
+            html += '</div>';
+        }
+        html += '</div>';
+
+        html += '<h6 class="border-bottom pb-2 mb-0">Items</h6>';
+        html += '<div class="table-responsive">';
+        html += '<table class="table table-sm mb-0">';
+        html += '<thead class="table-light"><tr>';
+        html += '<th>Product</th><th class="text-center">Qty</th><th class="text-end">Total</th>';
+        html += '</tr></thead><tbody>';
+
+        data.items.forEach(function(item) {
+            html += '<tr>';
+            html += '<td>' + item.product_name + '</td>';
+            html += '<td class="text-center">' + parseFloat(item.quantity) + '</td>';
+            html += '<td class="text-end">' + currencySymbol + parseFloat(item.total).toFixed(2) + '</td>';
+            html += '</tr>';
+        });
+
+        html += '</tbody></table></div>';
+        html += '<div class="border-top pt-2 mt-2">';
+        html += '<div class="d-flex justify-content-between fw-bold fs-5">';
+        html += '<span>Total</span><span>' + currencySymbol + parseFloat(data.total).toFixed(2) + '</span>';
+        html += '</div></div>';
+
+        contentEl.innerHTML = html;
+    }
+    
+    function buildActionButtons(data) {
+        footerEl.innerHTML = '';
+        
+        let printBtn = document.createElement('a');
+        printBtn.className = 'btn btn-outline-info me-auto';
+        printBtn.innerHTML = '<i class="bi bi-printer me-1"></i>Print';
+        printBtn.href = '/sales/' + data.id + '/receipt/';
+        printBtn.target = '_blank';
+        footerEl.appendChild(printBtn);
+        
+        // PAY ACTION
+        if (data.status_code === 'PENDING' && (roleName === 'SHOP_CASHIER' || roleName === 'ADMIN' || (roleName === 'SHOP_ATTENDANT' && !useStrictWorkflow) || (roleName === 'SHOP_MANAGER' && !useStrictWorkflow))) {
+            let payBtn = document.createElement('button');
+            payBtn.className = 'btn btn-success ms-2';
+            payBtn.innerHTML = '<i class="bi bi-cash me-1"></i>Receive Payment';
+            payBtn.onclick = () => initPaymentProcess(data.id, parseFloat(data.total).toFixed(2));
+            footerEl.appendChild(payBtn);
+        }
+        
+        // DISPATCH ACTION
+        if (data.status_code === 'COMPLETED' && useStrictWorkflow && !data.is_dispatched && (roleName === 'SHOP_MANAGER' || roleName === 'ADMIN')) {
+            let dispatchBtn = document.createElement('button');
+            dispatchBtn.className = 'btn btn-primary ms-2';
+            dispatchBtn.innerHTML = '<i class="bi bi-truck me-1"></i>Dispatch Goods';
+            dispatchBtn.onclick = () => dispatchInvoice(data.id);
+            footerEl.appendChild(dispatchBtn);
+        }
+        
+        // ADMIN REVERSALS
+        if (data.is_admin) {
+            if (data.status_code === 'COMPLETED' && (!useStrictWorkflow || !data.is_dispatched)) {
+                let revertPayBtn = document.createElement('button');
+                revertPayBtn.className = 'btn btn-outline-danger ms-2';
+                revertPayBtn.innerHTML = '<i class="bi bi-arrow-counterclockwise me-1"></i>Revert Payment';
+                revertPayBtn.onclick = () => revertInvoicePayment(data.id, data.sale_number);
+                footerEl.appendChild(revertPayBtn);
+            }
+            if (data.status_code === 'COMPLETED' && data.is_dispatched) {
+                let revertDispBtn = document.createElement('button');
+                revertDispBtn.className = 'btn btn-outline-danger ms-2';
+                revertDispBtn.innerHTML = '<i class="bi bi-arrow-counterclockwise me-1"></i>Revert Dispatch';
+                revertDispBtn.onclick = () => revertInvoiceDispatch(data.id, data.sale_number);
+                footerEl.appendChild(revertDispBtn);
+            }
+        }
+        
+        let closeBtn = document.createElement('button');
+        closeBtn.className = 'btn btn-secondary ms-2';
+        closeBtn.innerText = 'Close';
+        closeBtn.dataset.bsDismiss = 'modal';
+        footerEl.appendChild(closeBtn);
+    }
+    
+    // PAYMENT LOGIC
+    const paymentForm = document.getElementById('invoicePaymentForm');
+    const tenderedInput = document.getElementById('invoicePayAmountTendered');
+    const payConfirmBtn = document.getElementById('invoiceConfirmPaymentBtn');
+    
+    function initPaymentProcess(saleId, total) {
+        document.getElementById('invoicePaySaleId').value = saleId;
+        document.getElementById('invoicePayAmountDisplay').innerText = currencySymbol + total;
+        document.getElementById('invoicePayAmountDisplay').dataset.total = total;
+        document.getElementById('invoicePayMethod').value = 'CASH';
+        tenderedInput.value = '';
+        document.getElementById('invoicePayChangeContainer').style.display = 'none';
+        
+        actionModal.hide();
+        paymentModal.show();
+    }
+    
+    if (tenderedInput) {
+        tenderedInput.addEventListener('input', function() {
+            const total = parseFloat(document.getElementById('invoicePayAmountDisplay').dataset.total || 0);
+            const tendered = parseFloat(this.value || 0);
+            const changeContainer = document.getElementById('invoicePayChangeContainer');
+            const changeInput = document.getElementById('invoicePayChangeAmount');
+            
+            if (tendered > total) {
+                changeContainer.style.display = 'block';
+                changeInput.value = (tendered - total).toFixed(2);
+            } else {
+                changeContainer.style.display = 'none';
+            }
+        });
+    }
+    
+    if (payConfirmBtn) {
+        payConfirmBtn.addEventListener('click', function() {
+            if (!paymentForm.checkValidity()) {
+                paymentForm.reportValidity();
+                return;
+            }
+            const saleId = document.getElementById('invoicePaySaleId').value;
+            const pm = document.getElementById('invoicePayMethod').value;
+            const amt = document.getElementById('invoicePayAmountTendered').value;
+            
+            this.disabled = true;
+            this.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing...';
+            
+            fetch('/sales/api/pay-invoice/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCookie('csrftoken')
+                },
+                body: JSON.stringify({ sale_id: saleId, payment_method: pm, amount_paid: amt })
+            })
+            .then(r => r.json())
+            .then(res => {
+                if (res.success) {
+                    location.reload(); // Refresh to update statuses
+                } else {
+                    alert('Error: ' + (res.error || res.message));
+                    this.disabled = false;
+                    this.innerHTML = 'Confirm Payment';
+                }
+            })
+            .catch(err => {
+                alert('Network error.');
+                this.disabled = false;
+                this.innerHTML = 'Confirm Payment';
+            });
+        });
+    }
+    
+    // DISPATCH LOGIC
+    function dispatchInvoice(saleId) {
+        if (!confirm('Are you sure you want to dispatch this invoice and deduct inventory?')) return;
+        
+        fetch('/sales/api/dispatch-invoice/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({ sale_id: saleId })
+        })
+        .then(r => r.json())
+        .then(res => {
+            if (res.success) {
+                location.reload(); // Refresh to update statuses
+            } else {
+                alert('Error: ' + (res.error || res.message));
+            }
+        })
+        .catch(err => alert('Network error.'));
+    }
+    // REVERSAL LOGIC (ADMIN)
+    window.revertInvoicePayment = function(saleId, saleNumber) {
+        if (!confirm('ADMIN: Revert payment for ' + saleNumber + ' back to PENDING? This will reverse any customer balances generated by this payment.')) return;
+        fetch('/sales/api/' + saleId + '/revert-payment/', {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') }
+        })
+        .then(r => r.json())
+        .then(res => {
+            if (res.success) {
+                location.reload();
+            } else {
+                alert('Error reversing payment: ' + res.error);
+            }
+        })
+        .catch(err => alert('Network error.'));
+    };
+
+    window.revertInvoiceDispatch = function(saleId, saleNumber) {
+        if (!confirm('ADMIN: Reverse dispatch for ' + saleNumber + '? This will restore the deducted inventory for this sale.')) return;
+        fetch('/sales/api/' + saleId + '/revert-dispatch/', {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') }
+        })
+        .then(r => r.json())
+        .then(res => {
+            if (res.success) {
+                location.reload();
+            } else {
+                alert('Error reversing dispatch: ' + res.error);
+            }
+        })
+        .catch(err => alert('Network error.'));
+    };
+    
+    // Helper to get CSRF
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+});
+</script>

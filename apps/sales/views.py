@@ -453,6 +453,10 @@ class SaleDetailView(LoginRequiredMixin, DetailView):
         except ShopSettings.DoesNotExist:
             context['shop_settings'] = None
         
+        # Determine number of receipt copies to print
+        copies = getattr(self.request.user.tenant, 'receipt_print_copies', 3)
+        context['print_copies'] = range(copies)
+        
         return context
 
 
@@ -476,6 +480,7 @@ def api_sale_detail(request, pk):
         })
 
     data = {
+        'id': sale.id,
         'sale_number': sale.sale_number,
         'created_at': sale.created_at.strftime('%b %d, %Y %H:%M'),
         'shop': sale.shop.name,
@@ -484,6 +489,7 @@ def api_sale_detail(request, pk):
         'payment_method_code': sale.payment_method,
         'status': sale.get_status_display(),
         'status_code': sale.status,
+        'is_dispatched': sale.is_dispatched,
         'subtotal': str(sale.subtotal),
         'discount_amount': str(sale.discount_amount) if sale.discount_amount else None,
         'tax_amount': str(sale.tax_amount) if sale.tax_amount else None,
@@ -491,7 +497,11 @@ def api_sale_detail(request, pk):
         'amount_paid': str(sale.amount_paid),
         'change_given': str(sale.change_given) if sale.change_given else None,
         'customer': sale.customer.name if sale.customer else None,
+        'customer_phone': sale.customer.phone if sale.customer else None,
+        'walkin_customer_name': sale.walkin_customer_name or None,
+        'walkin_customer_phone': sale.walkin_customer_phone or None,
         'items': items,
+        'is_admin': request.user.role.name == 'ADMIN' if request.user.role else False,
     }
     return JsonResponse(data)
 
@@ -605,8 +615,8 @@ class CashierPendingInvoicesView(LoginRequiredMixin, ListView):
     def get_queryset(self):
         tenant = self.request.user.tenant
         qs = Sale.objects.filter(
-            tenant=tenant,
-            status='PENDING'
+            Q(status='PENDING') | Q(is_disputed=True),
+            tenant=tenant
         ).select_related('attendant', 'customer', 'shop').prefetch_related('items__product').order_by('-created_at')
 
         q = self.request.GET.get('q', '').strip()
@@ -628,14 +638,51 @@ class CashierPendingInvoicesView(LoginRequiredMixin, ListView):
 class ManagerDispatchView(LoginRequiredMixin, AdminOrManagerRequiredMixin, ListView):
     template_name = 'sales/dispatch_invoices.html'
     context_object_name = 'invoices'
+    paginate_by = 20
     
     def get_queryset(self):
+        from datetime import datetime
         tenant = self.request.user.tenant
-        return Sale.objects.filter(
+        qs = Sale.objects.filter(
             tenant=tenant, 
-            status='COMPLETED',
-            is_dispatched=False
-        ).select_related('attendant', 'customer').order_by('created_at')
+            status='COMPLETED'
+        ).select_related('attendant', 'customer').order_by('-created_at')
+        
+        # Date range filter
+        date_from = self.request.GET.get('date_from')
+        date_to = self.request.GET.get('date_to')
+        
+        if date_from:
+            try:
+                date_from_parsed = datetime.strptime(date_from, '%Y-%m-%d').date()
+                qs = qs.filter(created_at__date__gte=date_from_parsed)
+            except ValueError:
+                pass
+        if date_to:
+            try:
+                date_to_parsed = datetime.strptime(date_to, '%Y-%m-%d').date()
+                qs = qs.filter(created_at__date__lte=date_to_parsed)
+            except ValueError:
+                pass
+                
+        # Dispatch Status filter
+        status = self.request.GET.get('dispatch_status')
+        if status == 'DISPATCHED':
+            qs = qs.filter(is_dispatched=True)
+        elif status == 'AWAITING':
+            qs = qs.filter(is_dispatched=False)
+            
+        return qs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        # Preserve filters
+        context['date_from'] = self.request.GET.get('date_from', '')
+        context['date_to'] = self.request.GET.get('date_to', '')
+        context['dispatch_status'] = self.request.GET.get('dispatch_status', '')
+        # Only Strict workflow has Dispatch
+        context['use_strict_workflow'] = getattr(self.request.user.tenant, 'use_strict_sales_workflow', False)
+        return context
 
 
 @login_required
@@ -654,7 +701,39 @@ def api_pay_invoice(request):
             if payment_method == 'CREDIT' and not sale.customer:
                  return JsonResponse({'error': 'Credit sales require a registered customer.'}, status=400)
                  
+            sale.cashier = request.user
             sale.complete(amount_paid, payment_method, paystack_ref)
+            
+            # Reset dispute status if it was previously disputed
+            if getattr(sale, 'is_disputed', False):
+                sale.is_disputed = False
+                sale.save(update_fields=['is_disputed'])
+            
+            if payment_method in ['ECASH', 'MOMO']:
+                from apps.payments.models import ECashLedger
+                actual_paid = min(amount_paid, sale.total)
+                ECashLedger.record_payment(
+                    tenant=request.user.tenant,
+                    amount=actual_paid,
+                    sale=sale,
+                    paystack_ref=paystack_ref,
+                    user=request.user,
+                    wallet_type=payment_method
+                )
+                
+            # Notify Shop Managers that invoice is paid and ready for dispatch
+            from apps.notifications.models import Notification
+            managers = sale.shop.users.filter(role__name='SHOP_MANAGER')
+            for manager in managers:
+                Notification.objects.create(
+                    tenant=request.user.tenant,
+                    user=manager,
+                    title="Invoice Paid & Ready for Dispatch",
+                    message=f"Invoice {sale.sale_number} has been paid and is ready to be dispatched.",
+                    notification_type='INVOICE_PAID',
+                    reference_type='Sale',
+                    reference_id=sale.pk
+                )
             
         return JsonResponse({'success': True, 'sale_id': sale_id})
     except Exception as e:
@@ -675,6 +754,18 @@ def api_dispatch_invoice(request):
         
         with transaction.atomic():
             sale.dispatch(request.user)
+            
+            # Notify Attendant that the invoice has been dispatched
+            from apps.notifications.models import Notification
+            Notification.objects.create(
+                tenant=request.user.tenant,
+                user=sale.attendant,
+                title="Invoice Dispatched",
+                message=f"Invoice {sale.sale_number} has been dispatched. You can hand over the items to the customer.",
+                notification_type='INVOICE_DISPATCHED',
+                reference_type='Sale',
+                reference_id=sale.pk
+            )
             
         return JsonResponse({'success': True, 'sale_id': sale_id})
     except Exception as e:
@@ -918,6 +1009,21 @@ def api_complete_sale(request):
                 sale.walkin_customer_name = walkin_customer_name
                 sale.walkin_customer_phone = walkin_customer_phone
                 sale.save(update_fields=['walkin_customer_name', 'walkin_customer_phone'])
+                
+                # Notify Shop Cashiers that a new pending invoice is ready
+                from apps.notifications.models import Notification
+                cashiers = sale.shop.users.filter(role__name='SHOP_CASHIER')
+                for cashier in cashiers:
+                    Notification.objects.create(
+                        tenant=tenant,
+                        user=cashier,
+                        title="New Pending Invoice",
+                        message=f"Invoice {sale.sale_number} is waiting for payment.",
+                        notification_type='INVOICE_PENDING',
+                        reference_type='Sale',
+                        reference_id=sale.pk
+                    )
+                
                 # Stay PENDING — Cashier handles payment separately
                 return JsonResponse({
                     'success': True,
@@ -927,6 +1033,9 @@ def api_complete_sale(request):
                     'total': str(sale.total),
                     'message': 'Invoice created. Give the code to the customer and direct them to the Cashier.'
                 })
+            
+            # Non-strict workflow or Manager creating sale directly
+            sale.cashier = request.user
             
             # Handle overpayment for customer (reduces their balance)
             if customer and amount_paid > sale.total:
@@ -951,9 +1060,32 @@ def api_complete_sale(request):
                 
                 # For the sale, record only the total as paid
                 sale.complete(sale.total, payment_method, paystack_ref)
+                
+                if payment_method in ['ECASH', 'MOMO']:
+                    from apps.payments.models import ECashLedger
+                    ECashLedger.record_payment(
+                        tenant=request.user.tenant,
+                        amount=sale.total,
+                        sale=sale,
+                        paystack_ref=paystack_ref,
+                        user=request.user,
+                        wallet_type=payment_method
+                    )
             else:
                 # Complete sale (handles partial payments)
                 sale.complete(amount_paid, payment_method, paystack_ref)
+                
+                if payment_method in ['ECASH', 'MOMO']:
+                    from apps.payments.models import ECashLedger
+                    actual_paid = min(amount_paid, sale.total)  # In case of change, though digital rarely has change
+                    ECashLedger.record_payment(
+                        tenant=request.user.tenant,
+                        amount=actual_paid,
+                        sale=sale,
+                        paystack_ref=paystack_ref,
+                        user=request.user,
+                        wallet_type=payment_method
+                    )
             
             return JsonResponse({
                 'success': True,
@@ -987,6 +1119,115 @@ def api_void_sale(request, pk):
         return JsonResponse({'error': str(e)}, status=400)
 
 
+@login_required
+@require_POST
+def api_revert_payment(request, pk):
+    """Revert a COMPLETED sale back to PENDING (Admin only)."""
+    if request.user.role.name != 'ADMIN':
+        return JsonResponse({'error': 'Permission denied. Admin access required.'}, status=403)
+        
+    sale = get_object_or_404(Sale, pk=pk, tenant=request.user.tenant)
+    
+    if sale.status != 'COMPLETED':
+        return JsonResponse({'error': 'Only COMPLETED sales can be reverted.'}, status=400)
+    
+    if sale.is_dispatched:
+        return JsonResponse({'error': 'Sale has already been dispatched. Revert the dispatch first.'}, status=400)
+        
+    try:
+        from django.db import transaction
+        with transaction.atomic():
+            # If there was a customer debt transaction, reverse it
+            if sale.customer:
+                from apps.customers.models import CustomerTransaction
+                # Find the exact debit transaction generated by this sale
+                debt_tx = CustomerTransaction.objects.filter(
+                    tenant=sale.tenant,
+                    customer=sale.customer,
+                    reference_id=sale.sale_number,
+                    transaction_type='DEBIT'
+                ).first()
+                
+                if debt_tx:
+                    balance_before = sale.customer.current_balance
+                    sale.customer.current_balance -= debt_tx.amount
+                    sale.customer.save()
+                    
+                    CustomerTransaction.objects.create(
+                        tenant=sale.tenant,
+                        customer=sale.customer,
+                        transaction_type='CREDIT',
+                        amount=debt_tx.amount,
+                        description=f"Reversed Payment (Sale {sale.sale_number})",
+                        reference_id=sale.sale_number,
+                        balance_before=balance_before,
+                        balance_after=sale.customer.current_balance,
+                        performed_by=request.user
+                    )
+            
+            # Reset sale
+            sale.status = 'PENDING'
+            sale.completed_at = None
+            sale.amount_paid = 0
+            sale.change_given = 0
+            sale.payment_method = ''
+            sale.save()
+            
+        return JsonResponse({'success': True})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@login_required
+@require_POST
+def api_revert_dispatch(request, pk):
+    """Revert a dispatched sale back to non-dispatched (Admin only)."""
+    if request.user.role.name != 'ADMIN':
+        return JsonResponse({'error': 'Permission denied. Admin access required.'}, status=403)
+        
+    sale = get_object_or_404(Sale, pk=pk, tenant=request.user.tenant)
+    
+    if not sale.is_dispatched:
+        return JsonResponse({'error': 'Sale has not been dispatched.'}, status=400)
+        
+    try:
+        from django.db import transaction
+        with transaction.atomic():
+            from apps.inventory.models import InventoryLedger
+            
+            # Reverse all inventory ledgers for this sale
+            ledgers = InventoryLedger.objects.filter(
+                tenant=sale.tenant,
+                reference_type='Sale',
+                reference_id=sale.pk
+            )
+            
+            for ledger in ledgers:
+                # Add a compensating ledger to restore stock
+                InventoryLedger.objects.create(
+                    tenant=ledger.tenant,
+                    product=ledger.product,
+                    batch=ledger.batch,
+                    location=ledger.location,
+                    transaction_type='SALE_VOID',  # Re-injects stock functionally identically
+                    quantity=-ledger.quantity,     # If ledger was -2, this is +2
+                    unit_cost=ledger.unit_cost,
+                    reference_type='Sale Revert',
+                    reference_id=sale.pk,
+                    notes=f"Dispatch Reverted (Sale {sale.sale_number})",
+                    created_by=request.user
+                )
+            
+            sale.is_dispatched = False
+            sale.dispatched_by = None
+            sale.dispatched_at = None
+            sale.save()
+            
+        return JsonResponse({'success': True})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
 class ShopSalesReportView(LoginRequiredMixin, View):
     """
     Shop Manager view showing sales breakdown by attendant.
@@ -1001,8 +1242,8 @@ class ShopSalesReportView(LoginRequiredMixin, View):
         user = request.user
         role_name = user.role.name if user.role else None
         
-        # Allow shop managers, accountants, auditors, and admin to access
-        if role_name not in ['SHOP_MANAGER', 'ACCOUNTANT', 'AUDITOR', 'ADMIN']:
+        # Allow shop managers, cashiers, accountants, auditors, and admin to access
+        if role_name not in ['SHOP_MANAGER', 'SHOP_CASHIER', 'ACCOUNTANT', 'AUDITOR', 'ADMIN']:
             messages.error(request, 'You do not have permission to view this report.')
             return redirect('core:dashboard')
         

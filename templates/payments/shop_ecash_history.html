@@ -36,6 +36,37 @@
         </div>
     </div>
 
+    <!-- Filter Form -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3 align-items-end">
+                {% if shop %}
+                <input type="hidden" name="shop" value="{{ shop.pk }}">
+                {% endif %}
+                <div class="col-md-3">
+                    <label class="form-label">Payment Type</label>
+                    <select name="wallet_type" class="form-select">
+                        <option value="">All</option>
+                        <option value="ECASH" {% if wallet_type == 'ECASH' %}selected{% endif %}>E-Cash</option>
+                        <option value="MOMO" {% if wallet_type == 'MOMO' %}selected{% endif %}>Mobile Money</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Date From</label>
+                    <input type="date" name="date_from" class="form-control" value="{{ date_from }}">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Date To</label>
+                    <input type="date" name="date_to" class="form-control" value="{{ date_to }}">
+                </div>
+                <div class="col-md-3">
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-filter"></i> Filter</button>
+                    <a href="?{% if shop %}shop={{ shop.pk }}{% endif %}" class="btn btn-outline-secondary">Reset</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <div class="card">
         <div class="card-body p-0">
             {% if transactions %}

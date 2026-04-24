@@ -125,7 +125,13 @@
                             {% endif %}
                         </td>
                         <td>
-                            {{ transfer.to_user.get_full_name|default:transfer.to_user.email }}
+                            {% if transfer.destination_type == 'BANK' %}
+                                <span class="fw-bold"><i class="bi bi-bank me-1"></i>Bank Account</span>
+                            {% elif transfer.to_user %}
+                                {{ transfer.to_user.get_full_name|default:transfer.to_user.email }}
+                            {% else %}
+                                -
+                            {% endif %}
                             {% if transfer.to_location %}
                             <br><small class="text-muted">{{ transfer.to_location.name }}</small>
                             {% endif %}
@@ -155,7 +161,7 @@
                                 <i class="bi bi-printer"></i>
                             </a>
                             {% if transfer.status == 'PENDING' %}
-                            {% if transfer.to_user == user %}
+                            {% if transfer.to_user == user or transfer.destination_type == 'BANK' and user.role.name == 'ACCOUNTANT' or transfer.destination_type == 'BANK' and user.role.name == 'ADMIN' %}
                             <form method="post" action="{% url 'accounting:cash_transfer_confirm' transfer.pk %}"
                                 style="display:inline;">
                                 {% csrf_token %}

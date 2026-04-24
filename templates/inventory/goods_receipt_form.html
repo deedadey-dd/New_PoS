@@ -19,6 +19,18 @@
     <ul class="mb-0 mt-1">
         {% for field in form %}{% for error in field.errors %}<li>{{ field.label }}: {{ error }}</li>{% endfor %}{% endfor %}
         {% for error in form.non_field_errors %}<li>{{ error }}</li>{% endfor %}
+        
+        {% for error in items.non_form_errors %}<li>Items Error: {{ error }}</li>{% endfor %}
+        {% for item_form in items %}
+            {% for field in item_form %}
+                {% for error in field.errors %}
+                    <li>Item #{{ forloop.parentloop.parentloop.counter }} ({{ field.label }}): {{ error }}</li>
+                {% endfor %}
+            {% endfor %}
+            {% for error in item_form.non_field_errors %}
+                <li>Item #{{ forloop.parentloop.counter }}: {{ error }}</li>
+            {% endfor %}
+        {% endfor %}
     </ul>
 </div>
 {% endif %}
@@ -273,7 +285,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const qty = parseFloat(qtyInput ? qtyInput.value : 0) || 0;
             const total = parseFloat(this.value) || 0;
             if (qty > 0 && unitCostInput) {
-                unitCostInput.value = (total / qty).toFixed(4);
+                unitCostInput.value = (total / qty).toFixed(2);
             }
             calcLine();
         });
@@ -283,7 +295,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const totalVal = parseFloat(totalCostInput ? totalCostInput.value : 0) || 0;
             const qty = parseFloat(this.value) || 0;
             if (totalVal > 0 && qty > 0 && unitCostInput) {
-                unitCostInput.value = (totalVal / qty).toFixed(4);
+                unitCostInput.value = (totalVal / qty).toFixed(2);
             }
             calcLine();
         });

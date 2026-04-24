@@ -17,6 +17,51 @@
         </span>
     </div>
 
+    <!-- Filter Form -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3 align-items-end">
+                <div class="col-md-2">
+                    <label class="form-label">Payment Type</label>
+                    <select name="wallet_type" class="form-select">
+                        <option value="">All</option>
+                        <option value="ECASH" {% if wallet_type == 'ECASH' %}selected{% endif %}>E-Cash</option>
+                        <option value="MOMO" {% if wallet_type == 'MOMO' %}selected{% endif %}>Mobile Money</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Status</label>
+                    <select name="status" class="form-select">
+                        <option value="">All</option>
+                        <option value="PENDING" {% if status == 'PENDING' %}selected{% endif %}>Pending</option>
+                        <option value="CONFIRMED" {% if status == 'CONFIRMED' %}selected{% endif %}>Confirmed</option>
+                        <option value="DISPUTED" {% if status == 'DISPUTED' %}selected{% endif %}>Disputed</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Date From</label>
+                    <input type="date" name="date_from" class="form-control" value="{{ date_from }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Date To</label>
+                    <input type="date" name="date_to" class="form-control" value="{{ date_to }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Sort By</label>
+                    <select name="sort" class="form-select">
+                        <option value="-created_at" {% if sort == '-created_at' %}selected{% endif %}>Newest First</option>
+                        <option value="created_at" {% if sort == 'created_at' %}selected{% endif %}>Oldest First</option>
+                        <option value="-amount" {% if sort == '-amount' %}selected{% endif %}>Highest Amount</option>
+                        <option value="amount" {% if sort == 'amount' %}selected{% endif %}>Lowest Amount</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary w-100"><i class="bi bi-funnel me-1"></i>Filter</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <div class="card">
         <div class="card-body p-0">
             {% if transactions %}
@@ -25,17 +70,26 @@
                     <thead class="table-light">
                         <tr>
                             <th>Date</th>
+                            <th>Wallet</th>
                             <th>Type</th>
                             <th>Reference</th>
                             <th class="text-end">Amount</th>
-                            <th class="text-end">Balance After</th>
+                            <th>Status</th>
                             <th>Notes</th>
+                            <th>Action</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for tx in transactions %}
                         <tr>
                             <td>{{ tx.created_at|date:"M d, Y H:i" }}</td>
+                            <td>
+                                {% if tx.wallet_type == 'MOMO' %}
+                                <span class="badge bg-purple"><i class="bi bi-phone-vibrate me-1"></i>MoMo</span>
+                                {% else %}
+                                <span class="badge bg-primary"><i class="bi bi-credit-card me-1"></i>E-Cash</span>
+                                {% endif %}
+                            </td>
                             <td>
                                 {% if tx.transaction_type == 'PAYMENT' %}
                                 <span class="badge bg-success"><i class="bi bi-arrow-down me-1"></i>Payment</span>
@@ -59,8 +113,32 @@
                             <td class="text-end {% if tx.amount >= 0 %}text-success{% else %}text-danger{% endif %}">
                                 {% if tx.amount >= 0 %}+{% endif %}{{ currency_symbol }}{{ tx.amount|floatformat:"2g" }}
                             </td>
-                            <td class="text-end">{{ currency_symbol }}{{ tx.balance_after|floatformat:"2g" }}</td>
+                            <td>
+                                {% if tx.status == 'PENDING' %}
+                                <span class="badge bg-warning text-dark"><i class="bi bi-hourglass-split me-1"></i>Pending</span>
+                                {% elif tx.status == 'CONFIRMED' %}
+                                <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Confirmed</span>
+                                {% elif tx.status == 'DISPUTED' %}
+                                <span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>Disputed</span>
+                                {% endif %}
+                            </td>
                             <td>{{ tx.notes|truncatechars:40|default:"-" }}</td>
+                            <td>
+                                {% if tx.status == 'PENDING' and request.user.role.name in 'ACCOUNTANT,ADMIN' %}
+                                <form method="post" action="{% url 'payments:ecash_confirm' tx.pk %}" class="d-inline">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-sm btn-success" title="Confirm Receipt in Bank">
+                                        <i class="bi bi-check-lg"></i> Confirm
+                                    </button>
+                                </form>
+                                <form method="post" action="{% url 'payments:ecash_dispute' tx.pk %}" class="d-inline ms-1">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-sm btn-danger" title="Dispute Payment">
+                                        <i class="bi bi-x-circle"></i> Dispute
+                                    </button>
+                                </form>
+                                {% endif %}
+                            </td>
                         </tr>
                         {% endfor %}
                     </tbody>

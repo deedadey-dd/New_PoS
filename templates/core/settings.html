@@ -131,6 +131,16 @@
                         <small class="d-block text-muted mt-1">Allow accountants to send float/change money to shops. If
                             disabled, cash only flows from shops to accountants.</small>
                     </div>
+                    <div class="form-check form-switch mb-3">
+                        {{ form.allow_shop_to_accountant_transfers }}
+                        <label class="form-check-label ms-2">Allow Shop → Accountant Transfers</label>
+                        <small class="d-block text-muted mt-1">Allow shops to transfer cash deposits to the accountant.</small>
+                    </div>
+                    <div class="form-check form-switch mb-3">
+                        {{ form.allow_shop_to_bank_transfers }}
+                        <label class="form-check-label ms-2">Allow Shop → Bank Transfers</label>
+                        <small class="d-block text-muted mt-1">Allow shops to transfer cash deposits directly to a bank.</small>
+                    </div>
                 </div>
             </div>
         </div>
@@ -162,6 +172,20 @@
                                 </div>
                             </div>
                         </div>
+                        
+                        <!-- Print Copies Setting -->
+                        <div class="col-md-6">
+                            <div class="card h-100 border-0 bg-light">
+                                <div class="card-body">
+                                    <label class="form-label fw-bold"><i class="bi bi-printer me-2"></i>Receipt Copies</label>
+                                    {{ form.receipt_print_copies }}
+                                    <p class="text-muted small mt-2 mb-0">
+                                        Number of identical receipt copies to print upon successful payment. (e.g. 3 copies: Customer, Manager, Cashier).
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                        
                         <!-- Require Customer on Invoice -->
                         <div class="col-md-6">
                             <div class="card h-100 border-0 bg-light">

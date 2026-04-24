@@ -586,8 +586,8 @@ class GoodsReceipt(TenantModel):
     """
     STATUS_CHOICES = [
         ('DRAFT', 'Draft'),
-        ('PENDING_APPROVAL', 'Pending Approval'),
-        ('FINALIZED', 'Finalized'),
+        ('PENDING', 'Pending Verification'),
+        ('VERIFIED', 'Verified'),
     ]
     
     receipt_id = models.CharField(max_length=50) # Auto-generated GR-xxx
@@ -600,7 +600,7 @@ class GoodsReceipt(TenantModel):
         related_name='goods_receipts'
     )
     
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='DRAFT')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
     
     total_expected_cost = models.DecimalField(
         max_digits=12, decimal_places=2, default=Decimal('0')
@@ -653,10 +653,10 @@ class GoodsReceipt(TenantModel):
         )['total'] or Decimal('0')
         self.save(update_fields=['total_expected_cost'])
         
-    def finalize(self, user):
+    def verify(self, verified_by):
         """Finalize the receipt and create batches."""
-        if self.status == 'FINALIZED':
-            raise ValidationError("Already finalized.")
+        if self.status == 'VERIFIED':
+            raise ValidationError("Already verified.")
             
         for item in self.items.all():
             # Create the batch
@@ -671,7 +671,6 @@ class GoodsReceipt(TenantModel):
                 initial_quantity=item.quantity,
                 current_quantity=item.quantity,
                 unit_cost=item.unit_cost,
-                production_date=item.production_date,
                 expiry_date=item.expiry_date,
             )
             
@@ -681,17 +680,17 @@ class GoodsReceipt(TenantModel):
                 product=item.product,
                 batch=batch,
                 location=self.location,
-                transaction_type='RECEIPT',
+                transaction_type='IN',
                 quantity=item.quantity,
                 unit_cost=item.unit_cost,
                 reference_type='GoodsReceipt',
                 reference_id=self.pk,
                 notes=f"Received via {self.receipt_id}",
-                created_by=user
+                created_by=verified_by
             )
 
-        self.status = 'FINALIZED'
-        self.approved_by = user
+        self.status = 'VERIFIED'
+        self.approved_by = verified_by
         self.approved_at = timezone.now()
         self.save()
 

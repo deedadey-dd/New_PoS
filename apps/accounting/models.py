@@ -32,6 +32,12 @@ class CashTransfer(TenantModel):
         ('BANK', 'Bank Account'),
     ]
     
+    SOURCE_CHOICES = [
+        ('CASH', 'Physical Cash'),
+        ('ECASH', 'E-Cash Wallet'),
+        ('MOMO', 'Mobile Money Wallet'),
+    ]
+    
     # Transfer details
     amount = models.DecimalField(
         max_digits=12,
@@ -39,6 +45,7 @@ class CashTransfer(TenantModel):
         validators=[MinValueValidator(Decimal('0.01'))]
     )
     transfer_type = models.CharField(max_length=10, choices=TYPE_CHOICES)
+    source_type = models.CharField(max_length=10, choices=SOURCE_CHOICES, default='CASH')
     destination_type = models.CharField(max_length=10, choices=DESTINATION_CHOICES, default='USER')
     status = models.CharField(max_length=15, choices=STATUS_CHOICES, default='PENDING')
     
@@ -107,14 +114,33 @@ class CashTransfer(TenantModel):
             raise ValidationError("Only pending transfers can be confirmed.")
         
         # Verify the confirming user is the recipient
-        if user != self.to_user and not user.is_superuser:
-            if user.role and user.role.name != 'ADMIN':
+        if not user.is_superuser and not (user.role and user.role.name == 'ADMIN'):
+            if self.destination_type == 'BANK':
+                # For transfers to BANK, ACCOUNTANT can confirm
+                if user.role and user.role.name != 'ACCOUNTANT':
+                    raise ValidationError("Only an accountant or admin can confirm transfers to the bank.")
+            elif user != self.to_user:
                 raise ValidationError("Only the recipient can confirm this transfer.")
         
         self.status = 'CONFIRMED'
         self.confirmed_at = timezone.now()
         self.confirmed_by = user
         self.save()
+        
+        # If withdrawing digital funds to Bank, record it in ECashLedger
+        if self.source_type in ['ECASH', 'MOMO']:
+            from apps.payments.models import ECashLedger
+            ECashLedger.objects.create(
+                tenant=self.tenant,
+                transaction_type='WITHDRAWAL',
+                wallet_type=self.source_type,
+                amount=-abs(self.amount),
+                status='CONFIRMED',
+                reference_type='CashTransfer',
+                reference_id=self.pk,
+                created_by=user,
+                notes=f"Transfer to {self.get_destination_type_display()} confirmed by {user.get_full_name() or user.email}"
+            )
         
         # Create notification for sender
         from apps.notifications.models import Notification
@@ -271,6 +297,11 @@ class ExpenditureItem(TenantModel):
         ('REJECTED', 'Rejected'),
     ]
     
+    SOURCE_CHOICES = [
+        ('ACCOUNTANT', 'From Accountant'),
+        ('SHOP_CASH', "From Shop's Cash-on-Hand"),
+    ]
+    
     request = models.ForeignKey(
         ExpenditureRequest,
         on_delete=models.CASCADE,
@@ -290,6 +321,7 @@ class ExpenditureItem(TenantModel):
     )
     description = models.TextField(help_text="Detailed description of this item")
     status = models.CharField(max_length=15, choices=STATUS_CHOICES, default='PENDING')
+    source_of_funds = models.CharField(max_length=20, choices=SOURCE_CHOICES, null=True, blank=True)
     rejection_reason = models.TextField(blank=True)
     
     approved_by = models.ForeignKey(
@@ -301,10 +333,16 @@ class ExpenditureItem(TenantModel):
     )
     approved_at = models.DateTimeField(null=True, blank=True)
     
-    def approve(self, user):
+    def approve(self, user, source_of_funds):
         if self.status != 'PENDING':
             raise ValidationError("This item is already processed.")
+        if not source_of_funds:
+            raise ValidationError("Source of funds is required for approval.")
+        if source_of_funds not in dict(self.SOURCE_CHOICES).keys():
+            raise ValidationError("Invalid source of funds.")
+            
         self.status = 'APPROVED'
+        self.source_of_funds = source_of_funds
         self.approved_by = user
         self.approved_at = timezone.now()
         self.save()

@@ -94,8 +94,8 @@
                     </li>
                     {% endif %}
 
-                    <!-- Sales Menu (Shop Manager, Accountant, Auditor, Admin) -->
-                    {% if role_name == 'SHOP_MANAGER' or role_name == 'ACCOUNTANT' or role_name == 'AUDITOR' or role_name == 'ADMIN' %}
+                    <!-- Sales Menu (Shop Manager, Accountant, Auditor, Admin, Cashier) -->
+                    {% if role_name == 'SHOP_MANAGER' or role_name == 'ACCOUNTANT' or role_name == 'AUDITOR' or role_name == 'ADMIN' or role_name == 'SHOP_CASHIER' %}
                     <li class="nav-item">
                         <a class="nav-link text-white d-flex justify-content-between align-items-center {% if 'sales' in request.path and 'cashier' not in request.path and 'dispatch' not in request.path or 'price-history' in request.path %}active{% endif %}"
                             data-bs-toggle="collapse" href="#salesMenu" role="button"
@@ -112,11 +112,11 @@
                                         <i class="bi bi-graph-up me-1"></i>Sales Report
                                     </a>
                                 </li>
-                                {% if role_name == 'SHOP_MANAGER' or role_name == 'ACCOUNTANT' or role_name == 'AUDITOR' or role_name == 'ADMIN' %}
+                                {% if role_name == 'SHOP_MANAGER' or role_name == 'ACCOUNTANT' or role_name == 'AUDITOR' or role_name == 'ADMIN' or role_name == 'SHOP_CASHIER' %}
                                 <li class="nav-item">
                                     <a class="nav-link text-white-50 py-1 {% if '/sales/' in request.path and '/pos/' not in request.path and 'report' not in request.path %}text-white{% endif %}"
                                         href="{% url 'sales:sale_list' %}">
-                                        <i class="bi bi-clock-history me-1"></i>Sales History
+                                        <i class="bi bi-clock-history me-1"></i>All Invoices
                                     </a>
                                 </li>
                                 {% endif %}
@@ -172,6 +172,12 @@
                                     </a>
                                 </li>
                                 <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if 'ledger' in request.path %}active text-white{% endif %}"
+                                        href="{% url 'payments:ecash_ledger' %}">
+                                        <i class="bi bi-wallet2 me-1"></i>E-Cash Ledger
+                                    </a>
+                                </li>
+                                <li class="nav-item">
                                     <a class="nav-link text-white-50 py-1 {% if 'expenditures' in request.path %}active text-white{% endif %}"
                                         href="{% url 'accounting:expenditure_list' %}">
                                         <i class="bi bi-receipt-cutoff me-1"></i>Expenditures
@@ -180,14 +186,16 @@
                             </ul>
                         </div>
                     </li>
-                    {% elif role_name == 'SHOP_MANAGER' or role_name == 'SHOP_CASHIER' %}
+                    {% elif role_name == 'SHOP_CASHIER' or role_name == 'SHOP_MANAGER' %}
                     <!-- Shop Manager/Cashier Cash Transfers & Expenditures (standalone) -->
+                    {% if role_name == 'SHOP_CASHIER' or not current_tenant.use_strict_sales_workflow %}
                     <li class="nav-item">
                         <a class="nav-link text-white {% if 'cash-transfers' in request.path %}active{% endif %}"
                             href="{% url 'accounting:cash_transfer_list' %}">
                             <i class="bi bi-cash-stack me-2"></i>Cash Transfers
                         </a>
                     </li>
+                    {% endif %}
                     <li class="nav-item">
                         <a class="nav-link text-white {% if 'expenditures' in request.path %}active{% endif %}"
                             href="{% url 'accounting:expenditure_list' %}">
@@ -245,12 +253,14 @@
                                 </li>
                                 {% endif %}
                                 {% if current_tenant.use_bulk_inventory_receiving and role_name not in 'SHOP_ATTENDANT' %}
+                                {% if role_name != 'SHOP_MANAGER' or current_tenant.shop_manager_can_receive_stock %}
                                 <li class="nav-item">
                                     <a class="nav-link text-white-50 py-1 {% if 'goods-receipts' in request.path %}active text-white{% endif %}"
                                         href="{% url 'inventory:goods_receipt_list' %}">
                                         Bulk Receiving
                                     </a>
                                 </li>
+                                {% endif %}
                                 {% endif %}
                                 <li class="nav-item">
                                     <a class="nav-link text-white-50 py-1 {% if 'stock' in request.path %}active text-white{% endif %}"
@@ -286,6 +296,16 @@
                                 {% endif %}
                             </ul>
                         </div>
+                    </li>
+                    {% endif %}
+
+                    <!-- Accountant: Bulk Receiving approval access -->
+                    {% if role_name == 'ACCOUNTANT' and current_tenant.use_bulk_inventory_receiving and current_tenant.require_accountant_for_bulk_receiving %}
+                    <li class="nav-item mt-2">
+                        <a class="nav-link text-white {% if 'goods-receipts' in request.path %}active{% endif %}"
+                            href="{% url 'inventory:goods_receipt_list' %}">
+                            <i class="bi bi-box-arrow-in-down me-2"></i> Bulk Receiving
+                        </a>
                     </li>
                     {% endif %}
 
@@ -520,7 +540,7 @@
                     </div>
 
                     <!-- Cash on Hand Badge (exclude ADMIN) -->
-                    {% if role_name == 'SHOP_MANAGER' or role_name == 'ACCOUNTANT' or role_name == 'SHOP_CASHIER' or role_name == 'SHOP_ATTENDANT' and not current_tenant.use_strict_sales_workflow %}
+                    {% if role_name == 'ACCOUNTANT' or role_name == 'SHOP_CASHIER' or role_name == 'SHOP_MANAGER' and not current_tenant.use_strict_sales_workflow or role_name == 'SHOP_ATTENDANT' and not current_tenant.use_strict_sales_workflow %}
                     <a href="{% url 'accounting:cash_transfer_list' %}" class="me-3 text-decoration-none"
                         title="Cash on Hand - Click to manage transfers">
                         <span class="badge bg-success fs-6">
@@ -530,6 +550,20 @@
                     </a>
                     {% endif %}
 
+                    <!-- Monthly MoMo / E-Cash Badges -->
+                    {% if monthly_ecash is not None and role_name in 'SHOP_MANAGER,ACCOUNTANT,SHOP_CASHIER' %}
+                    <a href="{% if role_name == 'SHOP_MANAGER' or role_name == 'SHOP_CASHIER' %}{% url 'payments:shop_ecash_history' %}{% elif role_name == 'ACCOUNTANT' %}{% url 'payments:shop_ecash_list' %}{% else %}{% url 'payments:ecash_ledger' %}{% endif %}" class="me-3 text-decoration-none" title="Monthly E-Cash Taken">
+                        <span class="badge bg-primary fs-6">
+                            <i class="bi bi-credit-card me-1"></i>M. E-Cash: {{ currency_symbol }}{{ monthly_ecash|floatformat:"2g"|default:"0.00" }}
+                        </span>
+                    </a>
+                    <a href="{% if role_name == 'SHOP_MANAGER' or role_name == 'SHOP_CASHIER' %}{% url 'payments:shop_ecash_history' %}?wallet_type=MOMO{% elif role_name == 'ACCOUNTANT' %}{% url 'payments:shop_ecash_list' %}?wallet_type=MOMO{% else %}{% url 'payments:ecash_ledger' %}?wallet_type=MOMO{% endif %}" class="me-3 text-decoration-none" title="Monthly MoMo Taken">
+                        <span class="badge bg-purple fs-6" style="background-color: #6f42c1;">
+                            <i class="bi bi-phone-vibrate me-1"></i>M. MoMo: {{ currency_symbol }}{{ monthly_momo|floatformat:"2g"|default:"0.00" }}
+                        </span>
+                    </a>
+                    {% endif %}
+                    
                     <!-- E-Cash Balance Badge (exclude ADMIN and AUDITOR) -->
                     {% if ecash_balance is not None and role_name in 'SHOP_MANAGER,ACCOUNTANT' %}
                     <a href="{% if role_name == 'SHOP_MANAGER' %}{% url 'payments:shop_ecash_history' %}{% elif role_name == 'ACCOUNTANT' %}{% url 'payments:shop_ecash_list' %}{% else %}{% url 'payments:ecash_ledger' %}{% endif %}"

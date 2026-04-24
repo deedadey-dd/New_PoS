@@ -199,7 +199,10 @@
 </head>
 
 <body>
-    <div class="receipt-header">
+    {% if sale.status == 'COMPLETED' %}
+        {% for _ in print_copies %}
+    <div class="receipt-container">
+        <div class="receipt-header">
         {% if shop_settings.receipt_header %}
         <p>{{ shop_settings.receipt_header|linebreaksbr }}</p>
         {% else %}
@@ -313,6 +316,116 @@
 
         <div class="barcode">*{{ sale.sale_number }}*</div>
     </div>
+    
+    <div style="text-align: center; margin-top: 10px; font-weight: bold; font-size: 13px;">
+        {% if forloop.counter == 1 %}
+        --- Customer Copy ---
+        {% elif forloop.counter == 2 %}
+        --- Shop Manager Copy ---
+        {% elif forloop.counter == 3 %}
+        --- Cashier Copy ---
+        {% else %}
+        --- Duplicate Copy ---
+        {% endif %}
+    </div>
+    
+    </div> <!-- end receipt-container -->
+    
+    {% if not forloop.last %}
+    <div style="page-break-after: always; margin-top: 20px;"></div>
+    {% endif %}
+    
+    {% endfor %}
+    {% else %}
+    <!-- Single copy for non-completed sales -->
+    <div class="receipt-container">
+        <div class="receipt-header">
+            {% if shop_settings.receipt_header %}
+            <p>{{ shop_settings.receipt_header|linebreaksbr }}</p>
+            {% else %}
+            <h1>{{ sale.shop.name }}</h1>
+            <p>{{ sale.tenant.name }}</p>
+            {% endif %}
+        </div>
+    
+        <div class="receipt-info">
+            <table>
+                <tr>
+                    <td>{{ sale.created_at|date:"d/m/Y H:i" }}</td>
+                    <td class="text-right"><strong>{{ sale.sale_number }}</strong></td>
+                </tr>
+                <tr>
+                    <td>By: {{ sale.attendant.first_name|default:sale.attendant.email }}</td>
+                    {% if sale.payment_method %}
+                    <td class="text-right">| {{ sale.get_payment_method_display }} |</td>
+                    {% endif %}
+                </tr>
+            </table>
+        </div>
+    
+        <div class="receipt-items">
+            <table>
+                <thead>
+                    <tr>
+                        <th class="text-right">Qty</th>
+                        <th>Item</th>
+                        <th class="text-right">Price</th>
+                        <th class="text-right">Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in sale.items.all %}
+                    <tr>
+                        <td class="text-right">{{ item.quantity }}</td>
+                        <td class="item-name">{{ item.product.name }}</td>
+                        <td class="text-right">{{ item.unit_price|floatformat:"2g" }}</td>
+                        <td class="text-right">{{ currency_symbol }}{{ item.total|floatformat:"2g" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    
+        <div class="receipt-totals">
+            <div class="totals-row">
+                <span>Subtotal:</span>
+                <span>{{ currency_symbol }}{{ sale.subtotal|floatformat:"2g" }}</span>
+            </div>
+            {% if sale.discount_amount %}
+            <div class="totals-row">
+                <span>Discount:</span>
+                <span>-{{ currency_symbol }}{{ sale.discount_amount|floatformat:"2g" }}</span>
+            </div>
+            {% endif %}
+            {% if sale.tax_amount %}
+            <div class="totals-row">
+                <span>Tax:</span>
+                <span>{{ currency_symbol }}{{ sale.tax_amount|floatformat:"2g" }}</span>
+            </div>
+            {% endif %}
+            <div class="totals-row total">
+                <span>TOTAL:</span>
+                <span>{{ currency_symbol }}{{ sale.total|floatformat:"2g" }}</span>
+            </div>
+        </div>
+    
+        {% if sale.status == 'PENDING' %}
+        <div style="border: 2px solid #000; padding: 10px; margin: 10px 0; text-align: center;">
+            <strong style="font-size: 16px;">PROFORMA INVOICE</strong><br>
+            <span>NOT A VALID TAX RECEIPT</span>
+        </div>
+        {% endif %}
+    
+        <div class="receipt-footer">
+            {% if shop_settings.receipt_footer %}
+            <p>{{ shop_settings.receipt_footer|linebreaksbr }}</p>
+            {% else %}
+            <p>Thank you!</p>
+            {% endif %}
+            <div class="barcode">*{{ sale.sale_number }}*</div>
+        </div>
+    </div>
+    {% endif %}
 
     <button class="print-btn no-print" onclick="window.print()">
         🖨️ Print Receipt

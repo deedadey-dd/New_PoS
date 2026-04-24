@@ -89,6 +89,20 @@ class Tenant(models.Model):
         default=False,
         help_text="Allow accountants to send cash (float/change) to shops"
     )
+    allow_shop_to_accountant_transfers = models.BooleanField(
+        default=True,
+        help_text="Allow shops to transfer cash deposits to the accountant"
+    )
+    allow_shop_to_bank_transfers = models.BooleanField(
+        default=True,
+        help_text="Allow shops to transfer cash deposits directly to a bank"
+    )
+    
+    # Printing Settings
+    receipt_print_copies = models.PositiveIntegerField(
+        default=3,
+        help_text="Number of receipt copies to print upon successful payment."
+    )
     
     # Subscription Management
     SUBSCRIPTION_STATUS_CHOICES = [

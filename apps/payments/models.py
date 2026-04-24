@@ -164,6 +164,16 @@ class ECashLedger(TenantModel):
         ('ADJUSTMENT', 'Manual Adjustment'),
     ]
     
+    WALLET_CHOICES = [
+        ('ECASH', 'E-Cash / Paystack'),
+        ('MOMO', 'Mobile Money'),
+    ]
+    
+    wallet_type = models.CharField(
+        max_length=10,
+        choices=WALLET_CHOICES,
+        default='ECASH'
+    )
     transaction_type = models.CharField(
         max_length=20,
         choices=TRANSACTION_TYPES
@@ -172,6 +182,13 @@ class ECashLedger(TenantModel):
         max_digits=12,
         decimal_places=2,
         help_text="Positive for incoming, negative for outgoing"
+    )
+    
+    status = models.CharField(
+        max_length=15,
+        choices=[('PENDING', 'Pending Confirmation'), ('CONFIRMED', 'Confirmed'), ('DISPUTED', 'Disputed')],
+        default='CONFIRMED',
+        help_text="Accountant confirmation status"
     )
     
     # Running balance (calculated on save)
@@ -235,52 +252,54 @@ class ECashLedger(TenantModel):
         return f"{self.get_transaction_type_display()} - {self.amount} ({self.created_at.strftime('%Y-%m-%d %H:%M')})"
     
     def save(self, *args, **kwargs):
-        # Calculate running balance
+        # balance_after is deprecated but kept for backwards compatibility
         if not self.pk:
-            last_entry = ECashLedger.objects.filter(
-                tenant=self.tenant
-            ).order_by('-created_at', '-pk').first()
-            
-            previous_balance = last_entry.balance_after if last_entry else Decimal('0')
-            self.balance_after = previous_balance + self.amount
-        
+            self.balance_after = Decimal('0')
         super().save(*args, **kwargs)
     
     @classmethod
-    def get_current_balance(cls, tenant):
-        """Get the current e-cash balance for a tenant."""
-        last_entry = cls.objects.filter(tenant=tenant).order_by('-created_at', '-pk').first()
-        return last_entry.balance_after if last_entry else Decimal('0')
-    
-    @classmethod
-    def get_shop_balance(cls, tenant, shop):
-        """Get the current e-cash balance for a specific shop."""
+    def get_current_balance(cls, tenant, wallet_type='ECASH'):
+        """Get the current confirmed balance for a tenant."""
         result = cls.objects.filter(
-            tenant=tenant,
-            shop=shop
+            tenant=tenant, 
+            status='CONFIRMED',
+            wallet_type=wallet_type
         ).aggregate(total=Sum('amount'))
         return result['total'] or Decimal('0')
     
     @classmethod
-    def record_payment(cls, tenant, amount, sale=None, paystack_ref='', user=None, notes='', shop=None):
+    def get_shop_balance(cls, tenant, shop, wallet_type='ECASH'):
+        """Get the current confirmed balance for a specific shop."""
+        result = cls.objects.filter(
+            tenant=tenant,
+            shop=shop,
+            status='CONFIRMED',
+            wallet_type=wallet_type
+        ).aggregate(total=Sum('amount'))
+        return result['total'] or Decimal('0')
+    
+    @classmethod
+    def record_payment(cls, tenant, amount, sale=None, paystack_ref='', user=None, notes='', shop=None, wallet_type='ECASH'):
         """Record an e-cash payment from a sale or payment on account."""
         # Determine reference info based on sale presence
         if sale:
             reference_type = 'Sale'
             reference_id = sale.pk
-            auto_notes = f"E-Cash payment for Sale {sale.sale_number}"
+            auto_notes = f"{wallet_type} payment for Sale {sale.sale_number}"
             # Use sale's shop if not explicitly provided
             if not shop and hasattr(sale, 'shop'):
                 shop = sale.shop
         else:
             reference_type = 'Payment'
             reference_id = None
-            auto_notes = "E-Cash payment on account"
+            auto_notes = f"{wallet_type} payment on account"
         
         return cls.objects.create(
             tenant=tenant,
             transaction_type='PAYMENT',
+            wallet_type=wallet_type,
             amount=amount,
+            status='PENDING', # Pending accountant confirmation
             reference_type=reference_type,
             reference_id=reference_id,
             paystack_reference=paystack_ref,

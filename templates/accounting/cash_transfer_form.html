@@ -46,10 +46,15 @@
                     </div>
 
                     <div class="mb-4">
-                        <label class="form-label fw-bold">{{ form.to_user.label }} *</label>
+                        <label class="form-label fw-bold">Destination Type *</label>
+                        {{ form.destination_type }}
+                    </div>
+
+                    <div class="mb-4" id="toUserContainer">
+                        <label class="form-label fw-bold" id="toUserLabel">{{ form.to_user.label }} *</label>
                         {{ form.to_user }}
-                        {% if not form.to_user.field.queryset.exists %}
-                        <div class="alert alert-warning mt-2 mb-0">
+                        {% if not form.to_user.field.queryset.exists and 'USER' in form.destination_type.value %}
+                        <div class="alert alert-warning mt-2 mb-0" id="noRecipientWarning">
                             <small><i class="bi bi-exclamation-triangle me-1"></i>No eligible recipients found.</small>
                         </div>
                         {% endif %}
@@ -58,7 +63,7 @@
                     <div class="mb-4">
                         <label class="form-label">Notes (Optional)</label>
                         {{ form.notes }}
-                        <small class="text-muted">Reference number or description</small>
+                        <small class="text-muted">Reference number, description, or Bank details.</small>
                     </div>
 
                     <div class="d-flex gap-2">
@@ -84,4 +89,27 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const destSelect = document.getElementById('id_destination_type');
+    const toUserContainer = document.getElementById('toUserContainer');
+    
+    function toggleToUser() {
+        if (!destSelect) return;
+        if (destSelect.value === 'BANK') {
+            toUserContainer.style.display = 'none';
+        } else {
+            toUserContainer.style.display = 'block';
+        }
+    }
+    
+    if (destSelect) {
+        destSelect.addEventListener('change', toggleToUser);
+        toggleToUser(); // initial state
+    }
+});
+</script>
 {% endblock %}

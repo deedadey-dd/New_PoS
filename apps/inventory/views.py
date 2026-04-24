@@ -1549,21 +1549,24 @@ class GoodsReceiptCreateView(LoginRequiredMixin, CreateView):
     def form_valid(self, form):
         context = self.get_context_data()
         items = context['items']
+        
+        if not items.is_valid():
+            return self.render_to_response(self.get_context_data(form=form))
+            
         with transaction.atomic():
             form.instance.tenant = self.request.user.tenant
             form.instance.created_by = self.request.user
             self.object = form.save()
-            if items.is_valid():
-                items.instance = self.object
-                # Set tenant on each unsaved item before saving the formset
-                for item_form in items:
-                    if item_form.cleaned_data and not item_form.cleaned_data.get('DELETE', False):
-                        item_form.instance.tenant = self.request.user.tenant
-                items.save()
-                messages.success(self.request, f"Goods Receipt created successfully (Status: Pending Verification).")
-                return redirect('inventory:goods_receipt_list')
-            else:
-                return self.render_to_response(self.get_context_data(form=form))
+            
+            items.instance = self.object
+            # Set tenant on each unsaved item before saving the formset
+            for item_form in items:
+                if item_form.cleaned_data and not item_form.cleaned_data.get('DELETE', False):
+                    item_form.instance.tenant = self.request.user.tenant
+            items.save()
+            
+            messages.success(self.request, f"Goods Receipt created successfully (Status: Pending Verification).")
+            return redirect('inventory:goods_receipt_list')
 
 class GoodsReceiptDetailView(LoginRequiredMixin, DetailView):
     model = GoodsReceipt
@@ -1576,8 +1579,8 @@ class GoodsReceiptDetailView(LoginRequiredMixin, DetailView):
 @login_required
 def verify_goods_receipt(request, pk):
     receipt = get_object_or_404(GoodsReceipt, pk=pk, tenant=request.user.tenant)
-    if receipt.status != 'PENDING':
-        messages.error(request, "Receipt is already verified or cancelled.")
+    if receipt.status not in ['PENDING', 'DRAFT']:
+        messages.error(request, "Receipt is already verified or cannot be changed.")
         return redirect('inventory:goods_receipt_detail', pk=pk)
 
     # Check restriction

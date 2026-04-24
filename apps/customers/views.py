@@ -41,10 +41,10 @@ class CustomerCreateView(LoginRequiredMixin, CreateView):
     success_url = reverse_lazy('customers:customer_list')
 
     def dispatch(self, request, *args, **kwargs):
-        # Only Shop Managers and Admins can create customers
+        # Only Shop Managers, Admins, and Cashiers can create customers
         role = request.user.role.name if request.user.role else None
-        if role not in ['SHOP_MANAGER', 'ADMIN']:
-            messages.error(request, "Only shop managers can add customers.")
+        if role not in ['SHOP_MANAGER', 'ADMIN', 'SHOP_CASHIER']:
+            messages.error(request, "You do not have permission to add customers.")
             return redirect('customers:customer_list')
         return super().dispatch(request, *args, **kwargs)
     
@@ -87,10 +87,10 @@ class CustomerUpdateView(LoginRequiredMixin, UpdateView):
     success_url = reverse_lazy('customers:customer_list')
 
     def dispatch(self, request, *args, **kwargs):
-        # Only Shop Managers and Admins can edit customers
+        # Only Shop Managers, Admins, and Cashiers can edit customers
         role = request.user.role.name if request.user.role else None
-        if role not in ['SHOP_MANAGER', 'ADMIN']:
-            messages.error(request, "Only shop managers can edit customers.")
+        if role not in ['SHOP_MANAGER', 'ADMIN', 'SHOP_CASHIER']:
+            messages.error(request, "You do not have permission to edit customers.")
             return redirect('customers:customer_list')
         return super().dispatch(request, *args, **kwargs)
 

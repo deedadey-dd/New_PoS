@@ -176,7 +176,14 @@ class Sale(TenantModel):
     attendant = models.ForeignKey(
         User,
         on_delete=models.PROTECT,
-        related_name='sales'
+        related_name='sales_created'
+    )
+    cashier = models.ForeignKey(
+        User,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='sales_processed'
     )
     shift = models.ForeignKey(
         Shift,
@@ -210,6 +217,7 @@ class Sale(TenantModel):
     
     # Strict workflow status
     is_dispatched = models.BooleanField(default=False)
+    is_disputed = models.BooleanField(default=False, help_text="True if the accountant disputes the digital payment")
     dispatched_by = models.ForeignKey(
         User,
         on_delete=models.SET_NULL,

@@ -244,12 +244,13 @@ class DashboardView(LoginRequiredMixin, View):
         if role_name == 'TENANT_MANAGER':
             return redirect('subscriptions:tm_dashboard')
         
-        # Shop attendants get limited dashboard - no location/user stats
+        # Shop attendants and cashiers get limited dashboard - no location/user stats
         is_attendant = role_name == 'SHOP_ATTENDANT'
+        is_cashier = role_name == 'SHOP_CASHIER'
         
         if user.tenant:
-            # Only show location/user stats to non-attendants
-            if not is_attendant:
+            # Only show location/user stats to non-attendants/non-cashiers
+            if not is_attendant and not is_cashier:
                 context['total_locations'] = Location.objects.filter(
                     tenant=user.tenant
                 ).count()
@@ -266,8 +267,8 @@ class DashboardView(LoginRequiredMixin, View):
                     tenant=user.tenant
                 ).values('location_type').annotate(count=Count('id'))
             
-            # Get pending transfer alerts for all non-attendant users
-            if not is_attendant:
+            # Get pending transfer alerts for all non-attendant/non-cashier users
+            if not is_attendant and not is_cashier:
                 # Build location filter based on user's role/location
                 role_location_map = {
                     'PRODUCTION_MANAGER': 'PRODUCTION',
@@ -316,8 +317,9 @@ class DashboardView(LoginRequiredMixin, View):
             from apps.sales.models import Sale
             from django.utils import timezone
             from django.db.models import Sum
-            
             today = timezone.now().date()
+            
+            # Today's sales calculation for dashboard
             sales_filter = {
                 'tenant': user.tenant,
                 'status': 'COMPLETED',
@@ -327,8 +329,8 @@ class DashboardView(LoginRequiredMixin, View):
             # For attendants, show only their own sales
             if is_attendant:
                 sales_filter['attendant'] = user
-            # For shop managers, show their shop's sales
-            elif role_name == 'SHOP_MANAGER' and user.location:
+            # For shop managers and cashiers, show their shop's sales
+            elif (role_name == 'SHOP_MANAGER' or is_cashier) and user.location:
                 sales_filter['shop'] = user.location
             
             today_sales = Sale.objects.filter(**sales_filter).aggregate(
@@ -343,6 +345,36 @@ class DashboardView(LoginRequiredMixin, View):
                     tenant=user.tenant,
                     attendant=user
                 ).select_related('customer', 'shop').order_by('-created_at')[:10]
+                
+            from django.core.paginator import Paginator
+
+            # For cashiers, add pending invoices and shop sales history to the dashboard
+            if is_cashier:
+                q_pending = {'tenant': user.tenant, 'status': 'PENDING'}
+                q_history = {'tenant': user.tenant, 'status': 'COMPLETED'}
+                if user.location:
+                    q_pending['shop'] = user.location
+                    q_history['shop'] = user.location
+                
+                pending_qs = Sale.objects.filter(**q_pending).select_related('customer', 'shop').order_by('-created_at')
+                history_qs = Sale.objects.filter(**q_history).select_related('customer', 'shop').order_by('-created_at')
+                
+                context['pending_invoices'] = Paginator(pending_qs, 10).get_page(request.GET.get('p_page', 1))
+                context['sales_history'] = Paginator(history_qs, 10).get_page(request.GET.get('h_page', 1))
+            
+            # For managers in strict workflow, add dispatch lists
+            if role_name == 'SHOP_MANAGER' and getattr(user.tenant, 'use_strict_sales_workflow', False):
+                q_dispatch = {'tenant': user.tenant, 'status': 'COMPLETED', 'is_dispatched': False}
+                q_dispatched = {'tenant': user.tenant, 'status': 'COMPLETED', 'is_dispatched': True}
+                if user.location:
+                    q_dispatch['shop'] = user.location
+                    q_dispatched['shop'] = user.location
+                    
+                pending_dispatch_qs = Sale.objects.filter(**q_dispatch).select_related('customer', 'shop', 'attendant').order_by('-created_at')
+                recent_dispatch_qs = Sale.objects.filter(**q_dispatched).select_related('customer', 'shop', 'attendant').order_by('-dispatched_at')
+                
+                context['pending_dispatch_invoices'] = Paginator(pending_dispatch_qs, 10).get_page(request.GET.get('d_page', 1))
+                context['recent_dispatch_invoices'] = Paginator(recent_dispatch_qs, 10).get_page(request.GET.get('r_page', 1))
         
         return render(request, self.template_name, context)
 
@@ -933,19 +965,23 @@ class ForcedPasswordChangeView(LoginRequiredMixin, View):
 
 
 class HelpView(View):
-    """Display help and documentation page. Accessible without login."""
-    template_name = 'core/help.html'
+    """Display the system help/support page."""
     
     def get(self, request):
-        return render(request, self.template_name)
+        if hasattr(request, 'user') and hasattr(request.user, 'tenant') and request.user.tenant:
+            if request.user.tenant.use_strict_sales_workflow:
+                return render(request, 'core/help_strict.html')
+        return render(request, 'core/help_standard.html')
 
 
 class DocumentationView(View):
-    """Display full documentation/user manual page. Accessible without login."""
-    template_name = 'core/documentation.html'
+    """Display the detailed system documentation page."""
     
     def get(self, request):
-        return render(request, self.template_name)
+        if hasattr(request, 'user') and hasattr(request.user, 'tenant') and request.user.tenant:
+            if request.user.tenant.use_strict_sales_workflow:
+                return render(request, 'core/documentation_strict.html')
+        return render(request, 'core/documentation_standard.html')
 
 
 class StartupKitView(View):

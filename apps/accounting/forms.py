@@ -13,7 +13,7 @@ class CashTransferForm(forms.ModelForm):
     
     class Meta:
         model = CashTransfer
-        fields = ['amount', 'to_user', 'notes']
+        fields = ['amount', 'source_type', 'destination_type', 'to_user', 'notes']
         widgets = {
             'amount': forms.NumberInput(attrs={
                 'class': 'form-control',
@@ -21,7 +21,9 @@ class CashTransferForm(forms.ModelForm):
                 'step': '0.01',
                 'min': '0.01'
             }),
-            'to_user': forms.Select(attrs={'class': 'form-select'}),
+            'source_type': forms.Select(attrs={'class': 'form-select', 'id': 'id_source_type'}),
+            'destination_type': forms.Select(attrs={'class': 'form-select', 'id': 'id_destination_type'}),
+            'to_user': forms.Select(attrs={'class': 'form-select', 'id': 'id_to_user'}),
             'notes': forms.Textarea(attrs={
                 'class': 'form-control',
                 'placeholder': 'Reference or description (optional)',
@@ -37,7 +39,17 @@ class CashTransferForm(forms.ModelForm):
         if user and user.tenant:
             role_name = user.role.name if user.role else None
             
+            # Setup default destination choices
+            dest_choices = [('USER', 'User/Accountant'), ('BANK', 'Bank Account')]
+            if 'destination_type' in self.fields:
+                self.fields['destination_type'].choices = dest_choices
+                
+            self.fields['to_user'].required = False
+            
             # Calculate cash on hand for validation
+            if role_name not in ['ACCOUNTANT', 'ADMIN'] and 'source_type' in self.fields:
+                self.fields.pop('source_type')
+
             if role_name == 'SHOP_ATTENDANT':
                 # Attendants can send to their shop manager
                 from apps.sales.models import Shift, Sale
@@ -85,6 +97,27 @@ class CashTransferForm(forms.ModelForm):
                     payment_method='MIXED'
                 ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
                 shiftless_cash = shiftless_cash_sales + shiftless_mixed
+                # Add customer cash payments received (even outside shift)
+                from apps.customers.models import CustomerTransaction
+                customer_payments = CustomerTransaction.objects.filter(
+                    tenant=user.tenant,
+                    performed_by=user,
+                    transaction_type='CREDIT',
+                    description__icontains='(CASH)'
+                ).exclude(
+                    description__icontains='ECASH'
+                ).exclude(
+                    description__icontains='MOMO'
+                ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                
+                # Subtract expenses paid from shop's cash
+                from apps.accounting.models import ExpenditureItem
+                expenses = ExpenditureItem.objects.filter(
+                    request__tenant=user.tenant,
+                    request__requested_by=user,
+                    status='APPROVED',
+                    source_of_funds='SHOP_CASH'
+                ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
                 
                 # Subtract already transferred amounts
                 transferred = CashTransfer.objects.filter(
@@ -93,8 +126,8 @@ class CashTransferForm(forms.ModelForm):
                     status__in=['PENDING', 'CONFIRMED']
                 ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
                 
-                cash_on_hand += shiftless_cash
-                self.cash_on_hand = max(Decimal('0'), cash_on_hand - transferred)
+                cash_on_hand += shiftless_cash + customer_payments
+                self.cash_on_hand = max(Decimal('0'), cash_on_hand - transferred - expenses)
                 
                 # Find their shop manager
                 if user.location:
@@ -108,7 +141,10 @@ class CashTransferForm(forms.ModelForm):
                 else:
                     self.fields['to_user'].queryset = User.objects.none()
                     
-            elif role_name == 'SHOP_MANAGER':
+                # Attendants cannot send to BANK
+                self.fields['destination_type'].choices = [('USER', 'Shop Manager')]
+                    
+            elif role_name in ('SHOP_MANAGER', 'SHOP_CASHIER'):
                 from apps.sales.models import Shift, Sale
                 
                 received = CashTransfer.objects.filter(
@@ -120,7 +156,7 @@ class CashTransferForm(forms.ModelForm):
                 sent = CashTransfer.objects.filter(
                     tenant=user.tenant,
                     from_user=user,
-                    status='CONFIRMED'
+                    status__in=['PENDING', 'CONFIRMED']
                 ).exclude(
                     to_user=user  # Exclude self-transfers (shift closings)
                 ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
@@ -133,41 +169,62 @@ class CashTransferForm(forms.ModelForm):
                     status='OPEN'
                 ).first()
                 
-                if open_shift:
-                    shift_cash_sales = Sale.objects.filter(
-                        tenant=user.tenant,
-                        shift=open_shift,
-                        status='COMPLETED',
-                        payment_method='CASH'
-                    ).aggregate(total=Sum('total'))['total'] or Decimal('0')
-                    shift_mixed = Sale.objects.filter(
-                        tenant=user.tenant,
-                        shift=open_shift,
-                        status='COMPLETED',
-                        payment_method='MIXED'
-                    ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
-                    open_shift_cash = open_shift.opening_cash + shift_cash_sales + shift_mixed
-                
-                # Own shiftless cash sales
-                shiftless_cash_sales = Sale.objects.filter(
+                # Add own cash sales (made directly by manager/cashier, or processed on behalf of attendant)
+                own_cash_sales = Sale.objects.filter(
                     tenant=user.tenant,
-                    attendant=user,
-                    shift__isnull=True,
+                    cashier=user,
                     status='COMPLETED',
                     payment_method='CASH'
                 ).aggregate(total=Sum('total'))['total'] or Decimal('0')
-                shiftless_mixed = Sale.objects.filter(
+                
+                own_mixed_sales = Sale.objects.filter(
                     tenant=user.tenant,
-                    attendant=user,
-                    shift__isnull=True,
+                    cashier=user,
                     status='COMPLETED',
                     payment_method='MIXED'
                 ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
-                own_sales = shiftless_cash_sales + shiftless_mixed
                 
-                self.cash_on_hand = received - sent + open_shift_cash + own_sales
+                own_sales = own_cash_sales + own_mixed_sales
                 
-                # Shop managers can only send to accountants
+                if open_shift:
+                    open_shift_cash = open_shift.opening_cash
+                    
+                # Add customer cash payments received (payments on account)
+                from apps.customers.models import CustomerTransaction
+                customer_payments = CustomerTransaction.objects.filter(
+                    tenant=user.tenant,
+                    performed_by=user,
+                    transaction_type='CREDIT',
+                    description__icontains='(CASH)'
+                ).exclude(
+                    description__icontains='ECASH'
+                ).exclude(
+                    description__icontains='MOMO'
+                ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                
+                # Subtract expenses paid from shop's cash
+                from apps.accounting.models import ExpenditureItem
+                expenses = ExpenditureItem.objects.filter(
+                    request__tenant=user.tenant,
+                    request__requested_by=user,
+                    status='APPROVED',
+                    source_of_funds='SHOP_CASH'
+                ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                
+                self.cash_on_hand = received - sent + open_shift_cash + own_sales + customer_payments - expenses
+                
+                # Shop managers / cashiers can send to bank or accountants based on settings
+                d_choices = []
+                if user.tenant.allow_shop_to_accountant_transfers:
+                    d_choices.append(('USER', 'Accountant'))
+                if user.tenant.allow_shop_to_bank_transfers:
+                    d_choices.append(('BANK', 'Bank Account'))
+                
+                if d_choices:
+                    self.fields['destination_type'].choices = d_choices
+                else:
+                    self.fields['destination_type'].choices = [('', 'No destinations allowed (Contact Admin)')]
+                
                 self.fields['to_user'].queryset = User.objects.filter(
                     tenant=user.tenant,
                     is_active=True,
@@ -204,20 +261,42 @@ class CashTransferForm(forms.ModelForm):
                 ).exclude(pk=user.pk)
             else:
                 self.fields['to_user'].queryset = User.objects.none()
+                
+            # Pre-populate amount with cash_on_hand and default to BANK for cashiers
+            if not self.is_bound:
+                if self.cash_on_hand and self.cash_on_hand > 0:
+                    self.initial['amount'] = round(self.cash_on_hand, 2)
+                if role_name == 'SHOP_CASHIER' and 'destination_type' in self.fields:
+                    self.initial['destination_type'] = 'BANK'
         else:
             self.fields['to_user'].queryset = User.objects.none()
     
-    def clean_amount(self):
-        amount = self.cleaned_data.get('amount')
+    def clean(self):
+        cleaned_data = super().clean()
+        dest_type = cleaned_data.get('destination_type')
+        to_user = cleaned_data.get('to_user')
+        amount = cleaned_data.get('amount')
+        source_type = cleaned_data.get('source_type', 'CASH')
         
-        if amount and self.cash_on_hand is not None:
-            if amount > self.cash_on_hand:
-                raise forms.ValidationError(
-                    f"Insufficient funds. Your cash on hand is {self.cash_on_hand:.2f}. "
-                    f"You cannot transfer {amount:.2f}."
-                )
-        
-        return amount
+        if dest_type == 'USER' and not to_user:
+            self.add_error('to_user', 'Please select a recipient.')
+        elif dest_type == 'BANK':
+            cleaned_data['to_user'] = None
+            
+        if amount:
+            if source_type == 'CASH':
+                if self.cash_on_hand is not None and amount > self.cash_on_hand:
+                    self.add_error('amount', f"Insufficient funds. Your cash on hand is {self.cash_on_hand:.2f}. "
+                                             f"You cannot transfer {amount:.2f}.")
+            elif source_type in ['ECASH', 'MOMO']:
+                if dest_type != 'BANK':
+                    self.add_error('destination_type', "Digital wallets can only be transferred to a Bank Account.")
+                from apps.payments.models import ECashLedger
+                balance = ECashLedger.get_current_balance(self.user.tenant, wallet_type=source_type)
+                if amount > balance:
+                    self.add_error('amount', f"Insufficient {source_type} balance. Available is {balance:.2f}.")
+            
+        return cleaned_data
 
 from .models import ExpenditureRequest, ExpenditureItem, ExpenditureCategory
 

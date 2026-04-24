@@ -82,6 +82,11 @@
                                             <span class="badge rounded-pill bg-warning text-dark">Pending</span>
                                             {% elif item.status == 'APPROVED' %}
                                             <span class="badge rounded-pill bg-success">Approved</span>
+                                            <br>
+                                            <small class="text-muted" style="font-size: 0.7em;">
+                                                <i class="bi bi-wallet2 me-1"></i>
+                                                {{ item.get_source_of_funds_display|default:"Unknown Source" }}
+                                            </small>
                                             {% else %}
                                             <span class="badge rounded-pill bg-danger" title="{{ item.rejection_reason }}">Rejected</span>
                                             {% endif %}
@@ -89,12 +94,10 @@
                                         <td class="text-end">
                                             {% if item.status == 'PENDING' and request.user.role.name in 'ACCOUNTANT,ADMIN' %}
                                             <div class="d-flex gap-1 justify-content-end">
-                                                <form method="post" action="{% url 'accounting:expenditure_item_action' item.pk 'approve' %}">
-                                                    {% csrf_token %}
-                                                    <button type="submit" class="btn btn-sm btn-success" title="Approve Item">
-                                                        <i class="bi bi-check-lg"></i>
-                                                    </button>
-                                                </form>
+                                                <button type="button" class="btn btn-sm btn-success" title="Approve Item"
+                                                        onclick="approveItem({{ item.pk }}, '{{ item.description|escapejs }}')">
+                                                    <i class="bi bi-check-lg"></i>
+                                                </button>
                                                 <button type="button" class="btn btn-sm btn-danger" title="Reject Item" 
                                                         onclick="rejectItem({{ item.pk }}, '{{ item.description|escapejs }}')">
                                                     <i class="bi bi-x-lg"></i>
@@ -140,6 +143,34 @@
     </div>
 </div>
 
+<!-- Approve Item Modal -->
+<div class="modal fade" id="approveItemModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Approve Expenditure Item</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" id="approve-item-form">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <p class="text-muted small mb-3">Item: <span id="approve-item-name" class="fw-bold"></span></p>
+                    <label class="form-label fw-bold small">Source of Funds <span class="text-danger">*</span></label>
+                    <select name="source_of_funds" class="form-select" required>
+                        <option value="" disabled selected>Select where the money is coming from</option>
+                        <option value="ACCOUNTANT">From Accountant</option>
+                        <option value="SHOP_CASH">From Shop's Cash-on-Hand</option>
+                    </select>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success px-4">Confirm Approval</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block extra_js %}
@@ -148,6 +179,11 @@ function rejectItem(pk, description) {
     document.getElementById('reject-item-form').action = `/accounting/expenditures/item/${pk}/reject/`;
     document.getElementById('reject-item-name').textContent = description;
     new bootstrap.Modal(document.getElementById('rejectItemModal')).show();
+}
+function approveItem(pk, description) {
+    document.getElementById('approve-item-form').action = `/accounting/expenditures/item/${pk}/approve/`;
+    document.getElementById('approve-item-name').textContent = description;
+    new bootstrap.Modal(document.getElementById('approveItemModal')).show();
 }
 </script>
 {% endblock %}

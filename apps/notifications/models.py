@@ -22,6 +22,10 @@ class Notification(TenantModel):
         ('SUBSCRIPTION_EXPIRY', 'Subscription Expiry'),
         ('SUBSCRIPTION_DEACTIVATED', 'Subscription Deactivated'),
         ('ACCOUNT_LOCKED', 'Account Locked'),
+        ('INVOICE_PENDING', 'Invoice Pending'),
+        ('INVOICE_PAID', 'Invoice Paid'),
+        ('INVOICE_DISPATCHED', 'Invoice Dispatched'),
+        ('INVOICE_DISPUTED', 'Invoice Disputed'),
         ('SYSTEM', 'System Notification'),
     ]
     

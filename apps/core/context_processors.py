@@ -108,13 +108,23 @@ def tenant_context(request):
                 status__in=['PENDING', 'CONFIRMED']
             ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
             
-            # Total cash on hand = shift cash + shiftless cash + customer payments - already transferred
+            # Total cash on hand = shift cash + shiftless cash + customer payments
             cash_on_hand += shiftless_cash + customer_payments
-            cash_on_hand = max(Decimal('0'), cash_on_hand - transferred)
+            
+            # Subtract expenses paid from shop's cash
+            from apps.accounting.models import ExpenditureItem
+            expenses = ExpenditureItem.objects.filter(
+                request__tenant=tenant,
+                request__requested_by=user,
+                status='APPROVED',
+                source_of_funds='SHOP_CASH'
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+            
+            cash_on_hand = max(Decimal('0'), cash_on_hand - transferred - expenses)
             
             context['cash_on_hand'] = cash_on_hand
         
-        elif role_name == 'SHOP_MANAGER':
+        elif role_name in ['SHOP_MANAGER', 'SHOP_CASHIER']:
             # Cash received from attendants (confirmed) minus sent to accountant
             # Plus own sales made directly (with or without shift)
             # Plus customer payments received in cash
@@ -130,7 +140,7 @@ def tenant_context(request):
             sent = CashTransfer.objects.filter(
                 tenant=tenant,
                 from_user=user,
-                status='CONFIRMED'
+                status__in=['PENDING', 'CONFIRMED']
             ).exclude(
                 to_user=user  # Exclude self-transfers (shop manager shift closings)
             ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
@@ -143,39 +153,31 @@ def tenant_context(request):
                 status='OPEN'
             ).first()
             
-            if open_shift:
-                # Cash from pure cash sales in this shift
-                shift_cash_sales = Sale.objects.filter(
-                    tenant=tenant,
-                    shift=open_shift,
-                    status='COMPLETED',
-                    payment_method='CASH'
-                ).aggregate(total=Sum('total'))['total'] or Decimal('0')
-                # Cash portion from mixed payments in this shift
-                shift_mixed = Sale.objects.filter(
-                    tenant=tenant,
-                    shift=open_shift,
-                    status='COMPLETED',
-                    payment_method='MIXED'
-                ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
-                open_shift_cash = open_shift.opening_cash + shift_cash_sales + shift_mixed
-            
-            # Add own shiftless cash sales (made directly by manager without a shift)
-            shiftless_cash_sales = Sale.objects.filter(
+            # Add own cash sales (made directly by manager/cashier, or processed on behalf of attendant)
+            # We filter by `cashier=user` instead of `attendant` to get exactly what they collected.
+            own_cash_sales = Sale.objects.filter(
                 tenant=tenant,
-                attendant=user,
-                shift__isnull=True,
+                cashier=user,
                 status='COMPLETED',
                 payment_method='CASH'
             ).aggregate(total=Sum('total'))['total'] or Decimal('0')
-            shiftless_mixed = Sale.objects.filter(
+            
+            own_mixed_sales = Sale.objects.filter(
                 tenant=tenant,
-                attendant=user,
-                shift__isnull=True,
+                cashier=user,
                 status='COMPLETED',
                 payment_method='MIXED'
             ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
-            own_sales = shiftless_cash_sales + shiftless_mixed
+            
+            # Since own_cash_sales includes ALL sales where this user collected cash, 
+            # we do not need to add shift_cash_sales because that would double-count sales 
+            # where the user is both the attendant (owns the shift) and the cashier.
+            own_sales = own_cash_sales + own_mixed_sales
+            
+            if open_shift:
+                # We already counted the cash they collected in own_sales.
+                # Just add the opening cash.
+                open_shift_cash = open_shift.opening_cash
             
             # Add customer cash payments received (payments on account)
             # Only count explicit (CASH) payments, not (ECASH)
@@ -188,7 +190,16 @@ def tenant_context(request):
                 description__icontains='ECASH'
             ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
             
-            context['cash_on_hand'] = received - sent + open_shift_cash + own_sales + customer_payments
+            # Subtract expenses paid from shop's cash
+            from apps.accounting.models import ExpenditureItem
+            expenses = ExpenditureItem.objects.filter(
+                request__tenant=tenant,
+                request__requested_by=user,
+                status='APPROVED',
+                source_of_funds='SHOP_CASH'
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+            
+            context['cash_on_hand'] = received - sent + open_shift_cash + own_sales + customer_payments - expenses
         
         elif role_name == 'ACCOUNTANT':
             # All deposits received minus any sent out
@@ -233,20 +244,45 @@ def tenant_context(request):
             ).count()
         
         # E-Cash balance for accountants, managers, and auditors
-        if role_name in ['ACCOUNTANT', 'AUDITOR', 'SHOP_MANAGER']:
+        if role_name in ['ACCOUNTANT', 'AUDITOR', 'SHOP_MANAGER', 'SHOP_CASHIER']:
             try:
                 from apps.payments.models import ECashLedger
+                from django.utils import timezone
                 
                 # Shop managers see their shop's e-cash balance
-                if role_name == 'SHOP_MANAGER' and user.location and user.location.location_type == 'SHOP':
-                    ecash_balance = ECashLedger.get_shop_balance(tenant, user.location)
+                if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER'] and user.location and user.location.location_type == 'SHOP':
+                    ecash_balance = ECashLedger.get_shop_balance(tenant, user.location, 'ECASH')
+                    momo_balance = ECashLedger.get_shop_balance(tenant, user.location, 'MOMO')
                 else:
                     # Accountants and auditors see tenant total
-                    ecash_balance = ECashLedger.get_current_balance(tenant)
+                    ecash_balance = ECashLedger.get_current_balance(tenant, 'ECASH')
+                    momo_balance = ECashLedger.get_current_balance(tenant, 'MOMO')
                     
                 context['ecash_balance'] = ecash_balance
+                context['momo_balance'] = momo_balance
+                
+                # Calculate monthly totals
+                now = timezone.now()
+                monthly_txs = ECashLedger.objects.filter(
+                    tenant=tenant,
+                    transaction_type='PAYMENT',
+                    created_at__year=now.year,
+                    created_at__month=now.month
+                )
+                
+                if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER'] and user.location and user.location.location_type == 'SHOP':
+                    monthly_txs = monthly_txs.filter(shop=user.location)
+                    
+                monthly_ecash = monthly_txs.filter(wallet_type='ECASH').aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                monthly_momo = monthly_txs.filter(wallet_type='MOMO').aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                
+                context['monthly_ecash'] = monthly_ecash
+                context['monthly_momo'] = monthly_momo
             except Exception:
                 context['ecash_balance'] = Decimal('0')
+                context['momo_balance'] = Decimal('0')
+                context['monthly_ecash'] = Decimal('0')
+                context['monthly_momo'] = Decimal('0')
         
         # Low stock products for the user's location (Stock Alerts)
         if user.location and role_name in ['SHOP_MANAGER', 'SHOP_ATTENDANT', 'STORES_MANAGER', 'PRODUCTION_MANAGER', 'ADMIN']:

@@ -221,14 +221,134 @@ class ECashLedgerView(LoginRequiredMixin, ListView):
     paginate_by = 50
     
     def get_queryset(self):
-        return ECashLedger.objects.filter(
+        from datetime import datetime
+        qs = ECashLedger.objects.filter(
             tenant=self.request.user.tenant
-        ).select_related('created_by', 'shop').order_by('-created_at')
+        ).select_related('created_by', 'shop')
+        
+        # Filtering
+        wallet_type = self.request.GET.get('wallet_type')
+        status = self.request.GET.get('status')
+        date_from = self.request.GET.get('date_from')
+        date_to = self.request.GET.get('date_to')
+        sort_by = self.request.GET.get('sort', '-created_at')
+        
+        if wallet_type:
+            qs = qs.filter(wallet_type=wallet_type)
+            
+        if status:
+            qs = qs.filter(status=status)
+            
+        if date_from:
+            try:
+                date_from_obj = datetime.strptime(date_from, '%Y-%m-%d').date()
+                qs = qs.filter(created_at__date__gte=date_from_obj)
+            except ValueError:
+                pass
+                
+        if date_to:
+            try:
+                date_to_obj = datetime.strptime(date_to, '%Y-%m-%d').date()
+                qs = qs.filter(created_at__date__lte=date_to_obj)
+            except ValueError:
+                pass
+                
+        # Sorting validation
+        allowed_sorts = ['created_at', '-created_at', 'amount', '-amount']
+        if sort_by not in allowed_sorts:
+            sort_by = '-created_at'
+            
+        qs = qs.order_by(sort_by)
+        
+        return qs
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['ecash_balance'] = ECashLedger.get_current_balance(self.request.user.tenant)
+        context['ecash_balance'] = ECashLedger.get_current_balance(self.request.user.tenant, 'ECASH')
+        context['momo_balance'] = ECashLedger.get_current_balance(self.request.user.tenant, 'MOMO')
+        
+        # Pass filter params to context
+        context['wallet_type'] = self.request.GET.get('wallet_type', '')
+        context['status'] = self.request.GET.get('status', '')
+        context['date_from'] = self.request.GET.get('date_from', '')
+        context['date_to'] = self.request.GET.get('date_to', '')
+        context['sort'] = self.request.GET.get('sort', '-created_at')
+        
         return context
+
+@login_required
+@require_POST
+def confirm_ecash_transaction(request, pk):
+    """Accountant confirms a pending digital wallet transaction."""
+    if request.user.role and request.user.role.name not in ['ACCOUNTANT', 'ADMIN']:
+        messages.error(request, "Only accountants can confirm transactions.")
+        return redirect('payments:ecash_ledger')
+        
+    transaction = get_object_or_404(
+        ECashLedger,
+        pk=pk,
+        tenant=request.user.tenant
+    )
+    
+    if transaction.status == 'PENDING':
+        transaction.status = 'CONFIRMED'
+        transaction.save()
+        messages.success(request, f"Transaction {transaction.pk} confirmed successfully.")
+    else:
+        messages.info(request, "Transaction is already processed.")
+        
+    return redirect('payments:ecash_ledger')
+
+@login_required
+@require_POST
+def dispute_ecash_transaction(request, pk):
+    """Accountant disputes a pending digital wallet transaction."""
+    if request.user.role and request.user.role.name not in ['ACCOUNTANT', 'ADMIN']:
+        messages.error(request, "Only accountants can dispute transactions.")
+        return redirect('payments:ecash_ledger')
+        
+    transaction = get_object_or_404(
+        ECashLedger,
+        pk=pk,
+        tenant=request.user.tenant
+    )
+    
+    if transaction.status == 'PENDING':
+        transaction.status = 'DISPUTED'
+        transaction.save()
+        # Mark associated sale as disputed and revert payment
+        if transaction.reference_type == 'Sale' and transaction.reference_id:
+            from apps.sales.models import Sale
+            try:
+                sale = Sale.objects.get(pk=transaction.reference_id)
+                # Revert payment details
+                sale.status = 'PENDING'
+                sale.completed_at = None
+                sale.amount_paid = 0
+                sale.change_given = 0
+                sale.payment_method = ''
+                sale.is_disputed = True
+                sale.save()
+            except Sale.DoesNotExist:
+                pass
+            
+            # Notify the cashier that their digital payment was disputed
+            from apps.notifications.models import Notification
+            if 'sale' in locals() and sale.cashier:
+                Notification.objects.create(
+                    tenant=request.user.tenant,
+                    user=sale.cashier,
+                    title="Payment Disputed",
+                    message=f"The {transaction.wallet_type} payment for invoice {sale.sale_number} was disputed by the Accountant. It has been returned to your Pending queue.",
+                    notification_type='INVOICE_DISPUTED',
+                    reference_type='Sale',
+                    reference_id=sale.pk
+                )
+        messages.warning(request, f"Transaction {transaction.pk} marked as disputed. The sale has been reverted to Pending for the Cashier.")
+    else:
+        messages.info(request, "Transaction is already processed.")
+        
+    return redirect('payments:ecash_ledger')
 
 
 class ShopECashListView(LoginRequiredMixin, TemplateView):
@@ -354,14 +474,15 @@ class ShopECashHistoryView(LoginRequiredMixin, ListView):
     paginate_by = 30
     
     def dispatch(self, request, *args, **kwargs):
-        # Shop managers, accountants, auditors, and admins can access
-        allowed_roles = ['SHOP_MANAGER', 'ACCOUNTANT', 'AUDITOR', 'ADMIN']
+        # Shop managers, cashiers, accountants, auditors, and admins can access
+        allowed_roles = ['SHOP_MANAGER', 'SHOP_CASHIER', 'ACCOUNTANT', 'AUDITOR', 'ADMIN']
         if request.user.role and request.user.role.name not in allowed_roles:
             messages.error(request, "You don't have permission to view e-cash history.")
             return redirect('core:dashboard')
         return super().dispatch(request, *args, **kwargs)
     
     def get_queryset(self):
+        from datetime import datetime
         user = self.request.user
         tenant = user.tenant
         
@@ -370,10 +491,34 @@ class ShopECashHistoryView(LoginRequiredMixin, ListView):
         if not shop:
             return ECashLedger.objects.none()
         
-        return ECashLedger.objects.filter(
+        qs = ECashLedger.objects.filter(
             tenant=tenant,
             shop=shop
         ).select_related('created_by').order_by('-created_at')
+        
+        # Filtering
+        wallet_type = self.request.GET.get('wallet_type')
+        date_from = self.request.GET.get('date_from')
+        date_to = self.request.GET.get('date_to')
+        
+        if wallet_type:
+            qs = qs.filter(wallet_type=wallet_type)
+            
+        if date_from:
+            try:
+                date_from_parsed = datetime.strptime(date_from, '%Y-%m-%d').date()
+                qs = qs.filter(created_at__date__gte=date_from_parsed)
+            except ValueError:
+                pass
+                
+        if date_to:
+            try:
+                date_to_parsed = datetime.strptime(date_to, '%Y-%m-%d').date()
+                qs = qs.filter(created_at__date__lte=date_to_parsed)
+            except ValueError:
+                pass
+                
+        return qs
     
     def _get_shop(self):
         """Get the shop to show history for."""
@@ -415,6 +560,10 @@ class ShopECashHistoryView(LoginRequiredMixin, ListView):
             context['all_shops'] = Location.objects.filter(
                 tenant=tenant, location_type='SHOP', is_active=True
             ).order_by('name')
+            
+        context['wallet_type'] = self.request.GET.get('wallet_type', '')
+        context['date_from'] = self.request.GET.get('date_from', '')
+        context['date_to'] = self.request.GET.get('date_to', '')
         
         return context
 

@@ -34,6 +34,8 @@ urlpatterns = [
     path('api/invoices/delete/', views.api_delete_invoices, name='api_delete_invoices'),
     path('api/invoices/<int:pk>/update/', views.api_update_invoice, name='api_update_invoice'),
     path('api/<int:pk>/void/', views.api_void_sale, name='api_void_sale'),
+    path('api/<int:pk>/revert-payment/', views.api_revert_payment, name='api_revert_payment'),
+    path('api/<int:pk>/revert-dispatch/', views.api_revert_dispatch, name='api_revert_dispatch'),
     
     # Invoice Management (Cashier)
     path('invoices/<int:pk>/edit/', views.InvoiceEditView.as_view(), name='invoice_edit'),

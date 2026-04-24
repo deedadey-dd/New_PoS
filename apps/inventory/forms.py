@@ -191,17 +191,21 @@ class BatchForm(forms.ModelForm):
         self.auto_location = None
         
         # Determine allowed location types based on role
-        allowed_types = ['PRODUCTION', 'STORES']
         if user and user.role:
-            if user.role.name == 'STORES_MANAGER':
+            if user.role.name == 'SHOP_MANAGER':
+                allowed_types = ['SHOP']
+            elif user.role.name == 'STORES_MANAGER':
                 allowed_types = ['STORES']
             elif user.role.name == 'PRODUCTION_MANAGER':
                 allowed_types = ['PRODUCTION']
+            else:
+                allowed_types = ['PRODUCTION', 'STORES', 'SHOP']
+        else:
+            allowed_types = ['PRODUCTION', 'STORES']
         
         if tenant:
             self.fields['product'].queryset = Product.objects.filter(tenant=tenant, is_active=True)
             
-            # Only Production and Stores can receive batches
             self.fields['location'].queryset = Location.objects.filter(
                 tenant=tenant, 
                 is_active=True,
@@ -219,10 +223,10 @@ class BatchForm(forms.ModelForm):
         if user and user.location and user.location.location_type in allowed_types:
             self.initial['location'] = user.location.pk
             self.auto_location = user.location
-            # Make location field hidden when auto-set
+            # Lock location field when it is auto-set from the user's assignment
             self.fields['location'].widget = forms.HiddenInput()
-        elif user and tenant:
-            # For users without location, find first allowed location
+        elif user and user.role and user.role.name not in ['ADMIN'] and tenant:
+            # For non-admin users without a location, find first allowed location
             auto_loc = Location.objects.filter(
                 tenant=tenant,
                 is_active=True,
@@ -381,9 +385,10 @@ class GoodsReceiptForm(forms.ModelForm):
 
         if user and user.location:
             self.initial['location'] = user.location.pk
-            # If shop manager, lock it to their shop
-            if user.role and user.role.name == 'SHOP_MANAGER':
+            # If user has a specific location assigned, lock it to prevent reassignment
+            if user.role and user.role.name in ['SHOP_MANAGER', 'STORES_MANAGER', 'PRODUCTION_MANAGER']:
                 self.fields['location'].queryset = Location.objects.filter(pk=user.location.pk)
+                self.fields['location'].widget = forms.HiddenInput()
 
 
 class GoodsReceiptItemForm(forms.ModelForm):

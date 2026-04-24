@@ -98,7 +98,10 @@ class CashTransferListView(LoginRequiredMixin, SortableMixin, ListView):
         ).count()
         
         # Check if user can create transfers (Auditor cannot create)
-        context['can_create'] = role_name in ['SHOP_ATTENDANT', 'SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN']
+        if getattr(user.tenant, 'use_strict_sales_workflow', False):
+            context['can_create'] = role_name in ['SHOP_CASHIER', 'ACCOUNTANT', 'ADMIN']
+        else:
+            context['can_create'] = role_name in ['SHOP_ATTENDANT', 'SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN', 'SHOP_CASHIER']
         
         # Show filters for all roles
         context['show_filters'] = True
@@ -140,9 +143,15 @@ class CashTransferCreateView(LoginRequiredMixin, View):
     template_name = 'accounting/cash_transfer_form.html'
     
     def dispatch(self, request, *args, **kwargs):
-        # Shop Attendants, Shop Managers, Accountants and Admins can create transfers
         role_name = request.user.role.name if request.user.role else None
-        if role_name not in ['SHOP_ATTENDANT', 'SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN']:
+        
+        # Determine allowed roles based on workflow setting
+        if getattr(request.user.tenant, 'use_strict_sales_workflow', False):
+            allowed_roles = ['SHOP_CASHIER', 'ACCOUNTANT', 'ADMIN']
+        else:
+            allowed_roles = ['SHOP_ATTENDANT', 'SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN', 'SHOP_CASHIER']
+            
+        if role_name not in allowed_roles:
             messages.error(request, 'You do not have permission to create cash transfers.')
             return redirect('accounting:cash_transfer_list')
         return super().dispatch(request, *args, **kwargs)
@@ -168,19 +177,20 @@ class CashTransferCreateView(LoginRequiredMixin, View):
             
             transfer.save()
             
-            # Create notification for recipient
-            from apps.notifications.models import Notification
-            Notification.objects.create(
-                tenant=transfer.tenant,
-                user=transfer.to_user,
-                title="Incoming Cash Transfer",
-                message=f"{request.user.get_full_name() or request.user.email} is sending you {transfer.tenant.currency_symbol}{transfer.amount}. Please confirm receipt.",
-                notification_type='SYSTEM',
-                reference_type='CashTransfer',
-                reference_id=transfer.pk
-            )
+            # Create notification for recipient if not going to bank
+            if transfer.to_user:
+                from apps.notifications.models import Notification
+                Notification.objects.create(
+                    tenant=transfer.tenant,
+                    user=transfer.to_user,
+                    title="Incoming Cash Transfer",
+                    message=f"{request.user.get_full_name() or request.user.email} is sending you {transfer.tenant.currency_symbol}{transfer.amount}. Please confirm receipt.",
+                    notification_type='SYSTEM',
+                    reference_type='CashTransfer',
+                    reference_id=transfer.pk
+                )
             
-            messages.success(request, f'Cash transfer of {transfer.amount} created. Waiting for confirmation.')
+            messages.success(request, f'Cash transfer of {transfer.amount} created.')
             return redirect('accounting:cash_transfer_list')
         
         return render(request, self.template_name, {'form': form})
@@ -1013,7 +1023,8 @@ class ExpenditureItemActionView(LoginRequiredMixin, View):
 
         try:
             if action == 'approve':
-                item.approve(request.user)
+                source_of_funds = request.POST.get('source_of_funds')
+                item.approve(request.user, source_of_funds)
                 messages.success(request, f"Item approved.")
             elif action == 'reject':
                 reason = request.POST.get('reason', '')
@@ -1021,7 +1032,7 @@ class ExpenditureItemActionView(LoginRequiredMixin, View):
                 messages.success(request, f"Item rejected.")
         except ValidationError as e:
             messages.error(request, str(e))
-
+            
         return redirect('accounting:expenditure_detail', pk=item.request.pk)
 
 

@@ -88,8 +88,8 @@
 </style>
 {% endif %}
 
-<!-- Stats Cards - Hidden from Shop Attendants -->
-{% if user.role.name != 'SHOP_ATTENDANT' %}
+<!-- Stats Cards - Hidden from Shop Attendants and Cashiers -->
+{% if user.role.name != 'SHOP_ATTENDANT' and user.role.name != 'SHOP_CASHIER' %}
 <div class="row g-4 mb-4">
     <div class="col-md-6 col-lg-3">
         <div class="card stat-card">
@@ -148,7 +148,7 @@
         </div>
     </div>
 </div>
-{% else %}
+{% elif user.role.name == 'SHOP_ATTENDANT' or user.role.name == 'SHOP_CASHIER' %}
 <!-- Simplified stats for Shop Attendants -->
 <div class="row g-4 mb-4">
     <div class="col-md-6 col-lg-4">
@@ -285,8 +285,8 @@
 </div>
 {% endif %}
 
-<!-- Locations Overview - Hidden from Shop Attendants -->
-{% if locations_by_type and user.role.name != 'SHOP_ATTENDANT' %}
+<!-- Locations Overview - Hidden from Shop Attendants and Cashiers -->
+{% if locations_by_type and user.role.name != 'SHOP_ATTENDANT' and user.role.name != 'SHOP_CASHIER' %}
 <div class="row g-4">
     <div class="col-md-6">
         <div class="card">
@@ -327,4 +327,233 @@
     </div>
 </div>
 {% endif %}
+
+{% if user.role.name == 'SHOP_CASHIER' %}
+<!-- Dashbaord elements for Cashiers -->
+<div class="row g-4 mb-4">
+    <div class="col-12">
+        <div class="card border-0 shadow-sm border-warning border-top border-3">
+            <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                <h4 class="card-title fw-bold text-warning mb-0"><i class="bi bi-hourglass-split me-2"></i>Pending Invoices (Awaiting Payment)</h4>
+                <a href="{% url 'sales:cashier_invoices' %}" class="btn btn-sm btn-outline-warning text-dark">View All Pending</a>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Inv #</th>
+                                <th>Date / Time</th>
+                                <th>Customer</th>
+                                <th>Attendant</th>
+                                <th>Amount</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for invoice in pending_invoices %}
+                            <tr>
+                                <td class="fw-bold"><a href="#" class="invoice-action-link text-decoration-none" data-sale-id="{{ invoice.id }}">{{ invoice.sale_number }}</a></td>
+                                <td class="text-muted small">{{ invoice.created_at|date:"d M, H:i" }}</td>
+                                <td>
+                                {% if invoice.customer %}
+                                    {{ invoice.customer.name }} <span class="badge bg-info text-dark ms-1">Registered</span>
+                                {% elif invoice.walkin_customer_name %}
+                                    {{ invoice.walkin_customer_name }} <span class="badge bg-secondary text-white ms-1">Walk-in</span>
+                                {% else %}
+                                    Walk-in Customer <span class="badge bg-secondary text-white ms-1">Walk-in</span>
+                                {% endif %}
+                                </td>
+                                <td>{{ invoice.attendant.first_name }}</td>
+                                <td class="fw-bold text-danger">{{ currency_symbol }}{{ invoice.total|floatformat:"2" }}</td>
+                                <td>
+                                    <a href="{% url 'sales:invoice_edit' invoice.id %}" class="btn btn-sm btn-outline-primary me-1 text-decoration-none">
+                                        Edit
+                                    </a>
+                                    <button class="btn btn-sm btn-success invoice-action-link"
+                                            data-sale-id="{{ invoice.id }}"
+                                            data-total="{{ invoice.total }}">
+                                        Pay
+                                    </button>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="6" class="text-center py-4 text-muted">No pending invoices.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% if pending_invoices.has_other_pages %}
+                        <div class="px-3 pb-3">{% include 'includes/multi_pagination.html' with page_obj=pending_invoices param_name="p_page" %}</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-12">
+        <div class="card border-0 shadow-sm border-success border-top border-3">
+            <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 fw-bold"><i class="bi bi-check-circle me-2 text-success"></i>Recent Sales History</h5>
+                <a href="{% url 'sales:sale_list' %}" class="btn btn-sm btn-outline-success text-dark">View All Sales</a>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                                <th>Inv #</th>
+                                <th>Time</th>
+                                <th>Amount</th>
+                                <th>Method</th>
+                                <th>Status</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for sale in sales_history %}
+                            <tr>
+                                <td class="fw-bold"><a href="#" class="invoice-action-link text-decoration-none" data-sale-id="{{ sale.id }}">{{ sale.sale_number }}</a></td>
+                                <td class="text-muted small">{{ sale.created_at|date:"H:i" }}</td>
+                                <td class="fw-bold text-success">{{ currency_symbol }}{{ sale.total|floatformat:"2" }}</td>
+                                <td><span class="badge bg-light text-dark">{{ sale.get_payment_method_display }}</span></td>
+                                <td>
+                                    {% if sale.is_dispatched %}
+                                        <span class="badge bg-success"><i class="bi bi-check2-all me-1"></i>Dispatched</span>
+                                    {% else %}
+                                        <span class="badge bg-warning text-dark"><i class="bi bi-hourglass me-1"></i>Waiting Dispatch</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-primary invoice-action-link" data-sale-id="{{ sale.id }}">View</button>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="6" class="text-center py-4 text-muted">No sales history for today.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% if sales_history.has_other_pages %}
+                        <div class="px-3 pb-3">{% include 'includes/multi_pagination.html' with page_obj=sales_history param_name="h_page" %}</div>
+                    {% endif %}
+                </div>
+            </div>
+    </div>
+</div>
+{% endif %}
+
+{% if user.role.name == 'SHOP_MANAGER' and current_tenant.use_strict_sales_workflow %}
+<!-- Dashboard elements for Shop Managers (Strict Workflow) -->
+<div class="row g-4 mb-4">
+    <div class="col-12">
+        <div class="card border-0 shadow-sm border-primary border-top border-3">
+            <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                <h4 class="card-title fw-bold text-primary mb-0"><i class="bi bi-truck me-2"></i>Pending Dispatch (Awaiting Dispatch)</h4>
+                <a href="{% url 'sales:dispatch_invoices' %}" class="btn btn-sm btn-outline-primary text-dark">View All Pending</a>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Inv #</th>
+                                <th>Date / Time</th>
+                                <th>Customer</th>
+                                <th>Attendant</th>
+                                <th>Amount</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for invoice in pending_dispatch_invoices %}
+                            <tr>
+                                <td class="fw-bold"><a href="#" class="invoice-action-link text-decoration-none" data-sale-id="{{ invoice.id }}">{{ invoice.sale_number }}</a></td>
+                                <td class="text-muted small">{{ invoice.created_at|date:"d M, H:i" }}</td>
+                                <td>
+                                {% if invoice.customer %}
+                                    {{ invoice.customer.name }} <span class="badge bg-info text-dark ms-1">Registered</span>
+                                {% elif invoice.walkin_customer_name %}
+                                    {{ invoice.walkin_customer_name }} <span class="badge bg-secondary text-white ms-1">Walk-in</span>
+                                {% else %}
+                                    Walk-in Customer <span class="badge bg-secondary text-white ms-1">Walk-in</span>
+                                {% endif %}
+                                </td>
+                                <td>{{ invoice.attendant.first_name }}</td>
+                                <td class="fw-bold text-dark">{{ currency_symbol }}{{ invoice.total|floatformat:"2" }}</td>
+                                <td>
+                                    <button class="btn btn-sm btn-primary invoice-action-link" data-sale-id="{{ invoice.id }}">
+                                        Dispatch
+                                    </button>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="6" class="text-center py-4 text-muted">No pending dispatches.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% if pending_dispatch_invoices.has_other_pages %}
+                        <div class="px-3 pb-3">{% include 'includes/multi_pagination.html' with page_obj=pending_dispatch_invoices param_name="d_page" %}</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-12">
+        <div class="card border-0 shadow-sm border-success border-top border-3">
+            <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 fw-bold"><i class="bi bi-check2-all me-2 text-success"></i>Recent Dispatches</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Inv #</th>
+                                <th>Dispatched At</th>
+                                <th>Amount</th>
+                                <th>Method</th>
+                                <th>Status</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for sale in recent_dispatch_invoices %}
+                            <tr>
+                                <td class="fw-bold"><a href="#" class="invoice-action-link text-decoration-none" data-sale-id="{{ sale.id }}">{{ sale.sale_number }}</a></td>
+                                <td class="text-muted small">{{ sale.dispatched_at|date:"H:i" }}</td>
+                                <td class="fw-bold text-success">{{ currency_symbol }}{{ sale.total|floatformat:"2" }}</td>
+                                <td><span class="badge bg-light text-dark">{{ sale.get_payment_method_display }}</span></td>
+                                <td>
+                                    <span class="badge bg-success"><i class="bi bi-check2-all me-1"></i>Dispatched</span>
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-primary invoice-action-link" data-sale-id="{{ sale.id }}">View</button>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="6" class="text-center py-4 text-muted">No recently dispatched sales.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% if recent_dispatch_invoices.has_other_pages %}
+                        <div class="px-3 pb-3">{% include 'includes/multi_pagination.html' with page_obj=recent_dispatch_invoices param_name="r_page" %}</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% include 'includes/invoice_action_modal.html' %}
 {% endblock %}

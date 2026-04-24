@@ -2007,17 +2007,22 @@
                         alert('✓ Sale saved offline! It will sync automatically when you\'re back online.');
                     } else {
                         // Sale completed online
-                        // Open receipt for printing
-                        {% if shop_settings.receipt_printer_type != 'NO_PRINT' %}
-                        if (isPaymentOnAccount && result.transaction_id) {
-                            window.open(`/customers/payment/${result.transaction_id}/receipt/`, '_blank');
-                        } else if (result.sale_id) {
-                            window.open(`/sales/${result.sale_id}/receipt/`, '_blank');
+                        if (result.status === 'PENDING') {
+                            alert(`PENDING INVOICE CREATED!\n\nGive this code to the customer: ${result.sale_number}\n\nThey must present it to the Cashier for payment.`);
+                            location.reload();
+                        } else {
+                            // Open receipt for printing
+                            {% if shop_settings.receipt_printer_type != 'NO_PRINT' %}
+                            if (isPaymentOnAccount && result.transaction_id) {
+                                window.open(`/customers/payment/${result.transaction_id}/receipt/`, '_blank');
+                            } else if (result.sale_id) {
+                                window.open(`/sales/${result.sale_id}/receipt/`, '_blank');
+                            }
+                            {% endif %}
+                            
+                            // Reload window to update stock
+                            setTimeout(() => location.reload(), 500);
                         }
-                        {% endif %}
-
-                        // Reload window to update stock
-                        setTimeout(() => location.reload(), 500);
                     }
                 } else {
                     alert('Error: ' + (result.error || 'Failed to process sale'));

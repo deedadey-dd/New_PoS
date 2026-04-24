@@ -11,26 +11,62 @@
     </div>
 </div>
 
+<!-- Filters -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">From Date</label>
+                <input type="date" name="date_from" class="form-control" value="{{ date_from }}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">To Date</label>
+                <input type="date" name="date_to" class="form-control" value="{{ date_to }}">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Dispatch Status</label>
+                <select name="dispatch_status" class="form-select">
+                    <option value="">All</option>
+                    <option value="AWAITING" {% if dispatch_status == 'AWAITING' %}selected{% endif %}>Awaiting Dispatch</option>
+                    <option value="DISPATCHED" {% if dispatch_status == 'DISPATCHED' %}selected{% endif %}>Dispatched</option>
+                </select>
+            </div>
+            <div class="col-md-2 d-flex align-items-end gap-2">
+                <button type="submit" class="btn btn-primary flex-grow-1">Filter</button>
+                <a href="?" class="btn btn-outline-secondary"><i class="bi bi-x-lg"></i></a>
+            </div>
+        </form>
+    </div>
+</div>
+
 <div class="card">
     <div class="card-body">
         {% if invoices %}
         <div class="table-responsive">
             <table class="table table-hover align-middle">
-                <thead>
+                <thead class="table-light">
                     <tr>
                         <th>Invoice #</th>
                         <th>Sale Date</th>
                         <th>Payment Method</th>
-                        <th>Customer / Walk-in</th>
-                        <th>Total</th>
+                        <th>Customer</th>
+                        <th class="text-end">Total</th>
+                        <th class="text-center">Dispatch Status</th>
                         <th class="text-end">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for invoice in invoices %}
                     <tr>
-                        <td><span class="fw-bold">{{ invoice.sale_number }}</span></td>
-                        <td>{{ invoice.created_at|date:"M d, H:i" }}</td>
+                        <td>
+                            <a href="#" class="invoice-action-link fw-bold text-decoration-none" data-sale-id="{{ invoice.id }}">
+                                {{ invoice.sale_number }}
+                            </a>
+                        </td>
+                        <td>
+                            <div>{{ invoice.created_at|date:"M d, Y" }}</div>
+                            <small class="text-muted">{{ invoice.created_at|date:"H:i" }}</small>
+                        </td>
                         <td>
                             {% if invoice.payment_method == 'CASH' %}
                                 <span class="badge bg-success">Cash</span>
@@ -44,17 +80,25 @@
                         </td>
                         <td>
                             {% if invoice.customer %}
-                                {{ invoice.customer.name }} <span class="badge bg-info">CRM</span>
-                            {% elif invoice.walkin_customer_name or invoice.walkin_customer_phone %}
-                                {{ invoice.walkin_customer_name|default:"Walk-in" }} <small class="text-muted">({{ invoice.walkin_customer_phone }})</small>
+                                <div class="fw-medium">{{ invoice.customer.name }}</div>
+                                <span class="badge bg-info text-dark" data-bs-toggle="tooltip" title="Registered CRM Customer">Registered</span>
                             {% else %}
-                                Walk-in
+                                <div class="fw-medium">{{ invoice.walkin_customer_name|default:"Walk-in Customer" }}</div>
+                                <span class="badge bg-secondary text-white" data-bs-toggle="tooltip" title="Unregistered / Walk-in">Walk-in</span>
                             {% endif %}
                         </td>
-                        <td class="fw-bold">{{ current_tenant.currency_symbol|default:'GHC' }} {{ invoice.total|floatformat:"2g" }}</td>
+                        <td class="text-end fw-bold">{{ current_tenant.currency_symbol|default:'GHC' }}{{ invoice.total|floatformat:"2g" }}</td>
+                        <td class="text-center">
+                            {% if invoice.is_dispatched %}
+                                <span class="badge bg-success">Dispatched</span>
+                                <div class="small text-muted">{{ invoice.dispatched_at|date:"M d, H:i" }}</div>
+                            {% else %}
+                                <span class="badge bg-warning text-dark">Awaiting Dispatch</span>
+                            {% endif %}
+                        </td>
                         <td class="text-end">
-                            <button class="btn btn-warning btn-sm dispatch-btn" data-sale-id="{{ invoice.id }}">
-                                <i class="bi bi-box-seam me-1"></i> Dispatch Items
+                            <button class="btn btn-outline-primary btn-sm invoice-action-link" data-sale-id="{{ invoice.id }}">
+                                View Details
                             </button>
                         </td>
                     </tr>
@@ -62,6 +106,9 @@
                 </tbody>
             </table>
         </div>
+        
+        <!-- Pagination -->
+        {% include "includes/multi_pagination.html" with page_obj=page_obj param_name="page" %}
         {% else %}
         <div class="text-center py-5">
             <i class="bi bi-box-seam display-1 text-success"></i>
@@ -71,49 +118,5 @@
         {% endif %}
     </div>
 </div>
-
-{% endblock %}
-
-{% block extra_js %}
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    document.querySelectorAll('.dispatch-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            if (!confirm('Are you certain you want to dispatch these items? This will deduct inventory permanently.')) {
-                return;
-            }
-            
-            const saleId = this.dataset.saleId;
-            const originalText = this.innerHTML;
-            this.disabled = true;
-            this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Dispatching...';
-
-            fetch('{% url "sales:api_dispatch_invoice" %}', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': '{{ csrf_token }}'
-                },
-                body: JSON.stringify({ sale_id: saleId })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    window.location.reload();
-                } else {
-                    alert(data.error || 'Failed to dispatch items');
-                    this.disabled = false;
-                    this.innerHTML = originalText;
-                }
-            })
-            .catch(err => {
-                alert('An error occurred while communicating with the server.');
-                console.error(err);
-                this.disabled = false;
-                this.innerHTML = originalText;
-            });
-        });
-    });
-});
-</script>
+{% include 'includes/invoice_action_modal.html' %}
 {% endblock %}

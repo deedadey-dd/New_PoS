@@ -227,12 +227,16 @@ class TenantSettingsForm(forms.ModelForm):
             'shop_manager_can_add_products', 'shop_manager_can_receive_stock',
             'shops_can_see_other_stock',
             'allow_accountant_to_shop_transfers',
+            'allow_shop_to_accountant_transfers',
+            'allow_shop_to_bank_transfers',
             'allow_shop_to_shop_transfers',
             # Workflow feature flags
             'use_strict_sales_workflow',
             'require_customer_on_invoice',
             'use_bulk_inventory_receiving',
             'require_accountant_for_bulk_receiving',
+            # Printing settings
+            'receipt_print_copies',
         ]
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control'}),
@@ -242,12 +246,16 @@ class TenantSettingsForm(forms.ModelForm):
             'currency': forms.Select(attrs={'class': 'form-select'}),
             'credit_limit_warning_percent': forms.NumberInput(attrs={'class': 'form-control', 'min': 0, 'max': 100}),
             'backdating_allowed_days': forms.NumberInput(attrs={'class': 'form-control', 'min': 0}),
+            'receipt_print_copies': forms.NumberInput(attrs={'class': 'form-control', 'min': 1}),
             'allow_negative_stock': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'require_refund_approval': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'require_return_approval': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'shop_manager_can_add_products': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'shop_manager_can_receive_stock': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'shops_can_see_other_stock': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'allow_accountant_to_shop_transfers': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'allow_shop_to_accountant_transfers': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'allow_shop_to_bank_transfers': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'allow_shop_to_shop_transfers': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'use_strict_sales_workflow': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'require_customer_on_invoice': forms.CheckboxInput(attrs={'class': 'form-check-input'}),

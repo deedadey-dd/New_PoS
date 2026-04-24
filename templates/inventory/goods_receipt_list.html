@@ -25,7 +25,7 @@
                         <th>Location</th>
                         <th>Supplier</th>
                         <th>Status</th>
-                        <th>Items Count</th>
+                        <th>Items</th>
                         <th>Total Value</th>
                         <th class="text-end">Actions</th>
                     </tr>
@@ -33,25 +33,48 @@
                 <tbody>
                     {% for receipt in receipts %}
                     <tr>
-                        <td><strong>#{{ receipt.id }}</strong></td>
+                        <td><strong>{{ receipt.receipt_id }}</strong></td>
                         <td>{{ receipt.created_at|date:"M d, Y H:i" }}</td>
                         <td>
                             <span class="badge bg-{% if receipt.location.location_type == 'SHOP' %}success{% else %}info{% endif %}">
                                 {{ receipt.location.name }}
                             </span>
                         </td>
-                        <td>{{ receipt.supplier_name }}</td>
+                        <td>{{ receipt.supplier_name|default:"-" }}</td>
                         <td>
-                            <span class="badge bg-{% if receipt.status == 'PENDING' %}warning{% elif receipt.status == 'VERIFIED' %}success{% else %}danger{% endif %}">
-                                {{ receipt.status }}
+                            <span class="badge bg-{% if receipt.status == 'PENDING' %}warning text-dark{% elif receipt.status == 'VERIFIED' %}success{% else %}secondary{% endif %}">
+                                {{ receipt.get_status_display }}
                             </span>
                         </td>
                         <td>{{ receipt.items.count }}</td>
-                        <td>{{ currency_symbol }}{{ receipt.total_value|floatformat:"2g" }}</td>
+                        <td>{{ currency_symbol }}{{ receipt.total_expected_cost|floatformat:"2g" }}</td>
                         <td class="text-end">
                             <a href="{% url 'inventory:goods_receipt_detail' receipt.pk %}" class="btn btn-sm btn-outline-info">
                                 <i class="bi bi-eye"></i> View
                             </a>
+                            {% if receipt.status == 'PENDING' or receipt.status == 'DRAFT' %}
+                                {% if current_tenant.require_accountant_for_bulk_receiving %}
+                                    {% if user.role.name == 'ACCOUNTANT' or user.role.name == 'ADMIN' %}
+                                    <form method="post" action="{% url 'inventory:goods_receipt_verify' receipt.pk %}" class="d-inline">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-sm btn-success"
+                                                onclick="return confirm('Verify this receipt and add all items to stock? This cannot be undone.')">
+                                            <i class="bi bi-check-circle"></i> Verify
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                {% else %}
+                                    {% if user.role.name == 'SHOP_MANAGER' or user.role.name == 'ADMIN' or user.role.name == 'STORES_MANAGER' %}
+                                    <form method="post" action="{% url 'inventory:goods_receipt_verify' receipt.pk %}" class="d-inline">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-sm btn-success"
+                                                onclick="return confirm('Verify this receipt and add all items to stock? This cannot be undone.')">
+                                            <i class="bi bi-check-circle"></i> Verify
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                {% endif %}
+                            {% endif %}
                         </td>
                     </tr>
                     {% endfor %}
