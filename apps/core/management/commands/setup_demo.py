@@ -11,9 +11,9 @@ from django.contrib.auth import get_user_model
 from apps.core.models import Tenant, Location, Role
 from apps.inventory.models import (
     Category, Product, Batch, Inventory, InventoryLedger, ShopPrice, 
-    GoodsReceipt, GoodsReceiptItem, StockAdjustment
+    GoodsReceipt, GoodsReceiptItem, StockAdjustment, FavoriteProduct
 )
-from apps.transfers.models import Transfer, TransferItem
+from apps.transfers.models import Transfer, TransferItem, StockRequest, StockRequestItem, StockWriteOff
 from apps.sales.models import Sale, SaleItem, Shift, ShopSettings
 from apps.accounting.models import CashTransfer, ExpenditureRequest, ExpenditureItem, ExpenditureCategory
 from apps.customers.models import Customer, CustomerTransaction
@@ -102,12 +102,14 @@ class Command(BaseCommand):
     # ─────────────────────────────────────────────────────────────
     def _wipe_tenant_data(self, tenant):
         """Delete all related data for a tenant in the correct dependency order."""
-        # 1. Transactions and Items (Bottom level)
+        # 1. Transactions and Items (Bottom level — must go first)
         SaleItem.objects.filter(tenant=tenant).delete()
         TransferItem.objects.filter(transfer__tenant=tenant).delete()
         GoodsReceiptItem.objects.filter(tenant=tenant).delete()
         ExpenditureItem.objects.filter(tenant=tenant).delete()
         StockAdjustment.objects.filter(tenant=tenant).delete()
+        StockRequestItem.objects.filter(tenant=tenant).delete()
+        FavoriteProduct.objects.filter(tenant=tenant).delete()
         
         # 2. Main records (Mid level)
         Sale.objects.filter(tenant=tenant).delete()
@@ -116,6 +118,8 @@ class Command(BaseCommand):
         ExpenditureRequest.objects.filter(tenant=tenant).delete()
         CashTransfer.objects.filter(tenant=tenant).delete()
         Shift.objects.filter(tenant=tenant).delete()
+        StockRequest.objects.filter(tenant=tenant).delete()
+        StockWriteOff.objects.filter(tenant=tenant).delete()
         CustomerTransaction.objects.filter(tenant=tenant).delete()
         ECashLedger.objects.filter(tenant=tenant).delete()
         ECashWithdrawal.objects.filter(tenant=tenant).delete()
