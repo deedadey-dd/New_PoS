@@ -203,17 +203,20 @@ class CustomerPaymentView(LoginRequiredMixin, View):
                     performed_by=request.user
                 )
                 
-                # Record E-Cash payments in the E-Cash Ledger
-                # This ensures they go to ecash_balance, not cash_on_hand
-                if method == 'ECASH':
+                # Record E-Cash and MoMo payments in the E-Cash Ledger
+                # This ensures they are tracked in the digital money channel
+                if method in ('ECASH', 'MOMO'):
                     from apps.payments.models import ECashLedger
+                    payment_shop = request.user.location or customer.shop
                     ECashLedger.record_payment(
                         tenant=request.user.tenant,
                         amount=amount,
                         sale=None,  # No sale, this is a payment on account
                         paystack_ref='',
                         user=request.user,
-                        notes=f"E-Cash payment from customer: {customer.name}"
+                        shop=payment_shop,
+                        wallet_type=method,
+                        notes=f"{method} payment from customer: {customer.name}"
                     )
             
             # Success message with receipt link

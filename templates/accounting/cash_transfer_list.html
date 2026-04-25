@@ -82,6 +82,42 @@
 </div>
 {% endif %}
 
+<!-- Filtered Totals Summary -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card border-success h-100">
+            <div class="card-body text-center py-3">
+                <div class="text-muted small mb-1"><i class="bi bi-bank me-1 text-success"></i>Confirmed Deposits</div>
+                <div class="fw-bold fs-5 text-success">{{ currency_symbol }}{{ total_deposits|floatformat:"2g"|default:"0.00" }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-info h-100">
+            <div class="card-body text-center py-3">
+                <div class="text-muted small mb-1"><i class="bi bi-arrow-left-right me-1 text-info"></i>Confirmed Floats</div>
+                <div class="fw-bold fs-5 text-info">{{ currency_symbol }}{{ total_floats|floatformat:"2g"|default:"0.00" }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-warning h-100">
+            <div class="card-body text-center py-3">
+                <div class="text-muted small mb-1"><i class="bi bi-hourglass-split me-1 text-warning"></i>Pending</div>
+                <div class="fw-bold fs-5 text-warning">{{ currency_symbol }}{{ total_pending|floatformat:"2g"|default:"0.00" }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-primary h-100">
+            <div class="card-body text-center py-3">
+                <div class="text-muted small mb-1"><i class="bi bi-check-all me-1 text-primary"></i>Total Confirmed</div>
+                <div class="fw-bold fs-5 text-primary">{{ currency_symbol }}{{ total_confirmed|floatformat:"2g"|default:"0.00" }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Transfers Table -->
 <div class="card">
     <div class="card-body">

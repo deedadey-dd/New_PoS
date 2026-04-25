@@ -67,6 +67,40 @@
         </div>
     </div>
 
+    <!-- Filtered Totals Summary -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-4">
+            <div class="card border-success h-100">
+                <div class="card-body text-center py-3">
+                    <div class="text-muted small mb-1"><i class="bi bi-arrow-down-circle me-1 text-success"></i>Total Received</div>
+                    <div class="fw-bold fs-5 text-success">
+                        {{ currency_symbol }}{{ filtered_total_received|floatformat:"2g"|default:"0.00" }}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card border-warning h-100">
+                <div class="card-body text-center py-3">
+                    <div class="text-muted small mb-1"><i class="bi bi-arrow-up-circle me-1 text-warning"></i>Total Withdrawn</div>
+                    <div class="fw-bold fs-5 text-warning">
+                        {{ currency_symbol }}{{ filtered_total_withdrawn|floatformat:"2g"|default:"0.00" }}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card {% if filtered_net >= 0 %}border-primary{% else %}border-danger{% endif %} h-100">
+                <div class="card-body text-center py-3">
+                    <div class="text-muted small mb-1"><i class="bi bi-wallet me-1"></i>Net Balance</div>
+                    <div class="fw-bold fs-5 {% if filtered_net >= 0 %}text-primary{% else %}text-danger{% endif %}">
+                        {{ currency_symbol }}{{ filtered_net|floatformat:"2g"|default:"0.00" }}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="card">
         <div class="card-body p-0">
             {% if transactions %}

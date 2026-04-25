@@ -883,7 +883,7 @@ def api_complete_sale(request):
     cart_items = data.get('items', [])
     payment_method = data.get('payment_method', 'CASH')
     # Ensure payment_method is valid - handle empty string or invalid values
-    valid_payment_methods = ['CASH', 'CREDIT', 'ECASH', 'MIXED', 'PAYMENT_ON_ACCOUNT']
+    valid_payment_methods = ['CASH', 'CREDIT', 'ECASH', 'MOMO', 'MIXED', 'PAYMENT_ON_ACCOUNT']
     if not payment_method or payment_method not in valid_payment_methods:
         payment_method = 'CASH'
     amount_paid = Decimal(str(data.get('amount_paid', 0)))

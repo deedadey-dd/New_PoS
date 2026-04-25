@@ -935,9 +935,15 @@
                     <i class="bi bi-credit-card-2-front"></i> Sell on Credit
                 </button>
                 {% if shop_settings.enable_ecash_payment %}
-                <button class="btn-pay btn-pay-ecash" id="btn-pay-ecash" disabled>
-                    <i class="bi bi-credit-card"></i> Pay E-Cash
-                </button>
+                <div class="d-flex gap-2">
+                    <button class="btn-pay btn-pay-ecash flex-fill" id="btn-pay-ecash" disabled>
+                        <i class="bi bi-credit-card"></i> E-Cash
+                    </button>
+                    <button class="btn-pay flex-fill" id="btn-pay-momo"
+                        style="background: #6f42c1; color: #fff;" disabled>
+                        <i class="bi bi-phone-vibrate"></i> Local Momo
+                    </button>
+                </div>
                 {% endif %}
                 {% endif %}
                 <div class="d-flex gap-2">
@@ -1158,6 +1164,11 @@
                     if (checkShiftBeforePayment('ECASH')) openECashCheckout();
                 });
             }
+            if (document.getElementById('btn-pay-momo')) {
+                document.getElementById('btn-pay-momo').addEventListener('click', () => {
+                    if (checkShiftBeforePayment('MOMO')) openCheckout('MOMO');
+                });
+            }
             document.getElementById('btn-clear-cart').addEventListener('click', clearCart);
             document.getElementById('btn-discount').addEventListener('click', applyDiscount);
 
@@ -1345,6 +1356,13 @@
 
                 // Auto-fill amount for backend logic
                 document.getElementById('amount-received').value = 0;
+            } else if (mode === 'MOMO') {
+                // Mobile Money payment mode
+                title.innerHTML = '<i class="bi bi-phone-vibrate me-2"></i>Mobile Money Payment';
+                if (amountContainer) amountContainer.style.display = 'block';
+                if (changeContainer) changeContainer.style.display = 'block';
+                creditInfo.style.display = 'none';
+                document.getElementById('btn-complete-sale').disabled = false;
             } else {
                 // CASH payment mode
                 {% if current_tenant.use_strict_sales_workflow and user.role.name in 'SHOP_ATTENDANT,SHOP_CASHIER' %}
@@ -1635,6 +1653,8 @@
             document.getElementById('btn-pay-cash').disabled = !hasItems;
             const ecashBtn = document.getElementById('btn-pay-ecash');
             if (ecashBtn) ecashBtn.disabled = !hasItems;
+            const momoBtn = document.getElementById('btn-pay-momo');
+            if (momoBtn) momoBtn.disabled = !hasItems;
 
             // Update mobile cart badge
             updateMobileCartBadge();

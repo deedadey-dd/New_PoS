@@ -28,6 +28,6 @@ class CustomerPaymentForm(forms.Form):
         widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Payment description'})
     )
     payment_method = forms.ChoiceField(
-        choices=[('CASH', 'Cash'), ('ECASH', 'E-Cash'), ('BANK', 'Bank Transfer')],
+        choices=[('CASH', 'Cash'), ('ECASH', 'E-Cash'), ('MOMO', 'Mobile Money'), ('BANK', 'Bank Transfer')],
         widget=forms.Select(attrs={'class': 'form-control'})
     )

@@ -134,7 +134,20 @@ class CashTransferListView(LoginRequiredMixin, SortableMixin, ListView):
             context['date_to'] = self.request.GET.get('date_to', '')
             context['selected_shop'] = self.request.GET.get('shop', '')
             context['selected_status'] = self.request.GET.get('status', '')
-        
+
+        # Filtered totals for summary row (over full filtered queryset, not just current page)
+        full_qs = self.get_queryset()
+        totals = full_qs.aggregate(
+            total_deposits=Sum('amount', filter=Q(transfer_type='DEPOSIT', status='CONFIRMED')),
+            total_floats=Sum('amount', filter=Q(transfer_type='FLOAT', status='CONFIRMED')),
+            total_pending=Sum('amount', filter=Q(status='PENDING')),
+            total_confirmed=Sum('amount', filter=Q(status='CONFIRMED')),
+        )
+        context['total_deposits'] = totals['total_deposits'] or Decimal('0')
+        context['total_floats'] = totals['total_floats'] or Decimal('0')
+        context['total_pending'] = totals['total_pending'] or Decimal('0')
+        context['total_confirmed'] = totals['total_confirmed'] or Decimal('0')
+
         return context
 
 
@@ -925,7 +938,7 @@ class ApiDeleteExpenditureCategoryView(LoginRequiredMixin, View):
 
 
 class ExpenditureListView(LoginRequiredMixin, ListView):
-    """List expenditure vouchers; filterable by status."""
+    """List expenditure vouchers; filterable by status, date and category."""
     model = ExpenditureRequest
     template_name = 'accounting/expenditure_list.html'
     context_object_name = 'vouchers'
@@ -945,11 +958,51 @@ class ExpenditureListView(LoginRequiredMixin, ListView):
         if status:
             qs = qs.filter(status=status)
 
+        category = self.request.GET.get('category')
+        if category:
+            qs = qs.filter(items__category_id=category).distinct()
+
+        date_from = self.request.GET.get('date_from', '')
+        date_to = self.request.GET.get('date_to', '')
+        if date_from:
+            try:
+                qs = qs.filter(created_at__date__gte=datetime.strptime(date_from, '%Y-%m-%d').date())
+            except ValueError:
+                pass
+        if date_to:
+            try:
+                qs = qs.filter(created_at__date__lte=datetime.strptime(date_to, '%Y-%m-%d').date())
+            except ValueError:
+                pass
+
         return qs
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         ctx['selected_status'] = self.request.GET.get('status', '')
+        ctx['selected_category'] = self.request.GET.get('category', '')
+        ctx['date_from'] = self.request.GET.get('date_from', '')
+        ctx['date_to'] = self.request.GET.get('date_to', '')
+
+        # Categories for filter dropdown
+        ctx['categories'] = ExpenditureCategory.objects.filter(
+            tenant=self.request.user.tenant
+        ).order_by('name')
+
+        # Totals from ExpenditureItem (since total_amount is a @property, not a DB field)
+        full_qs = self.get_queryset()
+        item_agg = ExpenditureItem.objects.filter(request__in=full_qs).aggregate(
+            total_requested=Sum('amount'),
+            total_approved=Sum('amount', filter=Q(status='APPROVED')),
+            total_pending=Sum('amount', filter=Q(status='PENDING')),
+            total_rejected=Sum('amount', filter=Q(status='REJECTED')),
+        )
+        ctx['exp_total_requested'] = item_agg['total_requested'] or Decimal('0')
+        ctx['exp_total_approved'] = item_agg['total_approved'] or Decimal('0')
+        ctx['exp_total_pending'] = item_agg['total_pending'] or Decimal('0')
+        ctx['exp_total_rejected'] = item_agg['total_rejected'] or Decimal('0')
+        ctx['voucher_count'] = full_qs.count()
+
         return ctx
 
 
@@ -1170,3 +1223,128 @@ class CashTransferPrintView(LoginRequiredMixin, View):
             tenant=request.user.tenant
         )
         return render(request, self.template_name, {'transfer': transfer})
+
+
+class CashHistoryView(LoginRequiredMixin, ListView):
+    """
+    Cash history page linked from the Cash-on-Hand navbar badge.
+    Shows cash sales, cash customer payments and cash transfers
+    for the current user's shop with date filtering and totals.
+    """
+    template_name = 'accounting/cash_history.html'
+    context_object_name = 'cash_sales'
+    paginate_by = 30
+
+    def get_queryset(self):
+        from apps.sales.models import Sale
+        user = self.request.user
+        role_name = user.role.name if user.role else None
+        qs = Sale.objects.filter(
+            tenant=user.tenant,
+            status='COMPLETED',
+            payment_method__in=['CASH', 'MIXED'],
+        ).select_related('attendant', 'shop').order_by('-created_at')
+
+        # Scope to user's shop unless accountant/admin
+        if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER', 'SHOP_ATTENDANT']:
+            if user.location:
+                qs = qs.filter(shop=user.location)
+            else:
+                qs = qs.filter(attendant=user)
+
+        date_from = self.request.GET.get('date_from', '')
+        date_to = self.request.GET.get('date_to', '')
+        if date_from:
+            try:
+                qs = qs.filter(created_at__date__gte=datetime.strptime(date_from, '%Y-%m-%d').date())
+            except ValueError:
+                pass
+        if date_to:
+            try:
+                qs = qs.filter(created_at__date__lte=datetime.strptime(date_to, '%Y-%m-%d').date())
+            except ValueError:
+                pass
+        return qs
+
+    def get_context_data(self, **kwargs):
+        from apps.sales.models import Sale
+        from apps.customers.models import CustomerTransaction
+        context = super().get_context_data(**kwargs)
+        user = self.request.user
+        role_name = user.role.name if user.role else None
+
+        date_from = self.request.GET.get('date_from', '')
+        date_to = self.request.GET.get('date_to', '')
+        context['date_from'] = date_from
+        context['date_to'] = date_to
+
+        # ---- Filtered queryset totals ----
+        qs = self.get_queryset()
+        agg = qs.aggregate(
+            total_cash=Sum('total', filter=Q(payment_method='CASH')),
+            total_mixed=Sum('amount_paid', filter=Q(payment_method='MIXED')),
+            sale_count=Count('id'),
+        )
+        total_cash = (agg['total_cash'] or Decimal('0')) + (agg['total_mixed'] or Decimal('0'))
+        context['total_cash_sales'] = total_cash
+        context['sale_count'] = agg['sale_count'] or 0
+
+        # ---- Cash transfers (outgoing deposits) ----
+        transfer_qs = CashTransfer.objects.filter(
+            tenant=user.tenant,
+        ).order_by('-created_at')
+        if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER', 'SHOP_ATTENDANT']:
+            transfer_qs = transfer_qs.filter(Q(from_user=user) | Q(to_user=user))
+        if date_from:
+            try:
+                transfer_qs = transfer_qs.filter(
+                    created_at__date__gte=datetime.strptime(date_from, '%Y-%m-%d').date()
+                )
+            except ValueError:
+                pass
+        if date_to:
+            try:
+                transfer_qs = transfer_qs.filter(
+                    created_at__date__lte=datetime.strptime(date_to, '%Y-%m-%d').date()
+                )
+            except ValueError:
+                pass
+        context['cash_transfers'] = transfer_qs[:20]
+        context['total_transferred'] = transfer_qs.filter(
+            status='CONFIRMED', transfer_type='DEPOSIT'
+        ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
+        # ---- Cash customer payments ----
+        cust_qs = CustomerTransaction.objects.filter(
+            tenant=user.tenant,
+            transaction_type='CREDIT',
+            description__icontains='(CASH)',
+        ).exclude(description__icontains='ECASH').order_by('-created_at')
+        if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER', 'SHOP_ATTENDANT']:
+            cust_qs = cust_qs.filter(performed_by=user)
+        if date_from:
+            try:
+                cust_qs = cust_qs.filter(
+                    created_at__date__gte=datetime.strptime(date_from, '%Y-%m-%d').date()
+                )
+            except ValueError:
+                pass
+        if date_to:
+            try:
+                cust_qs = cust_qs.filter(
+                    created_at__date__lte=datetime.strptime(date_to, '%Y-%m-%d').date()
+                )
+            except ValueError:
+                pass
+        context['cash_customer_payments'] = cust_qs[:20]
+        context['total_customer_cash'] = cust_qs.aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
+        # ---- Permissions ----
+        if getattr(user.tenant, 'use_strict_sales_workflow', False):
+            context['can_create_transfer'] = role_name in ['SHOP_CASHIER', 'ACCOUNTANT', 'ADMIN']
+        else:
+            context['can_create_transfer'] = role_name in ['SHOP_ATTENDANT', 'SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN', 'SHOP_CASHIER']
+
+        context['role_name'] = role_name
+        return context
+

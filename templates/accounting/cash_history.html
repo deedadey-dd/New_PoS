@@ -1,0 +1,282 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Cash History - {{ current_tenant.name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+
+    <!-- Page Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="fw-bold mb-0"><i class="bi bi-cash-stack me-2 text-success"></i>Cash History</h2>
+            <p class="text-muted mb-0">Cash sales, customer payments &amp; transfers for the filtered period</p>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{% url 'accounting:cash_transfer_list' %}" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left-right me-1"></i>Cash Transfers
+            </a>
+            {% if can_create_transfer %}
+            <a href="{% url 'accounting:cash_transfer_create' %}" class="btn btn-success">
+                <i class="bi bi-plus-lg me-1"></i>New Transfer
+            </a>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Filter Form -->
+    <div class="card mb-3">
+        <div class="card-body">
+            <form method="get" class="row g-3 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label">From Date</label>
+                    <input type="date" name="date_from" class="form-control" value="{{ date_from }}">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">To Date</label>
+                    <input type="date" name="date_to" class="form-control" value="{{ date_to }}">
+                </div>
+                <div class="col-md-4 d-flex gap-2">
+                    <button type="submit" class="btn btn-primary flex-fill">
+                        <i class="bi bi-filter me-1"></i>Filter
+                    </button>
+                    <a href="?" class="btn btn-outline-secondary"><i class="bi bi-x-lg"></i></a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Totals Summary Row -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-4">
+            <div class="card border-success">
+                <div class="card-body text-center py-3">
+                    <div class="text-muted small mb-1"><i class="bi bi-cash me-1"></i>Cash Sales</div>
+                    <div class="fw-bold fs-5 text-success">
+                        {{ currency_symbol }}{{ total_cash_sales|floatformat:"2g"|default:"0.00" }}
+                    </div>
+                    <div class="text-muted small">{{ sale_count }} invoice{{ sale_count|pluralize }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card border-primary">
+                <div class="card-body text-center py-3">
+                    <div class="text-muted small mb-1"><i class="bi bi-person-check me-1"></i>Customer Cash Payments</div>
+                    <div class="fw-bold fs-5 text-primary">
+                        {{ currency_symbol }}{{ total_customer_cash|floatformat:"2g"|default:"0.00" }}
+                    </div>
+                    <div class="text-muted small">{{ cash_customer_payments|length }} payment{{ cash_customer_payments|length|pluralize }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card border-warning">
+                <div class="card-body text-center py-3">
+                    <div class="text-muted small mb-1"><i class="bi bi-send-check me-1"></i>Confirmed Deposits</div>
+                    <div class="fw-bold fs-5 text-warning">
+                        {{ currency_symbol }}{{ total_transferred|floatformat:"2g"|default:"0.00" }}
+                    </div>
+                    <div class="text-muted small">Transferred out</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cash Sales Table -->
+    <div class="card mb-4">
+        <div class="card-header bg-transparent d-flex justify-content-between align-items-center">
+            <h6 class="mb-0"><i class="bi bi-receipt me-2 text-success"></i>Cash Sales</h6>
+            <span class="badge bg-success">{{ currency_symbol }}{{ total_cash_sales|floatformat:"2g"|default:"0.00" }}</span>
+        </div>
+        <div class="card-body p-0">
+            {% if cash_sales %}
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Date</th>
+                            <th>Invoice</th>
+                            <th>Attendant</th>
+                            <th>Method</th>
+                            <th class="text-end">Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for sale in cash_sales %}
+                        <tr>
+                            <td>{{ sale.created_at|date:"M d, Y H:i" }}</td>
+                            <td>
+                                <a href="{% url 'sales:sale_receipt' sale.pk %}" target="_blank"
+                                    class="text-decoration-none fw-bold">
+                                    {{ sale.sale_number }}
+                                </a>
+                            </td>
+                            <td>
+                                {% if sale.attendant %}
+                                    {{ sale.attendant.get_full_name|default:sale.attendant.email }}
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if sale.payment_method == 'MIXED' %}
+                                <span class="badge bg-info text-dark">Mixed</span>
+                                {% else %}
+                                <span class="badge bg-success">Cash</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end fw-semibold text-success">
+                                {% if sale.payment_method == 'MIXED' %}
+                                    {{ currency_symbol }}{{ sale.amount_paid|floatformat:"2g" }}
+                                {% else %}
+                                    {{ currency_symbol }}{{ sale.total|floatformat:"2g" }}
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <!-- Pagination -->
+            {% if page_obj.has_other_pages %}
+            <div class="p-3">
+                <nav>
+                    <ul class="pagination justify-content-center mb-0">
+                        {% if page_obj.has_previous %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ page_obj.previous_page_number }}&date_from={{ date_from }}&date_to={{ date_to }}">Previous</a>
+                        </li>
+                        {% endif %}
+                        <li class="page-item disabled">
+                            <span class="page-link">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>
+                        </li>
+                        {% if page_obj.has_next %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ page_obj.next_page_number }}&date_from={{ date_from }}&date_to={{ date_to }}">Next</a>
+                        </li>
+                        {% endif %}
+                    </ul>
+                </nav>
+            </div>
+            {% endif %}
+            {% else %}
+            <div class="text-center py-4 text-muted">
+                <i class="bi bi-cash display-4"></i>
+                <p class="mt-2">No cash sales in this period.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Customer Cash Payments -->
+    {% if cash_customer_payments %}
+    <div class="card mb-4">
+        <div class="card-header bg-transparent d-flex justify-content-between align-items-center">
+            <h6 class="mb-0"><i class="bi bi-person-check me-2 text-primary"></i>Customer Cash Payments</h6>
+            <span class="badge bg-primary">{{ currency_symbol }}{{ total_customer_cash|floatformat:"2g"|default:"0.00" }}</span>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Date</th>
+                            <th>Customer</th>
+                            <th>Description</th>
+                            <th>Received By</th>
+                            <th class="text-end">Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for pmt in cash_customer_payments %}
+                        <tr>
+                            <td>{{ pmt.created_at|date:"M d, Y H:i" }}</td>
+                            <td>{{ pmt.customer.name }}</td>
+                            <td class="text-muted small">{{ pmt.description|truncatechars:40 }}</td>
+                            <td>
+                                {% if pmt.performed_by %}
+                                    {{ pmt.performed_by.get_full_name|default:pmt.performed_by.email }}
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end fw-semibold text-primary">
+                                {{ currency_symbol }}{{ pmt.amount|floatformat:"2g" }}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Cash Transfers -->
+    <div class="card">
+        <div class="card-header bg-transparent d-flex justify-content-between align-items-center">
+            <h6 class="mb-0"><i class="bi bi-send me-2 text-warning"></i>Cash Transfers</h6>
+            <div class="d-flex gap-2 align-items-center">
+                <span class="badge bg-warning text-dark">
+                    Deposited: {{ currency_symbol }}{{ total_transferred|floatformat:"2g"|default:"0.00" }}
+                </span>
+                <a href="{% url 'accounting:cash_transfer_list' %}" class="btn btn-sm btn-outline-secondary">
+                    View All
+                </a>
+                {% if can_create_transfer %}
+                <a href="{% url 'accounting:cash_transfer_create' %}" class="btn btn-sm btn-success">
+                    <i class="bi bi-plus-lg me-1"></i>New
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        <div class="card-body p-0">
+            {% if cash_transfers %}
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Date</th>
+                            <th>Type</th>
+                            <th>From → To</th>
+                            <th>Status</th>
+                            <th class="text-end">Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for t in cash_transfers %}
+                        <tr>
+                            <td>{{ t.created_at|date:"M d, Y H:i" }}</td>
+                            <td>
+                                <span class="badge {% if t.transfer_type == 'DEPOSIT' %}bg-warning text-dark{% else %}bg-info text-dark{% endif %}">
+                                    {{ t.get_transfer_type_display }}
+                                </span>
+                            </td>
+                            <td class="small">
+                                {{ t.from_user.get_full_name|default:t.from_user.email|default:"—" }}
+                                <i class="bi bi-arrow-right mx-1 text-muted"></i>
+                                {{ t.to_user.get_full_name|default:t.to_user.email|default:"—" }}
+                            </td>
+                            <td>
+                                <span class="badge {% if t.status == 'CONFIRMED' %}bg-success{% elif t.status == 'PENDING' %}bg-secondary{% else %}bg-danger{% endif %}">
+                                    {{ t.status }}
+                                </span>
+                            </td>
+                            <td class="text-end fw-semibold">{{ currency_symbol }}{{ t.amount|floatformat:"2g" }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-4 text-muted">
+                <i class="bi bi-send display-4"></i>
+                <p class="mt-2">No cash transfers in this period.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+</div>
+{% endblock %}

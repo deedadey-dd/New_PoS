@@ -555,40 +555,29 @@
 
                     <!-- Cash on Hand Badge (exclude ADMIN) -->
                     {% if role_name == 'ACCOUNTANT' or role_name == 'SHOP_CASHIER' or role_name == 'SHOP_MANAGER' and not current_tenant.use_strict_sales_workflow or role_name == 'SHOP_ATTENDANT' and not current_tenant.use_strict_sales_workflow %}
-                    <a href="{% url 'accounting:cash_transfer_list' %}" class="me-3 text-decoration-none"
-                        title="Cash on Hand - Click to manage transfers">
+                    <a href="{% url 'accounting:cash_history' %}" class="me-3 text-decoration-none"
+                        title="Cash on Hand — click to view history">
                         <span class="badge bg-success fs-6">
-                            <i
-                                class="bi bi-cash me-1"></i>{{ currency_symbol }}{{ cash_on_hand|floatformat:"2g"|default:"0.00" }}
+                            <i class="bi bi-cash me-1"></i>{{ currency_symbol }}{{ cash_on_hand|floatformat:"2g"|default:"0.00" }}
                         </span>
                     </a>
                     {% endif %}
 
-                    <!-- Monthly MoMo / E-Cash Badges -->
+                    <!-- E-Cash / MoMo Badges -->
                     {% if monthly_ecash is not None and role_name in 'SHOP_MANAGER,ACCOUNTANT,SHOP_CASHIER' %}
-                    <a href="{% if role_name == 'SHOP_MANAGER' or role_name == 'SHOP_CASHIER' %}{% url 'payments:shop_ecash_history' %}{% elif role_name == 'ACCOUNTANT' %}{% url 'payments:shop_ecash_list' %}{% else %}{% url 'payments:ecash_ledger' %}{% endif %}" class="me-3 text-decoration-none" title="Monthly E-Cash Taken">
+                    <a href="{% if role_name == 'SHOP_MANAGER' or role_name == 'SHOP_CASHIER' %}{% url 'payments:shop_ecash_history' %}{% elif role_name == 'ACCOUNTANT' %}{% url 'payments:shop_ecash_list' %}{% else %}{% url 'payments:ecash_ledger' %}{% endif %}" class="me-3 text-decoration-none" title="E-Cash Received">
                         <span class="badge bg-primary fs-6">
-                            <i class="bi bi-credit-card me-1"></i>M. E-Cash: {{ currency_symbol }}{{ monthly_ecash|floatformat:"2g"|default:"0.00" }}
+                            <i class="bi bi-credit-card me-1"></i>E-Cash: {{ currency_symbol }}{{ monthly_ecash|floatformat:"2g"|default:"0.00" }}
                         </span>
                     </a>
-                    <a href="{% if role_name == 'SHOP_MANAGER' or role_name == 'SHOP_CASHIER' %}{% url 'payments:shop_ecash_history' %}?wallet_type=MOMO{% elif role_name == 'ACCOUNTANT' %}{% url 'payments:shop_ecash_list' %}?wallet_type=MOMO{% else %}{% url 'payments:ecash_ledger' %}?wallet_type=MOMO{% endif %}" class="me-3 text-decoration-none" title="Monthly MoMo Taken">
+                    <a href="{% if role_name == 'SHOP_MANAGER' or role_name == 'SHOP_CASHIER' %}{% url 'payments:shop_ecash_history' %}?wallet_type=MOMO{% elif role_name == 'ACCOUNTANT' %}{% url 'payments:shop_ecash_list' %}?wallet_type=MOMO{% else %}{% url 'payments:ecash_ledger' %}?wallet_type=MOMO{% endif %}" class="me-3 text-decoration-none" title="MoMo Received">
                         <span class="badge bg-purple fs-6" style="background-color: #6f42c1;">
-                            <i class="bi bi-phone-vibrate me-1"></i>M. MoMo: {{ currency_symbol }}{{ monthly_momo|floatformat:"2g"|default:"0.00" }}
+                            <i class="bi bi-phone-vibrate me-1"></i>MoMo: {{ currency_symbol }}{{ monthly_momo|floatformat:"2g"|default:"0.00" }}
                         </span>
                     </a>
                     {% endif %}
                     
-                    <!-- E-Cash Balance Badge (exclude ADMIN and AUDITOR) -->
-                    {% if ecash_balance is not None and role_name in 'SHOP_MANAGER,ACCOUNTANT' %}
-                    <a href="{% if role_name == 'SHOP_MANAGER' %}{% url 'payments:shop_ecash_history' %}{% elif role_name == 'ACCOUNTANT' %}{% url 'payments:shop_ecash_list' %}{% else %}{% url 'payments:ecash_ledger' %}{% endif %}"
-                        class="me-3 text-decoration-none"
-                        title="E-Cash Balance - Click to {% if role_name == 'ACCOUNTANT' %}withdraw{% else %}view history{% endif %}">
-                        <span class="badge bg-info fs-6">
-                            <i
-                                class="bi bi-phone me-1"></i>{{ currency_symbol }}{{ ecash_balance|floatformat:"2g"|default:"0.00" }}
-                        </span>
-                    </a>
-                    {% endif %}
+                    {# E-Cash Balance badge hidden — covered by E-Cash badge above #}
 
                     <!-- Pending Transfers Badge -->
                     {% if pending_transfers_count > 0 %}

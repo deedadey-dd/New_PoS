@@ -26,19 +26,20 @@
 </div>
 
 <!-- Filters -->
-<div class="card mb-4 border-0 shadow-sm">
+<div class="card mb-3 border-0 shadow-sm">
     <div class="card-body py-2">
         <form method="get" class="row g-2 align-items-end">
-            <div class="col-auto">
+            <div class="col-md-2">
                 <label class="form-label small mb-1">Status</label>
                 <select name="status" class="form-select form-select-sm">
                     <option value="">All Statuses</option>
                     <option value="PENDING" {% if selected_status == 'PENDING' %}selected{% endif %}>Pending</option>
-                    <option value="APPROVED" {% if selected_status == 'APPROVED' %}selected{% endif %}>Approved</option>
+                    <option value="FULLY_APPROVED" {% if selected_status == 'FULLY_APPROVED' %}selected{% endif %}>Approved</option>
+                    <option value="PARTIAL" {% if selected_status == 'PARTIAL' %}selected{% endif %}>Partial</option>
                     <option value="REJECTED" {% if selected_status == 'REJECTED' %}selected{% endif %}>Rejected</option>
                 </select>
             </div>
-            <div class="col-auto">
+            <div class="col-md-2">
                 <label class="form-label small mb-1">Category</label>
                 <select name="category" class="form-select form-select-sm">
                     <option value="">All Categories</option>
@@ -47,11 +48,60 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-auto">
-                <button type="submit" class="btn btn-sm btn-secondary">Filter</button>
-                <a href="{% url 'accounting:expenditure_list' %}" class="btn btn-sm btn-link">Clear</a>
+            <div class="col-md-2">
+                <label class="form-label small mb-1">From Date</label>
+                <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small mb-1">To Date</label>
+                <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
+            </div>
+            <div class="col-md-4 d-flex gap-2 align-items-end">
+                <button type="submit" class="btn btn-sm btn-primary flex-fill">
+                    <i class="bi bi-filter me-1"></i>Filter
+                </button>
+                <a href="{% url 'accounting:expenditure_list' %}" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-x-lg"></i>
+                </a>
             </div>
         </form>
+    </div>
+</div>
+
+<!-- Filtered Totals Summary -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card border-secondary h-100">
+            <div class="card-body text-center py-3">
+                <div class="text-muted small mb-1"><i class="bi bi-receipt me-1"></i>Total Requested</div>
+                <div class="fw-bold fs-5">{{ currency_symbol }}{{ exp_total_requested|floatformat:"2g"|default:"0.00" }}</div>
+                <div class="text-muted small">{{ voucher_count }} voucher{{ voucher_count|pluralize }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-success h-100">
+            <div class="card-body text-center py-3">
+                <div class="text-muted small mb-1"><i class="bi bi-check-circle me-1 text-success"></i>Approved</div>
+                <div class="fw-bold fs-5 text-success">{{ currency_symbol }}{{ exp_total_approved|floatformat:"2g"|default:"0.00" }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-warning h-100">
+            <div class="card-body text-center py-3">
+                <div class="text-muted small mb-1"><i class="bi bi-hourglass-split me-1 text-warning"></i>Pending</div>
+                <div class="fw-bold fs-5 text-warning">{{ currency_symbol }}{{ exp_total_pending|floatformat:"2g"|default:"0.00" }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-danger h-100">
+            <div class="card-body text-center py-3">
+                <div class="text-muted small mb-1"><i class="bi bi-x-circle me-1 text-danger"></i>Rejected</div>
+                <div class="fw-bold fs-5 text-danger">{{ currency_symbol }}{{ exp_total_rejected|floatformat:"2g"|default:"0.00" }}</div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -109,9 +159,17 @@
 {% if page_obj.has_other_pages %}
 <nav class="mt-3">
     <ul class="pagination pagination-sm justify-content-center">
-        {% if page_obj.has_previous %}<li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}&status={{ selected_status }}">«</a></li>{% endif %}
+        {% if page_obj.has_previous %}
+        <li class="page-item">
+            <a class="page-link" href="?page={{ page_obj.previous_page_number }}&status={{ selected_status }}&category={{ selected_category }}&date_from={{ date_from }}&date_to={{ date_to }}">«</a>
+        </li>
+        {% endif %}
         <li class="page-item disabled"><span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span></li>
-        {% if page_obj.has_next %}<li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}&status={{ selected_status }}">»</a></li>{% endif %}
+        {% if page_obj.has_next %}
+        <li class="page-item">
+            <a class="page-link" href="?page={{ page_obj.next_page_number }}&status={{ selected_status }}&category={{ selected_category }}&date_from={{ date_from }}&date_to={{ date_to }}">»</a>
+        </li>
+        {% endif %}
     </ul>
 </nav>
 {% endif %}
@@ -119,4 +177,6 @@
 {% endblock %}
 {% block extra_js %}
 {% endblock %}
+
+
 

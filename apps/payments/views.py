@@ -564,7 +564,18 @@ class ShopECashHistoryView(LoginRequiredMixin, ListView):
         context['wallet_type'] = self.request.GET.get('wallet_type', '')
         context['date_from'] = self.request.GET.get('date_from', '')
         context['date_to'] = self.request.GET.get('date_to', '')
-        
+
+        # Filtered totals for the summary row
+        from django.db.models import Sum, Q as DQ
+        filtered_qs = self.get_queryset()
+        agg = filtered_qs.aggregate(
+            total_received=Sum('amount', filter=DQ(transaction_type='PAYMENT', amount__gt=0)),
+            total_withdrawn=Sum('amount', filter=DQ(transaction_type='WITHDRAWAL')),
+        )
+        context['filtered_total_received'] = agg['total_received'] or Decimal('0')
+        context['filtered_total_withdrawn'] = abs(agg['total_withdrawn'] or Decimal('0'))
+        context['filtered_net'] = context['filtered_total_received'] - context['filtered_total_withdrawn']
+
         return context
 
 
