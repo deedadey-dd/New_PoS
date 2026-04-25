@@ -9,11 +9,15 @@ from django.conf import settings
 from django.core.files import File
 from django.contrib.auth import get_user_model
 from apps.core.models import Tenant, Location, Role
-from apps.inventory.models import Category, Product, Batch, Inventory, InventoryLedger, ShopPrice, GoodsReceipt, GoodsReceiptItem
+from apps.inventory.models import (
+    Category, Product, Batch, Inventory, InventoryLedger, ShopPrice, 
+    GoodsReceipt, GoodsReceiptItem, StockAdjustment
+)
 from apps.transfers.models import Transfer, TransferItem
-from apps.sales.models import Sale, SaleItem, Shift
-from apps.accounting.models import CashTransfer
+from apps.sales.models import Sale, SaleItem, Shift, ShopSettings
+from apps.accounting.models import CashTransfer, ExpenditureRequest, ExpenditureItem, ExpenditureCategory
 from apps.customers.models import Customer, CustomerTransaction
+from apps.payments.models import ECashLedger, ECashWithdrawal, PaymentProviderSettings
 
 User = get_user_model()
 
@@ -98,24 +102,39 @@ class Command(BaseCommand):
     # ─────────────────────────────────────────────────────────────
     def _wipe_tenant_data(self, tenant):
         """Delete all related data for a tenant in the correct dependency order."""
-        GoodsReceiptItem.objects.filter(tenant=tenant).delete()
-        GoodsReceipt.objects.filter(tenant=tenant).delete()
-        TransferItem.objects.filter(transfer__tenant=tenant).delete()
-        Transfer.objects.filter(tenant=tenant).delete()
-        CustomerTransaction.objects.filter(tenant=tenant).delete()
-        Customer.objects.filter(tenant=tenant).delete()
+        # 1. Transactions and Items (Bottom level)
         SaleItem.objects.filter(tenant=tenant).delete()
+        TransferItem.objects.filter(transfer__tenant=tenant).delete()
+        GoodsReceiptItem.objects.filter(tenant=tenant).delete()
+        ExpenditureItem.objects.filter(tenant=tenant).delete()
+        StockAdjustment.objects.filter(tenant=tenant).delete()
+        
+        # 2. Main records (Mid level)
         Sale.objects.filter(tenant=tenant).delete()
+        Transfer.objects.filter(tenant=tenant).delete()
+        GoodsReceipt.objects.filter(tenant=tenant).delete()
+        ExpenditureRequest.objects.filter(tenant=tenant).delete()
         CashTransfer.objects.filter(tenant=tenant).delete()
         Shift.objects.filter(tenant=tenant).delete()
+        CustomerTransaction.objects.filter(tenant=tenant).delete()
+        ECashLedger.objects.filter(tenant=tenant).delete()
+        ECashWithdrawal.objects.filter(tenant=tenant).delete()
+        PaymentProviderSettings.objects.filter(tenant=tenant).delete()
+        ShopSettings.objects.filter(tenant=tenant).delete()
+        
+        # 3. Master data and Inventory (Top level)
         InventoryLedger.objects.filter(tenant=tenant).delete()
         Inventory.objects.filter(tenant=tenant).delete()
         Batch.objects.filter(tenant=tenant).delete()
         ShopPrice.objects.filter(tenant=tenant).delete()
         Product.objects.filter(tenant=tenant).delete()
         Category.objects.filter(tenant=tenant).delete()
+        ExpenditureCategory.objects.filter(tenant=tenant).delete()
+        Customer.objects.filter(tenant=tenant).delete()
         Location.objects.filter(tenant=tenant).delete()
         User.objects.filter(tenant=tenant).delete()
+        
+        # 4. Finally delete the tenant
         tenant.delete()
 
     def _create_base_data(self, tenant, email_suffix):
