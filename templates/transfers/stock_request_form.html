@@ -96,7 +96,16 @@
                                 <div class="row">
                                     <div class="col-md-5 mb-2">
                                         <label class="form-label">Product <span class="text-danger">*</span></label>
-                                        {{ item_form.product }}
+                                        <div class="position-relative">
+                                            <input type="hidden" name="{{ item_form.product.html_name }}" id="id_{{ item_form.prefix }}-product" class="product-id-input" value="{{ item_form.product.value|default:'' }}">
+                                            <input type="text"
+                                                   class="form-control product-search-input"
+                                                   placeholder="Type product name or SKU…"
+                                                   autocomplete="off"
+                                                   data-target="id_{{ item_form.prefix }}-product"
+                                                   value="{{ item_form.instance.product.name|default:'' }}">
+                                            <div class="autocomplete-dropdown list-group shadow" style="display:none;position:absolute;z-index:999;width:100%;max-height:220px;overflow-y:auto;"></div>
+                                        </div>
                                     </div>
                                     <div class="col-md-3 mb-2">
                                         <label class="form-label">Quantity</label>
@@ -153,50 +162,104 @@
 
 {% block extra_js %}
 <script>
-    document.addEventListener('DOMContentLoaded', function () {
-        const formsetDiv = document.getElementById('item-formset');
-        const addBtn = document.getElementById('add-item');
-        const totalForms = document.getElementById('id_items-TOTAL_FORMS');
+const AUTOCOMPLETE_URL = "{% url 'inventory:api_product_autocomplete' %}";
 
-        addBtn.addEventListener('click', function () {
-            const rows = formsetDiv.querySelectorAll('.item-row');
-            const templateRow = rows[rows.length - 1];
-            const newRow = templateRow.cloneNode(true);
-            const formCount = parseInt(totalForms.value);
+function initProductAutocomplete(container) {
+    container.querySelectorAll('.product-search-input').forEach(function (searchInput) {
+        if (searchInput.dataset.acInit) return; // prevent double init
+        searchInput.dataset.acInit = '1';
+        const targetId = searchInput.dataset.target;
+        const hiddenInput = document.getElementById(targetId);
+        const dropdown = searchInput.parentElement.querySelector('.autocomplete-dropdown');
+        let debounceTimer;
 
-            newRow.innerHTML = newRow.innerHTML.replace(/-\d+-/g, `-${formCount}-`);
-
-            newRow.querySelectorAll('input').forEach(input => {
-                if (input.type !== 'hidden') input.value = '';
-            });
-            newRow.querySelectorAll('select').forEach(select => {
-                select.selectedIndex = 0;
-            });
-
-            formsetDiv.appendChild(newRow);
-            totalForms.value = formCount + 1;
-
-            newRow.querySelector('.remove-item').addEventListener('click', function () {
-                removeRow(newRow);
-            });
+        searchInput.addEventListener('input', function () {
+            const q = this.value.trim();
+            clearTimeout(debounceTimer);
+            if (q.length < 2) { dropdown.style.display = 'none'; return; }
+            debounceTimer = setTimeout(() => {
+                fetch(`${AUTOCOMPLETE_URL}?q=${encodeURIComponent(q)}`)
+                    .then(r => r.json())
+                    .then(data => {
+                        dropdown.innerHTML = '';
+                        if (!data.results.length) { dropdown.style.display = 'none'; return; }
+                        data.results.forEach(p => {
+                            const item = document.createElement('button');
+                            item.type = 'button';
+                            item.className = 'list-group-item list-group-item-action py-2 px-3 small';
+                            item.innerHTML = `<strong>${p.name}</strong>${p.sku ? ' <span class="text-muted">(' + p.sku + ')</span>' : ''}`;
+                            item.addEventListener('click', () => {
+                                searchInput.value = p.name;
+                                hiddenInput.value = p.id;
+                                dropdown.style.display = 'none';
+                            });
+                            dropdown.appendChild(item);
+                        });
+                        dropdown.style.display = 'block';
+                    }).catch(() => { dropdown.style.display = 'none'; });
+            }, 250);
         });
 
-        document.querySelectorAll('.remove-item').forEach(btn => {
-            btn.addEventListener('click', function () {
-                removeRow(this.closest('.item-row'));
-            });
+        document.addEventListener('click', (e) => {
+            if (!searchInput.parentElement.contains(e.target)) dropdown.style.display = 'none';
         });
-
-        function removeRow(row) {
-            const deleteCheckbox = row.querySelector('input[type="checkbox"][name$="-DELETE"]');
-            if (deleteCheckbox) {
-                deleteCheckbox.checked = true;
-                row.style.display = 'none';
-            } else {
-                row.remove();
-                totalForms.value = parseInt(totalForms.value) - 1;
-            }
-        }
     });
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    const formsetDiv = document.getElementById('item-formset');
+    const addBtn = document.getElementById('add-item');
+    const totalForms = document.getElementById('id_items-TOTAL_FORMS');
+
+    // Init autocomplete on existing rows
+    initProductAutocomplete(formsetDiv);
+
+    addBtn.addEventListener('click', function () {
+        const rows = formsetDiv.querySelectorAll('.item-row');
+        const templateRow = rows[rows.length - 1];
+        const newRow = templateRow.cloneNode(true);
+        const formCount = parseInt(totalForms.value);
+
+        newRow.innerHTML = newRow.innerHTML.replace(/-\d+-/g, `-${formCount}-`);
+
+        // Clear all inputs
+        newRow.querySelectorAll('input').forEach(input => {
+            if (input.type !== 'hidden') input.value = '';
+            // Also clear the hidden product id
+            if (input.classList.contains('product-id-input')) input.value = '';
+        });
+        // Remove double-init guard so autocomplete re-inits
+        newRow.querySelectorAll('.product-search-input').forEach(i => {
+            delete i.dataset.acInit;
+        });
+
+        formsetDiv.appendChild(newRow);
+        totalForms.value = formCount + 1;
+
+        // Init autocomplete on the new row
+        initProductAutocomplete(newRow);
+
+        newRow.querySelector('.remove-item').addEventListener('click', function () {
+            removeRow(newRow);
+        });
+    });
+
+    document.querySelectorAll('.remove-item').forEach(btn => {
+        btn.addEventListener('click', function () {
+            removeRow(this.closest('.item-row'));
+        });
+    });
+
+    function removeRow(row) {
+        const deleteCheckbox = row.querySelector('input[type="checkbox"][name$="-DELETE"]');
+        if (deleteCheckbox) {
+            deleteCheckbox.checked = true;
+            row.style.display = 'none';
+        } else {
+            row.remove();
+            totalForms.value = parseInt(totalForms.value) - 1;
+        }
+    }
+});
 </script>
 {% endblock %}

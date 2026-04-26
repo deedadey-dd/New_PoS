@@ -78,7 +78,16 @@
                             <div class="row">
                                 <div class="col-md-4 mb-2">
                                     <label class="form-label">Product <span class="text-danger">*</span></label>
-                                    {{ item_form.product }}
+                                    <div class="position-relative">
+                                        <input type="hidden" name="{{ item_form.product.html_name }}" id="id_{{ item_form.prefix }}-product" class="product-id-input" value="{{ item_form.product.value|default:'' }}">
+                                        <input type="text"
+                                               class="form-control product-search-input"
+                                               placeholder="Type product name or SKU…"
+                                               autocomplete="off"
+                                               data-target="id_{{ item_form.prefix }}-product"
+                                               value="{{ item_form.instance.product.name|default:'' }}">
+                                        <div class="autocomplete-dropdown list-group shadow" style="display:none;position:absolute;z-index:999;width:100%;max-height:220px;overflow-y:auto;"></div>
+                                    </div>
                                 </div>
                                 <div class="col-md-3 mb-2 {% if source_type == 'PRODUCTION' %}d-none{% endif %}">
                                     <label class="form-label">Batch (Optional)</label>
@@ -151,15 +160,16 @@
 <script>
     const SOURCE_TYPE = '{{ source_type }}';
     const SOURCE_LOCATION_ID = '{{ transfer.source_location.pk }}';
+    const AUTOCOMPLETE_URL = "{% url 'inventory:api_product_autocomplete' %}";
 
     document.addEventListener('DOMContentLoaded', function () {
         const formsetDiv = document.getElementById('item-formset');
         const addBtn = document.getElementById('add-item');
         const totalForms = document.getElementById('id_items-TOTAL_FORMS');
 
-        // Add cost calculation and batch loading listeners to existing rows
         initCostCalculation();
         initBatchLoading();
+        initProductAutocomplete(formsetDiv);
 
         addBtn.addEventListener('click', function () {
             const rows = formsetDiv.querySelectorAll('.item-row');
@@ -173,36 +183,30 @@
 
             newRow.querySelectorAll('input').forEach(input => {
                 if (input.type !== 'hidden') input.value = '';
-                // Clear the id hidden field for new rows
                 if (input.name && input.name.endsWith('-id')) input.value = '';
+                if (input.classList.contains('product-id-input')) input.value = '';
             });
             newRow.querySelectorAll('select').forEach(select => {
                 select.selectedIndex = 0;
-                // Clear batch options for new rows (will be populated dynamically)
                 if (select.classList.contains('batch-select')) {
                     select.innerHTML = '<option value="">---------</option>';
                 }
             });
-            // Clear calculated display
+            newRow.querySelectorAll('.product-search-input').forEach(i => delete i.dataset.acInit);
             const displayEl = newRow.querySelector('.unit-cost-display');
             if (displayEl) displayEl.textContent = '';
 
             formsetDiv.appendChild(newRow);
             totalForms.value = formCount + 1;
 
-            newRow.querySelector('.remove-item').addEventListener('click', function () {
-                removeRow(newRow);
-            });
-
-            // Add cost calculation and batch loading to new row
+            newRow.querySelector('.remove-item').addEventListener('click', function () { removeRow(newRow); });
             addCostCalculationToRow(newRow);
             addBatchLoadingToRow(newRow);
+            initProductAutocomplete(newRow);
         });
 
         document.querySelectorAll('.remove-item').forEach(btn => {
-            btn.addEventListener('click', function () {
-                removeRow(this.closest('.item-row'));
-            });
+            btn.addEventListener('click', function () { removeRow(this.closest('.item-row')); });
         });
 
         function removeRow(row) {
@@ -216,51 +220,85 @@
             }
         }
 
-        // ===== Batch Loading (Dynamic per-product) =====
-        function initBatchLoading() {
-            document.querySelectorAll('.item-row').forEach(row => {
-                addBatchLoadingToRow(row);
+        // ===== Product Autocomplete =====
+        function initProductAutocomplete(container) {
+            container.querySelectorAll('.product-search-input').forEach(function (searchInput) {
+                if (searchInput.dataset.acInit) return;
+                searchInput.dataset.acInit = '1';
+                const targetId = searchInput.dataset.target;
+                const hiddenInput = document.getElementById(targetId);
+                const dropdown = searchInput.parentElement.querySelector('.autocomplete-dropdown');
+                let debounceTimer;
+
+                searchInput.addEventListener('input', function () {
+                    const q = this.value.trim();
+                    clearTimeout(debounceTimer);
+                    if (q.length < 2) { dropdown.style.display = 'none'; return; }
+                    debounceTimer = setTimeout(() => {
+                        fetch(`${AUTOCOMPLETE_URL}?q=${encodeURIComponent(q)}`)
+                            .then(r => r.json())
+                            .then(data => {
+                                dropdown.innerHTML = '';
+                                if (!data.results.length) { dropdown.style.display = 'none'; return; }
+                                data.results.forEach(p => {
+                                    const item = document.createElement('button');
+                                    item.type = 'button';
+                                    item.className = 'list-group-item list-group-item-action py-2 px-3 small';
+                                    item.innerHTML = `<strong>${p.name}</strong>${p.sku ? ' <span class="text-muted">(' + p.sku + ')</span>' : ''}`;
+                                    item.addEventListener('click', () => {
+                                        searchInput.value = p.name;
+                                        hiddenInput.value = p.id;
+                                        dropdown.style.display = 'none';
+                                        hiddenInput.dispatchEvent(new CustomEvent('productSelected', { detail: { productId: p.id } }));
+                                    });
+                                    dropdown.appendChild(item);
+                                });
+                                dropdown.style.display = 'block';
+                            }).catch(() => { dropdown.style.display = 'none'; });
+                    }, 250);
+                });
+
+                document.addEventListener('click', (e) => {
+                    if (!searchInput.parentElement.contains(e.target)) dropdown.style.display = 'none';
+                });
             });
         }
 
+        // ===== Batch Loading =====
+        function initBatchLoading() {
+            document.querySelectorAll('.item-row').forEach(row => addBatchLoadingToRow(row));
+        }
+
         function addBatchLoadingToRow(row) {
-            const productSelect = row.querySelector('.product-select');
+            const hiddenInput = row.querySelector('.product-id-input');
             const batchSelect = row.querySelector('.batch-select');
 
-            if (!productSelect || !batchSelect || SOURCE_TYPE === 'PRODUCTION') return;
+            if (!hiddenInput || !batchSelect || SOURCE_TYPE === 'PRODUCTION') return;
 
-            productSelect.addEventListener('change', function () {
-                const productId = this.value;
-                // Clear current batch options
+            hiddenInput.addEventListener('productSelected', function (e) {
+                const productId = e.detail.productId;
                 batchSelect.innerHTML = '<option value="">---------</option>';
-
                 if (!productId || !SOURCE_LOCATION_ID) return;
 
-                // Fetch batches for this product at the source location
                 fetch(`/transfers/api/batches/?product_id=${productId}&location_id=${SOURCE_LOCATION_ID}`)
-                    .then(response => response.json())
+                    .then(r => r.json())
                     .then(data => {
                         if (data.batches && data.batches.length > 0) {
                             data.batches.forEach(batch => {
                                 const option = document.createElement('option');
                                 option.value = batch.id;
-                                const expiryStr = batch.expiry_date ? ` | Exp: ${batch.expiry_date}` : '';
-                                option.textContent = `${batch.batch_number} (Qty: ${batch.current_quantity}${expiryStr})`;
+                                const exp = batch.expiry_date ? ` | Exp: ${batch.expiry_date}` : '';
+                                option.textContent = `${batch.batch_number} (Qty: ${batch.current_quantity}${exp})`;
                                 batchSelect.appendChild(option);
                             });
                         }
-                    })
-                    .catch(() => {
-                        // Silently fail - user can still proceed without batch
-                    });
+                    }).catch(() => {});
             });
         }
 
         // ===== Cost Calculation =====
         function initCostCalculation() {
-            document.querySelectorAll('.item-row').forEach(row => {
-                addCostCalculationToRow(row);
-            });
+            document.querySelectorAll('.item-row').forEach(row => addCostCalculationToRow(row));
         }
 
         function addCostCalculationToRow(row) {
@@ -275,45 +313,28 @@
                 const calculateUnitCost = () => {
                     const quantity = parseFloat(quantityInput.value) || 0;
                     const totalCost = parseFloat(totalCostInput.value) || 0;
-
                     if (quantity > 0 && totalCost > 0) {
                         const unitCost = totalCost / quantity;
-                        if (unitCostInput) {
-                            unitCostInput.value = unitCost.toFixed(2);
-                        }
-                        if (unitCostDisplay) {
-                            unitCostDisplay.textContent = `Unit: ${unitCost.toFixed(2)}`;
-                        }
+                        if (unitCostInput) unitCostInput.value = unitCost.toFixed(2);
+                        if (unitCostDisplay) unitCostDisplay.textContent = `Unit: ${unitCost.toFixed(2)}`;
                     } else {
-                        if (unitCostDisplay) {
-                            unitCostDisplay.textContent = '';
-                        }
+                        if (unitCostDisplay) unitCostDisplay.textContent = '';
                     }
                 };
-
                 quantityInput.addEventListener('input', calculateUnitCost);
                 totalCostInput.addEventListener('input', calculateUnitCost);
             } else if (batchSelect && unitCostInput) {
                 batchSelect.addEventListener('change', function () {
                     const selectedOption = this.options[this.selectedIndex];
                     if (selectedOption && selectedOption.value) {
-                        const batchId = selectedOption.value;
-
-                        fetch(`/transfers/api/batch-details/?batch_id=${batchId}`)
-                            .then(response => response.json())
+                        fetch(`/transfers/api/batch-details/?batch_id=${selectedOption.value}`)
+                            .then(r => r.json())
                             .then(data => {
                                 if (data.unit_cost) {
                                     unitCostInput.value = parseFloat(data.unit_cost).toFixed(2);
-                                    if (batchCostHint) {
-                                        batchCostHint.textContent = `From batch`;
-                                    }
+                                    if (batchCostHint) batchCostHint.textContent = 'From batch';
                                 }
-                            })
-                            .catch(() => {
-                                if (batchCostHint) {
-                                    batchCostHint.textContent = '';
-                                }
-                            });
+                            }).catch(() => { if (batchCostHint) batchCostHint.textContent = ''; });
                     }
                 });
             }
@@ -321,3 +342,4 @@
     });
 </script>
 {% endblock %}
+

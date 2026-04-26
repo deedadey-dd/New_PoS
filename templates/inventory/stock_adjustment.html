@@ -35,8 +35,20 @@
                     {% csrf_token %}
 
                     <div class="mb-3">
-                        <label for="id_product" class="form-label">Product <span class="text-danger">*</span></label>
-                        {{ form.product }}
+                        <label for="id_product_search" class="form-label">Product <span class="text-danger">*</span></label>
+                        <div class="position-relative">
+                            <input type="hidden" name="product" id="id_product" class="product-id-input" value="{{ form.product.value|default:'' }}">
+                            <input type="text" id="id_product_search"
+                                   class="form-control product-search-input"
+                                   placeholder="Type product name or SKU…"
+                                   autocomplete="off"
+                                   data-target="id_product"
+                                   value="{{ form.instance.product.name|default:'' }}">
+                            <div class="autocomplete-dropdown list-group shadow" style="display:none;position:absolute;z-index:999;width:100%;max-height:220px;overflow-y:auto;"></div>
+                        </div>
+                        {% if form.product.errors %}
+                        <div class="invalid-feedback d-block">{% for e in form.product.errors %}{{ e }}{% endfor %}</div>
+                        {% endif %}
                     </div>
 
                     <div class="mb-3">
@@ -80,4 +92,50 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const AUTOCOMPLETE_URL = "{% url 'inventory:api_product_autocomplete' %}";
+
+document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.product-search-input').forEach(function (searchInput) {
+        const targetId = searchInput.dataset.target;
+        const hiddenInput = document.getElementById(targetId);
+        const dropdown = searchInput.parentElement.querySelector('.autocomplete-dropdown');
+        let debounceTimer;
+
+        searchInput.addEventListener('input', function () {
+            const q = this.value.trim();
+            clearTimeout(debounceTimer);
+            if (q.length < 2) { dropdown.style.display = 'none'; return; }
+            debounceTimer = setTimeout(() => {
+                fetch(`${AUTOCOMPLETE_URL}?q=${encodeURIComponent(q)}`)
+                    .then(r => r.json())
+                    .then(data => {
+                        dropdown.innerHTML = '';
+                        if (!data.results.length) { dropdown.style.display = 'none'; return; }
+                        data.results.forEach(p => {
+                            const item = document.createElement('button');
+                            item.type = 'button';
+                            item.className = 'list-group-item list-group-item-action py-2 px-3 small';
+                            item.innerHTML = `<strong>${p.name}</strong>${p.sku ? ' <span class="text-muted">(' + p.sku + ')</span>' : ''}`;
+                            item.addEventListener('click', () => {
+                                searchInput.value = p.name;
+                                hiddenInput.value = p.id;
+                                dropdown.style.display = 'none';
+                            });
+                            dropdown.appendChild(item);
+                        });
+                        dropdown.style.display = 'block';
+                    }).catch(() => { dropdown.style.display = 'none'; });
+            }, 250);
+        });
+
+        document.addEventListener('click', (e) => {
+            if (!searchInput.parentElement.contains(e.target)) dropdown.style.display = 'none';
+        });
+    });
+});
+</script>
 {% endblock %}

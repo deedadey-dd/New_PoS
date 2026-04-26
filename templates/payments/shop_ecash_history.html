@@ -39,29 +39,50 @@
     <!-- Filter Form -->
     <div class="card mb-4">
         <div class="card-body">
-            <form method="get" class="row g-3 align-items-end">
+            <form method="get" class="row g-2 align-items-end">
                 {% if shop %}
                 <input type="hidden" name="shop" value="{{ shop.pk }}">
                 {% endif %}
-                <div class="col-md-3">
-                    <label class="form-label">Payment Type</label>
-                    <select name="wallet_type" class="form-select">
-                        <option value="">All</option>
+                <div class="col-md-2">
+                    <label class="form-label small mb-1">Wallet Type</label>
+                    <select name="wallet_type" class="form-select form-select-sm">
+                        <option value="">All Wallets</option>
                         <option value="ECASH" {% if wallet_type == 'ECASH' %}selected{% endif %}>E-Cash</option>
                         <option value="MOMO" {% if wallet_type == 'MOMO' %}selected{% endif %}>Mobile Money</option>
                     </select>
                 </div>
-                <div class="col-md-3">
-                    <label class="form-label">Date From</label>
-                    <input type="date" name="date_from" class="form-control" value="{{ date_from }}">
+                <div class="col-md-2">
+                    <label class="form-label small mb-1">Transaction Type</label>
+                    <select name="tx_type" class="form-select form-select-sm">
+                        <option value="">All Types</option>
+                        <option value="PAYMENT" {% if tx_type == 'PAYMENT' %}selected{% endif %}>Payment</option>
+                        <option value="WITHDRAWAL" {% if tx_type == 'WITHDRAWAL' %}selected{% endif %}>Withdrawal</option>
+                        <option value="REFUND" {% if tx_type == 'REFUND' %}selected{% endif %}>Refund</option>
+                    </select>
                 </div>
-                <div class="col-md-3">
-                    <label class="form-label">Date To</label>
-                    <input type="date" name="date_to" class="form-control" value="{{ date_to }}">
+                <div class="col-md-2">
+                    <label class="form-label small mb-1">Sort By</label>
+                    <select name="sort" class="form-select form-select-sm">
+                        <option value="date_desc" {% if sort == 'date_desc' %}selected{% endif %}>Date (Newest)</option>
+                        <option value="date_asc" {% if sort == 'date_asc' %}selected{% endif %}>Date (Oldest)</option>
+                        <option value="amount_desc" {% if sort == 'amount_desc' %}selected{% endif %}>Amount (High)</option>
+                        <option value="amount_asc" {% if sort == 'amount_asc' %}selected{% endif %}>Amount (Low)</option>
+                        <option value="type" {% if sort == 'type' %}selected{% endif %}>Type</option>
+                        <option value="performer_asc" {% if sort == 'performer_asc' %}selected{% endif %}>Performer (A→Z)</option>
+                        <option value="performer_desc" {% if sort == 'performer_desc' %}selected{% endif %}>Performer (Z→A)</option>
+                    </select>
                 </div>
-                <div class="col-md-3">
-                    <button type="submit" class="btn btn-primary"><i class="bi bi-filter"></i> Filter</button>
-                    <a href="?{% if shop %}shop={{ shop.pk }}{% endif %}" class="btn btn-outline-secondary">Reset</a>
+                <div class="col-md-2">
+                    <label class="form-label small mb-1">From Date</label>
+                    <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small mb-1">To Date</label>
+                    <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
+                </div>
+                <div class="col-md-2 d-flex gap-1 align-items-end">
+                    <button type="submit" class="btn btn-sm btn-primary flex-fill"><i class="bi bi-filter me-1"></i>Filter</button>
+                    <a href="?{% if shop %}shop={{ shop.pk }}{% endif %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-x-lg"></i></a>
                 </div>
             </form>
         </div>
@@ -108,11 +129,27 @@
                 <table class="table table-hover mb-0">
                     <thead class="table-light">
                         <tr>
-                            <th>Date</th>
-                            <th>Type</th>
-                            <th>Amount</th>
+                            <th>
+                                <a href="?{% if shop %}shop={{ shop.pk }}&{% endif %}wallet_type={{ wallet_type }}&tx_type={{ tx_type }}&date_from={{ date_from }}&date_to={{ date_to }}&sort={% if sort == 'date_desc' %}date_asc{% else %}date_desc{% endif %}" class="text-decoration-none text-dark">
+                                    Date <i class="bi bi-arrow-{% if sort == 'date_asc' %}up{% else %}down{% endif %}-short"></i>
+                                </a>
+                            </th>
+                            <th>
+                                <a href="?{% if shop %}shop={{ shop.pk }}&{% endif %}wallet_type={{ wallet_type }}&tx_type={{ tx_type }}&date_from={{ date_from }}&date_to={{ date_to }}&sort={% if sort == 'type' %}date_desc{% else %}type{% endif %}" class="text-decoration-none text-dark">
+                                    Type <i class="bi bi-arrow-down-short {% if sort != 'type' %}opacity-25{% endif %}"></i>
+                                </a>
+                            </th>
+                            <th>
+                                <a href="?{% if shop %}shop={{ shop.pk }}&{% endif %}wallet_type={{ wallet_type }}&tx_type={{ tx_type }}&date_from={{ date_from }}&date_to={{ date_to }}&sort={% if sort == 'amount_desc' %}amount_asc{% else %}amount_desc{% endif %}" class="text-decoration-none text-dark">
+                                    Amount <i class="bi bi-arrow-{% if sort == 'amount_asc' %}up{% else %}down{% endif %}-short {% if sort != 'amount_asc' and sort != 'amount_desc' %}opacity-25{% endif %}"></i>
+                                </a>
+                            </th>
                             <th>Reference</th>
-                            <th>By</th>
+                            <th>
+                                <a href="?{% if shop %}shop={{ shop.pk }}&{% endif %}wallet_type={{ wallet_type }}&tx_type={{ tx_type }}&date_from={{ date_from }}&date_to={{ date_to }}&sort={% if sort == 'performer_desc' %}performer_asc{% else %}performer_desc{% endif %}" class="text-decoration-none text-dark">
+                                    By <i class="bi bi-arrow-{% if sort == 'performer_asc' %}up{% else %}down{% endif %}-short {% if sort != 'performer_asc' and sort != 'performer_desc' %}opacity-25{% endif %}"></i>
+                                </a>
+                            </th>
                             <th>Notes</th>
                         </tr>
                     </thead>
@@ -182,8 +219,7 @@
         <ul class="pagination justify-content-center">
             {% if page_obj.has_previous %}
             <li class="page-item">
-                <a class="page-link"
-                    href="?{% if shop %}shop={{ shop.pk }}&{% endif %}page={{ page_obj.previous_page_number }}">Previous</a>
+                <a class="page-link" href="?{% if shop %}shop={{ shop.pk }}&{% endif %}wallet_type={{ wallet_type }}&tx_type={{ tx_type }}&date_from={{ date_from }}&date_to={{ date_to }}&sort={{ sort }}&page={{ page_obj.previous_page_number }}">«</a>
             </li>
             {% endif %}
             <li class="page-item disabled">
@@ -191,8 +227,7 @@
             </li>
             {% if page_obj.has_next %}
             <li class="page-item">
-                <a class="page-link"
-                    href="?{% if shop %}shop={{ shop.pk }}&{% endif %}page={{ page_obj.next_page_number }}">Next</a>
+                <a class="page-link" href="?{% if shop %}shop={{ shop.pk }}&{% endif %}wallet_type={{ wallet_type }}&tx_type={{ tx_type }}&date_from={{ date_from }}&date_to={{ date_to }}&sort={{ sort }}&page={{ page_obj.next_page_number }}">»</a>
             </li>
             {% endif %}
         </ul>

@@ -498,27 +498,45 @@ class ShopECashHistoryView(LoginRequiredMixin, ListView):
         
         # Filtering
         wallet_type = self.request.GET.get('wallet_type')
+        tx_type = self.request.GET.get('tx_type')
         date_from = self.request.GET.get('date_from')
         date_to = self.request.GET.get('date_to')
-        
+        sort = self.request.GET.get('sort', '-created_at')
+
         if wallet_type:
             qs = qs.filter(wallet_type=wallet_type)
-            
+
+        if tx_type:
+            qs = qs.filter(transaction_type=tx_type)
+
         if date_from:
             try:
                 date_from_parsed = datetime.strptime(date_from, '%Y-%m-%d').date()
                 qs = qs.filter(created_at__date__gte=date_from_parsed)
             except ValueError:
                 pass
-                
+
         if date_to:
             try:
                 date_to_parsed = datetime.strptime(date_to, '%Y-%m-%d').date()
                 qs = qs.filter(created_at__date__lte=date_to_parsed)
             except ValueError:
                 pass
-                
+
+        # Sorting
+        sort_map = {
+            'date_asc': 'created_at',
+            'date_desc': '-created_at',
+            'amount_asc': 'amount',
+            'amount_desc': '-amount',
+            'type': 'transaction_type',
+            'performer_asc': 'created_by__first_name',
+            'performer_desc': '-created_by__first_name',
+        }
+        qs = qs.order_by(sort_map.get(sort, '-created_at'))
+
         return qs
+
     
     def _get_shop(self):
         """Get the shop to show history for."""
@@ -562,8 +580,10 @@ class ShopECashHistoryView(LoginRequiredMixin, ListView):
             ).order_by('name')
             
         context['wallet_type'] = self.request.GET.get('wallet_type', '')
+        context['tx_type'] = self.request.GET.get('tx_type', '')
         context['date_from'] = self.request.GET.get('date_from', '')
         context['date_to'] = self.request.GET.get('date_to', '')
+        context['sort'] = self.request.GET.get('sort', 'date_desc')
 
         # Filtered totals for the summary row
         from django.db.models import Sum, Q as DQ

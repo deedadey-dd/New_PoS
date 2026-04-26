@@ -1243,7 +1243,7 @@ class CashHistoryView(LoginRequiredMixin, ListView):
             tenant=user.tenant,
             status='COMPLETED',
             payment_method__in=['CASH', 'MIXED'],
-        ).select_related('attendant', 'shop').order_by('-created_at')
+        ).select_related('attendant', 'shop')
 
         # Scope to user's shop unless accountant/admin
         if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER', 'SHOP_ATTENDANT']:
@@ -1264,6 +1264,18 @@ class CashHistoryView(LoginRequiredMixin, ListView):
                 qs = qs.filter(created_at__date__lte=datetime.strptime(date_to, '%Y-%m-%d').date())
             except ValueError:
                 pass
+
+        # Sorting
+        sort = self.request.GET.get('sort', 'date_desc')
+        sort_map = {
+            'date_asc': 'created_at',
+            'date_desc': '-created_at',
+            'amount_asc': 'total',
+            'amount_desc': '-total',
+            'attendant_asc': 'attendant__first_name',
+            'attendant_desc': '-attendant__first_name',
+        }
+        qs = qs.order_by(sort_map.get(sort, '-created_at'))
         return qs
 
     def get_context_data(self, **kwargs):
@@ -1275,8 +1287,10 @@ class CashHistoryView(LoginRequiredMixin, ListView):
 
         date_from = self.request.GET.get('date_from', '')
         date_to = self.request.GET.get('date_to', '')
+        sort = self.request.GET.get('sort', 'date_desc')
         context['date_from'] = date_from
         context['date_to'] = date_to
+        context['sort'] = sort
 
         # ---- Filtered queryset totals ----
         qs = self.get_queryset()
