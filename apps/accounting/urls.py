@@ -13,6 +13,7 @@ urlpatterns = [
     path('cash-history/', views.CashHistoryView.as_view(), name='cash_history'),
     path('cash-transfers/', views.CashTransferListView.as_view(), name='cash_transfer_list'),
     path('cash-transfers/new/', views.CashTransferCreateView.as_view(), name='cash_transfer_create'),
+    path('cash-transfers/bulk-confirm/', views.BulkConfirmCashTransfersView.as_view(), name='cash_transfer_bulk_confirm'),
     path('cash-transfers/<int:pk>/confirm/', views.CashTransferConfirmView.as_view(), name='cash_transfer_confirm'),
     path('cash-transfers/<int:pk>/cancel/', views.CashTransferCancelView.as_view(), name='cash_transfer_cancel'),
     path('cash-transfers/<int:pk>/print/', views.CashTransferPrintView.as_view(), name='cash_transfer_print'),

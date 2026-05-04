@@ -1,0 +1,142 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ profile_user.get_full_name|default:profile_user.email }} — Profile{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4 no-print">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-person-badge me-2"></i>{{ profile_user.get_full_name|default:profile_user.email }}</h2>
+        <p class="text-muted mb-0">User Profile &mdash; {{ profile_user.role.name|default:"No Role" }}</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="?print=1" target="_blank" class="btn btn-outline-secondary">
+            <i class="bi bi-printer me-1"></i>Print Profile
+        </a>
+        <a href="{% url 'core:user_list' %}" class="btn btn-outline-primary">
+            <i class="bi bi-arrow-left me-1"></i>Back
+        </a>
+    </div>
+</div>
+
+<!-- User Info Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-md-5">
+        <div class="card shadow-sm h-100">
+            <div class="card-header"><i class="bi bi-person-circle me-2"></i>Profile Information</div>
+            <div class="card-body">
+                <div class="d-flex align-items-center mb-3">
+                    <div class="rounded-circle bg-primary d-flex align-items-center justify-content-center text-white fw-bold me-3"
+                         style="width:56px;height:56px;font-size:22px;">
+                        {{ profile_user.first_name|first|upper|default:profile_user.email|first|upper }}
+                    </div>
+                    <div>
+                        <div class="fw-bold fs-5">{{ profile_user.get_full_name|default:profile_user.email }}</div>
+                        <div class="text-muted small">{{ profile_user.email }}</div>
+                    </div>
+                </div>
+                <table class="table table-sm table-borderless mb-0">
+                    <tr><th>Role</th><td>
+                        <span class="badge bg-primary">{{ profile_user.role.name|default:"Not Assigned" }}</span>
+                    </td></tr>
+                    <tr><th>Location</th><td>
+                        {% if profile_user.location %}
+                        <a href="{% url 'core:location_overview' profile_user.location.pk %}" class="text-decoration-none">
+                            {{ profile_user.location.name }}
+                        </a>
+                        {% else %}<span class="text-muted">No location</span>{% endif %}
+                    </td></tr>
+                    <tr><th>Phone</th><td>{{ profile_user.phone|default:"-" }}</td></tr>
+                    <tr><th>Status</th><td>
+                        {% if profile_user.is_active %}<span class="badge bg-success">Active</span>
+                        {% else %}<span class="badge bg-danger">Inactive</span>{% endif %}
+                    </td></tr>
+                    <tr><th>Last Login</th><td class="text-muted small">{{ profile_user.last_login|date:"d M Y H:i"|default:"Never" }}</td></tr>
+                    <tr><th>Date Joined</th><td class="text-muted small">{{ profile_user.date_joined|date:"d M Y" }}</td></tr>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    {% if recent_sales is not None %}
+    <div class="col-md-7">
+        <div class="row g-3 mb-3">
+            <div class="col-6">
+                <div class="card shadow-sm text-center h-100">
+                    <div class="card-body">
+                        <div class="display-6 fw-bold text-success">{{ currency_symbol }}{{ sales_today|floatformat:"0" }}</div>
+                        <p class="text-muted mb-0">Sales Today</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6">
+                <div class="card shadow-sm text-center h-100">
+                    <div class="card-body">
+                        <div class="display-6 fw-bold text-primary">{{ currency_symbol }}{{ all_time_sales|floatformat:"0" }}</div>
+                        <p class="text-muted mb-0">All-Time Sales</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-header"><i class="bi bi-receipt me-2"></i>Recent Sales</div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead class="table-light">
+                            <tr><th>Invoice</th><th>Customer</th><th>Shop</th><th class="text-end">Amount</th><th>Date</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for s in recent_sales %}
+                            <tr>
+                                <td><a href="{% url 'sales:sale_receipt' s.pk %}" class="text-decoration-none">{{ s.sale_number }}</a></td>
+                                <td class="small">{{ s.customer.name|default:s.walkin_customer_name|default:"Walk-in" }}</td>
+                                <td class="small text-muted">{{ s.shop.name|default:"-" }}</td>
+                                <td class="text-end">{{ currency_symbol }}{{ s.total|floatformat:"0" }}</td>
+                                <td class="text-muted small">{{ s.created_at|date:"M d" }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="5" class="text-center text-muted py-3">No sales yet</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{% if adjustments %}
+<div class="card shadow-sm mb-4">
+    <div class="card-header"><i class="bi bi-sliders me-2"></i>Recent Stock Adjustments</div>
+    <div class="card-body p-0">
+        <table class="table table-sm table-hover mb-0">
+            <thead class="table-light">
+                <tr><th>Product</th><th>Location</th><th>Type</th><th class="text-end">Qty</th><th>Status</th><th>Date</th></tr>
+            </thead>
+            <tbody>
+                {% for adj in adjustments %}
+                <tr>
+                    <td>{{ adj.product.name }}</td>
+                    <td class="small text-muted">{{ adj.location.name }}</td>
+                    <td><span class="badge bg-info text-dark" style="font-size:10px;">{{ adj.adjustment_type }}</span></td>
+                    <td class="text-end">{{ adj.quantity }}</td>
+                    <td>
+                        {% if adj.status == 'APPROVED' %}<span class="badge bg-success" style="font-size:10px;">Approved</span>
+                        {% elif adj.status == 'PENDING' %}<span class="badge bg-warning text-dark" style="font-size:10px;">Pending</span>
+                        {% else %}<span class="badge bg-danger" style="font-size:10px;">Rejected</span>{% endif %}
+                    </td>
+                    <td class="text-muted small">{{ adj.created_at|date:"M d, Y" }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{% if print_mode %}
+<script>window.addEventListener('load', function(){ setTimeout(function(){ window.print(); }, 400); });</script>
+{% endif %}
+{% endblock %}

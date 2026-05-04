@@ -71,6 +71,18 @@ class Tenant(models.Model):
         default=False,
         help_text="Enforce Attendant(Invoice) -> Cashier(Pay) -> Manager(Dispatch) workflow"
     )
+    
+    STOCK_ADJUSTMENT_APPROVER_CHOICES = [
+        ('MANAGER', 'Shop Manager / Admin Only'),
+        ('AUDITOR', 'Auditor Only'),
+        ('BOTH', 'Both Manager and Auditor'),
+    ]
+    stock_adjustment_approver = models.CharField(
+        max_length=10,
+        choices=STOCK_ADJUSTMENT_APPROVER_CHOICES,
+        default='MANAGER',
+        help_text="Who must approve pending stock adjustments."
+    )
     require_customer_on_invoice = models.BooleanField(
         default=False,
         help_text="Require a customer profile (with a valid phone number) when creating sales/invoices"

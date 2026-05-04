@@ -102,6 +102,12 @@ class CashTransferListView(LoginRequiredMixin, SortableMixin, ListView):
             context['can_create'] = role_name in ['SHOP_CASHIER', 'ACCOUNTANT', 'ADMIN']
         else:
             context['can_create'] = role_name in ['SHOP_ATTENDANT', 'SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN', 'SHOP_CASHIER']
+
+        # Can this user bulk-confirm? (has pending transfers addressed to them, or is ACCOUNTANT/ADMIN for bank deposits)
+        context['can_bulk_confirm'] = (
+            context['pending_count'] > 0 or
+            role_name in ['ACCOUNTANT', 'ADMIN']
+        )
         
         # Show filters for all roles
         context['show_filters'] = True
@@ -253,6 +259,48 @@ class CashTransferCancelView(LoginRequiredMixin, View):
             messages.error(request, str(e))
         
         return redirect('accounting:cash_transfer_list')
+
+
+class BulkConfirmCashTransfersView(LoginRequiredMixin, View):
+    """Bulk-confirm selected pending cash transfers."""
+
+    def post(self, request):
+        role_name = request.user.role.name if request.user.role else None
+        ids = request.POST.getlist('transfer_ids')
+
+        if not ids:
+            messages.warning(request, 'No transfers selected.')
+            return redirect('accounting:cash_transfer_list')
+
+        transfers = CashTransfer.objects.filter(
+            pk__in=ids,
+            tenant=request.user.tenant,
+            status='PENDING',
+        ).select_related('from_user', 'to_user')
+
+        confirmed = 0
+        skipped = 0
+        for transfer in transfers:
+            can_confirm = (
+                transfer.to_user == request.user or
+                (transfer.destination_type == 'BANK' and role_name in ['ACCOUNTANT', 'ADMIN'])
+            )
+            if can_confirm:
+                try:
+                    transfer.confirm(request.user)
+                    confirmed += 1
+                except Exception:
+                    skipped += 1
+            else:
+                skipped += 1
+
+        if confirmed:
+            messages.success(request, f'{confirmed} transfer{"s" if confirmed != 1 else ""} confirmed successfully.')
+        if skipped:
+            messages.warning(request, f'{skipped} transfer{"s" if skipped != 1 else ""} skipped (not authorised or already processed).')
+
+        return redirect('accounting:cash_transfer_list')
+
 
 
 class AccountantDashboardView(LoginRequiredMixin, View):

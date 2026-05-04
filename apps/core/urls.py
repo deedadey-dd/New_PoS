@@ -32,6 +32,7 @@ urlpatterns = [
     path('locations/create/', views.LocationCreateView.as_view(), name='location_create'),
     path('locations/<int:pk>/edit/', views.LocationUpdateView.as_view(), name='location_edit'),
     path('locations/<int:pk>/delete/', views.LocationDeleteView.as_view(), name='location_delete'),
+    path('locations/<int:pk>/overview/', views.LocationOverviewView.as_view(), name='location_overview'),
     
     # Users
     path('users/', views.UserListView.as_view(), name='user_list'),
@@ -39,6 +40,7 @@ urlpatterns = [
     path('users/<int:pk>/edit/', views.UserUpdateView.as_view(), name='user_edit'),
     path('users/<int:pk>/delete/', views.UserDeleteView.as_view(), name='user_delete'),
     path('users/<int:pk>/reset-password/', views.AdminPasswordResetView.as_view(), name='admin_password_reset'),
+    path('users/<int:pk>/overview/', views.UserOverviewView.as_view(), name='user_overview'),
     
     # Password change
     path('change-password/', views.ForcedPasswordChangeView.as_view(), name='forced_password_change'),

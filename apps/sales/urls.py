@@ -23,6 +23,8 @@ urlpatterns = [
     # Sales History
     path('', views.SaleListView.as_view(), name='sale_list'),
     path('<int:pk>/receipt/', views.SaleDetailView.as_view(), name='sale_receipt'),
+    path('<int:pk>/receipt/pdf/', views.sale_receipt_pdf, name='sale_receipt_pdf'),
+    path('<int:pk>/waybill/', views.waybill_print_view, name='waybill_print'),
     path('api/<int:pk>/detail/', views.api_sale_detail, name='api_sale_detail'),
     
     # API Endpoints

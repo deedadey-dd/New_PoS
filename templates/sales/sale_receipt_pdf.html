@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Receipt - {{ sale.sale_number }}</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        @page { size: A5 portrait; margin: 15mm; }
+        body {
+            font-family: Arial, sans-serif;
+            font-size: 11px;
+            color: #111;
+            max-width: 148mm;
+        }
+        h1 { font-size: 16px; margin-bottom: 2px; }
+        .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 10px; }
+        .header p { font-size: 10px; margin: 1px 0; }
+        .info-table { width: 100%; font-size: 10px; margin-bottom: 10px; }
+        .info-table td { padding: 1px 0; }
+        .items-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+        .items-table th { border-bottom: 1px solid #000; text-align: left; padding: 3px 2px; font-size: 10px; }
+        .items-table td { padding: 2px; vertical-align: top; font-size: 10px; }
+        .text-right { text-align: right; }
+        .totals { margin-bottom: 8px; }
+        .totals-row { display: flex; justify-content: space-between; padding: 1px 0; }
+        .totals-row.grand { font-weight: bold; font-size: 13px; border-top: 1px solid #000; margin-top: 4px; padding-top: 4px; }
+        .footer { text-align: center; border-top: 1px dashed #000; padding-top: 8px; margin-top: 10px; font-size: 10px; }
+        .copy-label { text-align: center; font-weight: bold; font-size: 11px; margin-top: 8px; }
+        .page-break { page-break-after: always; }
+    </style>
+</head>
+<body>
+
+{% for _ in print_copies %}
+<div class="receipt-page{% if not forloop.last %} page-break{% endif %}">
+    <div class="header">
+        {% if shop_settings and shop_settings.receipt_header %}
+        <p>{{ shop_settings.receipt_header|linebreaksbr }}</p>
+        {% else %}
+        <h1>{{ sale.shop.name }}</h1>
+        <p>{{ tenant.name }}</p>
+        {% endif %}
+        {% if sale.shop.phone %}<p>{{ sale.shop.phone }}</p>{% endif %}
+    </div>
+
+    <table class="info-table">
+        <tr>
+            <td>Date: {{ sale.created_at|date:"d/m/Y H:i" }}</td>
+            <td class="text-right"><strong>{{ sale.sale_number }}</strong></td>
+        </tr>
+        <tr>
+            <td>Attendant: {{ sale.attendant.get_full_name|default:sale.attendant.email }}</td>
+            <td class="text-right">{{ sale.get_payment_method_display|default:"" }}</td>
+        </tr>
+        {% if sale.customer %}
+        <tr>
+            <td colspan="2">Customer: <strong>{{ sale.customer.name }}</strong></td>
+        </tr>
+        {% endif %}
+    </table>
+
+    <table class="items-table">
+        <thead>
+            <tr>
+                <th class="text-right">Qty</th>
+                <th>Item</th>
+                <th class="text-right">Price</th>
+                <th class="text-right">Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in sale.items.all %}
+            <tr>
+                <td class="text-right">{{ item.quantity }}</td>
+                <td>{{ item.product.name }}</td>
+                <td class="text-right">{{ item.unit_price|floatformat:"2g" }}</td>
+                <td class="text-right">{{ item.total|floatformat:"2g" }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="totals">
+        <div class="totals-row"><span>Subtotal:</span><span>{{ tenant.currency_symbol|default:"GHC" }}{{ sale.subtotal|floatformat:"2g" }}</span></div>
+        {% if sale.discount_amount %}<div class="totals-row"><span>Discount:</span><span>-{{ sale.discount_amount|floatformat:"2g" }}</span></div>{% endif %}
+        {% if sale.tax_amount %}<div class="totals-row"><span>Tax:</span><span>{{ sale.tax_amount|floatformat:"2g" }}</span></div>{% endif %}
+        <div class="totals-row grand"><span>TOTAL:</span><span>{{ tenant.currency_symbol|default:"GHC" }}{{ sale.total|floatformat:"2g" }}</span></div>
+        <div class="totals-row" style="margin-top:4px;"><span>Amount Paid:</span><span>{{ tenant.currency_symbol|default:"GHC" }}{{ sale.amount_paid|floatformat:"2g" }}</span></div>
+        {% if sale.change_given %}<div class="totals-row"><span>Change:</span><span>{{ sale.change_given|floatformat:"2g" }}</span></div>{% endif %}
+    </div>
+
+    <div class="footer">
+        {% if shop_settings and shop_settings.receipt_footer %}
+        <p>{{ shop_settings.receipt_footer }}</p>
+        {% else %}
+        <p>Thank you for your purchase! Please come again.</p>
+        {% endif %}
+        <p style="margin-top:5px;font-size:9px;">{{ sale.sale_number }}</p>
+    </div>
+
+    <div class="copy-label">
+        {% if forloop.counter == 1 %}--- Customer Copy ---
+        {% elif forloop.counter == 2 %}--- Shop Manager Copy ---
+        {% elif forloop.counter == 3 %}--- Cashier Copy ---
+        {% else %}--- Copy {{ forloop.counter }} ---
+        {% endif %}
+    </div>
+</div>
+{% endfor %}
+
+</body>
+</html>

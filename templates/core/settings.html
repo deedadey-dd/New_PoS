@@ -233,6 +233,21 @@
                                 </div>
                             </div>
                         </div>
+                        <!-- Stock Adjustment Approver -->
+                        <div class="col-md-6">
+                            <div class="card h-100 border-0 bg-light">
+                                <div class="card-body">
+                                    <label class="form-label fw-bold"><i class="bi bi-person-check me-2"></i>Stock Adjustment Approver</label>
+                                    {{ form.stock_adjustment_approver }}
+                                    <p class="text-muted small mt-2 mb-0">
+                                        Defines <strong>who must approve</strong> pending stock adjustments:<br>
+                                        &bull; <strong>Manager/Admin</strong> — Shop manager of that location or Admin.<br>
+                                        &bull; <strong>Auditor Only</strong> — Only users with the Auditor role.<br>
+                                        &bull; <strong>Both</strong> — Both the manager AND an Auditor must approve.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

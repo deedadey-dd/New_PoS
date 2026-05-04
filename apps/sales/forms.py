@@ -7,22 +7,28 @@ from .models import ShopSettings
 
 class ShopManagerSettingsForm(forms.ModelForm):
     """
-    Form for Shop Managers to configure their shop's receipt and printing settings.
+    Form for Shop Managers to configure their shop's receipt, printing, and PoS display settings.
     Explicitly excludes payment configuration fields.
     """
     class Meta:
         model = ShopSettings
         fields = [
-            'receipt_printer_type', 
+            'receipt_printer_type',
             'show_logo_on_receipt',
-            'receipt_header', 
-            'receipt_footer', 
+            'receipt_print_copies',
+            'receipt_header',
+            'receipt_footer',
+            'hide_zero_stock_items',
+            'warn_on_low_stock',
         ]
         widgets = {
             'receipt_printer_type': forms.Select(attrs={'class': 'form-select'}),
             'show_logo_on_receipt': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'receipt_print_copies': forms.NumberInput(attrs={'class': 'form-control', 'min': 1, 'max': 10}),
             'receipt_header': forms.Textarea(attrs={'class': 'form-control', 'rows': 3, 'placeholder': 'Optional custom header text'}),
             'receipt_footer': forms.Textarea(attrs={'class': 'form-control', 'rows': 3, 'placeholder': 'Thank you! Come again.'}),
+            'hide_zero_stock_items': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'warn_on_low_stock': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         }
 
 

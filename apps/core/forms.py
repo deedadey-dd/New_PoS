@@ -235,6 +235,7 @@ class TenantSettingsForm(forms.ModelForm):
             'require_customer_on_invoice',
             'use_bulk_inventory_receiving',
             'require_accountant_for_bulk_receiving',
+            'stock_adjustment_approver',
             # Printing settings
             'receipt_print_copies',
         ]
@@ -261,6 +262,7 @@ class TenantSettingsForm(forms.ModelForm):
             'require_customer_on_invoice': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'use_bulk_inventory_receiving': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'require_accountant_for_bulk_receiving': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'stock_adjustment_approver': forms.Select(attrs={'class': 'form-select'}),
         }
 
 

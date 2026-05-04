@@ -913,22 +913,32 @@ class StockAdjustmentView(LoginRequiredMixin, View):
                 requested_by=user,
                 status='PENDING' if needs_approval else 'APPROVED',
             )
-            
             if needs_approval:
-                # Notify the target location's manager(s) and admins
+                # Determine who should be notified / approve
+                approver_setting = getattr(user.tenant, 'stock_adjustment_approver', 'MANAGER')
                 from apps.notifications.models import Notification
-                from apps.core.models import User
-                
-                # Find managers of the target location + admins
-                target_users = User.objects.filter(
+                from apps.core.models import User as TenantUser
+
+                target_users_qs = TenantUser.objects.filter(
                     tenant=user.tenant,
                     is_active=True,
-                ).filter(
-                    Q(location=location, role__name='SHOP_MANAGER') |
-                    Q(role__name='ADMIN')
                 ).exclude(pk=user.pk)
-                
-                for target_user in target_users:
+
+                if approver_setting == 'AUDITOR':
+                    notified = target_users_qs.filter(role__name='AUDITOR')
+                elif approver_setting == 'BOTH':
+                    notified = target_users_qs.filter(
+                        Q(location=location, role__name='SHOP_MANAGER') |
+                        Q(role__name='ADMIN') |
+                        Q(role__name='AUDITOR')
+                    )
+                else:  # MANAGER (default)
+                    notified = target_users_qs.filter(
+                        Q(location=location, role__name='SHOP_MANAGER') |
+                        Q(role__name='ADMIN')
+                    )
+
+                for target_user in notified:
                     Notification.objects.create(
                         tenant=user.tenant,
                         user=target_user,
@@ -939,8 +949,8 @@ class StockAdjustmentView(LoginRequiredMixin, View):
                         reference_type='StockAdjustment',
                         reference_id=adjustment.pk,
                     )
-                
-                messages.info(request, 
+
+                messages.info(request,
                     f'Stock adjustment for {product.name} at {location.name} has been submitted for approval.'
                 )
             else:
@@ -1012,14 +1022,21 @@ class AdjustmentHistoryView(LoginRequiredMixin, SortableMixin, ListView):
         context['status_choices'] = StockAdjustment.STATUS_CHOICES
         
         # Pending count for the user's location (for the badge)
-        if role_name in ('SHOP_MANAGER', 'ADMIN'):
+        if role_name in ('SHOP_MANAGER', 'ADMIN', 'AUDITOR'):
+            approver_setting = getattr(user.tenant, 'stock_adjustment_approver', 'MANAGER')
             if role_name == 'SHOP_MANAGER' and user.location:
+                if approver_setting in ('MANAGER', 'BOTH'):
+                    context['pending_count'] = StockAdjustment.objects.filter(
+                        tenant=user.tenant,
+                        location=user.location,
+                        status='PENDING'
+                    ).count()
+            elif role_name == 'ADMIN':
                 context['pending_count'] = StockAdjustment.objects.filter(
                     tenant=user.tenant,
-                    location=user.location,
                     status='PENDING'
                 ).count()
-            elif role_name == 'ADMIN':
+            elif role_name == 'AUDITOR' and approver_setting in ('AUDITOR', 'BOTH'):
                 context['pending_count'] = StockAdjustment.objects.filter(
                     tenant=user.tenant,
                     status='PENDING'
@@ -1047,13 +1064,17 @@ class ReviewAdjustmentView(LoginRequiredMixin, View):
         
         user = request.user
         role_name = user.role.name if hasattr(user, 'role') and user.role else ''
-        
-        # Only Shop Manager of that location or Admin can review
+        approver_setting = getattr(user.tenant, 'stock_adjustment_approver', 'MANAGER')
+
+        # Determine if the user can review this adjustment
         can_review = False
         if role_name == 'ADMIN':
             can_review = True
-        elif role_name == 'SHOP_MANAGER' and user.location_id == adjustment.location_id:
+        elif role_name == 'AUDITOR' and approver_setting in ('AUDITOR', 'BOTH'):
             can_review = True
+        elif role_name == 'SHOP_MANAGER' and user.location_id == adjustment.location_id:
+            if approver_setting in ('MANAGER', 'BOTH'):
+                can_review = True
         
         if not can_review:
             messages.error(request, 'You do not have permission to review this adjustment.')
@@ -1228,8 +1249,8 @@ class ShopPriceListView(LoginRequiredMixin, View):
     
     def dispatch(self, request, *args, **kwargs):
         role_name = request.user.role.name if request.user.role else None
-        if role_name not in ['SHOP_MANAGER', 'ADMIN']:
-            messages.error(request, 'Only shop managers can access pricing.')
+        if role_name not in ['SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN']:
+            messages.error(request, 'Only shop managers and accountants can access pricing.')
             return redirect('core:dashboard')
         return super().dispatch(request, *args, **kwargs)
     
@@ -1237,7 +1258,7 @@ class ShopPriceListView(LoginRequiredMixin, View):
         user = request.user
         shop = user.location
         
-        # Admin can select a shop
+        # Admin or Accountant can select a shop
         if not shop or shop.location_type != 'SHOP':
             shop_id = request.GET.get('shop')
             if shop_id:
@@ -1246,7 +1267,7 @@ class ShopPriceListView(LoginRequiredMixin, View):
                 ).first()
         
         context = {'shop': shop}
-        
+
         if not shop or shop.location_type != 'SHOP':
             context['shops'] = Location.objects.filter(
                 tenant=user.tenant, location_type='SHOP', is_active=True
@@ -1303,22 +1324,23 @@ class ShopPriceSetView(LoginRequiredMixin, View):
     
     def dispatch(self, request, *args, **kwargs):
         role_name = request.user.role.name if request.user.role else None
-        if role_name not in ['SHOP_MANAGER', 'ADMIN']:
-            messages.error(request, 'Only shop managers can set pricing.')
+        if role_name not in ['SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN']:
+            messages.error(request, 'Only shop managers and accountants can set pricing.')
             return redirect('core:dashboard')
         return super().dispatch(request, *args, **kwargs)
     
     def get_shop_and_product(self, request, product_pk):
         user = request.user
         shop = user.location
-        
+
+        # Admin and Accountant can pick any shop via GET param
         if not shop or shop.location_type != 'SHOP':
-            shop_id = request.GET.get('shop')
+            shop_id = request.GET.get('shop') or request.POST.get('shop')
             if shop_id:
                 shop = Location.objects.filter(
                     tenant=user.tenant, pk=shop_id, location_type='SHOP'
                 ).first()
-        
+
         product = get_object_or_404(Product, pk=product_pk, tenant=user.tenant)
         return shop, product
     

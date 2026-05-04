@@ -32,7 +32,9 @@
                     {% for usr in users %}
                     <tr>
                         <td>
-                            <strong>{{ usr.get_full_name|default:usr.email }}</strong>
+                            <a href="{% url 'core:user_overview' usr.pk %}" class="fw-bold text-decoration-none">
+                                {{ usr.get_full_name|default:usr.email }}
+                            </a>
                         </td>
                         <td>{{ usr.email }}</td>
                         <td>
@@ -42,7 +44,13 @@
                             <span class="text-muted">-</span>
                             {% endif %}
                         </td>
-                        <td>{{ usr.location.name|default:"-" }}</td>
+                        <td>
+                            {% if usr.location %}
+                            <a href="{% url 'core:location_overview' usr.location.pk %}" class="text-decoration-none text-muted">
+                                {{ usr.location.name }}
+                            </a>
+                            {% else %}-{% endif %}
+                        </td>
                         <td>
                             {% if usr.is_active %}
                             <span class="badge bg-success">Active</span>
@@ -51,13 +59,16 @@
                             {% endif %}
                         </td>
                         <td class="text-end">
-                            <a href="{% url 'core:user_edit' usr.pk %}" class="btn btn-sm btn-outline-primary"
+                            <a href="{% url 'core:user_overview' usr.pk %}" class="btn btn-sm btn-outline-info me-1" title="View Profile">
+                                <i class="bi bi-eye"></i>
+                            </a>
+                            <a href="{% url 'core:user_edit' usr.pk %}" class="btn btn-sm btn-outline-primary me-1"
                                 title="Edit User">
                                 <i class="bi bi-pencil"></i>
                             </a>
                             {% if usr.pk != user.pk %}
                             <a href="{% url 'core:admin_password_reset' usr.pk %}"
-                                class="btn btn-sm btn-outline-warning" title="Reset Password">
+                                class="btn btn-sm btn-outline-warning me-1" title="Reset Password">
                                 <i class="bi bi-key"></i>
                             </a>
                             <a href="{% url 'core:user_delete' usr.pk %}" class="btn btn-sm btn-outline-danger"

@@ -453,8 +453,12 @@ class SaleDetailView(LoginRequiredMixin, DetailView):
         except ShopSettings.DoesNotExist:
             context['shop_settings'] = None
         
-        # Determine number of receipt copies to print
-        copies = getattr(self.request.user.tenant, 'receipt_print_copies', 3)
+        # Determine number of receipt copies to print (shop setting overrides tenant)
+        shop_settings = context.get('shop_settings')
+        if shop_settings and shop_settings.receipt_print_copies:
+            copies = shop_settings.receipt_print_copies
+        else:
+            copies = getattr(self.request.user.tenant, 'receipt_print_copies', 1)
         context['print_copies'] = range(copies)
         
         return context
@@ -510,45 +514,78 @@ def api_sale_detail(request, pk):
 
 @login_required
 def api_product_search(request):
-    """Search products for POS - optimized with prefetch."""
-    from django.db.models import Q, Prefetch
-    
+    """Search products for POS - respects hide_zero_stock and returns stock quantities."""
+    from django.db.models import Q, Prefetch, Sum
+    from apps.inventory.models import InventoryLedger
+
     query = request.GET.get('q', '')
     shop = request.user.location
-    
+
     if not shop or shop.location_type != 'SHOP':
         return JsonResponse({'products': []})
-    
+
+    # Check shop settings
+    try:
+        shop_settings = ShopSettings.objects.get(tenant=request.user.tenant, shop=shop)
+        hide_zero_stock = shop_settings.hide_zero_stock_items
+        warn_low_stock = shop_settings.warn_on_low_stock
+    except ShopSettings.DoesNotExist:
+        hide_zero_stock = False
+        warn_low_stock = True
+
     # Prefetch shop prices for THIS shop only
     shop_price_prefetch = Prefetch(
         'shop_prices',
         queryset=ShopPrice.objects.filter(location=shop, is_active=True),
         to_attr='current_shop_prices'
     )
-    
-    products = Product.objects.filter(
+
+    products_qs = Product.objects.filter(
         tenant=request.user.tenant,
         is_active=True
     ).filter(
-        Q(name__icontains=query) | 
+        Q(name__icontains=query) |
         Q(sku__icontains=query) |
         Q(barcode__icontains=query)
-    ).prefetch_related(shop_price_prefetch)[:20]
-    
+    ).prefetch_related(shop_price_prefetch)[:50]
+
+    # Build stock lookup for the shop in one query
+    stock_map = {}
+    ledger_agg = InventoryLedger.objects.filter(
+        tenant=request.user.tenant,
+        location=shop
+    ).values('product_id').annotate(total=Sum('quantity'))
+    for row in ledger_agg:
+        stock_map[row['product_id']] = float(row['total'] or 0)
+
     results = []
-    for product in products:
+    for product in products_qs:
         shop_prices = getattr(product, 'current_shop_prices', [])
-        if shop_prices:
-            shop_price = shop_prices[0]
-            results.append({
-                'id': product.pk,
-                'name': product.name,
-                'sku': product.sku,
-                'price': str(shop_price.selling_price),
-                'unit': product.unit_of_measure,
-            })
-    # Limit to 15
+        if not shop_prices:
+            # Use default product price if no shop price set
+            price = str(product.default_selling_price or '0')
+        else:
+            price = str(shop_prices[0].selling_price)
+
+        stock_qty = stock_map.get(product.pk, 0)
+
+        if hide_zero_stock and stock_qty <= 0:
+            continue
+
+        results.append({
+            'id': product.pk,
+            'name': product.name,
+            'sku': product.sku,
+            'price': price,
+            'unit': product.unit_of_measure,
+            'stock_qty': stock_qty,
+            'warn_low_stock': warn_low_stock,
+        })
+        if len(results) >= 20:
+            break
+
     return JsonResponse({'products': results})
+
 
 @login_required
 def api_customer_search(request):
@@ -2186,3 +2223,72 @@ class AdminShopPaymentConfigView(LoginRequiredMixin, AdminRequiredMixin, UpdateV
         messages.success(self.request, f"Payment settings for {self.shop_name} updated.")
         return super().form_valid(form)
 
+
+
+# ============ PDF Receipt and Waybill ============
+
+@login_required
+def sale_receipt_pdf(request, pk):
+    """Generate and download a PDF version of a sale receipt using xhtml2pdf."""
+    from django.template.loader import get_template
+    from django.http import HttpResponse
+
+    sale = get_object_or_404(
+        Sale.objects.select_related('shop', 'attendant', 'cashier', 'customer')
+                    .prefetch_related('items__product'),
+        pk=pk,
+        tenant=request.user.tenant,
+    )
+
+    try:
+        shop_settings = ShopSettings.objects.get(tenant=request.user.tenant, shop=sale.shop)
+    except ShopSettings.DoesNotExist:
+        shop_settings = None
+
+    context = {
+        'sale': sale,
+        'shop_settings': shop_settings,
+        'tenant': request.user.tenant,
+        'pdf_mode': True,
+    }
+
+    try:
+        from xhtml2pdf import pisa
+        import io
+
+        template = get_template('sales/sale_receipt_pdf.html')
+        html_string = template.render(context)
+
+        response = HttpResponse(content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="receipt_{sale.sale_number}.pdf"'
+
+        pisa_status = pisa.CreatePDF(io.BytesIO(html_string.encode('utf-8')), dest=response)
+        if pisa_status.err:
+            return HttpResponse('PDF generation failed.', status=500)
+        return response
+
+    except ImportError:
+        messages.error(request, 'PDF generation library (xhtml2pdf) is not installed. Please contact your system administrator.')
+        return redirect('sales:sale_receipt', pk=pk)
+
+
+@login_required
+def waybill_print_view(request, pk):
+    """Render a printable waybill for a dispatched sale."""
+    role_name = request.user.role.name if request.user.role else ''
+    if role_name not in ['SHOP_MANAGER', 'ADMIN', 'AUDITOR', 'ACCOUNTANT']:
+        messages.error(request, 'You do not have permission to print waybills.')
+        return redirect('core:dashboard')
+
+    sale = get_object_or_404(
+        Sale.objects.select_related('shop', 'attendant', 'cashier', 'customer')
+                    .prefetch_related('items__product'),
+        pk=pk,
+        tenant=request.user.tenant,
+    )
+
+    context = {
+        'sale': sale,
+        'tenant': request.user.tenant,
+    }
+    return render(request, 'sales/waybill_print.html', context)

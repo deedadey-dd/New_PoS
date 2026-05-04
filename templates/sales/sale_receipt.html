@@ -430,6 +430,11 @@
     <button class="print-btn no-print" onclick="window.print()">
         🖨️ Print Receipt
     </button>
+    {% if sale.status == 'COMPLETED' %}
+    <a href="{% url 'sales:sale_receipt_pdf' sale.pk %}" class="print-btn no-print" style="display:block;text-align:center;text-decoration:none;background:#007bff;color:#fff;border-radius:4px;">
+        📄 Download PDF
+    </a>
+    {% endif %}
 
     <script>
         // Auto-print on page load

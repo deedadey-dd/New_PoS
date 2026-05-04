@@ -1159,3 +1159,129 @@ class ContactSubmitView(View):
                 'error': 'An error occurred. Please try again.'
             }, status=500, content_type='application/json')
 
+
+
+# ============ Location & User Overview Reports ============
+
+class LocationOverviewView(LoginRequiredMixin, View):
+    """
+    Printable, detailed overview of a location (shop, production, stores).
+    Shows users, stock summary, recent sales (shops), recent transfers.
+    """
+    template_name = 'core/location_overview.html'
+
+    def get(self, request, pk):
+        from django.db.models import Sum, Count, Q
+        from django.utils import timezone
+
+        location = get_object_or_404(Location, pk=pk, tenant=request.user.tenant)
+        user = request.user
+        role_name = user.role.name if user.role else ''
+
+        # Staff at this location
+        staff = User.objects.filter(
+            tenant=request.user.tenant, location=location, is_active=True
+        ).select_related('role').order_by('role__name', 'first_name')
+
+        # Stock summary
+        from apps.inventory.models import InventoryLedger, Batch
+        stock_summary = InventoryLedger.objects.filter(
+            tenant=request.user.tenant, location=location
+        ).values('product__name', 'product__sku').annotate(
+            total_qty=Sum('quantity')
+        ).filter(total_qty__gt=0).order_by('product__name')
+
+        # Recent sales (for shops)
+        recent_sales = None
+        sales_total = 0
+        if location.location_type == 'SHOP':
+            from apps.sales.models import Sale
+            recent_sales = Sale.objects.filter(
+                tenant=request.user.tenant, shop=location, status='COMPLETED'
+            ).select_related('customer', 'attendant').order_by('-created_at')[:10]
+            sales_total = Sale.objects.filter(
+                tenant=request.user.tenant, shop=location, status='COMPLETED',
+                created_at__date=timezone.now().date()
+            ).aggregate(t=Sum('total'))['t'] or 0
+
+        # Recent transfers (in & out)
+        from apps.transfers.models import Transfer
+        recent_transfers = Transfer.objects.filter(
+            tenant=request.user.tenant
+        ).filter(
+            Q(source_location=location) | Q(destination_location=location)
+        ).select_related('source_location', 'destination_location').order_by('-created_at')[:10]
+
+        # Expiring batches
+        from datetime import timedelta
+        expiring = Batch.objects.filter(
+            tenant=request.user.tenant, location=location, status='AVAILABLE',
+            current_quantity__gt=0,
+            expiry_date__lte=timezone.now().date() + timedelta(days=30),
+            expiry_date__gte=timezone.now().date()
+        ).select_related('product').order_by('expiry_date')[:5]
+
+        context = {
+            'location': location,
+            'staff': staff,
+            'stock_summary': stock_summary,
+            'recent_sales': recent_sales,
+            'sales_today': sales_total,
+            'recent_transfers': recent_transfers,
+            'expiring_batches': expiring,
+            'currency_symbol': getattr(request.user.tenant, 'currency_symbol', 'GHC'),
+            'print_mode': request.GET.get('print') == '1',
+        }
+        return render(request, self.template_name, context)
+
+
+class UserOverviewView(LoginRequiredMixin, View):
+    """
+    Printable overview of a user: role, location, recent activity, sales.
+    Accessible to Admin, Auditor, Accountant, and the user themselves.
+    """
+    template_name = 'core/user_overview.html'
+
+    def get(self, request, pk):
+        from django.db.models import Sum, Count
+        from django.utils import timezone
+
+        profile_user = get_object_or_404(User, pk=pk, tenant=request.user.tenant)
+        viewer_role = request.user.role.name if request.user.role else ''
+
+        # Only allow admin-level or self
+        if viewer_role not in ['ADMIN', 'AUDITOR', 'ACCOUNTANT'] and request.user.pk != profile_user.pk:
+            messages.error(request, 'You do not have permission to view this profile.')
+            return redirect('core:dashboard')
+
+        # Sales by this user
+        recent_sales = None
+        today_total = 0
+        all_time_total = 0
+        if profile_user.role and profile_user.role.name in ['SHOP_ATTENDANT', 'SHOP_CASHIER', 'SHOP_MANAGER']:
+            from apps.sales.models import Sale
+            sales_qs = Sale.objects.filter(
+                tenant=request.user.tenant, attendant=profile_user, status='COMPLETED'
+            )
+            recent_sales = sales_qs.select_related('shop', 'customer').order_by('-created_at')[:10]
+            today_total = sales_qs.filter(
+                created_at__date=timezone.now().date()
+            ).aggregate(t=Sum('total'))['t'] or 0
+            all_time_total = sales_qs.aggregate(t=Sum('total'))['t'] or 0
+
+        # Stock adjustments by this user
+        from apps.inventory.models import StockAdjustment
+        adjustments = StockAdjustment.objects.filter(
+            tenant=request.user.tenant, requested_by=profile_user
+        ).select_related('product', 'location').order_by('-created_at')[:10]
+
+        context = {
+            'profile_user': profile_user,
+            'recent_sales': recent_sales,
+            'sales_today': today_total,
+            'all_time_sales': all_time_total,
+            'adjustments': adjustments,
+            'currency_symbol': getattr(request.user.tenant, 'currency_symbol', 'GHC'),
+            'print_mode': request.GET.get('print') == '1',
+        }
+        return render(request, self.template_name, context)

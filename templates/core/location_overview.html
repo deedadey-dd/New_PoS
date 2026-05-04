@@ -1,0 +1,190 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ location.name }} — Overview{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4 no-print">
+    <div>
+        <h2 class="mb-1">
+            {% if location.location_type == 'SHOP' %}<i class="bi bi-shop me-2 text-success"></i>
+            {% elif location.location_type == 'PRODUCTION' %}<i class="bi bi-gear me-2 text-primary"></i>
+            {% else %}<i class="bi bi-building me-2 text-info"></i>{% endif %}
+            {{ location.name }}
+        </h2>
+        <p class="text-muted mb-0">Location Overview &mdash; {{ location.get_location_type_display }}</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="?print=1" target="_blank" class="btn btn-outline-secondary">
+            <i class="bi bi-printer me-1"></i>Print Report
+        </a>
+        <a href="{% url 'core:location_list' %}" class="btn btn-outline-primary">
+            <i class="bi bi-arrow-left me-1"></i>Back
+        </a>
+    </div>
+</div>
+
+<!-- Location Info Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="card shadow-sm h-100">
+            <div class="card-header"><i class="bi bi-geo-alt me-2"></i>Details</div>
+            <div class="card-body">
+                <table class="table table-sm table-borderless mb-0">
+                    <tr><th>Type</th><td>{{ location.get_location_type_display }}</td></tr>
+                    <tr><th>Status</th><td>
+                        {% if location.is_active %}<span class="badge bg-success">Active</span>
+                        {% else %}<span class="badge bg-secondary">Inactive</span>{% endif %}
+                    </td></tr>
+                    {% if location.address %}<tr><th>Address</th><td>{{ location.address }}</td></tr>{% endif %}
+                    {% if location.phone %}<tr><th>Phone</th><td>{{ location.phone }}</td></tr>{% endif %}
+                    {% if location.email %}<tr><th>Email</th><td>{{ location.email }}</td></tr>{% endif %}
+                </table>
+            </div>
+        </div>
+    </div>
+
+    {% if location.location_type == 'SHOP' %}
+    <div class="col-md-4">
+        <div class="card shadow-sm h-100">
+            <div class="card-header"><i class="bi bi-cash-stack me-2"></i>Today's Sales</div>
+            <div class="card-body text-center d-flex flex-column justify-content-center">
+                <div class="display-6 fw-bold text-success">{{ currency_symbol }}{{ sales_today|floatformat:"0" }}</div>
+                <p class="text-muted mt-2 mb-0">Revenue today</p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="col-md-4">
+        <div class="card shadow-sm h-100">
+            <div class="card-header"><i class="bi bi-people me-2"></i>Staff ({{ staff.count }})</div>
+            <div class="card-body p-0">
+                <ul class="list-group list-group-flush">
+                    {% for member in staff %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <a href="{% url 'core:user_overview' member.pk %}" class="fw-medium text-decoration-none">
+                                {{ member.get_full_name|default:member.email }}
+                            </a>
+                        </div>
+                        <span class="badge bg-secondary">{{ member.role.name|default:"No Role" }}</span>
+                    </li>
+                    {% empty %}
+                    <li class="list-group-item text-muted">No staff assigned</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <!-- Stock Summary -->
+    <div class="col-lg-6">
+        <div class="card shadow-sm">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-boxes me-2"></i>Stock Summary</span>
+                <small class="text-muted">{{ stock_summary.count }} products</small>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive" style="max-height:320px;overflow-y:auto;">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead class="table-light sticky-top">
+                            <tr><th>Product</th><th>SKU</th><th class="text-end">Qty</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for item in stock_summary %}
+                            <tr>
+                                <td>{{ item.product__name }}</td>
+                                <td class="text-muted small">{{ item.product__sku|default:"-" }}</td>
+                                <td class="text-end {% if item.total_qty <= 0 %}text-danger{% elif item.total_qty <= 5 %}text-warning{% else %}text-success{% endif %}">
+                                    <strong>{{ item.total_qty|floatformat:"0" }}</strong>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="3" class="text-center text-muted py-3">No stock records</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Transfers or Recent Sales -->
+    <div class="col-lg-6">
+        {% if location.location_type == 'SHOP' and recent_sales %}
+        <div class="card shadow-sm mb-3">
+            <div class="card-header"><i class="bi bi-receipt me-2"></i>Recent Sales</div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead class="table-light"><tr><th>Invoice</th><th>Customer</th><th class="text-end">Amount</th><th>Date</th></tr></thead>
+                        <tbody>
+                            {% for s in recent_sales %}
+                            <tr>
+                                <td>
+                                    <a href="{% url 'sales:sale_receipt' s.pk %}" class="text-decoration-none">{{ s.sale_number }}</a>
+                                </td>
+                                <td>{{ s.customer.name|default:s.walkin_customer_name|default:"Walk-in" }}</td>
+                                <td class="text-end">{{ currency_symbol }}{{ s.total|floatformat:"0" }}</td>
+                                <td class="text-muted small">{{ s.created_at|date:"M d" }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="card shadow-sm">
+            <div class="card-header"><i class="bi bi-arrow-left-right me-2"></i>Recent Transfers</div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead class="table-light"><tr><th>From</th><th>To</th><th>Status</th><th>Date</th></tr></thead>
+                        <tbody>
+                            {% for t in recent_transfers %}
+                            <tr>
+                                <td class="small">{{ t.source_location.name|truncatechars:15 }}</td>
+                                <td class="small">{{ t.destination_location.name|truncatechars:15 }}</td>
+                                <td><span class="badge bg-secondary" style="font-size:10px;">{{ t.status }}</span></td>
+                                <td class="text-muted small">{{ t.created_at|date:"M d" }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="4" class="text-center text-muted py-3">No transfers</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if expiring_batches %}
+<div class="card shadow-sm mb-4 border-warning">
+    <div class="card-header bg-warning text-dark"><i class="bi bi-exclamation-triangle me-2"></i>Expiring Soon (within 30 days)</div>
+    <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+            <thead class="table-light"><tr><th>Product</th><th>Batch</th><th class="text-end">Qty</th><th>Expires</th></tr></thead>
+            <tbody>
+                {% for b in expiring_batches %}
+                <tr class="{% if b.days_to_expiry <= 7 %}table-danger{% else %}table-warning{% endif %}">
+                    <td>{{ b.product.name }}</td>
+                    <td class="text-muted small">{{ b.batch_number }}</td>
+                    <td class="text-end">{{ b.current_quantity }}</td>
+                    <td>{{ b.expiry_date|date:"M d, Y" }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{% if print_mode %}
+<script>window.addEventListener('load', function(){ setTimeout(function(){ window.print(); }, 400); });</script>
+{% endif %}
+{% endblock %}

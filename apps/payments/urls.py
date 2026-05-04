@@ -22,6 +22,7 @@ urlpatterns = [
     
     # E-Cash Ledger
     path('ledger/', views.ECashLedgerView.as_view(), name='ecash_ledger'),
+    path('ledger/bulk-confirm/', views.bulk_confirm_ecash_transactions, name='ecash_bulk_confirm'),
     path('ledger/<int:pk>/confirm/', views.confirm_ecash_transaction, name='ecash_confirm'),
     path('ledger/<int:pk>/dispute/', views.dispute_ecash_transaction, name='ecash_dispute'),
     

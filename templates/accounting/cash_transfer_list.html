@@ -122,10 +122,25 @@
 <div class="card">
     <div class="card-body">
         {% if transfers %}
+        {% if can_bulk_confirm %}
+        <form method="post" action="{% url 'accounting:cash_transfer_bulk_confirm' %}" id="bulk-confirm-form">
+            {% csrf_token %}
+            <div class="d-flex align-items-center gap-3 px-1 py-2 border-bottom bg-light rounded-top mb-0">
+                <div class="form-check mb-0">
+                    <input class="form-check-input" type="checkbox" id="select-all-transfers">
+                    <label class="form-check-label small fw-semibold" for="select-all-transfers">Select All Pending</label>
+                </div>
+                <button type="submit" class="btn btn-sm btn-success" id="bulk-confirm-btn" disabled>
+                    <i class="bi bi-check-all me-1"></i>Confirm Selected
+                </button>
+                <span class="text-muted small" id="selected-count"></span>
+            </div>
+        {% endif %}
         <div class="table-responsive">
             <table class="table table-hover">
                 <thead class="table-light">
                     <tr>
+                        {% if can_bulk_confirm %}<th style="width:40px;"></th>{% endif %}
                         <th>Reference</th>
                         <th>{% sort_link "Date" "created_at" %}</th>
                         <th>Type</th>
@@ -140,6 +155,16 @@
                 <tbody>
                     {% for transfer in transfers %}
                     <tr>
+                        {% if can_bulk_confirm %}
+                        <td>
+                            {% if transfer.status == 'PENDING' %}
+                            {% if transfer.to_user == user or transfer.destination_type == 'BANK' and user.role.name in 'ACCOUNTANT,ADMIN' %}
+                            <input class="form-check-input transfer-checkbox" type="checkbox"
+                                   name="transfer_ids" value="{{ transfer.pk }}">
+                            {% endif %}
+                            {% endif %}
+                        </td>
+                        {% endif %}
                         <td>
                             <strong>{{ transfer.transfer_number }}</strong>
                         </td>
@@ -250,6 +275,10 @@
             </table>
         </div>
 
+        {% if can_bulk_confirm %}
+        </form>
+        {% endif %}
+
         <!-- Pagination -->
         {% if page_obj.has_other_pages %}
         <nav class="mt-4">
@@ -282,3 +311,35 @@
     </div>
 </div>
 {% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const selectAll = document.getElementById('select-all-transfers');
+    const confirmBtn = document.getElementById('bulk-confirm-btn');
+    const countLabel = document.getElementById('selected-count');
+
+    function updateBulkBar() {
+        const checked = document.querySelectorAll('.transfer-checkbox:checked');
+        if (confirmBtn) confirmBtn.disabled = checked.length === 0;
+        if (countLabel) countLabel.textContent = checked.length > 0 ? `${checked.length} selected` : '';
+    }
+
+    if (selectAll) {
+        selectAll.addEventListener('change', function () {
+            document.querySelectorAll('.transfer-checkbox').forEach(cb => cb.checked = this.checked);
+            updateBulkBar();
+        });
+    }
+
+    document.querySelectorAll('.transfer-checkbox').forEach(cb => {
+        cb.addEventListener('change', function () {
+            const all = document.querySelectorAll('.transfer-checkbox');
+            const allChecked = document.querySelectorAll('.transfer-checkbox:checked');
+            if (selectAll) selectAll.checked = all.length === allChecked.length && all.length > 0;
+            updateBulkBar();
+        });
+    });
+});
+</script>
+{% endblock %}

@@ -97,9 +97,14 @@
                             {% endif %}
                         </td>
                         <td class="text-end">
-                            <button class="btn btn-outline-primary btn-sm invoice-action-link" data-sale-id="{{ invoice.id }}">
+                            <button class="btn btn-outline-primary btn-sm invoice-action-link me-1" data-sale-id="{{ invoice.id }}">
                                 View Details
                             </button>
+                            {% if invoice.is_dispatched %}
+                            <a href="{% url 'sales:waybill_print' invoice.pk %}" target="_blank" class="btn btn-outline-secondary btn-sm" title="Print Waybill">
+                                <i class="bi bi-file-earmark-text"></i> Waybill
+                            </a>
+                            {% endif %}
                         </td>
                     </tr>
                     {% endfor %}

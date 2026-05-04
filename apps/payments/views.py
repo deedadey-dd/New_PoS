@@ -266,14 +266,36 @@ class ECashLedgerView(LoginRequiredMixin, ListView):
         context = super().get_context_data(**kwargs)
         context['ecash_balance'] = ECashLedger.get_current_balance(self.request.user.tenant, 'ECASH')
         context['momo_balance'] = ECashLedger.get_current_balance(self.request.user.tenant, 'MOMO')
-        
+
         # Pass filter params to context
         context['wallet_type'] = self.request.GET.get('wallet_type', '')
         context['status'] = self.request.GET.get('status', '')
         context['date_from'] = self.request.GET.get('date_from', '')
         context['date_to'] = self.request.GET.get('date_to', '')
         context['sort'] = self.request.GET.get('sort', '-created_at')
-        
+
+        # --- Filtered summary (over the full filtered queryset, not just current page) ---
+        from django.db.models import Sum, Count, Q as dQ
+        full_qs = self.get_queryset()
+        agg = full_qs.aggregate(
+            total_received=Sum('amount', filter=dQ(amount__gt=0)),
+            total_withdrawn=Sum('amount', filter=dQ(amount__lt=0)),
+            pending_count=Count('id', filter=dQ(status='PENDING')),
+            pending_amount=Sum('amount', filter=dQ(status='PENDING')),
+            confirmed_count=Count('id', filter=dQ(status='CONFIRMED')),
+        )
+        from decimal import Decimal
+        context['summary_received']  = agg['total_received']  or Decimal('0')
+        context['summary_withdrawn'] = abs(agg['total_withdrawn'] or Decimal('0'))
+        context['summary_net']       = (agg['total_received'] or Decimal('0')) + (agg['total_withdrawn'] or Decimal('0'))
+        context['summary_pending_count']  = agg['pending_count']  or 0
+        context['summary_pending_amount'] = agg['pending_amount'] or Decimal('0')
+        context['summary_confirmed_count'] = agg['confirmed_count'] or 0
+
+        # Can this user bulk-confirm?
+        role_name = self.request.user.role.name if self.request.user.role else None
+        context['can_confirm'] = role_name in ['ACCOUNTANT', 'ADMIN']
+
         return context
 
 @login_required
@@ -348,6 +370,29 @@ def dispute_ecash_transaction(request, pk):
     else:
         messages.info(request, "Transaction is already processed.")
         
+    return redirect('payments:ecash_ledger')
+
+
+@login_required
+@require_POST
+def bulk_confirm_ecash_transactions(request):
+    """Accountant bulk-confirms selected pending e-cash transactions."""
+    if request.user.role and request.user.role.name not in ['ACCOUNTANT', 'ADMIN']:
+        messages.error(request, "Only accountants can confirm transactions.")
+        return redirect('payments:ecash_ledger')
+
+    ids = request.POST.getlist('transaction_ids')
+    if not ids:
+        messages.warning(request, "No transactions selected.")
+        return redirect('payments:ecash_ledger')
+
+    updated = ECashLedger.objects.filter(
+        pk__in=ids,
+        tenant=request.user.tenant,
+        status='PENDING',
+    ).update(status='CONFIRMED')
+
+    messages.success(request, f"{updated} transaction{'s' if updated != 1 else ''} confirmed successfully.")
     return redirect('payments:ecash_ledger')
 
 

@@ -32,7 +32,9 @@
                     {% for location in locations %}
                     <tr>
                         <td>
-                            <strong>{{ location.name }}</strong>
+                            <a href="{% url 'core:location_overview' location.pk %}" class="fw-bold text-decoration-none">
+                                {{ location.name }}
+                            </a>
                         </td>
                         <td>
                             {% if location.location_type == 'PRODUCTION' %}
@@ -53,12 +55,15 @@
                             {% endif %}
                         </td>
                         <td class="text-end">
+                            <a href="{% url 'core:location_overview' location.pk %}" class="btn btn-sm btn-outline-info me-1" title="View Overview">
+                                <i class="bi bi-eye"></i>
+                            </a>
                             {% if location.location_type == 'SHOP' %}
-                            <a href="{% url 'sales:admin_shop_payment_settings' location.pk %}" class="btn btn-sm btn-outline-success me-1" title="E-Cash & Payment Settings">
+                            <a href="{% url 'sales:admin_shop_payment_settings' location.pk %}" class="btn btn-sm btn-outline-success me-1" title="E-Cash &amp; Payment Settings">
                                 <i class="bi bi-wallet2"></i>
                             </a>
                             {% endif %}
-                            <a href="{% url 'core:location_edit' location.pk %}" class="btn btn-sm btn-outline-primary" title="Edit Location">
+                            <a href="{% url 'core:location_edit' location.pk %}" class="btn btn-sm btn-outline-primary me-1" title="Edit Location">
                                 <i class="bi bi-pencil"></i>
                             </a>
                             <a href="{% url 'core:location_delete' location.pk %}" class="btn btn-sm btn-outline-danger" title="Delete Location"

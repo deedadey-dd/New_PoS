@@ -47,6 +47,20 @@ class ShopSettings(TenantModel):
         help_text="Custom footer text for receipts (e.g., 'Thank you!')"
     )
     show_logo_on_receipt = models.BooleanField(default=True)
+    receipt_print_copies = models.PositiveIntegerField(
+        default=1,
+        help_text="Number of receipt copies to print after payment in strict workflow (overrides tenant default if > 0)."
+    )
+    
+    # PoS display settings
+    hide_zero_stock_items = models.BooleanField(
+        default=False,
+        help_text="Hide products with zero stock from the PoS product list."
+    )
+    warn_on_low_stock = models.BooleanField(
+        default=True,
+        help_text="Show a warning pop-up when an attendant adds more items than available stock."
+    )
     
     # Payment settings
     enable_cash_payment = models.BooleanField(default=True)
