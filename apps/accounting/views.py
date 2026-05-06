@@ -43,8 +43,18 @@ class CashTransferListView(LoginRequiredMixin, SortableMixin, ListView):
             ).select_related(
                 'from_user', 'to_user', 'from_location', 'to_location'
             ).order_by('-created_at')
+        elif role_name == 'SHOP_MANAGER' and user.location:
+            # Shop Managers see all transfers involving their shop location
+            queryset = CashTransfer.objects.filter(
+                tenant=user.tenant
+            ).filter(
+                Q(from_location=user.location) | Q(to_location=user.location) |
+                Q(from_user=user) | Q(to_user=user)
+            ).select_related(
+                'from_user', 'to_user', 'from_location', 'to_location'
+            ).distinct().order_by('-created_at')
         else:
-            # Others see only their own transfers
+            # Attendants and others see only their own transfers
             queryset = CashTransfer.objects.filter(
                 tenant=user.tenant
             ).filter(
@@ -97,15 +107,29 @@ class CashTransferListView(LoginRequiredMixin, SortableMixin, ListView):
             status='PENDING'
         ).count()
         
+        # For shop managers: also count pending transfers involving their location
+        if role_name == 'SHOP_MANAGER' and user.location:
+            location_pending = CashTransfer.objects.filter(
+                tenant=user.tenant,
+                status='PENDING'
+            ).filter(
+                Q(from_location=user.location) | Q(to_location=user.location)
+            ).exclude(to_user=user).count()
+            context['location_pending_count'] = location_pending
+        else:
+            context['location_pending_count'] = 0
+        
         # Check if user can create transfers (Auditor cannot create)
         if getattr(user.tenant, 'use_strict_sales_workflow', False):
             context['can_create'] = role_name in ['SHOP_CASHIER', 'ACCOUNTANT', 'ADMIN']
         else:
             context['can_create'] = role_name in ['SHOP_ATTENDANT', 'SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN', 'SHOP_CASHIER']
 
-        # Can this user bulk-confirm? (has pending transfers addressed to them, or is ACCOUNTANT/ADMIN for bank deposits)
+        # Can this user bulk-confirm? (has pending transfers addressed to them, or is ACCOUNTANT/ADMIN for bank deposits,
+        # or is SHOP_MANAGER with pending transfers at their location)
         context['can_bulk_confirm'] = (
             context['pending_count'] > 0 or
+            context['location_pending_count'] > 0 or
             role_name in ['ACCOUNTANT', 'ADMIN']
         )
         

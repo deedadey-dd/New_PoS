@@ -1,6 +1,7 @@
 """
 Views for the transfers app.
 """
+import json
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
@@ -810,6 +811,7 @@ class StockRequestCreateView(LoginRequiredMixin, View):
                     reorder_qty = max(product.reorder_level - stock_qty, 1)
                     low_stock_products.append({
                         'product': product.pk,
+                        'product_name': product.name,  # Pass name for template pre-fill
                         'quantity_requested': reorder_qty,
                         'notes': f'Current: {int(stock_qty)}, Reorder: {int(product.reorder_level)}'
                     })
@@ -832,8 +834,11 @@ class StockRequestCreateView(LoginRequiredMixin, View):
             validate_min=False,
         )
         
-        # Create initial data for formset
-        initial_data = low_stock_products if low_stock_products else []
+        # Create initial data for formset (only pass product pk + qty to formset)
+        initial_data = [
+            {'product': item['product'], 'quantity_requested': item['quantity_requested'], 'notes': item['notes']}
+            for item in low_stock_products
+        ] if low_stock_products else []
         formset = RequestItemFormSetWithExtra(
             queryset=StockRequestItem.objects.none(),
             initial=initial_data
@@ -851,6 +856,7 @@ class StockRequestCreateView(LoginRequiredMixin, View):
             'formset': formset,
             'title': 'Create Stock Request',
             'preloaded_count': num_preloaded,
+            'initial_product_names_json': json.dumps([item['product_name'] for item in low_stock_products]),
         })
     
     def post(self, request):

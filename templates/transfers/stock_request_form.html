@@ -161,6 +161,7 @@
 {% endblock %}
 
 {% block extra_js %}
+<script id="initial-product-names" type="application/json">{{ initial_product_names_json|default:"[]" }}</script>
 <script>
 const AUTOCOMPLETE_URL = "{% url 'inventory:api_product_autocomplete' %}";
 
@@ -210,6 +211,22 @@ document.addEventListener('DOMContentLoaded', function () {
     const formsetDiv = document.getElementById('item-formset');
     const addBtn = document.getElementById('add-item');
     const totalForms = document.getElementById('id_items-TOTAL_FORMS');
+
+    // Pre-fill product names for pre-loaded rows
+    try {
+        const namesData = JSON.parse(document.getElementById('initial-product-names').textContent || '[]');
+        if (namesData.length > 0) {
+            const rows = formsetDiv.querySelectorAll('.item-row');
+            rows.forEach(function(row, idx) {
+                if (idx < namesData.length && namesData[idx]) {
+                    const searchInput = row.querySelector('.product-search-input');
+                    if (searchInput && !searchInput.value) {
+                        searchInput.value = namesData[idx];
+                    }
+                }
+            });
+        }
+    } catch(e) { /* ignore parse errors */ }
 
     // Init autocomplete on existing rows
     initProductAutocomplete(formsetDiv);

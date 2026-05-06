@@ -65,6 +65,14 @@ class Tenant(models.Model):
         default=False,
         help_text="Allow shops to transfer stock directly to other shops"
     )
+    shop_manager_can_delete_products = models.BooleanField(
+        default=False,
+        help_text="Allow shop managers to delete products and categories from the main inventory"
+    )
+    include_opening_cash_in_transfer = models.BooleanField(
+        default=True,
+        help_text="Include the shift opening cash (float) in the manager's/cashier's transferable cash-on-hand balance"
+    )
     
     # Custom Workflow Settings
     use_strict_sales_workflow = models.BooleanField(

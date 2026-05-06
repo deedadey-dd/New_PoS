@@ -413,7 +413,35 @@ class ShopECashListView(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         tenant = self.request.user.tenant
-        
+        from django.utils import timezone
+        from datetime import timedelta
+        from django.db.models import Sum as _Sum
+
+        # Respect wallet_type filter (ECASH or MOMO)
+        wallet_type = self.request.GET.get('wallet_type', 'ECASH')
+        if wallet_type not in ('ECASH', 'MOMO'):
+            wallet_type = 'ECASH'
+        context['wallet_type'] = wallet_type
+        context['wallet_label'] = 'MoMo Balance' if wallet_type == 'MOMO' else 'E-Cash Balance'
+
+        # Period filter — default to today
+        period = self.request.GET.get('period', 'today')
+        if period not in ('today', '7days', 'all'):
+            period = 'today'
+        context['period'] = period
+
+        now = timezone.now()
+        if period == 'today':
+            period_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            period_label = 'Today'
+        elif period == '7days':
+            period_start = now - timedelta(days=7)
+            period_label = 'Last 7 Days'
+        else:
+            period_start = None
+            period_label = 'All Time'
+        context['period_label'] = period_label
+
         # Get all shops
         from apps.core.models import Location
         shops = Location.objects.filter(
@@ -421,21 +449,49 @@ class ShopECashListView(LoginRequiredMixin, TemplateView):
             location_type='SHOP',
             is_active=True
         ).order_by('name')
-        
-        # Calculate e-cash balance for each shop
+
+        # Calculate balance for each shop — include PENDING + CONFIRMED so
+        # MoMo payments show up before the accountant explicitly confirms them.
+        def _shop_balance(shop, wtype, start=None):
+            qs = ECashLedger.objects.filter(
+                tenant=tenant,
+                shop=shop,
+                wallet_type=wtype,
+                status__in=['PENDING', 'CONFIRMED'],
+            )
+            if start:
+                qs = qs.filter(created_at__gte=start)
+            return qs.aggregate(total=_Sum('amount'))['total'] or Decimal('0')
+
         shop_balances = []
         total_ecash = Decimal('0')
         for shop in shops:
-            balance = ECashLedger.get_shop_balance(tenant, shop)
+            balance = _shop_balance(shop, wallet_type, period_start)
+            pending_cnt = ECashLedger.objects.filter(
+                tenant=tenant, shop=shop, wallet_type=wallet_type,
+                status='PENDING',
+                **(({'created_at__gte': period_start}) if period_start else {})
+            ).count()
             shop_balances.append({
                 'shop': shop,
-                'balance': balance
+                'balance': balance,
+                'pending_count': pending_cnt,
             })
             total_ecash += balance
-        
+
         context['shop_balances'] = shop_balances
         context['total_ecash'] = total_ecash
-        context['tenant_ecash'] = ECashLedger.get_current_balance(tenant)
+
+        # Tenant-wide total (also pending+confirmed, same period)
+        tenant_qs = ECashLedger.objects.filter(
+            tenant=tenant, wallet_type=wallet_type,
+            status__in=['PENDING', 'CONFIRMED'],
+        )
+        if period_start:
+            tenant_qs = tenant_qs.filter(created_at__gte=period_start)
+        context['tenant_ecash'] = tenant_qs.aggregate(
+            total=_Sum('amount')
+        )['total'] or Decimal('0')
         return context
 
 
@@ -554,19 +610,24 @@ class ShopECashHistoryView(LoginRequiredMixin, ListView):
         if tx_type:
             qs = qs.filter(transaction_type=tx_type)
 
-        if date_from:
-            try:
-                date_from_parsed = datetime.strptime(date_from, '%Y-%m-%d').date()
-                qs = qs.filter(created_at__date__gte=date_from_parsed)
-            except ValueError:
-                pass
+        # Default to today when no date range is specified
+        if not date_from and not date_to:
+            from django.utils import timezone as _tz
+            qs = qs.filter(created_at__date=_tz.localdate())
+        else:
+            if date_from:
+                try:
+                    date_from_parsed = datetime.strptime(date_from, '%Y-%m-%d').date()
+                    qs = qs.filter(created_at__date__gte=date_from_parsed)
+                except ValueError:
+                    pass
 
-        if date_to:
-            try:
-                date_to_parsed = datetime.strptime(date_to, '%Y-%m-%d').date()
-                qs = qs.filter(created_at__date__lte=date_to_parsed)
-            except ValueError:
-                pass
+            if date_to:
+                try:
+                    date_to_parsed = datetime.strptime(date_to, '%Y-%m-%d').date()
+                    qs = qs.filter(created_at__date__lte=date_to_parsed)
+                except ValueError:
+                    pass
 
         # Sorting
         sort_map = {
@@ -613,22 +674,37 @@ class ShopECashHistoryView(LoginRequiredMixin, ListView):
         user = self.request.user
         tenant = user.tenant
         shop = self._get_shop()
-        
+
         context['shop'] = shop
         context['shop_balance'] = ECashLedger.get_shop_balance(tenant, shop) if shop else Decimal('0')
-        
+
         # For accountants/auditors, provide shop selector
         if user.role and user.role.name in ['ACCOUNTANT', 'AUDITOR', 'ADMIN']:
             from apps.core.models import Location
             context['all_shops'] = Location.objects.filter(
                 tenant=tenant, location_type='SHOP', is_active=True
             ).order_by('name')
-            
+
+        # Quick-filter date strings (today / 7-days ago)
+        from django.utils import timezone as _tz
+        from datetime import timedelta as _td
+        _today = _tz.localdate()
+        context['today_str'] = _today.strftime('%Y-%m-%d')
+        context['week_ago_str'] = (_today - _td(days=7)).strftime('%Y-%m-%d')
+
         context['wallet_type'] = self.request.GET.get('wallet_type', '')
         context['tx_type'] = self.request.GET.get('tx_type', '')
-        context['date_from'] = self.request.GET.get('date_from', '')
-        context['date_to'] = self.request.GET.get('date_to', '')
         context['sort'] = self.request.GET.get('sort', 'date_desc')
+        # Reflect the effective date range (including default-today)
+        date_from_param = self.request.GET.get('date_from', '')
+        date_to_param = self.request.GET.get('date_to', '')
+        if not date_from_param and not date_to_param:
+            # Default is today — reflect it in context so quick buttons highlight correctly
+            context['date_from'] = context['today_str']
+            context['date_to'] = context['today_str']
+        else:
+            context['date_from'] = date_from_param
+            context['date_to'] = date_to_param
 
         # Filtered totals for the summary row
         from django.db.models import Sum, Q as DQ
@@ -640,6 +716,7 @@ class ShopECashHistoryView(LoginRequiredMixin, ListView):
         context['filtered_total_received'] = agg['total_received'] or Decimal('0')
         context['filtered_total_withdrawn'] = abs(agg['total_withdrawn'] or Decimal('0'))
         context['filtered_net'] = context['filtered_total_received'] - context['filtered_total_withdrawn']
+
 
         return context
 

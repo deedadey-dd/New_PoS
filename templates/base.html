@@ -321,6 +321,12 @@
                             <i class="bi bi-printer me-2"></i> Shop Settings
                         </a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link text-white {% if 'shifts' in request.path %}active{% endif %}"
+                            href="{% url 'sales:shift_list' %}">
+                            <i class="bi bi-clock-history me-2"></i> Shift History
+                        </a>
+                    </li>
                     {% endif %}
 
                     <!-- Admin -->

@@ -225,6 +225,7 @@ class TenantSettingsForm(forms.ModelForm):
             'allow_negative_stock', 'require_refund_approval', 'require_return_approval',
             'credit_limit_warning_percent', 'backdating_allowed_days',
             'shop_manager_can_add_products', 'shop_manager_can_receive_stock',
+            'shop_manager_can_delete_products',
             'shops_can_see_other_stock',
             'allow_accountant_to_shop_transfers',
             'allow_shop_to_accountant_transfers',
@@ -236,6 +237,8 @@ class TenantSettingsForm(forms.ModelForm):
             'use_bulk_inventory_receiving',
             'require_accountant_for_bulk_receiving',
             'stock_adjustment_approver',
+            # Cash on hand settings
+            'include_opening_cash_in_transfer',
             # Printing settings
             'receipt_print_copies',
         ]
@@ -253,6 +256,7 @@ class TenantSettingsForm(forms.ModelForm):
             'require_return_approval': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'shop_manager_can_add_products': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'shop_manager_can_receive_stock': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'shop_manager_can_delete_products': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'shops_can_see_other_stock': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'allow_accountant_to_shop_transfers': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'allow_shop_to_accountant_transfers': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
@@ -262,6 +266,7 @@ class TenantSettingsForm(forms.ModelForm):
             'require_customer_on_invoice': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'use_bulk_inventory_receiving': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'require_accountant_for_bulk_receiving': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'include_opening_cash_in_transfer': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'stock_adjustment_approver': forms.Select(attrs={'class': 'form-select'}),
         }
 

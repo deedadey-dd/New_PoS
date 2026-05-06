@@ -160,7 +160,8 @@
                             {% if transfer.status == 'PENDING' %}
                             {% if transfer.to_user == user or transfer.destination_type == 'BANK' and user.role.name in 'ACCOUNTANT,ADMIN' %}
                             <input class="form-check-input transfer-checkbox" type="checkbox"
-                                   name="transfer_ids" value="{{ transfer.pk }}">
+                                   name="transfer_ids" value="{{ transfer.pk }}"
+                                   form="bulk-confirm-form">
                             {% endif %}
                             {% endif %}
                         </td>
@@ -223,13 +224,13 @@
                             </a>
                             {% if transfer.status == 'PENDING' %}
                             {% if transfer.to_user == user or transfer.destination_type == 'BANK' and user.role.name == 'ACCOUNTANT' or transfer.destination_type == 'BANK' and user.role.name == 'ADMIN' %}
-                            <form method="post" action="{% url 'accounting:cash_transfer_confirm' transfer.pk %}"
-                                style="display:inline;">
-                                {% csrf_token %}
-                                <button type="submit" class="btn btn-sm btn-success" title="Confirm Receipt">
-                                    <i class="bi bi-check-lg"></i> Confirm
-                                </button>
-                            </form>
+                            {# Individual confirm: use a standalone form with a unique id, NOT nested in bulk form #}
+                            <button type="button"
+                                    class="btn btn-sm btn-success btn-single-confirm"
+                                    data-confirm-url="{% url 'accounting:cash_transfer_confirm' transfer.pk %}"
+                                    title="Confirm Receipt">
+                                <i class="bi bi-check-lg"></i> Confirm
+                            </button>
                             {% endif %}
                             {% if transfer.from_user == user %}
                             <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal"
@@ -276,6 +277,9 @@
         </div>
 
         {% if can_bulk_confirm %}
+        {# Hidden CSRF form for individual confirms — not nested in bulk form #}
+        <form id="single-confirm-form" method="post" style="display:none;">
+            {% csrf_token %}
         </form>
         {% endif %}
 
@@ -338,6 +342,28 @@ document.addEventListener('DOMContentLoaded', function () {
             const allChecked = document.querySelectorAll('.transfer-checkbox:checked');
             if (selectAll) selectAll.checked = all.length === allChecked.length && all.length > 0;
             updateBulkBar();
+        });
+    });
+
+    // Individual confirm buttons — POST independently without nested form issue
+    document.querySelectorAll('.btn-single-confirm').forEach(btn => {
+        btn.addEventListener('click', function () {
+            if (!confirm('Confirm receipt of this transfer?')) return;
+            const url = this.dataset.confirmUrl;
+            const csrfToken = document.querySelector('#single-confirm-form [name=csrfmiddlewaretoken]')?.value ||
+                              document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+            fetch(url, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': csrfToken, 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'csrfmiddlewaretoken=' + encodeURIComponent(csrfToken)
+            }).then(response => {
+                // Server redirects on success — just reload
+                window.location.reload();
+            }).catch(() => {
+                window.location.reload();
+            });
         });
     });
 });

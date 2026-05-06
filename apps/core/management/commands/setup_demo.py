@@ -307,6 +307,22 @@ class Command(BaseCommand):
             sale.amount_paid = sale_total if payment_method in ['CASH', 'ECASH'] else Decimal('0')
             sale.save()
 
+            # Create ECashLedger entry for ECASH sales so cash-on-hand is non-zero for demo
+            if payment_method == 'ECASH':
+                from apps.payments.models import ECashLedger
+                ecash_entry = ECashLedger.record_payment(
+                    tenant=tenant,
+                    amount=sale_total,
+                    sale=sale,
+                    paystack_ref='',
+                    user=attendant,
+                    notes='Demo sale (ECASH)',
+                    shop=shop,
+                    wallet_type='ECASH',
+                )
+                # Confirm immediately for demo data (normally requires accountant)
+                ECashLedger.objects.filter(pk=ecash_entry.pk).update(status='CONFIRMED', created_at=sale_time)
+
     def _create_mock_cash_transfers(self, tenant, loc_shop1, loc_shop2, created_users):
         """Create 5 confirmed cash transfers."""
         now = timezone.now()

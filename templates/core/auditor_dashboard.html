@@ -395,9 +395,9 @@
                                             <td><span
                                                     class="badge {% if ct.transfer_type == 'DEPOSIT' %}bg-success{% else %}bg-info{% endif %}">{{ ct.get_transfer_type_display }}</span>
                                             </td>
-                                            <td><small>{{ ct.from_user.get_full_name|default:ct.from_user.email }}</small>
+                                            <td><small>{% if ct.from_user %}{{ ct.from_user.get_full_name|default:ct.from_user.email }}{% else %}<span class="text-muted">-</span>{% endif %}</small>
                                             </td>
-                                            <td><small>{{ ct.to_user.get_full_name|default:ct.to_user.email }}</small>
+                                            <td><small>{% if ct.to_user %}{{ ct.to_user.get_full_name|default:ct.to_user.email }}{% else %}<span class="text-muted">-</span>{% endif %}</small>
                                             </td>
                                             <td class="text-end fw-bold">
                                                 {{ currency_symbol }}{{ ct.amount|floatformat:"2g" }}</td>
@@ -503,7 +503,7 @@
                         {% for shift in shifts %}
                         <tr>
                             <td><small>{{ shift.shop.name }}</small></td>
-                            <td><small>{{ shift.attendant.get_full_name|default:shift.attendant.email }}</small></td>
+                            <td><small>{% if shift.attendant %}{{ shift.attendant.get_full_name|default:shift.attendant.email }}{% else %}<span class="text-muted">-</span>{% endif %}</small></td>
                             <td><small>{{ shift.start_time|date:"M d, H:i" }}</small></td>
                             <td><small>{{ shift.end_time|date:"H:i"|default:"-" }}</small></td>
                             <td class="text-end">{{ currency_symbol }}{{ shift.opening_cash|floatformat:"2g" }}</td>

@@ -79,11 +79,19 @@ class CategoryUpdateView(LoginRequiredMixin, UpdateView):
 
 
 class CategoryDeleteView(LoginRequiredMixin, DeleteView):
-    """Delete a category."""
+    """Delete a category. Restricted to Admin/Stores Manager by default."""
     model = Category
     template_name = 'inventory/category_confirm_delete.html'
     success_url = reverse_lazy('inventory:category_list')
-    
+
+    def dispatch(self, request, *args, **kwargs):
+        role_name = request.user.role.name if request.user.role else None
+        if role_name == 'SHOP_MANAGER':
+            if not request.user.tenant.shop_manager_can_delete_products:
+                messages.error(request, "You don't have permission to delete categories. Contact your Admin.")
+                return redirect('inventory:category_list')
+        return super().dispatch(request, *args, **kwargs)
+
     def get_queryset(self):
         return Category.objects.filter(tenant=self.request.user.tenant)
 
@@ -392,11 +400,19 @@ class ProductUpdateView(LoginRequiredMixin, UpdateView):
 
 
 class ProductDeleteView(LoginRequiredMixin, DeleteView):
-    """Delete a product."""
+    """Delete a product. Restricted to Admin/Stores Manager by default."""
     model = Product
     template_name = 'inventory/product_confirm_delete.html'
     success_url = reverse_lazy('inventory:product_list')
-    
+
+    def dispatch(self, request, *args, **kwargs):
+        role_name = request.user.role.name if request.user.role else None
+        if role_name == 'SHOP_MANAGER':
+            if not request.user.tenant.shop_manager_can_delete_products:
+                messages.error(request, "You don't have permission to delete products. Contact your Admin.")
+                return redirect('inventory:product_list')
+        return super().dispatch(request, *args, **kwargs)
+
     def get_queryset(self):
         return Product.objects.filter(tenant=self.request.user.tenant)
 

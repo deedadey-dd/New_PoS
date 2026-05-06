@@ -407,7 +407,18 @@ class DashboardView(LoginRequiredMixin, View):
                 context['today_dispatched_count'] = today_dispatched_qs.count()
                 context['today_dispatched_value'] = today_dispatched_qs.aggregate(t=Sum('total'))['t'] or 0
 
-        context['currency_symbol'] = getattr(user.tenant, 'currency', 'GHS') if user.tenant else 'GHS'
+                # Shift counts for today (scoped to manager shop)
+                from apps.sales.models import Shift as _Shift
+                shift_today_qs = _Shift.objects.filter(
+                    tenant=user.tenant,
+                    start_time__date=today,
+                )
+                if user.location:
+                    shift_today_qs = shift_today_qs.filter(shop=user.location)
+                context['today_open_shifts'] = shift_today_qs.filter(status='OPEN').count()
+                context['today_closed_shifts'] = shift_today_qs.filter(status='CLOSED').count()
+
+        context['currency_symbol'] = user.tenant.currency_symbol if user.tenant else 'GH₵'
         return render(request, self.template_name, context)
 
 
@@ -619,7 +630,7 @@ class DispatchSummaryView(LoginRequiredMixin, View):
             'sort': sort,
             'total_value': totals['total_value'] or 0,
             'total_count': totals['total_count'] or 0,
-            'currency_symbol': getattr(user.tenant, 'currency', 'GHS'),
+            'currency_symbol': user.tenant.currency_symbol if user.tenant else 'GH₵',
             'today_str': today.strftime('%Y-%m-%d'),
             'month_start': today.replace(day=1).strftime('%Y-%m-%d'),
             'week_start': (today - datetime.timedelta(days=today.weekday())).strftime('%Y-%m-%d'),
@@ -1229,7 +1240,7 @@ class LocationOverviewView(LoginRequiredMixin, View):
             'sales_today': sales_total,
             'recent_transfers': recent_transfers,
             'expiring_batches': expiring,
-            'currency_symbol': getattr(request.user.tenant, 'currency_symbol', 'GHC'),
+            'currency_symbol': getattr(request.user.tenant, 'currency_symbol', 'GH₵'),
             'print_mode': request.GET.get('print') == '1',
         }
         return render(request, self.template_name, context)
@@ -1281,7 +1292,7 @@ class UserOverviewView(LoginRequiredMixin, View):
             'sales_today': today_total,
             'all_time_sales': all_time_total,
             'adjustments': adjustments,
-            'currency_symbol': getattr(request.user.tenant, 'currency_symbol', 'GHC'),
+            'currency_symbol': getattr(request.user.tenant, 'currency_symbol', 'GH₵'),
             'print_mode': request.GET.get('print') == '1',
         }
         return render(request, self.template_name, context)

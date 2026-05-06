@@ -931,23 +931,27 @@
                     <i class="bi bi-cash"></i> Pay Cash
                 </button>
                 <button class="btn-pay btn-pay-credit" id="btn-pay-credit" disabled
-                    style="background: #e11d48; display: none;">
+                    style="background: #e11d48; display: none;"
+                    {% if not shift %}title="Open a shift to sell on credit"{% endif %}>
                     <i class="bi bi-credit-card-2-front"></i> Sell on Credit
                 </button>
                 {% if shop_settings.enable_ecash_payment %}
                 <div class="d-flex gap-2">
-                    <button class="btn-pay btn-pay-ecash flex-fill" id="btn-pay-ecash" disabled>
+                    <button class="btn-pay btn-pay-ecash flex-fill" id="btn-pay-ecash" disabled
+                        {% if not shift %}title="Open a shift to accept E-Cash payments"{% endif %}>
                         <i class="bi bi-credit-card"></i> E-Cash
                     </button>
                     <button class="btn-pay flex-fill" id="btn-pay-momo"
-                        style="background: #6f42c1; color: #fff;" disabled>
+                        style="background: #6f42c1; color: #fff;" disabled
+                        {% if not shift %}title="Open a shift to accept MoMo payments"{% endif %}>
                         <i class="bi bi-phone-vibrate"></i> Local Momo
                     </button>
                 </div>
                 {% endif %}
                 {% endif %}
                 <div class="d-flex gap-2">
-                    <button class="btn btn-outline-warning flex-fill" id="btn-discount">
+                    <button class="btn btn-outline-warning flex-fill" id="btn-discount"
+                        {% if not shift %}disabled title="Open a shift to apply discounts"{% endif %}>
                         <i class="bi bi-percent"></i> Discount
                     </button>
                     <button class="btn btn-outline-danger flex-fill" id="btn-clear-cart">
@@ -1008,6 +1012,18 @@
                 <label class="form-label">Change</label>
                 <div class="h3" id="modal-change">{{ currency_symbol }}0.00</div>
             </div>
+            <!-- Overage handling toggle: only shown for registered customers -->
+            <div class="mb-3" id="overage-handling-container" style="display:none;">
+                <div class="alert alert-info py-2 mb-0">
+                    <div class="form-check mb-0">
+                        <input class="form-check-input" type="checkbox" id="credit-overage-checkbox" checked>
+                        <label class="form-check-label small" for="credit-overage-checkbox">
+                            <strong>Credit overage to customer account</strong>
+                            <div class="text-muted" style="font-size:0.8em;">When checked, any overage reduces the customer's balance. When unchecked, overage is given back as change.</div>
+                        </label>
+                    </div>
+                </div>
+            </div>
             {% endif %}
 
             <div class="d-flex gap-2">
@@ -1025,15 +1041,16 @@
             <h4 class="mb-4 text-center text-warning">
                 <i class="bi bi-exclamation-triangle me-2"></i>No Shift Open
             </h4>
-            <p class="text-center mb-4">
-                You don't have an open shift. Sales made without a shift won't be tracked for cash balancing.
+            <p class="text-center mb-4" id="shift-prompt-msg">
+                You don't have an open shift. Cash sales are allowed, but
+                E-Cash, MoMo, Credit, and Discount require an open shift.
             </p>
             <div class="d-flex flex-column gap-2">
                 <button class="btn btn-success btn-lg" onclick="openShiftAndReturn()">
                     <i class="bi bi-clock me-2"></i>Open Shift First
                 </button>
-                <button class="btn btn-outline-warning" onclick="continueWithoutShift()">
-                    <i class="bi bi-cash-coin me-2"></i>Continue Without Shift
+                <button class="btn btn-outline-warning" id="btn-continue-no-shift" onclick="continueWithoutShift()">
+                    <i class="bi bi-cash-coin me-2"></i>Continue Cash Sale Without Shift
                 </button>
                 <button class="btn btn-outline-secondary" onclick="closeShiftPromptModal()">
                     Cancel
@@ -1384,6 +1401,16 @@
                 } else {
                     creditInfo.style.display = 'none';
                 }
+            }
+
+            // Show/hide overage handling container
+            const overageContainer = document.getElementById('overage-handling-container');
+            if (overageContainer) {
+                const showOverage = selectedCustomer && selectedCustomer.id && mode !== 'CREDIT' && !isPaymentOnAccount;
+                overageContainer.style.display = showOverage ? 'block' : 'none';
+                // Always reset checkbox to checked (credit to account) on modal open
+                const overageCb = document.getElementById('credit-overage-checkbox');
+                if (overageCb) overageCb.checked = true;
             }
 
             modal.classList.add('active');
@@ -1760,11 +1787,34 @@
         }
 
         // Check shift before allowing payment - called by payment buttons
+        // ECASH, MOMO, CREDIT, DISCOUNT: blocked entirely without a shift.
+        // CASH: allowed without a shift (shows prompt offering option to open shift).
+        const SHIFT_REQUIRED_MODES = ['ECASH', 'MOMO', 'CREDIT', 'DISCOUNT'];
+
         function checkShiftBeforePayment(mode) {
-            const isStrictWorkflow = {% if current_tenant.use_strict_sales_workflow %}true{% else %}false{% endif %};
-            if (!HAS_SHIFT && !isStrictWorkflow) {
-                openShiftPromptModal(mode);
-                return false;
+            if (!HAS_SHIFT) {
+                if (SHIFT_REQUIRED_MODES.includes(mode)) {
+                    // Hard-block: must open shift first
+                    pendingPaymentMode = null;
+                    const msgEl = document.getElementById('shift-prompt-msg');
+                    if (msgEl) msgEl.textContent =
+                        `${mode === 'DISCOUNT' ? 'Discounts' : mode + ' payments'} are not allowed without an open shift. Please open a shift first.`;
+                    const continueBtn = document.getElementById('btn-continue-no-shift');
+                    if (continueBtn) continueBtn.style.display = 'none';
+                    document.getElementById('shift-prompt-modal').classList.add('active');
+                    return false;
+                }
+                // CASH without strict workflow: offer choice
+                const isStrictWorkflow = {% if current_tenant.use_strict_sales_workflow %}true{% else %}false{% endif %};
+                if (!isStrictWorkflow) {
+                    const msgEl = document.getElementById('shift-prompt-msg');
+                    if (msgEl) msgEl.textContent =
+                        "You don't have an open shift. Cash sales are allowed, but E-Cash, MoMo, Credit, and Discount require an open shift.";
+                    const continueBtn = document.getElementById('btn-continue-no-shift');
+                    if (continueBtn) continueBtn.style.display = '';
+                    openShiftPromptModal(mode);
+                    return false;
+                }
             }
             return true;
         }
@@ -1954,9 +2004,22 @@
         function updateChange() {
             const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0) - discountAmount;
             const received = parseFloat(document.getElementById('amount-received').value) || 0;
-            const change = Math.max(0, received - total);
+            const overage = Math.max(0, received - total);
+
+            // Determine if overage should be credited to account or returned as change
+            const creditOverageCb = document.getElementById('credit-overage-checkbox');
+            const creditOverage = selectedCustomer && selectedCustomer.id && creditOverageCb && creditOverageCb.checked;
+
+            const changeContainer = document.getElementById('change-container');
             const mc3 = document.getElementById('modal-change');
-            if (mc3) mc3.textContent = CURRENCY + change.toFixed(2);
+
+            if (creditOverage && overage > 0) {
+                // Overage goes to customer account — show change as 0
+                if (mc3) mc3.textContent = CURRENCY + '0.00';
+            } else {
+                // Return overage as change
+                if (mc3) mc3.textContent = CURRENCY + overage.toFixed(2);
+            }
 
             // Update new balance display if customer selected
             if (selectedCustomer) {
@@ -1969,8 +2032,8 @@
                 } else {
                     // Sale with payment
                     const unpaid = Math.max(0, total - received);
-                    const overpayment = Math.max(0, received - total);
-                    newBalance = currentBalance + unpaid - overpayment;
+                    const overpaymentForAccount = creditOverage ? overage : 0;
+                    newBalance = currentBalance + unpaid - overpaymentForAccount;
                 }
 
                 const newBalanceEl = document.getElementById('credit-new-balance');
@@ -1980,6 +2043,12 @@
                 }
             }
         }
+
+        // Recompute change when checkbox toggles
+        document.addEventListener('DOMContentLoaded', function() {
+            const overageCb = document.getElementById('credit-overage-checkbox');
+            if (overageCb) overageCb.addEventListener('change', updateChange);
+        });
 
         async function completeSale() {
             // Allow if cart has items OR payment on account (customer selected with empty cart)
@@ -2032,7 +2101,11 @@
                 customer_id: selectedCustomer ? selectedCustomer.id : null,
                 walkin_customer_name: walkinName,
                 walkin_customer_phone: walkinPhone,
-                is_payment_on_account: isPaymentOnAccount
+                is_payment_on_account: isPaymentOnAccount,
+                credit_overage_to_account: (() => {
+                    const cb = document.getElementById('credit-overage-checkbox');
+                    return selectedCustomer && selectedCustomer.id && cb ? cb.checked : true;
+                })()
             };
 
             try {

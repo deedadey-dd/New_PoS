@@ -107,8 +107,9 @@
         <div class="card-body p-0">
             {% if transactions %}
 
+            {# ── Bulk-confirm form wraps ONLY the toolbar (not the table) ── #}
+            {# Individual confirm/dispute buttons use fetch() so there is no nested-form issue #}
             {% if can_confirm %}
-            <!-- Bulk Confirm Form wraps the table -->
             <form method="post" action="{% url 'payments:ecash_bulk_confirm' %}" id="bulk-confirm-form">
                 {% csrf_token %}
                 <div class="d-flex align-items-center gap-3 px-3 py-2 border-bottom bg-light">
@@ -121,6 +122,7 @@
                     </button>
                     <span class="text-muted small" id="selected-count"></span>
                 </div>
+            </form>
             {% endif %}
 
             <div class="table-responsive">
@@ -144,8 +146,10 @@
                             {% if can_confirm %}
                             <td>
                                 {% if tx.status == 'PENDING' %}
+                                {# form= attribute links this checkbox to the bulk form without nesting #}
                                 <input class="form-check-input tx-checkbox" type="checkbox"
-                                       name="transaction_ids" value="{{ tx.pk }}">
+                                       name="transaction_ids" value="{{ tx.pk }}"
+                                       form="bulk-confirm-form">
                                 {% endif %}
                             </td>
                             {% endif %}
@@ -190,18 +194,19 @@
                             <td>{{ tx.notes|truncatechars:40|default:"-" }}</td>
                             <td>
                                 {% if tx.status == 'PENDING' and request.user.role.name in 'ACCOUNTANT,ADMIN' %}
-                                <form method="post" action="{% url 'payments:ecash_confirm' tx.pk %}" class="d-inline">
-                                    {% csrf_token %}
-                                    <button type="submit" class="btn btn-sm btn-success" title="Confirm Receipt in Bank">
-                                        <i class="bi bi-check-lg"></i>
-                                    </button>
-                                </form>
-                                <form method="post" action="{% url 'payments:ecash_dispute' tx.pk %}" class="d-inline ms-1">
-                                    {% csrf_token %}
-                                    <button type="submit" class="btn btn-sm btn-danger" title="Dispute Payment">
-                                        <i class="bi bi-x-circle"></i>
-                                    </button>
-                                </form>
+                                {# Individual confirm — uses fetch() to avoid nested-form issues #}
+                                <button type="button"
+                                        class="btn btn-sm btn-success btn-ecash-confirm"
+                                        data-url="{% url 'payments:ecash_confirm' tx.pk %}"
+                                        title="Confirm Receipt in Bank">
+                                    <i class="bi bi-check-lg"></i>
+                                </button>
+                                <button type="button"
+                                        class="btn btn-sm btn-danger btn-ecash-dispute ms-1"
+                                        data-url="{% url 'payments:ecash_dispute' tx.pk %}"
+                                        title="Dispute Payment">
+                                    <i class="bi bi-x-circle"></i>
+                                </button>
                                 {% endif %}
                             </td>
                         </tr>
@@ -209,10 +214,6 @@
                     </tbody>
                 </table>
             </div>
-
-            {% if can_confirm %}
-            </form>
-            {% endif %}
 
             {% else %}
             <div class="text-center py-5">
@@ -246,12 +247,16 @@
     {% endif %}
 
 </div>
+
+{# Hidden CSRF holder for individual confirm/dispute fetch() calls #}
+<form id="ecash-csrf-form" style="display:none;">{% csrf_token %}</form>
 {% endblock %}
 
 {% block extra_js %}
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    const selectAll = document.getElementById('select-all-ecash');
+    // ── Bulk-select logic ──────────────────────────────────────────────────
+    const selectAll  = document.getElementById('select-all-ecash');
     const confirmBtn = document.getElementById('bulk-confirm-btn');
     const countLabel = document.getElementById('selected-count');
 
@@ -272,6 +277,46 @@ document.addEventListener('DOMContentLoaded', function () {
         cb.addEventListener('change', function () {
             if (!this.checked && selectAll) selectAll.checked = false;
             updateBulkBar();
+        });
+    });
+
+    // ── Individual confirm / dispute via fetch() ───────────────────────────
+    const csrfToken = document.querySelector('#ecash-csrf-form [name=csrfmiddlewaretoken]').value;
+
+    function ecashAction(btn, url) {
+        btn.disabled = true;
+        fetch(url, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': csrfToken,
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+        })
+        .then(res => {
+            if (res.ok || res.redirected) {
+                window.location.reload();
+            } else {
+                return res.text().then(t => { throw new Error(t); });
+            }
+        })
+        .catch(err => {
+            console.error('ECash action failed:', err);
+            btn.disabled = false;
+            alert('Action failed. Please try again.');
+        });
+    }
+
+    document.querySelectorAll('.btn-ecash-confirm').forEach(btn => {
+        btn.addEventListener('click', function () {
+            ecashAction(this, this.dataset.url);
+        });
+    });
+
+    document.querySelectorAll('.btn-ecash-dispute').forEach(btn => {
+        btn.addEventListener('click', function () {
+            if (confirm('Mark this transaction as disputed?')) {
+                ecashAction(this, this.dataset.url);
+            }
         });
     });
 });

@@ -19,6 +19,7 @@ urlpatterns = [
     # Shift Management
     path('shift/open/', views.ShiftOpenView.as_view(), name='shift_open'),
     path('shift/<int:pk>/close/', views.ShiftCloseView.as_view(), name='shift_close'),
+    path('shifts/', views.ShiftListView.as_view(), name='shift_list'),
     
     # Sales History
     path('', views.SaleListView.as_view(), name='sale_list'),

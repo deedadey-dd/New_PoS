@@ -1,0 +1,241 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Shift History{% if shop %} — {{ shop.name }}{% endif %}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+
+    {# ── Header ── #}
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="fw-bold mb-0">
+                <i class="bi bi-clock-history me-2 text-primary"></i>Shift History
+            </h2>
+            <p class="text-muted mb-0">
+                {% if shop %}{{ shop.name }}{% else %}All Shops{% endif %}
+                &mdash; {{ period|title }}
+            </p>
+        </div>
+        <a href="{% url 'core:dashboard' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>Dashboard
+        </a>
+    </div>
+
+    {# ── Summary Cards ── #}
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3">
+            <div class="card border-0 shadow-sm text-center py-3">
+                <div class="text-muted small mb-1"><i class="bi bi-list-check me-1"></i>Total Shifts</div>
+                <div class="fw-bold fs-4">{{ summary.total_shifts|default:0 }}</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card border-success border-top border-3 shadow-sm text-center py-3">
+                <div class="text-muted small mb-1"><i class="bi bi-play-circle me-1 text-success"></i>Open</div>
+                <div class="fw-bold fs-4 text-success">{{ summary.open_shifts|default:0 }}</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card border-secondary border-top border-3 shadow-sm text-center py-3">
+                <div class="text-muted small mb-1"><i class="bi bi-stop-circle me-1 text-secondary"></i>Closed</div>
+                <div class="fw-bold fs-4 text-secondary">{{ summary.closed_shifts|default:0 }}</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card border-primary border-top border-3 shadow-sm text-center py-3">
+                <div class="text-muted small mb-1"><i class="bi bi-cash-stack me-1 text-primary"></i>Total Closing Cash</div>
+                <div class="fw-bold fs-4 text-primary">
+                    {{ currency_symbol }}{{ summary.total_closing_cash|default:0|floatformat:"2g" }}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# ── Period Quick Filters ── #}
+    <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+        <div class="btn-group" role="group">
+            <a href="?period=today{% if request.GET.attendant %}&attendant={{ request.GET.attendant }}{% endif %}{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}{% if request.GET.shop %}&shop={{ request.GET.shop }}{% endif %}"
+               class="btn btn-sm {% if period == 'today' and not date_from %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                <i class="bi bi-calendar-day me-1"></i>Today
+            </a>
+            <a href="?period=7days{% if request.GET.attendant %}&attendant={{ request.GET.attendant }}{% endif %}{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}{% if request.GET.shop %}&shop={{ request.GET.shop }}{% endif %}"
+               class="btn btn-sm {% if period == '7days' and not date_from %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                <i class="bi bi-calendar-week me-1"></i>Last 7 Days
+            </a>
+            <a href="?period=all{% if request.GET.attendant %}&attendant={{ request.GET.attendant }}{% endif %}{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}{% if request.GET.shop %}&shop={{ request.GET.shop }}{% endif %}"
+               class="btn btn-sm {% if period == 'all' and not date_from %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                <i class="bi bi-calendar-range me-1"></i>All Time
+            </a>
+        </div>
+    </div>
+
+    {# ── Filter Form ── #}
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-2 align-items-end">
+                {% if all_shops %}
+                <div class="col-md-2">
+                    <label class="form-label small mb-1">Shop</label>
+                    <select name="shop" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="">All Shops</option>
+                        {% for s in all_shops %}
+                        <option value="{{ s.pk }}" {% if request.GET.shop == s.pk|stringformat:"s" %}selected{% endif %}>
+                            {{ s.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% endif %}
+                <div class="col-md-2">
+                    <label class="form-label small mb-1">Attendant</label>
+                    <select name="attendant" class="form-select form-select-sm">
+                        <option value="">All Attendants</option>
+                        {% for att in attendants %}
+                        <option value="{{ att.pk }}" {% if request.GET.attendant == att.pk|stringformat:"s" %}selected{% endif %}>
+                            {{ att.get_full_name|default:att.email }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small mb-1">Status</label>
+                    <select name="status" class="form-select form-select-sm">
+                        <option value="">All</option>
+                        <option value="OPEN" {% if status_filter == 'OPEN' %}selected{% endif %}>Open</option>
+                        <option value="CLOSED" {% if status_filter == 'CLOSED' %}selected{% endif %}>Closed</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small mb-1">From</label>
+                    <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small mb-1">To</label>
+                    <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
+                </div>
+                <div class="col-md-2 d-flex gap-1">
+                    <button type="submit" class="btn btn-sm btn-primary flex-fill">
+                        <i class="bi bi-filter me-1"></i>Filter
+                    </button>
+                    <a href="{% url 'sales:shift_list' %}" class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-x-lg"></i>
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {# ── Shift Table ── #}
+    <div class="card">
+        <div class="card-body p-0">
+            {% if shifts %}
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>#</th>
+                            {% if all_shops %}<th>Shop</th>{% endif %}
+                            <th>Attendant</th>
+                            <th>Opened</th>
+                            <th>Closed</th>
+                            <th class="text-end">Opening Cash</th>
+                            <th class="text-end">Closing Cash</th>
+                            <th class="text-end">Cash Sales</th>
+                            <th class="text-end">Variance</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for shift in shifts %}
+                        <tr>
+                            <td class="text-muted small">{{ shift.pk }}</td>
+                            {% if all_shops %}<td class="small">{{ shift.shop.name }}</td>{% endif %}
+                            <td>
+                                <span class="fw-semibold">
+                                    {% if shift.attendant %}
+                                        {{ shift.attendant.get_full_name|default:shift.attendant.email }}
+                                    {% else %}
+                                        <span class="text-muted">—</span>
+                                    {% endif %}
+                                </span>
+                            </td>
+                            <td class="small text-muted">{{ shift.start_time|date:"d M Y, H:i" }}</td>
+                            <td class="small text-muted">
+                                {% if shift.end_time %}{{ shift.end_time|date:"d M Y, H:i" }}{% else %}—{% endif %}
+                            </td>
+                            <td class="text-end">{{ currency_symbol }}{{ shift.opening_cash|floatformat:"2g" }}</td>
+                            <td class="text-end">
+                                {% if shift.closing_cash is not None %}
+                                    {{ currency_symbol }}{{ shift.closing_cash|floatformat:"2g" }}
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end text-success">
+                                {{ currency_symbol }}{{ shift.total_sales|floatformat:"2g" }}
+                            </td>
+                            <td class="text-end
+                                {% if shift.cash_variance is not None %}
+                                    {% if shift.cash_variance < 0 %}text-danger
+                                    {% elif shift.cash_variance > 0 %}text-success
+                                    {% else %}text-muted{% endif %}
+                                {% else %}text-muted{% endif %}">
+                                {% if shift.cash_variance is not None %}
+                                    {% if shift.cash_variance > 0 %}+{% endif %}
+                                    {{ currency_symbol }}{{ shift.cash_variance|floatformat:"2g" }}
+                                {% else %}—{% endif %}
+                            </td>
+                            <td>
+                                {% if shift.status == 'OPEN' %}
+                                <span class="badge bg-success">
+                                    <i class="bi bi-play-fill me-1"></i>Open
+                                </span>
+                                {% else %}
+                                <span class="badge bg-secondary">
+                                    <i class="bi bi-stop-fill me-1"></i>Closed
+                                </span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            {# Pagination #}
+            {% if page_obj.has_other_pages %}
+            <nav class="p-3">
+                <ul class="pagination justify-content-center mb-0">
+                    {% if page_obj.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.previous_page_number }}&period={{ period }}&date_from={{ date_from }}&date_to={{ date_to }}&status={{ status_filter }}&attendant={{ request.GET.attendant }}{% if request.GET.shop %}&shop={{ request.GET.shop }}{% endif %}">«</a>
+                    </li>
+                    {% endif %}
+                    <li class="page-item disabled">
+                        <span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+                    </li>
+                    {% if page_obj.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.next_page_number }}&period={{ period }}&date_from={{ date_from }}&date_to={{ date_to }}&status={{ status_filter }}&attendant={{ request.GET.attendant }}{% if request.GET.shop %}&shop={{ request.GET.shop }}{% endif %}">»</a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+            {% endif %}
+
+            {% else %}
+            <div class="text-center py-5">
+                <i class="bi bi-clock-history display-1 text-muted"></i>
+                <h4 class="mt-3 text-muted">No Shifts Found</h4>
+                <p class="text-muted">No shifts match the selected filters.</p>
+                <a href="{% url 'sales:shift_list' %}?period=all" class="btn btn-outline-secondary">
+                    <i class="bi bi-calendar-range me-1"></i>View All Time
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+</div>
+{% endblock %}

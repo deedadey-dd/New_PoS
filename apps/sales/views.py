@@ -261,25 +261,12 @@ class ShiftCloseView(LoginRequiredMixin, View):
             
             user_role = request.user.role.name if request.user.role else None
             
-            # Check if the user closing shift IS the shop manager
+            # When the shop manager closes their own shift, no transfer is created.
+            # The context processor counts all their cash sales (shift + shiftless) directly,
+            # so creating a self-transfer would double-count the shift revenue.
             if user_role == 'SHOP_MANAGER':
-                # Shop manager's shift - no transfer needed, cash goes directly to their balance
-                # Create a confirmed transfer to self for record-keeping
-                transfer = CashTransfer.objects.create(
-                    tenant=request.user.tenant,
-                    amount=closing_cash,
-                    transfer_type='DEPOSIT',
-                    from_user=request.user,
-                    from_location=shift.shop,
-                    to_user=request.user,
-                    to_location=shift.shop,
-                    notes=f"Shop Manager shift closing - Shift #{shift.pk}",
-                    status='CONFIRMED'  # Auto-confirmed
-                )
-                transfer.confirmed_at = timezone.now()
-                transfer.save()
-                
-                messages.info(request, f"Shift cash of {closing_cash} added to your cash on hand.")
+                messages.info(request, f"Shift closed. Cash of {closing_cash} has been added to your cash on hand.")
+
             else:
                 # Attendant shift - create pending transfer to shop manager
                 shop_manager = User.objects.filter(
@@ -931,6 +918,8 @@ def api_complete_sale(request):
     is_payment_on_account = data.get('is_payment_on_account', False)
     walkin_customer_name = data.get('walkin_customer_name', '')
     walkin_customer_phone = data.get('walkin_customer_phone', '')
+    # Whether to credit overage to customer account (True by default) or return as change (False)
+    credit_overage_to_account = data.get('credit_overage_to_account', True)
     
     shop = request.user.location
     
@@ -1074,8 +1063,8 @@ def api_complete_sale(request):
             # Non-strict workflow or Manager creating sale directly
             sale.cashier = request.user
             
-            # Handle overpayment for customer (reduces their balance)
-            if customer and amount_paid > sale.total:
+            # Handle overpayment — credit to customer account OR return as change
+            if customer and amount_paid > sale.total and credit_overage_to_account:
                 from apps.customers.models import CustomerTransaction
                 overpayment = amount_paid - sale.total
                 
@@ -1088,7 +1077,7 @@ def api_complete_sale(request):
                     customer=customer,
                     transaction_type='CREDIT',
                     amount=overpayment,
-                    description=f"Overpayment from sale {sale.sale_number}",
+                    description=f"Overpayment credited from sale {sale.sale_number}",
                     reference_id=sale.sale_number,
                     balance_before=balance_before,
                     balance_after=customer.current_balance,
@@ -2292,3 +2281,140 @@ def waybill_print_view(request, pk):
         'tenant': request.user.tenant,
     }
     return render(request, 'sales/waybill_print.html', context)
+
+
+class ShiftListView(LoginRequiredMixin, ListView):
+    """
+    Shop Manager (and Admin/Auditor) view to see shift history for their shop.
+    Supports filtering by period and attendant.
+    """
+    model = Shift
+    template_name = 'sales/shift_list.html'
+    context_object_name = 'shifts'
+    paginate_by = 30
+
+    def dispatch(self, request, *args, **kwargs):
+        allowed = ['SHOP_MANAGER', 'ADMIN', 'AUDITOR', 'ACCOUNTANT']
+        role = request.user.role.name if request.user.role else None
+        if role not in allowed:
+            messages.error(request, "You don't have permission to view shift records.")
+            return redirect('core:dashboard')
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_queryset(self):
+        from django.utils import timezone as _tz
+        from datetime import timedelta as _td
+
+        user = self.request.user
+        tenant = user.tenant
+        role = user.role.name if user.role else None
+
+        qs = Shift.objects.filter(tenant=tenant).select_related(
+            'shop', 'attendant'
+        ).prefetch_related('sales')
+
+        # Scope: managers see only their shop; auditors/admins see all (can filter)
+        if role == 'SHOP_MANAGER' and user.location:
+            qs = qs.filter(shop=user.location)
+        else:
+            shop_id = self.request.GET.get('shop')
+            if shop_id:
+                qs = qs.filter(shop_id=shop_id)
+
+        # Attendant filter
+        attendant_id = self.request.GET.get('attendant')
+        if attendant_id:
+            qs = qs.filter(attendant_id=attendant_id)
+
+        # Status filter
+        status = self.request.GET.get('status')
+        if status in ('OPEN', 'CLOSED'):
+            qs = qs.filter(status=status)
+
+        # Period / date filter — default to today
+        period = self.request.GET.get('period', 'today')
+        date_from = self.request.GET.get('date_from')
+        date_to = self.request.GET.get('date_to')
+
+        today = _tz.localdate()
+        if date_from or date_to:
+            # Custom date range overrides period buttons
+            if date_from:
+                try:
+                    qs = qs.filter(start_time__date__gte=date_from)
+                except Exception:
+                    pass
+            if date_to:
+                try:
+                    qs = qs.filter(start_time__date__lte=date_to)
+                except Exception:
+                    pass
+        elif period == '7days':
+            qs = qs.filter(start_time__date__gte=today - _td(days=7))
+        elif period == 'all':
+            pass  # no date restriction
+        else:
+            # Default: today
+            qs = qs.filter(start_time__date=today)
+            period = 'today'
+
+        return qs.order_by('-start_time')
+
+    def get_context_data(self, **kwargs):
+        from django.db.models import Sum, Count, Q as _Q
+        from django.utils import timezone as _tz
+        from datetime import timedelta as _td
+        from apps.core.models import User as _User, Location as _Location
+
+        context = super().get_context_data(**kwargs)
+        user = self.request.user
+        tenant = user.tenant
+        role = user.role.name if user.role else None
+        today = _tz.localdate()
+
+        # Pass filter params back to template
+        context['period'] = self.request.GET.get('period', 'today')
+        context['date_from'] = self.request.GET.get('date_from', '')
+        context['date_to'] = self.request.GET.get('date_to', '')
+        context['status_filter'] = self.request.GET.get('status', '')
+        context['today_str'] = today.strftime('%Y-%m-%d')
+        context['week_ago_str'] = (today - _td(days=7)).strftime('%Y-%m-%d')
+
+        # Attendant list for filter dropdown (scoped to shop)
+        if role == 'SHOP_MANAGER' and user.location:
+            context['attendants'] = _User.objects.filter(
+                tenant=tenant,
+                location=user.location,
+                role__name__in=['SHOP_ATTENDANT', 'SHOP_MANAGER'],
+                is_active=True,
+            ).order_by('first_name')
+            context['shop'] = user.location
+        else:
+            # Admins/auditors: show all shops and attendants
+            context['all_shops'] = _Location.objects.filter(
+                tenant=tenant, location_type='SHOP', is_active=True
+            ).order_by('name')
+            context['attendants'] = _User.objects.filter(
+                tenant=tenant,
+                role__name__in=['SHOP_ATTENDANT', 'SHOP_MANAGER'],
+                is_active=True,
+            ).order_by('first_name')
+            # Currently selected shop for display
+            shop_id = self.request.GET.get('shop')
+            if shop_id:
+                context['shop'] = _Location.objects.filter(pk=shop_id, tenant=tenant).first()
+            context['attendant_filter'] = self.request.GET.get('attendant', '')
+
+        # Aggregate summary across the filtered queryset
+        qs = self.get_queryset()
+        agg = qs.aggregate(
+            total_shifts=Count('id'),
+            open_shifts=Count('id', filter=_Q(status='OPEN')),
+            closed_shifts=Count('id', filter=_Q(status='CLOSED')),
+            total_opening_cash=Sum('opening_cash'),
+            total_closing_cash=Sum('closing_cash'),
+        )
+        context['summary'] = agg
+        context['currency_symbol'] = getattr(tenant, 'currency_symbol', '') if tenant else ''
+        return context
+

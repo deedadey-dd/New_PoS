@@ -36,6 +36,24 @@
         </div>
     </div>
 
+    <!-- Quick Period Shortcuts -->
+    <div class="btn-group mb-3" role="group">
+        {% with today_str=today_str %}
+        <a href="?{% if shop %}shop={{ shop.pk }}&{% endif %}wallet_type={{ wallet_type }}&date_from={{ today_str }}&date_to={{ today_str }}&sort={{ sort }}"
+           class="btn btn-sm {% if date_from == today_str and date_to == today_str %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+            <i class="bi bi-calendar-day me-1"></i>Today
+        </a>
+        {% endwith %}
+        <a href="?{% if shop %}shop={{ shop.pk }}&{% endif %}wallet_type={{ wallet_type }}&date_from={{ week_ago_str }}&sort={{ sort }}"
+           class="btn btn-sm {% if date_from == week_ago_str and not date_to %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+            <i class="bi bi-calendar-week me-1"></i>Last 7 Days
+        </a>
+        <a href="?{% if shop %}shop={{ shop.pk }}&{% endif %}wallet_type={{ wallet_type }}&sort={{ sort }}"
+           class="btn btn-sm {% if not date_from and not date_to %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+            <i class="bi bi-calendar-range me-1"></i>All Time
+        </a>
+    </div>
+
     <!-- Filter Form -->
     <div class="card mb-4">
         <div class="card-body">

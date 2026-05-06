@@ -146,49 +146,76 @@ class CashTransferForm(forms.ModelForm):
                     
             elif role_name in ('SHOP_MANAGER', 'SHOP_CASHIER'):
                 from apps.sales.models import Shift, Sale
-                
+
+                # Step 1: Cash received via CashTransfer (CONFIRMED).
+                #   INCLUDES self-transfers (manager's own shift closes).
+                #   When a manager closes a shift, a self-transfer is created
+                #   for closing_cash. That becomes the canonical record for
+                #   that shift's cash. We must NOT also count those same sales
+                #   as own_sales — that would be double-counting.
                 received = CashTransfer.objects.filter(
                     tenant=user.tenant,
                     to_user=user,
                     status='CONFIRMED'
                 ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
-                
-                sent = CashTransfer.objects.filter(
+
+                # Step 2: Cash sent upstream to accountant / bank.
+                #   Excludes self-transfers (shift closes are not outgoing cash).
+                sent_upstream = CashTransfer.objects.filter(
                     tenant=user.tenant,
                     from_user=user,
                     status__in=['PENDING', 'CONFIRMED']
-                ).exclude(
-                    to_user=user  # Exclude self-transfers (shift closings)
-                ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
-                
-                # Cash from current open shift
-                open_shift_cash = Decimal('0')
+                ).exclude(to_user=user).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
+                # Step 3: Live cash from the CURRENT open shift.
+                #   This shift is not yet closed so no self-transfer exists yet.
+                #   Therefore it is NOT in 'received' — safe to add separately.
                 open_shift = Shift.objects.filter(
                     tenant=user.tenant,
                     attendant=user,
                     status='OPEN'
                 ).first()
-                
-                # Add own cash sales (made directly by manager/cashier, or processed on behalf of attendant)
-                own_cash_sales = Sale.objects.filter(
-                    tenant=user.tenant,
-                    cashier=user,
-                    status='COMPLETED',
-                    payment_method='CASH'
-                ).aggregate(total=Sum('total'))['total'] or Decimal('0')
-                
-                own_mixed_sales = Sale.objects.filter(
-                    tenant=user.tenant,
-                    cashier=user,
-                    status='COMPLETED',
-                    payment_method='MIXED'
-                ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
-                
-                own_sales = own_cash_sales + own_mixed_sales
-                
+
+                current_shift_cash = Decimal('0')
                 if open_shift:
-                    open_shift_cash = open_shift.opening_cash
-                    
+                    cs = open_shift.sales.filter(status='COMPLETED')
+                    shift_cash = cs.filter(payment_method='CASH').aggregate(
+                        total=Sum('total'))['total'] or Decimal('0')
+                    shift_mixed = cs.filter(payment_method='MIXED').aggregate(
+                        total=Sum('amount_paid'))['total'] or Decimal('0')
+                    current_shift_cash = shift_cash + shift_mixed
+                    if user.tenant.include_opening_cash_in_transfer:
+                        current_shift_cash += open_shift.opening_cash
+
+                # Step 4: Shiftless cash sales (shift__isnull=True).
+                #   Sales with no shift never generate a self-transfer so they
+                #   must be counted directly. Scoped to since last upstream
+                #   transfer to prevent all-time bleed.
+                last_transfer_dt = CashTransfer.objects.filter(
+                    tenant=user.tenant,
+                    from_user=user,
+                    status__in=['PENDING', 'CONFIRMED']
+                ).exclude(to_user=user).order_by('-created_at').values_list(
+                    'created_at', flat=True
+                ).first()
+
+                shiftless_filter = dict(
+                    tenant=user.tenant,
+                    cashier=user,
+                    status='COMPLETED',
+                    shift__isnull=True
+                )
+                if last_transfer_dt:
+                    shiftless_filter['created_at__gt'] = last_transfer_dt
+
+                shiftless_cash = Sale.objects.filter(
+                    **shiftless_filter, payment_method='CASH'
+                ).aggregate(total=Sum('total'))['total'] or Decimal('0')
+                shiftless_mixed = Sale.objects.filter(
+                    **shiftless_filter, payment_method='MIXED'
+                ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+                shiftless_sales = shiftless_cash + shiftless_mixed
+
                 # Add customer cash payments received (payments on account)
                 from apps.customers.models import CustomerTransaction
                 customer_payments = CustomerTransaction.objects.filter(
@@ -201,7 +228,7 @@ class CashTransferForm(forms.ModelForm):
                 ).exclude(
                     description__icontains='MOMO'
                 ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
-                
+
                 # Subtract expenses paid from shop's cash
                 from apps.accounting.models import ExpenditureItem
                 expenses = ExpenditureItem.objects.filter(
@@ -210,8 +237,13 @@ class CashTransferForm(forms.ModelForm):
                     status='APPROVED',
                     source_of_funds='SHOP_CASH'
                 ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
-                
-                self.cash_on_hand = received - sent + open_shift_cash + own_sales + customer_payments - expenses
+
+                self.cash_on_hand = max(
+                    Decimal('0'),
+                    received - sent_upstream
+                    + current_shift_cash + shiftless_sales
+                    + customer_payments - expenses
+                )
                 
                 # Shop managers / cashiers can send to bank or accountants based on settings
                 d_choices = []

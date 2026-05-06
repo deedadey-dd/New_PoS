@@ -194,7 +194,8 @@
                         <th>Reference</th>
                         <th>Date</th>
                         <th>From Shop</th>
-                        <th>Shop Manager</th>
+                        <th>Sent By</th>
+                        <th>Received By</th>
                         <th class="text-end">Amount</th>
                     </tr>
                 </thead>
@@ -206,7 +207,8 @@
                             <small>{{ d.confirmed_at|date:"M d, Y H:i" }}</small>
                         </td>
                         <td>{{ d.from_location.name|default:"-" }}</td>
-                        <td>{{ d.from_user.get_full_name|default:d.from_user.email }}</td>
+                        <td>{% if d.from_user %}{{ d.from_user.get_full_name|default:d.from_user.email }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+                        <td>{% if d.to_user %}{{ d.to_user.get_full_name|default:d.to_user.email }}{% else %}<span class="badge bg-secondary">Bank</span>{% endif %}</td>
                         <td class="text-end fw-bold text-success">{{ currency_symbol }}{{ d.amount|floatformat:"2g" }}</td>
                     </tr>
                     {% endfor %}

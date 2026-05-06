@@ -114,6 +114,12 @@
                         <label class="form-check-label ms-2">Can Transfer Between Shops</label>
                         <small class="d-block text-muted mt-1">Allow shop managers to transfer stock directly to other active shops within the organization.</small>
                     </div>
+                    <hr class="my-3">
+                    <div class="form-check form-switch mb-0">
+                        {{ form.shop_manager_can_delete_products }}
+                        <label class="form-check-label ms-2">Can Delete Products &amp; Categories</label>
+                        <small class="d-block text-muted mt-1">Allow shop managers to permanently delete products and categories from the main inventory. By default only Admins and Stores Managers can do this.</small>
+                    </div>
                 </div>
             </div>
         </div>
@@ -140,6 +146,12 @@
                         {{ form.allow_shop_to_bank_transfers }}
                         <label class="form-check-label ms-2">Allow Shop → Bank Transfers</label>
                         <small class="d-block text-muted mt-1">Allow shops to transfer cash deposits directly to a bank.</small>
+                    </div>
+                    <hr class="my-3">
+                    <div class="form-check form-switch mb-0">
+                        {{ form.include_opening_cash_in_transfer }}
+                        <label class="form-check-label ms-2">Include Opening Cash in Transfer Balance</label>
+                        <small class="d-block text-muted mt-1">When enabled, the shift opening float (e.g. change given to manager) is included in the manager's/cashier's transferable cash-on-hand balance. Disable this if you do not want float money counted as transferable.</small>
                     </div>
                 </div>
             </div>

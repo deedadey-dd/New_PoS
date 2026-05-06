@@ -287,11 +287,12 @@
 
 <!-- Dispatch Summary for Shop Managers -->
 {% if user.role.name == 'SHOP_MANAGER' %}
-<div class="row g-4">
-    <div class="col-md-6">
+<div class="row g-4 mb-4">
+    {# ── Dispatch Card ── #}
+    <div class="col-md-4">
         <div class="card border-0 shadow-sm border-top border-primary border-3 h-100">
             <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
-                <h5 class="mb-0 fw-bold"><i class="bi bi-truck me-2 text-primary"></i>Today's Dispatched Orders</h5>
+                <h5 class="mb-0 fw-bold"><i class="bi bi-truck me-2 text-primary"></i>Today's Dispatches</h5>
                 <a href="{% url 'core:dispatch_summary' %}" class="btn btn-sm btn-primary">
                     <i class="bi bi-bar-chart-line me-1"></i> Full Report
                 </a>
@@ -328,7 +329,47 @@
         </div>
     </div>
 
-    <div class="col-md-6">
+    {# ── Shift Report Card ── #}
+    <div class="col-md-4">
+        <div class="card border-0 shadow-sm border-top border-info border-3 h-100">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
+                <h5 class="mb-0 fw-bold"><i class="bi bi-clock-history me-2 text-info"></i>Today's Shifts</h5>
+                <a href="{% url 'sales:shift_list' %}?period=today" class="btn btn-sm btn-info text-white">
+                    <i class="bi bi-list-ul me-1"></i> View All
+                </a>
+            </div>
+            <div class="card-body">
+                <div class="row g-3 text-center">
+                    <div class="col-6">
+                        <div class="p-3 rounded-3" style="background:#f0fdf4;">
+                            <div class="fs-2 fw-bold text-success">{{ today_open_shifts|default:"0" }}</div>
+                            <div class="text-muted small mt-1">Open Shifts</div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="p-3 rounded-3" style="background:#f8f9fa;">
+                            <div class="fs-2 fw-bold text-secondary">{{ today_closed_shifts|default:"0" }}</div>
+                            <div class="text-muted small mt-1">Closed Today</div>
+                        </div>
+                    </div>
+                </div>
+                <hr class="my-3">
+                <div class="d-flex gap-2 flex-wrap">
+                    <a href="{% url 'sales:shift_list' %}?period=today"
+                       class="btn btn-outline-info btn-sm flex-grow-1">
+                        <i class="bi bi-calendar-day me-1"></i> Today
+                    </a>
+                    <a href="{% url 'sales:shift_list' %}?period=7days"
+                       class="btn btn-outline-secondary btn-sm flex-grow-1">
+                        <i class="bi bi-calendar-week me-1"></i> Last 7 Days
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# ── Locations Overview ── #}
+    <div class="col-md-4">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-header bg-white py-3">
                 <h5 class="mb-0 fw-bold"><i class="bi bi-buildings me-2 text-muted"></i>Locations Overview</h5>
