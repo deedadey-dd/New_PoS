@@ -74,6 +74,20 @@ class CustomerTransaction(TenantModel):
     # Links to other parts of the system
     reference_id = models.CharField(max_length=100, blank=True, help_text="ID of linked Sale or Payment")
     
+    # Accountant Confirmation (for digital payments on account)
+    is_accountant_confirmed = models.BooleanField(
+        default=False,
+        help_text="True if accountant has confirmed receipt of this digital payment"
+    )
+    accountant_confirmed_at = models.DateTimeField(null=True, blank=True)
+    accountant_confirmed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='confirmed_customer_transactions'
+    )
+    
     # Audit
     balance_before = models.DecimalField(max_digits=12, decimal_places=2)
     balance_after = models.DecimalField(max_digits=12, decimal_places=2)

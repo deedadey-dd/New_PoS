@@ -662,8 +662,19 @@ class ProductProfitLossExportView(LoginRequiredMixin, AuditAccessMixin, View):
                 margin,
             ])
 
-        wb = create_export_workbook('Product Profit & Loss', headers, rows)
-        return build_excel_response(wb, 'product_profit_loss_export.xlsx')
+        export_format = request.GET.get('format', 'excel')
+        if export_format == 'pdf':
+            from apps.core.pdf_utils import export_to_pdf
+            date_range_str = f"{date_from} to {date_to}" if date_from and date_to else "All Time"
+            metadata = {
+                'generator_name': request.user.get_full_name() or request.user.email,
+                'shop_name': 'All Shops',
+                'date_range': date_range_str
+            }
+            return export_to_pdf('product_profit_loss.pdf', 'Product Profit & Loss', headers, rows, metadata=metadata)
+        else:
+            wb = create_export_workbook('Product Profit & Loss', headers, rows)
+            return build_excel_response(wb, 'product_profit_loss_export.xlsx')
 
 
 class LocationProfitLossExportView(LoginRequiredMixin, AuditAccessMixin, View):
@@ -739,8 +750,19 @@ class LocationProfitLossExportView(LoginRequiredMixin, AuditAccessMixin, View):
                 float(avg_sale),
             ])
 
-        wb = create_export_workbook('Location Profit & Loss', headers, rows)
-        return build_excel_response(wb, 'location_profit_loss_export.xlsx')
+        export_format = request.GET.get('format', 'excel')
+        if export_format == 'pdf':
+            from apps.core.pdf_utils import export_to_pdf
+            date_range_str = f"{date_from} to {date_to}" if date_from and date_to else "All Time"
+            metadata = {
+                'generator_name': request.user.get_full_name() or request.user.email,
+                'shop_name': 'All Shops',
+                'date_range': date_range_str
+            }
+            return export_to_pdf('location_profit_loss.pdf', 'Location Profit & Loss', headers, rows, metadata=metadata)
+        else:
+            wb = create_export_workbook('Location Profit & Loss', headers, rows)
+            return build_excel_response(wb, 'location_profit_loss_export.xlsx')
 
 
 class ManagerProfitLossExportView(LoginRequiredMixin, AuditAccessMixin, View):
@@ -824,8 +846,19 @@ class ManagerProfitLossExportView(LoginRequiredMixin, AuditAccessMixin, View):
                     float(avg_sale),
                 ])
 
-        wb = create_export_workbook('Manager Profit & Loss', headers, rows)
-        return build_excel_response(wb, 'manager_profit_loss_export.xlsx')
+        export_format = request.GET.get('format', 'excel')
+        if export_format == 'pdf':
+            from apps.core.pdf_utils import export_to_pdf
+            date_range_str = f"{date_from} to {date_to}" if date_from and date_to else "All Time"
+            metadata = {
+                'generator_name': request.user.get_full_name() or request.user.email,
+                'shop_name': 'All Shops',
+                'date_range': date_range_str
+            }
+            return export_to_pdf('manager_profit_loss.pdf', 'Manager Profit & Loss', headers, rows, metadata=metadata)
+        else:
+            wb = create_export_workbook('Manager Profit & Loss', headers, rows)
+            return build_excel_response(wb, 'manager_profit_loss_export.xlsx')
 
 
 class InventoryMovementExportView(LoginRequiredMixin, AuditAccessMixin, View):
@@ -877,8 +910,32 @@ class InventoryMovementExportView(LoginRequiredMixin, AuditAccessMixin, View):
                 entry.notes or '',
             ])
 
-        wb = create_export_workbook('Inventory Movements', headers, rows)
-        return build_excel_response(wb, 'inventory_movements_export.xlsx')
+        export_format = request.GET.get('format', 'excel')
+        if export_format == 'pdf':
+            from apps.core.pdf_utils import export_to_pdf
+            date_range_str = "All Time"
+            if date_from and date_to:
+                date_range_str = f"{date_from} to {date_to}"
+            elif date_from:
+                date_range_str = f"From {date_from}"
+            elif date_to:
+                date_range_str = f"Until {date_to}"
+                
+            shop_name = "All Locations"
+            if location_id:
+                from apps.core.models import Location
+                loc = Location.objects.filter(pk=location_id).first()
+                if loc: shop_name = loc.name
+                
+            metadata = {
+                'generator_name': request.user.get_full_name() or request.user.email,
+                'shop_name': shop_name,
+                'date_range': date_range_str
+            }
+            return export_to_pdf('inventory_movements.pdf', 'Inventory Movements', headers, rows, metadata=metadata)
+        else:
+            wb = create_export_workbook('Inventory Movements', headers, rows)
+            return build_excel_response(wb, 'inventory_movements_export.xlsx')
 
 class UserActivityListView(LoginRequiredMixin, AuditAccessMixin, View):
     """

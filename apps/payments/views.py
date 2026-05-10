@@ -20,6 +20,7 @@ from django.utils import timezone
 from .models import PaymentProviderSettings, ECashLedger, ECashWithdrawal
 from .services.paystack import get_payment_provider, PaystackProvider
 from apps.core.decorators import role_required
+from apps.core.mixins import SortableMixin
 
 logger = logging.getLogger(__name__)
 
@@ -213,21 +214,72 @@ def cancel_withdrawal(request, pk):
     return redirect('payments:withdrawal_list')
 
 
-class ECashLedgerView(LoginRequiredMixin, ListView):
+class ECashLedgerView(LoginRequiredMixin, SortableMixin, ListView):
     """E-Cash transaction history."""
     model = ECashLedger
     template_name = 'payments/ecash_ledger.html'
     context_object_name = 'transactions'
     paginate_by = 50
+    sortable_fields = ['created_at', 'amount', 'transaction_type', 'reference', 'shop__name']
+    default_sort = '-created_at'
     
     def get_queryset(self):
-        return ECashLedger.objects.filter(
+        from datetime import datetime
+        
+        queryset = ECashLedger.objects.filter(
             tenant=self.request.user.tenant
-        ).select_related('created_by', 'shop').order_by('-created_at')
+        ).select_related('created_by', 'shop')
+        
+        # Apply filters
+        date_from = self.request.GET.get('date_from')
+        date_to = self.request.GET.get('date_to')
+        min_amount = self.request.GET.get('min_amount')
+        max_amount = self.request.GET.get('max_amount')
+        shop_id = self.request.GET.get('shop')
+        
+        if date_from:
+            try:
+                date_from_parsed = datetime.strptime(date_from, '%Y-%m-%d').date()
+                queryset = queryset.filter(created_at__date__gte=date_from_parsed)
+            except ValueError:
+                pass
+                
+        if date_to:
+            try:
+                date_to_parsed = datetime.strptime(date_to, '%Y-%m-%d').date()
+                queryset = queryset.filter(created_at__date__lte=date_to_parsed)
+            except ValueError:
+                pass
+                
+        if min_amount:
+            try:
+                queryset = queryset.filter(amount__gte=Decimal(min_amount))
+            except (ValueError, TypeError):
+                pass
+                
+        if max_amount:
+            try:
+                queryset = queryset.filter(amount__lte=Decimal(max_amount))
+            except (ValueError, TypeError):
+                pass
+                
+        if shop_id:
+            queryset = queryset.filter(shop_id=shop_id)
+            
+        return self.apply_sorting(queryset)
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['ecash_balance'] = ECashLedger.get_current_balance(self.request.user.tenant)
+        
+        from apps.core.models import Location
+        context['shops'] = Location.objects.filter(tenant=self.request.user.tenant, location_type='SHOP')
+        
+        context['date_from'] = self.request.GET.get('date_from', '')
+        context['date_to'] = self.request.GET.get('date_to', '')
+        context['min_amount'] = self.request.GET.get('min_amount', '')
+        context['max_amount'] = self.request.GET.get('max_amount', '')
+        context['selected_shop'] = self.request.GET.get('shop', '')
         return context
 
 
@@ -344,7 +396,7 @@ class ShopECashWithdrawView(LoginRequiredMixin, TemplateView):
         return redirect('payments:shop_ecash_list')
 
 
-class ShopECashHistoryView(LoginRequiredMixin, ListView):
+class ShopECashHistoryView(LoginRequiredMixin, SortableMixin, ListView):
     """
     Shop Manager view: View e-cash transaction history for their shop.
     """
@@ -352,6 +404,8 @@ class ShopECashHistoryView(LoginRequiredMixin, ListView):
     template_name = 'payments/shop_ecash_history.html'
     context_object_name = 'transactions'
     paginate_by = 30
+    sortable_fields = ['created_at', 'amount', 'transaction_type', 'reference']
+    default_sort = '-created_at'
     
     def dispatch(self, request, *args, **kwargs):
         # Shop managers, accountants, auditors, and admins can access
@@ -362,6 +416,7 @@ class ShopECashHistoryView(LoginRequiredMixin, ListView):
         return super().dispatch(request, *args, **kwargs)
     
     def get_queryset(self):
+        from datetime import datetime
         user = self.request.user
         tenant = user.tenant
         
@@ -370,10 +425,44 @@ class ShopECashHistoryView(LoginRequiredMixin, ListView):
         if not shop:
             return ECashLedger.objects.none()
         
-        return ECashLedger.objects.filter(
+        queryset = ECashLedger.objects.filter(
             tenant=tenant,
             shop=shop
-        ).select_related('created_by').order_by('-created_at')
+        ).select_related('created_by')
+        
+        # Apply filters
+        date_from = self.request.GET.get('date_from')
+        date_to = self.request.GET.get('date_to')
+        min_amount = self.request.GET.get('min_amount')
+        max_amount = self.request.GET.get('max_amount')
+        
+        if date_from:
+            try:
+                date_from_parsed = datetime.strptime(date_from, '%Y-%m-%d').date()
+                queryset = queryset.filter(created_at__date__gte=date_from_parsed)
+            except ValueError:
+                pass
+                
+        if date_to:
+            try:
+                date_to_parsed = datetime.strptime(date_to, '%Y-%m-%d').date()
+                queryset = queryset.filter(created_at__date__lte=date_to_parsed)
+            except ValueError:
+                pass
+                
+        if min_amount:
+            try:
+                queryset = queryset.filter(amount__gte=Decimal(min_amount))
+            except (ValueError, TypeError):
+                pass
+                
+        if max_amount:
+            try:
+                queryset = queryset.filter(amount__lte=Decimal(max_amount))
+            except (ValueError, TypeError):
+                pass
+                
+        return self.apply_sorting(queryset)
     
     def _get_shop(self):
         """Get the shop to show history for."""
@@ -409,6 +498,12 @@ class ShopECashHistoryView(LoginRequiredMixin, ListView):
         context['shop'] = shop
         context['shop_balance'] = ECashLedger.get_shop_balance(tenant, shop) if shop else Decimal('0')
         
+        # Pass filters to context
+        context['date_from'] = self.request.GET.get('date_from', '')
+        context['date_to'] = self.request.GET.get('date_to', '')
+        context['min_amount'] = self.request.GET.get('min_amount', '')
+        context['max_amount'] = self.request.GET.get('max_amount', '')
+        
         # For accountants/auditors, provide shop selector
         if user.role and user.role.name in ['ACCOUNTANT', 'AUDITOR', 'ADMIN']:
             from apps.core.models import Location
@@ -417,6 +512,220 @@ class ShopECashHistoryView(LoginRequiredMixin, ListView):
             ).order_by('name')
         
         return context
+
+from django.views import View
+
+class ShopECashExportView(LoginRequiredMixin, View):
+    """Export shop e-cash history to Excel or PDF."""
+    
+    def dispatch(self, request, *args, **kwargs):
+        allowed_roles = ['SHOP_MANAGER', 'ACCOUNTANT', 'AUDITOR', 'ADMIN']
+        if request.user.role and request.user.role.name not in allowed_roles:
+            messages.error(request, "You don't have permission to export e-cash history.")
+            return redirect('core:dashboard')
+        return super().dispatch(request, *args, **kwargs)
+        
+    def get(self, request):
+        from datetime import datetime
+        from apps.core.excel_utils import create_export_workbook, build_excel_response
+        from apps.core.pdf_utils import export_to_pdf
+        from apps.core.models import Location
+        
+        user = request.user
+        tenant = user.tenant
+        
+        shop_id = request.GET.get('shop')
+        role_name = user.role.name if user.role else None
+        
+        if role_name in ['ACCOUNTANT', 'AUDITOR', 'ADMIN']:
+            if shop_id:
+                shop = Location.objects.filter(pk=shop_id, tenant=tenant, location_type='SHOP').first()
+            else:
+                shop = Location.objects.filter(tenant=tenant, location_type='SHOP', is_active=True).first()
+        else:
+            shop = user.location if (user.location and user.location.location_type == 'SHOP') else None
+            
+        if not shop:
+            messages.error(request, 'Shop not found.')
+            return redirect('payments:shop_ecash_history')
+            
+        queryset = ECashLedger.objects.filter(tenant=tenant, shop=shop).select_related('created_by')
+        
+        date_from = request.GET.get('date_from')
+        date_to = request.GET.get('date_to')
+        min_amount = request.GET.get('min_amount')
+        max_amount = request.GET.get('max_amount')
+        
+        date_range_str = "All Time"
+        if date_from and date_to:
+            date_range_str = f"{date_from} to {date_to}"
+        elif date_from:
+            date_range_str = f"From {date_from}"
+        elif date_to:
+            date_range_str = f"Until {date_to}"
+            
+        if date_from:
+            try:
+                date_from_parsed = datetime.strptime(date_from, '%Y-%m-%d').date()
+                queryset = queryset.filter(created_at__date__gte=date_from_parsed)
+            except ValueError:
+                pass
+        if date_to:
+            try:
+                date_to_parsed = datetime.strptime(date_to, '%Y-%m-%d').date()
+                queryset = queryset.filter(created_at__date__lte=date_to_parsed)
+            except ValueError:
+                pass
+        if min_amount:
+            try:
+                queryset = queryset.filter(amount__gte=Decimal(min_amount))
+            except (ValueError, TypeError):
+                pass
+        if max_amount:
+            try:
+                queryset = queryset.filter(amount__lte=Decimal(max_amount))
+            except (ValueError, TypeError):
+                pass
+                
+        # Sort
+        sort_by = request.GET.get('sort', 'created_at')
+        direction = request.GET.get('dir', 'desc')
+        if direction == 'desc':
+            sort_by = f"-{sort_by}"
+            
+        valid_sorts = ['created_at', '-created_at', 'amount', '-amount', 'transaction_type', '-transaction_type', 'reference', '-reference']
+        if sort_by in valid_sorts:
+            queryset = queryset.order_by(sort_by)
+        else:
+            queryset = queryset.order_by('-created_at')
+            
+        headers = ['Date', 'Type', 'Amount', 'Reference', 'By', 'Notes']
+        rows = []
+        for t in queryset:
+            ref = f"{t.reference_type} #{t.reference_id}" if (t.reference_type and t.reference_id) else (t.paystack_reference or "-")
+            by = t.created_by.get_full_name() or t.created_by.email if t.created_by else 'System'
+            rows.append([
+                t.created_at.strftime('%Y-%m-%d %H:%M'),
+                t.get_transaction_type_display(),
+                float(t.amount),
+                ref,
+                by,
+                t.notes or '-'
+            ])
+            
+        export_format = request.GET.get('format', 'excel')
+        if export_format == 'pdf':
+            metadata = {
+                'generator_name': user.get_full_name() or user.email,
+                'shop_name': shop.name,
+                'date_range': date_range_str
+            }
+            return export_to_pdf('shop_ecash_history.pdf', 'Shop E-Cash History', headers, rows, metadata=metadata)
+        else:
+            wb = create_export_workbook('E-Cash History', headers, rows)
+            return build_excel_response(wb, 'shop_ecash_history.xlsx')
+
+class ECashLedgerExportView(LoginRequiredMixin, View):
+    """Export global e-cash ledger to Excel or PDF."""
+    
+    def dispatch(self, request, *args, **kwargs):
+        allowed_roles = ['ACCOUNTANT', 'AUDITOR', 'ADMIN']
+        if request.user.role and request.user.role.name not in allowed_roles:
+            messages.error(request, "You don't have permission to export the ledger.")
+            return redirect('core:dashboard')
+        return super().dispatch(request, *args, **kwargs)
+        
+    def get(self, request):
+        from datetime import datetime
+        from apps.core.excel_utils import create_export_workbook, build_excel_response
+        from apps.core.pdf_utils import export_to_pdf
+        
+        user = request.user
+        tenant = user.tenant
+        
+        queryset = ECashLedger.objects.filter(tenant=tenant).select_related('created_by', 'shop')
+        
+        date_from = request.GET.get('date_from')
+        date_to = request.GET.get('date_to')
+        min_amount = request.GET.get('min_amount')
+        max_amount = request.GET.get('max_amount')
+        shop_id = request.GET.get('shop')
+        
+        date_range_str = "All Time"
+        if date_from and date_to:
+            date_range_str = f"{date_from} to {date_to}"
+        elif date_from:
+            date_range_str = f"From {date_from}"
+        elif date_to:
+            date_range_str = f"Until {date_to}"
+            
+        shop_name = "All Shops"
+        if shop_id:
+            from apps.core.models import Location
+            loc = Location.objects.filter(pk=shop_id, tenant=tenant).first()
+            if loc: shop_name = loc.name
+            queryset = queryset.filter(shop_id=shop_id)
+            
+        if date_from:
+            try:
+                date_from_parsed = datetime.strptime(date_from, '%Y-%m-%d').date()
+                queryset = queryset.filter(created_at__date__gte=date_from_parsed)
+            except ValueError:
+                pass
+        if date_to:
+            try:
+                date_to_parsed = datetime.strptime(date_to, '%Y-%m-%d').date()
+                queryset = queryset.filter(created_at__date__lte=date_to_parsed)
+            except ValueError:
+                pass
+        if min_amount:
+            try:
+                queryset = queryset.filter(amount__gte=Decimal(min_amount))
+            except (ValueError, TypeError):
+                pass
+        if max_amount:
+            try:
+                queryset = queryset.filter(amount__lte=Decimal(max_amount))
+            except (ValueError, TypeError):
+                pass
+                
+        # Sort
+        sort_by = request.GET.get('sort', 'created_at')
+        direction = request.GET.get('dir', 'desc')
+        if direction == 'desc':
+            sort_by = f"-{sort_by}"
+            
+        valid_sorts = ['created_at', '-created_at', 'amount', '-amount', 'transaction_type', '-transaction_type', 'reference', '-reference', 'shop__name', '-shop__name']
+        if sort_by in valid_sorts:
+            queryset = queryset.order_by(sort_by)
+        else:
+            queryset = queryset.order_by('-created_at')
+            
+        headers = ['Date', 'Type', 'Shop', 'Reference', 'Amount', 'Balance After', 'Notes']
+        rows = []
+        for t in queryset:
+            ref = f"{t.reference_type} #{t.reference_id}" if (t.reference_type and t.reference_id) else (t.paystack_reference or "-")
+            rows.append([
+                t.created_at.strftime('%Y-%m-%d %H:%M'),
+                t.get_transaction_type_display(),
+                t.shop.name if t.shop else '-',
+                ref,
+                float(t.amount),
+                float(t.balance_after),
+                t.notes or '-'
+            ])
+            
+        export_format = request.GET.get('format', 'excel')
+        if export_format == 'pdf':
+            metadata = {
+                'generator_name': user.get_full_name() or user.email,
+                'shop_name': shop_name,
+                'date_range': date_range_str
+            }
+            return export_to_pdf('ecash_ledger.pdf', 'E-Cash Ledger', headers, rows, metadata=metadata)
+        else:
+            wb = create_export_workbook('E-Cash Ledger', headers, rows)
+            return build_excel_response(wb, 'ecash_ledger.xlsx')
 
 
 @csrf_exempt

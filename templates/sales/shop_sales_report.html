@@ -9,9 +9,23 @@
         <p class="text-muted mb-0">Sales breakdown{% if shop %} - {{ shop.name }}{% endif %}</p>
     </div>
     {% if shop %}
-    <a href="{% url 'sales:shop_sales_report_export' %}?{{ request.GET.urlencode }}" class="btn btn-outline-success">
-        <i class="bi bi-file-earmark-spreadsheet me-1"></i>Export
-    </a>
+    <div class="dropdown">
+        <button class="btn btn-outline-success dropdown-toggle" type="button" id="exportDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+            <i class="bi bi-download me-1"></i>Export
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="exportDropdown">
+            <li>
+                <a class="dropdown-item text-success" href="{% url 'sales:shop_sales_report_export' %}?{{ request.GET.urlencode }}&format=excel">
+                    <i class="bi bi-file-earmark-excel me-2"></i>Export as Excel
+                </a>
+            </li>
+            <li>
+                <a class="dropdown-item text-danger" href="{% url 'sales:shop_sales_report_export' %}?{{ request.GET.urlencode }}&format=pdf">
+                    <i class="bi bi-file-earmark-pdf me-2"></i>Export as PDF
+                </a>
+            </li>
+        </ul>
+    </div>
     {% endif %}
 </div>
 

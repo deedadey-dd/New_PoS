@@ -17,12 +17,14 @@ class ShopManagerSettingsForm(forms.ModelForm):
             'show_logo_on_receipt',
             'receipt_header', 
             'receipt_footer', 
+            'enable_momo_payment',
         ]
         widgets = {
             'receipt_printer_type': forms.Select(attrs={'class': 'form-select'}),
             'show_logo_on_receipt': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'receipt_header': forms.Textarea(attrs={'class': 'form-control', 'rows': 3, 'placeholder': 'Optional custom header text'}),
             'receipt_footer': forms.Textarea(attrs={'class': 'form-control', 'rows': 3, 'placeholder': 'Thank you! Come again.'}),
+            'enable_momo_payment': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         }
 
 
@@ -36,6 +38,7 @@ class AdminShopPaymentSettingsForm(forms.ModelForm):
             'enable_cash_payment',
             'enable_credit_payment',
             'enable_ecash_payment',
+            'enable_momo_payment',
             'paystack_public_key',
             'paystack_secret_key',
         ]
@@ -43,6 +46,7 @@ class AdminShopPaymentSettingsForm(forms.ModelForm):
             'enable_cash_payment': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'enable_credit_payment': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'enable_ecash_payment': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'enable_momo_payment': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'paystack_public_key': forms.TextInput(attrs={
                 'class': 'form-control', 
                 'placeholder': 'pk_live_... or pk_test_...'

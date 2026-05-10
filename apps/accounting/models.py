@@ -143,3 +143,60 @@ class CashTransfer(TenantModel):
                     reference_type='CashTransfer',
                     reference_id=self.pk
                 )
+
+class BankTransfer(TenantModel):
+    """
+    Records a bank deposit made by an accountant, removing funds from their dashboard.
+    """
+    FUND_CHOICES = [
+        ('CASH', 'Physical Cash'),
+        ('ECASH', 'E-Cash'),
+        ('MOMO', 'Local Momo'),
+    ]
+    
+    amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal('0.01'))]
+    )
+    fund_source = models.CharField(max_length=10, choices=FUND_CHOICES)
+    teller_name = models.CharField(max_length=255)
+    notes = models.TextField(blank=True, help_text="Additional information about the deposit")
+    
+    accountant = models.ForeignKey(
+        User,
+        on_delete=models.PROTECT,
+        related_name='bank_transfers'
+    )
+    
+    receipt_number = models.CharField(max_length=50, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = "Bank Transfer"
+        verbose_name_plural = "Bank Transfers"
+        
+    def __str__(self):
+        return f"{self.get_fund_source_display()} to Bank - {self.amount} ({self.created_at.strftime('%Y-%m-%d')})"
+        
+    def save(self, *args, **kwargs):
+        # Auto-generate receipt number
+        if not self.receipt_number:
+            today = timezone.now().strftime('%Y%m%d')
+            last = BankTransfer.objects.filter(
+                tenant=self.tenant,
+                receipt_number__startswith=f"BT{today}"
+            ).order_by('-receipt_number').first()
+            
+            if last and last.receipt_number:
+                try:
+                    num = int(last.receipt_number[-4:]) + 1
+                except ValueError:
+                    num = 1
+            else:
+                num = 1
+            
+            self.receipt_number = f"BT{today}{num:04d}"
+        
+        super().save(*args, **kwargs)

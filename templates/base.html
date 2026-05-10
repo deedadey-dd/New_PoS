@@ -88,11 +88,38 @@
                                 <li class="nav-item">
                                     <a class="nav-link text-white-50 py-1 {% if '/sales/' in request.path and '/pos/' not in request.path and 'report' not in request.path %}text-white{% endif %}"
                                         href="{% url 'sales:sale_list' %}">
-                                        <i class="bi bi-clock-history me-1"></i>Sales History
+                                        <i class="bi bi-clock-history me-1"></i>All Sales History
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if '/shifts/' in request.path %}text-white{% endif %}"
+                                        href="{% url 'sales:shift_list' %}">
+                                        <i class="bi bi-calendar-check me-1"></i>Shifts
+                                    </a>
+                                </li>
+                                <li class="nav-item mt-1 pt-1">
+                                    <span class="nav-link text-white-50 py-0 fw-bold small text-uppercase" style="letter-spacing: 0.5px; font-size: 0.75rem;">Payment History</span>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 ps-4"
+                                        href="{% url 'sales:sale_list' %}?payment=CASH">
+                                        <i class="bi bi-cash me-1"></i>Cash History
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 ps-4"
+                                        href="{% url 'sales:sale_list' %}?payment=ECASH">
+                                        <i class="bi bi-credit-card me-1"></i>E-Cash History
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 ps-4"
+                                        href="{% url 'sales:sale_list' %}?payment=MOMO">
+                                        <i class="bi bi-phone me-1"></i>Local Momo
                                     </a>
                                 </li>
                                 {% endif %}
-                                <li class="nav-item">
+                                <li class="nav-item border-top border-secondary mt-1 pt-1">
                                     <a class="nav-link text-white-50 py-1 {% if 'price-history' in request.path %}text-white{% endif %}"
                                         href="{% url 'accounting:price_history' %}">
                                         <i class="bi bi-tags me-1"></i>Price History
@@ -141,6 +168,18 @@
                                     <a class="nav-link text-white-50 py-1 {% if 'cash-transfers' in request.path %}active text-white{% endif %}"
                                         href="{% url 'accounting:cash_transfer_list' %}">
                                         <i class="bi bi-cash-stack me-1"></i>Cash Transfers
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if 'digital-confirmations' in request.path %}active text-white{% endif %}"
+                                        href="{% url 'accounting:digital_confirmations' %}">
+                                        <i class="bi bi-check-circle me-1"></i>Digital Confirmations
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if 'bank-transfers/new' in request.path %}active text-white{% endif %}"
+                                        href="{% url 'accounting:bank_transfer_create' %}">
+                                        <i class="bi bi-bank me-1"></i>Bank Transfers
                                     </a>
                                 </li>
                             </ul>
@@ -463,15 +502,27 @@
                         <span id="sync-status-indicator" class="fw-bold fs-5 text-success">✓</span>
                     </div>
 
-                    <!-- Cash on Hand Badge (exclude ADMIN) -->
+                    <!-- Cash on Hand Dropdown (exclude ADMIN) -->
                     {% if role_name == 'SHOP_ATTENDANT' or role_name == 'SHOP_MANAGER' or role_name == 'ACCOUNTANT' %}
-                    <a href="{% url 'accounting:cash_transfer_list' %}" class="me-3 text-decoration-none"
-                        title="Cash on Hand - Click to manage transfers">
-                        <span class="badge bg-success fs-6">
-                            <i
-                                class="bi bi-cash me-1"></i>{{ currency_symbol }}{{ cash_on_hand|floatformat:"2g"|default:"0.00" }}
-                        </span>
-                    </a>
+                    <div class="dropdown me-3">
+                        <a href="#" class="text-decoration-none dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" title="Cash on Hand">
+                            <span class="badge bg-success fs-6">
+                                <i class="bi bi-cash me-1"></i>{{ currency_symbol }}{{ cash_on_hand|floatformat:"2g"|default:"0.00" }}
+                            </span>
+                        </a>
+                        <ul class="dropdown-menu shadow">
+                            <li>
+                                <a class="dropdown-item" href="{% url 'accounting:cash_transfer_list' %}">
+                                    <i class="bi bi-arrow-left-right me-2"></i>Cash Transfers
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="{% url 'sales:sale_list' %}?payment=CASH">
+                                    <i class="bi bi-clock-history me-2"></i>Cash History
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
                     {% endif %}
 
                     <!-- E-Cash Balance Badge (exclude ADMIN and AUDITOR) -->
@@ -481,7 +532,17 @@
                         title="E-Cash Balance - Click to {% if role_name == 'ACCOUNTANT' %}withdraw{% else %}view history{% endif %}">
                         <span class="badge bg-info fs-6">
                             <i
-                                class="bi bi-phone me-1"></i>{{ currency_symbol }}{{ ecash_balance|floatformat:"2g"|default:"0.00" }}
+                                class="bi bi-credit-card me-1"></i>{{ currency_symbol }}{{ ecash_balance|floatformat:"2g"|default:"0.00" }}
+                        </span>
+                    </a>
+                    {% endif %}
+
+                    <!-- Local Momo Shortcut -->
+                    {% if role_name in 'SHOP_MANAGER,ACCOUNTANT,ADMIN' and request.user.tenant.allow_momo_payments %}
+                    <a href="{% if role_name == 'ACCOUNTANT' %}{% url 'accounting:shop_momo_list' %}{% else %}{% url 'accounting:shop_momo_history' %}{% endif %}" class="me-3 text-decoration-none"
+                        title="Local Momo {% if role_name == 'ACCOUNTANT' %}Withdrawals{% else %}History{% endif %}">
+                        <span class="badge text-dark fs-6" style="background-color: #eab308;">
+                            <i class="bi bi-phone me-1"></i>{{ currency_symbol }}{{ momo_balance|floatformat:"2g"|default:"0.00" }}
                         </span>
                     </a>
                     {% endif %}
@@ -500,10 +561,8 @@
                     {% if total_credit_debt and total_credit_debt > 0 and role_name != 'ADMIN' %}
                     <a href="{% url 'customers:customer_list' %}" class="me-3 text-decoration-none"
                         title="Total Customer Debt">
-                        <span class="badge bg-warning text-dark fs-6">
-                            <i
-                                class="bi bi-person-dash me-1"></i>{{ currency_symbol }}{{ total_credit_debt|floatformat:"2g" }}
-                            Debt
+                        <span class="badge text-white fs-6" style="background-color: #fd7e14;">
+                            <i class="bi bi-person-dash me-1"></i>{{ currency_symbol }}{{ total_credit_debt|floatformat:"2g" }} Debt
                         </span>
                     </a>
                     {% endif %}

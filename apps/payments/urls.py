@@ -22,9 +22,11 @@ urlpatterns = [
     
     # E-Cash Ledger
     path('ledger/', views.ECashLedgerView.as_view(), name='ecash_ledger'),
+    path('ledger/export/', views.ECashLedgerExportView.as_view(), name='ecash_ledger_export'),
     
     # Shop E-Cash Management (new)
     path('shops/', views.ShopECashListView.as_view(), name='shop_ecash_list'),
     path('shops/<int:shop_id>/withdraw/', views.ShopECashWithdrawView.as_view(), name='shop_ecash_withdraw'),
     path('shops/history/', views.ShopECashHistoryView.as_view(), name='shop_ecash_history'),
+    path('shops/history/export/', views.ShopECashExportView.as_view(), name='shop_ecash_export'),
 ]

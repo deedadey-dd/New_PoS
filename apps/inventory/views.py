@@ -86,6 +86,16 @@ class CategoryDeleteView(LoginRequiredMixin, DeleteView):
     
     def get_queryset(self):
         return Category.objects.filter(tenant=self.request.user.tenant)
+        
+    def dispatch(self, request, *args, **kwargs):
+        user = request.user
+        if not user.is_superuser and user.role and user.role.name == 'SHOP_MANAGER':
+            if not user.tenant.shop_manager_can_delete_categories:
+                from django.contrib import messages
+                from django.shortcuts import redirect
+                messages.error(request, 'You do not have permission to delete categories. Please contact an administrator.')
+                return redirect('inventory:category_list')
+        return super().dispatch(request, *args, **kwargs)
 
 
 # ============ Product Views ============
@@ -1171,6 +1181,66 @@ class InventoryLedgerListView(LoginRequiredMixin, SortableMixin, ListView):
 
 
 # ============ API Views ============
+
+class InventoryLedgerReceiptView(LoginRequiredMixin, View):
+    """Printable receipt for an inventory ledger entry."""
+    template_name = 'inventory/inventory_ledger_receipt.html'
+    
+    def get(self, request, pk):
+        entry = get_object_or_404(InventoryLedger, pk=pk, tenant=request.user.tenant)
+        
+        # Security check: User must have relevant role
+        role_name = request.user.role.name if hasattr(request.user, 'role') and request.user.role else ''
+        has_access = role_name in ['ADMIN', 'ACCOUNTANT', 'AUDITOR', 'STORES_MANAGER']
+        if not has_access and role_name in ['SHOP_MANAGER', 'PRODUCTION_MANAGER']:
+            has_access = (entry.location_id == request.user.location_id)
+            
+        if not has_access:
+            messages.error(request, "You don't have permission to view this record.")
+            return redirect('core:dashboard')
+            
+        return render(request, self.template_name, {
+            'entry': entry,
+            'current_tenant': request.user.tenant,
+        })
+
+@login_required
+def api_inventory_ledger_detail(request, pk):
+    """Return JSON details for an inventory ledger entry."""
+    try:
+        entry = InventoryLedger.objects.get(pk=pk, tenant=request.user.tenant)
+        
+        # Security check
+        role_name = request.user.role.name if hasattr(request.user, 'role') and request.user.role else ''
+        has_access = role_name in ['ADMIN', 'ACCOUNTANT', 'AUDITOR', 'STORES_MANAGER']
+        if not has_access and role_name in ['SHOP_MANAGER', 'PRODUCTION_MANAGER']:
+            has_access = (entry.location_id == request.user.location_id)
+            
+        if not has_access:
+            return JsonResponse({'error': 'Permission denied'}, status=403)
+            
+        data = {
+            'id': entry.pk,
+            'product': entry.product.name,
+            'sku': entry.product.sku,
+            'location': entry.location.name if entry.location else 'N/A',
+            'transaction_type': entry.get_transaction_type_display(),
+            'transaction_code': entry.transaction_type,
+            'quantity': str(entry.quantity),
+            'unit_cost': str(entry.unit_cost),
+            'total_value': str(entry.quantity * entry.unit_cost) if entry.quantity and entry.unit_cost else '0',
+            'batch': entry.batch.batch_number if entry.batch else 'N/A',
+            'reference_type': entry.reference_type,
+            'reference_id': entry.reference_id,
+            'notes': entry.notes,
+            'created_by': entry.created_by.get_full_name() or entry.created_by.email if entry.created_by else 'System',
+            'created_at': entry.created_at.strftime('%b %d, %Y %H:%M')
+        }
+        return JsonResponse(data)
+    except InventoryLedger.DoesNotExist:
+        return JsonResponse({'error': 'Record not found'}, status=404)
+
+
 def get_batches_for_product(request):
     """AJAX endpoint to get batches for a product at a location."""
     product_id = request.GET.get('product_id')

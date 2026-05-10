@@ -103,6 +103,11 @@
                         <small class="d-block text-muted mt-1">Allow shop managers to receive stock and create
                             batches</small>
                     </div>
+                    <div class="form-check form-switch mb-3">
+                        {{ form.shop_manager_can_delete_categories }}
+                        <label class="form-check-label ms-2">Can Delete Categories</label>
+                        <small class="d-block text-muted mt-1">Allow shop managers to delete product categories</small>
+                    </div>
                     <div class="form-check form-switch mb-0">
                         {{ form.shops_can_see_other_stock }}
                         <label class="form-check-label ms-2">Can See Other Locations' Stock</label>
@@ -113,18 +118,23 @@
             </div>
         </div>
 
-        <!-- Cash Transfer Settings -->
+        <!-- Financial Settings -->
         <div class="col-lg-6 mb-4">
             <div class="card h-100">
                 <div class="card-header bg-success text-white">
-                    <h5 class="mb-0"><i class="bi bi-cash-stack me-2"></i>Cash Transfer Settings</h5>
+                    <h5 class="mb-0"><i class="bi bi-cash-stack me-2"></i>Financial Settings</h5>
                 </div>
                 <div class="card-body">
-                    <div class="form-check form-switch mb-0">
+                    <div class="form-check form-switch mb-3">
                         {{ form.allow_accountant_to_shop_transfers }}
                         <label class="form-check-label ms-2">Allow Accountant → Shop Transfers</label>
                         <small class="d-block text-muted mt-1">Allow accountants to send float/change money to shops. If
                             disabled, cash only flows from shops to accountants.</small>
+                    </div>
+                    <div class="form-check form-switch mb-0">
+                        {{ form.allow_momo_payments }}
+                        <label class="form-check-label ms-2">Allow Momo Payments</label>
+                        <small class="d-block text-muted mt-1">Allow shops to receive Mobile Money payments. Shop Managers must also enable it per-shop.</small>
                     </div>
                 </div>
             </div>

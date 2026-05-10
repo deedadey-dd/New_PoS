@@ -314,6 +314,120 @@ class ShiftCloseView(LoginRequiredMixin, View):
         return redirect('core:dashboard')
 
 
+class ShiftListView(LoginRequiredMixin, SortableMixin, ListView):
+    """List of all shifts."""
+    model = Shift
+    template_name = 'sales/shift_list.html'
+    context_object_name = 'shifts'
+    paginate_by = 20
+    sortable_fields = ['start_time', 'end_time', 'opening_cash', 'closing_cash', 'status']
+    default_sort = '-start_time'
+
+    def get_queryset(self):
+        qs = Shift.objects.filter(tenant=self.request.user.tenant)
+        
+        # Filters
+        shop = self.request.GET.get('shop')
+        attendant = self.request.GET.get('attendant')
+        status = self.request.GET.get('status')
+        date_from = self.request.GET.get('date_from')
+        date_to = self.request.GET.get('date_to')
+        
+        if shop:
+            qs = qs.filter(shop_id=shop)
+        if attendant:
+            qs = qs.filter(attendant_id=attendant)
+        if status:
+            qs = qs.filter(status=status)
+        if date_from:
+            qs = qs.filter(start_time__date__gte=date_from)
+        if date_to:
+            qs = qs.filter(start_time__date__lte=date_to)
+            
+        qs = self.apply_sorting(qs)
+        
+        role_name = self.request.user.role.name if self.request.user.role else ''
+        
+        if role_name == 'ATTENDANT':
+            qs = qs.filter(attendant=self.request.user)
+        elif role_name == 'SHOP_MANAGER':
+            qs = qs.filter(shop=self.request.user.location)
+            
+        return qs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['role_name'] = self.request.user.role.name if self.request.user.role else ''
+        
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        
+        context['shops'] = Location.objects.filter(tenant=self.request.user.tenant, location_type='SHOP')
+        context['attendants'] = User.objects.filter(tenant=self.request.user.tenant, role__name='ATTENDANT')
+        
+        context['current_shop'] = self.request.GET.get('shop', '')
+        context['current_attendant'] = self.request.GET.get('attendant', '')
+        context['current_status'] = self.request.GET.get('status', '')
+        context['date_from'] = self.request.GET.get('date_from', '')
+        context['date_to'] = self.request.GET.get('date_to', '')
+        
+        return context
+
+
+class ShiftReceiptView(LoginRequiredMixin, View):
+    """Printable receipt for a shift."""
+    template_name = 'sales/shift_receipt.html'
+    
+    def get(self, request, pk):
+        shift = get_object_or_404(Shift, pk=pk, tenant=request.user.tenant)
+        
+        # Check permissions
+        role_name = request.user.role.name if request.user.role else ''
+        if role_name == 'ATTENDANT' and shift.attendant != request.user:
+            messages.error(request, "You don't have permission to view this shift.")
+            return redirect('sales:shift_list')
+        elif role_name == 'SHOP_MANAGER' and shift.shop != request.user.location:
+            messages.error(request, "You don't have permission to view this shift.")
+            return redirect('sales:shift_list')
+            
+        return render(request, self.template_name, {
+            'shift': shift,
+            'current_tenant': request.user.tenant,
+        })
+
+
+@login_required
+def api_shift_detail(request, pk):
+    """Return JSON details for a shift."""
+    try:
+        shift = Shift.objects.get(pk=pk, tenant=request.user.tenant)
+        
+        # Check permissions
+        role_name = request.user.role.name if request.user.role else ''
+        if role_name == 'ATTENDANT' and shift.attendant != request.user:
+            return JsonResponse({'error': 'Permission denied'}, status=403)
+        elif role_name == 'SHOP_MANAGER' and shift.shop != request.user.location:
+            return JsonResponse({'error': 'Permission denied'}, status=403)
+            
+        data = {
+            'id': shift.pk,
+            'shop': shift.shop.name,
+            'attendant': shift.attendant.get_full_name() or shift.attendant.email,
+            'status': shift.get_status_display(),
+            'start_time': shift.start_time.strftime('%b %d, %Y %H:%M'),
+            'end_time': shift.end_time.strftime('%b %d, %Y %H:%M') if shift.end_time else 'Active',
+            'opening_cash': str(shift.opening_cash),
+            'closing_cash': str(shift.closing_cash) if shift.closing_cash is not None else 'N/A',
+            'total_sales': str(shift.total_sales),
+            'expected_cash': str(shift.expected_cash),
+            'variance': str(shift.cash_variance) if shift.cash_variance is not None else 'N/A',
+            'notes': shift.notes
+        }
+        return JsonResponse(data)
+    except Shift.DoesNotExist:
+        return JsonResponse({'error': 'Shift not found'}, status=404)
+
+
 class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
     """List sales for the shop."""
     model = Sale
@@ -537,7 +651,7 @@ def api_complete_sale(request):
     cart_items = data.get('items', [])
     payment_method = data.get('payment_method', 'CASH')
     # Ensure payment_method is valid - handle empty string or invalid values
-    valid_payment_methods = ['CASH', 'CREDIT', 'ECASH', 'MIXED', 'PAYMENT_ON_ACCOUNT']
+    valid_payment_methods = ['CASH', 'CREDIT', 'ECASH', 'MIXED', 'PAYMENT_ON_ACCOUNT', 'MOMO']
     if not payment_method or payment_method not in valid_payment_methods:
         payment_method = 'CASH'
     amount_paid = Decimal(str(data.get('amount_paid', 0)))
@@ -587,7 +701,7 @@ def api_complete_sale(request):
                     customer=customer,
                     transaction_type='CREDIT',  # Credit = Payment received
                     amount=amount_paid,
-                    description=f"Payment on account",
+                    description=f"Payment on account ({payment_method})",
                     reference_id=f"POA-{timezone.now().strftime('%Y%m%d%H%M%S')}",
                     balance_before=balance_before,
                     balance_after=customer.current_balance,
@@ -1119,7 +1233,7 @@ def verify_ecash_payment(request):
                     customer=customer,
                     transaction_type='CREDIT',
                     amount=amount,
-                    description=f"E-Cash Payment (Paystack: {reference[:20]}...)",
+                    description=f"ECASH Payment (Paystack: {reference[:20]}...)",
                     reference_id=reference,
                     balance_before=balance_before,
                     balance_after=customer.current_balance,
@@ -1239,6 +1353,48 @@ def api_sync_offline_sales(request):
         payment_method = data.get('payment_method', 'CASH')
         amount_paid = Decimal(str(data.get('amount_paid', 0)))
         offline_created_at = data.get('offline_created_at')
+        is_payment_on_account = data.get('is_payment_on_account', False)
+
+        # Handle payment on account
+        if is_payment_on_account:
+            if not customer_id:
+                return JsonResponse({'error': 'Customer required for payment on account'}, status=400)
+            if amount_paid <= 0:
+                return JsonResponse({'error': 'Payment amount must be positive'}, status=400)
+            
+            from apps.customers.models import Customer, CustomerTransaction
+            customer = Customer.objects.filter(tenant=tenant, pk=customer_id).first()
+            if not customer:
+                return JsonResponse({'error': 'Customer not found'}, status=400)
+                
+            try:
+                with transaction.atomic():
+                    balance_before = customer.current_balance
+                    customer.current_balance -= amount_paid
+                    customer.save()
+                    
+                    txn = CustomerTransaction.objects.create(
+                        tenant=tenant,
+                        customer=customer,
+                        transaction_type='CREDIT',
+                        amount=amount_paid,
+                        description=f"Payment on account ({payment_method})",
+                        reference_id=f"POA-OFF-{timezone.now().strftime('%Y%m%d%H%M%S')}",
+                        balance_before=balance_before,
+                        balance_after=customer.current_balance,
+                        performed_by=user
+                    )
+                    
+                    return JsonResponse({
+                        'success': True,
+                        'sale_id': txn.pk,
+                        'sale_number': 'POA-' + str(txn.pk),
+                        'has_conflicts': False,
+                        'conflicts': [],
+                        'message': 'Offline payment synced successfully.'
+                    })
+            except Exception as e:
+                return JsonResponse({'error': str(e)}, status=400)
 
         if not cart_items:
             return JsonResponse({
@@ -1246,11 +1402,11 @@ def api_sync_offline_sales(request):
                 'error': 'No items in offline sale.'
             }, status=400)
 
-        # Only CASH and CREDIT allowed for offline sales (no E-Cash)
-        if payment_method not in ('CASH', 'CREDIT', 'MIXED'):
+        # Only CASH, CREDIT and MOMO allowed for offline sales (no E-Cash)
+        if payment_method not in ('CASH', 'CREDIT', 'MIXED', 'MOMO'):
             return JsonResponse({
                 'success': False,
-                'error': 'Only Cash or Credit payments are supported offline.'
+                'error': 'Only Cash, Credit or Momo payments are supported offline.'
             }, status=400)
 
         # Get shop
@@ -1474,8 +1630,37 @@ class SaleListExportView(LoginRequiredMixin, View):
                 float(sale.amount_paid),
             ])
 
-        wb = create_export_workbook('Sales', headers, rows)
-        return build_excel_response(wb, 'sales_export.xlsx')
+        export_format = request.GET.get('format', 'excel')
+        if export_format == 'pdf':
+            from apps.core.pdf_utils import export_to_pdf
+            date_range_str = "All Time"
+            if date_from and date_to:
+                date_range_str = f"{date_from} to {date_to}"
+            elif date_from:
+                date_range_str = f"From {date_from}"
+            elif date_to:
+                date_range_str = f"Until {date_to}"
+                
+            shop_name = "All Shops"
+            if role_name not in ['AUDITOR', 'ACCOUNTANT', 'ADMIN']:
+                if user.location and user.location.location_type == 'SHOP':
+                    shop_name = user.location.name
+            else:
+                shop_id = request.GET.get('shop')
+                if shop_id:
+                    from apps.core.models import Location
+                    loc = Location.objects.filter(pk=shop_id).first()
+                    if loc: shop_name = loc.name
+            
+            metadata = {
+                'generator_name': user.get_full_name() or user.email,
+                'shop_name': shop_name,
+                'date_range': date_range_str
+            }
+            return export_to_pdf('sales_export.pdf', 'Sales History', headers, rows, metadata=metadata)
+        else:
+            wb = create_export_workbook('Sales', headers, rows)
+            return build_excel_response(wb, 'sales_export.xlsx')
 
 
 class ShopSalesReportExportView(LoginRequiredMixin, View):
@@ -1564,9 +1749,6 @@ class ShopSalesReportExportView(LoginRequiredMixin, View):
                 float(a['ecash_amount'] or 0),
             ])
 
-        wb = create_export_workbook('Attendant Breakdown', att_headers, att_rows)
-
-        # Sheet 2: Product Breakdown
         items_filter = {
             'sale__tenant': user.tenant,
             'sale__shop': shop,
@@ -1591,9 +1773,27 @@ class ShopSalesReportExportView(LoginRequiredMixin, View):
             [p['product__name'], float(p['qty_sold'] or 0), float(p['revenue'] or 0)]
             for p in all_products
         ]
-        add_sheet(wb, 'Product Breakdown', prod_headers, prod_rows)
 
-        return build_excel_response(wb, f'shop_sales_report_{shop.name}_{date_from}_to_{date_to}.xlsx')
+        export_format = request.GET.get('format', 'excel')
+        if export_format == 'pdf':
+            from apps.core.pdf_utils import export_to_pdf
+            date_range_str = f"{date_from} to {date_to}" if date_from != date_to else str(date_from)
+            metadata = {
+                'generator_name': user.get_full_name() or user.email,
+                'shop_name': shop.name,
+                'date_range': date_range_str
+            }
+            return export_to_pdf(
+                f'shop_sales_report_{shop.name}_{date_from}_to_{date_to}.pdf', 
+                'Shop Sales Report', 
+                att_headers, att_rows,
+                additional_tables=[('Product Breakdown', prod_headers, prod_rows)],
+                metadata=metadata
+            )
+        else:
+            wb = create_export_workbook('Attendant Breakdown', att_headers, att_rows)
+            add_sheet(wb, 'Product Breakdown', prod_headers, prod_rows)
+            return build_excel_response(wb, f'shop_sales_report_{shop.name}_{date_from}_to_{date_to}.xlsx')
 
 
 class ShopSettingsUpdateView(LoginRequiredMixin, AdminOrManagerRequiredMixin, UpdateView):

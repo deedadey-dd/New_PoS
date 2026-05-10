@@ -1,0 +1,330 @@
+{% extends 'base.html' %}
+{% load sort_tags %}
+
+{% block title %}Shifts History{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1">Shifts History</h2>
+        <p class="text-muted mb-0">View and manage work shifts</p>
+    </div>
+    <div class="d-flex gap-2">
+        {% if role_name != 'AUDITOR' %}
+        <a href="{% url 'sales:pos' %}" class="btn btn-primary">
+            <i class="bi bi-shop me-2"></i>Open POS
+        </a>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-2">
+                <label class="form-label small">From Date</label>
+                <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small">To Date</label>
+                <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
+            </div>
+            
+            {% if role_name != 'ATTENDANT' and role_name != 'SHOP_MANAGER' %}
+            <div class="col-md-2">
+                <label class="form-label small">Shop</label>
+                <select name="shop" class="form-select form-select-sm">
+                    <option value="">All Shops</option>
+                    {% for shop in shops %}
+                    <option value="{{ shop.pk }}" {% if current_shop == shop.pk|stringformat:"i" %}selected{% endif %}>{{ shop.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+
+            {% if role_name != 'ATTENDANT' %}
+            <div class="col-md-2">
+                <label class="form-label small">Attendant</label>
+                <select name="attendant" class="form-select form-select-sm">
+                    <option value="">All Attendants</option>
+                    {% for att in attendants %}
+                    <option value="{{ att.pk }}" {% if current_attendant == att.pk|stringformat:"i" %}selected{% endif %}>{{ att.get_full_name|default:att.email }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+
+            <div class="col-md-2">
+                <label class="form-label small">Status</label>
+                <select name="status" class="form-select form-select-sm">
+                    <option value="">All Statuses</option>
+                    <option value="OPEN" {% if current_status == 'OPEN' %}selected{% endif %}>Open</option>
+                    <option value="CLOSED" {% if current_status == 'CLOSED' %}selected{% endif %}>Closed</option>
+                </select>
+            </div>
+
+            <div class="col-md-2 d-flex align-items-end gap-2">
+                <button type="submit" class="btn btn-primary btn-sm flex-grow-1">
+                    <i class="bi bi-filter me-1"></i>Filter
+                </button>
+                <a href="{% url 'sales:shift_list' %}" class="btn btn-outline-secondary btn-sm" title="Clear Filters">
+                    <i class="bi bi-x-lg"></i>
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+<div class="card">
+    <div class="card-body">
+        {% if shifts %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th>{% sort_link "ID" "id" %}</th>
+                        <th>{% sort_link "Start Time" "start_time" %}</th>
+                        <th>{% sort_link "End Time" "end_time" %}</th>
+                        <th>Shop</th>
+                        <th>Attendant</th>
+                        <th class="text-end">{% sort_link "Closing Cash" "closing_cash" %}</th>
+                        <th>Status</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for shift in shifts %}
+                    <tr>
+                        <td>
+                            <a href="#" class="fw-bold text-decoration-none shift-detail-link"
+                               data-shift-id="{{ shift.pk }}">
+                                #{{ shift.pk }}
+                            </a>
+                        </td>
+                        <td>{{ shift.start_time|date:"M d, Y H:i" }}</td>
+                        <td>
+                            {% if shift.end_time %}
+                                {{ shift.end_time|date:"M d, Y H:i" }}
+                            {% else %}
+                                <span class="text-muted">Active</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ shift.shop.name }}</td>
+                        <td>{{ shift.attendant.get_full_name|default:shift.attendant.email }}</td>
+                        <td class="text-end">
+                            {% if shift.status == 'CLOSED' %}
+                                {{ current_tenant.currency_symbol|default:'$' }}{{ shift.closing_cash|floatformat:"2g" }}
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if shift.status == 'OPEN' %}
+                            <span class="badge bg-success">Open</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Closed</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">
+                            <a href="{% url 'sales:shift_receipt' shift.pk %}" class="btn btn-sm btn-outline-info"
+                                target="_blank" title="Print Receipt">
+                                <i class="bi bi-printer"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% include 'includes/audit_pagination.html' %}
+        {% else %}
+        <div class="text-center py-5">
+            <i class="bi bi-clock-history display-1 text-muted"></i>
+            <h4 class="mt-3">No Shifts Found</h4>
+            <p class="text-muted">No shifts have been opened or recorded yet.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Shift Detail Modal -->
+<div class="modal fade" id="shiftDetailModal" tabindex="-1" aria-labelledby="shiftDetailModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="shiftDetailModalLabel">
+                    <i class="bi bi-clock me-2"></i>Shift Details
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="shiftDetailBody">
+                <!-- Loading spinner -->
+                <div class="text-center py-5" id="shiftDetailLoading">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="text-muted mt-2">Loading shift details...</p>
+                </div>
+                <!-- Content (populated by JS) -->
+                <div id="shiftDetailContent" style="display:none;">
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <small class="text-muted d-block">Shift ID</small>
+                            <span id="shiftId" class="fw-bold"></span>
+                        </div>
+                        <div class="col-6 text-end">
+                            <span id="shiftStatus" class="badge"></span>
+                        </div>
+                    </div>
+                    <hr>
+                    <div class="row mb-2">
+                        <div class="col-4 text-muted">Shop:</div>
+                        <div class="col-8 fw-medium text-end" id="shiftShop"></div>
+                    </div>
+                    <div class="row mb-2">
+                        <div class="col-4 text-muted">Attendant:</div>
+                        <div class="col-8 fw-medium text-end" id="shiftAttendant"></div>
+                    </div>
+                    <div class="row mb-2">
+                        <div class="col-4 text-muted">Started:</div>
+                        <div class="col-8 text-end" id="shiftStartTime"></div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-4 text-muted">Ended:</div>
+                        <div class="col-8 text-end" id="shiftEndTime"></div>
+                    </div>
+                    
+                    <div class="card bg-light border-0 mb-3">
+                        <div class="card-body py-2">
+                            <div class="row mb-1">
+                                <div class="col-6 text-muted">Opening Cash:</div>
+                                <div class="col-6 text-end font-monospace" id="shiftOpeningCash"></div>
+                            </div>
+                            <div class="row mb-1">
+                                <div class="col-6 text-muted">Cash Sales:</div>
+                                <div class="col-6 text-end font-monospace text-success" id="shiftTotalSales"></div>
+                            </div>
+                            <hr class="my-1">
+                            <div class="row mb-1 fw-bold">
+                                <div class="col-6">Expected Cash:</div>
+                                <div class="col-6 text-end font-monospace" id="shiftExpectedCash"></div>
+                            </div>
+                            <div class="row mb-1 fw-bold">
+                                <div class="col-6">Closing Cash:</div>
+                                <div class="col-6 text-end font-monospace" id="shiftClosingCash"></div>
+                            </div>
+                            <div class="row mt-2" id="shiftVarianceRow">
+                                <div class="col-6 fw-bold">Variance:</div>
+                                <div class="col-6 text-end fw-bold font-monospace" id="shiftVariance"></div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="shiftNotesContainer" style="display:none;">
+                        <small class="text-muted d-block mb-1">Notes:</small>
+                        <p class="mb-0 border-start border-3 border-secondary ps-2 text-muted" id="shiftNotes"></p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <a href="#" class="btn btn-outline-info" id="shiftDetailPrintBtn" target="_blank">
+                    <i class="bi bi-printer me-1"></i>Print Receipt
+                </a>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const detailLinks = document.querySelectorAll('.shift-detail-link');
+    const modal = new bootstrap.Modal(document.getElementById('shiftDetailModal'));
+    
+    detailLinks.forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const shiftId = this.dataset.shiftId;
+            openShiftDetail(shiftId);
+        });
+    });
+    
+    function openShiftDetail(shiftId) {
+        // Reset UI
+        document.getElementById('shiftDetailContent').style.display = 'none';
+        document.getElementById('shiftDetailLoading').style.display = 'block';
+        document.getElementById('shiftDetailPrintBtn').href = `/sales/shift/${shiftId}/receipt/`;
+        
+        modal.show();
+        
+        // Fetch details
+        fetch(`/sales/api/shift/${shiftId}/detail/`)
+            .then(response => {
+                if (!response.ok) throw new Error('Failed to fetch details');
+                return response.json();
+            })
+            .then(data => {
+                // Populate data
+                document.getElementById('shiftId').textContent = '#' + data.id;
+                
+                const statusBadge = document.getElementById('shiftStatus');
+                statusBadge.className = 'badge';
+                statusBadge.textContent = data.status;
+                if (data.status === 'Open') statusBadge.classList.add('bg-success');
+                else statusBadge.classList.add('bg-secondary');
+                
+                document.getElementById('shiftShop').textContent = data.shop;
+                document.getElementById('shiftAttendant').textContent = data.attendant;
+                document.getElementById('shiftStartTime').textContent = data.start_time;
+                document.getElementById('shiftEndTime').textContent = data.end_time;
+                
+                document.getElementById('shiftOpeningCash').textContent = data.opening_cash;
+                document.getElementById('shiftTotalSales').textContent = '+' + data.total_sales;
+                document.getElementById('shiftExpectedCash').textContent = data.expected_cash;
+                document.getElementById('shiftClosingCash').textContent = data.closing_cash;
+                
+                const varianceRow = document.getElementById('shiftVarianceRow');
+                const varianceEl = document.getElementById('shiftVariance');
+                if (data.variance === 'N/A') {
+                    varianceRow.style.display = 'none';
+                } else {
+                    varianceRow.style.display = 'flex';
+                    const varianceVal = parseFloat(data.variance);
+                    if (varianceVal > 0) {
+                        varianceEl.textContent = '+' + varianceVal.toFixed(2) + ' (Overage)';
+                        varianceEl.className = 'col-6 text-end fw-bold font-monospace text-success';
+                    } else if (varianceVal < 0) {
+                        varianceEl.textContent = varianceVal.toFixed(2) + ' (Shortage)';
+                        varianceEl.className = 'col-6 text-end fw-bold font-monospace text-danger';
+                    } else {
+                        varianceEl.textContent = '0.00 (Balanced)';
+                        varianceEl.className = 'col-6 text-end fw-bold font-monospace text-success';
+                    }
+                }
+                
+                const notesContainer = document.getElementById('shiftNotesContainer');
+                if (data.notes) {
+                    notesContainer.style.display = 'block';
+                    document.getElementById('shiftNotes').textContent = data.notes;
+                } else {
+                    notesContainer.style.display = 'none';
+                }
+                
+                // Show content
+                document.getElementById('shiftDetailLoading').style.display = 'none';
+                document.getElementById('shiftDetailContent').style.display = 'block';
+            })
+            .catch(error => {
+                console.error('Error fetching shift details:', error);
+                document.getElementById('shiftDetailLoading').innerHTML = `
+                    <div class="text-danger py-4">
+                        <i class="bi bi-exclamation-triangle display-4"></i>
+                        <h5 class="mt-3">Error Loading Details</h5>
+                        <p class="text-muted mb-0">Please try again later.</p>
+                    </div>
+                `;
+            });
+    }
+});
+</script>
+{% endblock %}

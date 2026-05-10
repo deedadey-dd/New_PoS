@@ -10,9 +10,23 @@
         <p class="text-muted mb-0">Transfer cash between shop and accountant</p>
     </div>
     <div class="d-flex gap-2">
-        <a href="{% url 'accounting:cash_transfer_export' %}?{{ request.GET.urlencode }}" class="btn btn-outline-success">
-            <i class="bi bi-file-earmark-spreadsheet me-1"></i>Export
-        </a>
+        <div class="dropdown">
+            <button class="btn btn-outline-success dropdown-toggle" type="button" id="exportDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                <i class="bi bi-download me-1"></i>Export
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="exportDropdown">
+                <li>
+                    <a class="dropdown-item text-success" href="{% url 'accounting:cash_transfer_export' %}?{{ request.GET.urlencode }}&format=excel">
+                        <i class="bi bi-file-earmark-excel me-2"></i>Export as Excel
+                    </a>
+                </li>
+                <li>
+                    <a class="dropdown-item text-danger" href="{% url 'accounting:cash_transfer_export' %}?{{ request.GET.urlencode }}&format=pdf">
+                        <i class="bi bi-file-earmark-pdf me-2"></i>Export as PDF
+                    </a>
+                </li>
+            </ul>
+        </div>
         {% if can_create %}
         <a href="{% url 'accounting:cash_transfer_create' %}" class="btn btn-primary">
             <i class="bi bi-plus-lg me-1"></i>New Transfer
@@ -105,7 +119,9 @@
                     {% for transfer in transfers %}
                     <tr>
                         <td>
-                            <strong>{{ transfer.transfer_number }}</strong>
+                            <a href="#" class="fw-bold text-decoration-none transfer-detail-link" data-transfer-id="{{ transfer.pk }}">
+                                {{ transfer.transfer_number }}
+                            </a>
                         </td>
                         <td>
                             <small>{{ transfer.created_at|date:"M d, Y" }}</small><br>
@@ -236,4 +252,151 @@
         {% endif %}
     </div>
 </div>
+
+<!-- Cash Transfer Detail Modal -->
+<div class="modal fade" id="transferDetailModal" tabindex="-1" aria-labelledby="transferDetailModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="transferDetailModalLabel">
+                    <i class="bi bi-arrow-left-right me-2"></i>Transfer Details
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="transferDetailBody">
+                <!-- Loading spinner -->
+                <div class="text-center py-5" id="transferDetailLoading">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="text-muted mt-2">Loading details...</p>
+                </div>
+                <!-- Content (populated by JS) -->
+                <div id="transferDetailContent" style="display:none;">
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <small class="text-muted d-block">Amount</small>
+                            <span id="transferAmount" class="fw-bold fs-4"></span>
+                        </div>
+                        <div class="col-6 text-end">
+                            <span id="transferStatus" class="badge"></span><br>
+                            <small class="text-muted" id="transferType"></small>
+                        </div>
+                    </div>
+                    <hr>
+                    <div class="row mb-2">
+                        <div class="col-4 text-muted">From:</div>
+                        <div class="col-8 fw-medium text-end" id="transferFrom"></div>
+                    </div>
+                    <div class="row mb-2">
+                        <div class="col-4 text-muted">To:</div>
+                        <div class="col-8 fw-medium text-end" id="transferTo"></div>
+                    </div>
+                    <div class="row mb-2">
+                        <div class="col-4 text-muted">Date:</div>
+                        <div class="col-8 text-end" id="transferDate"></div>
+                    </div>
+                    
+                    <div id="transferNotesContainer" style="display:none;" class="mt-3">
+                        <small class="text-muted d-block mb-1">Notes:</small>
+                        <p class="mb-0 border-start border-3 border-secondary ps-2 text-muted" id="transferNotes"></p>
+                    </div>
+                    
+                    <div id="transferCancelContainer" style="display:none;" class="mt-3">
+                        <small class="text-danger d-block mb-1">Cancellation Reason:</small>
+                        <p class="mb-0 border-start border-3 border-danger ps-2 text-danger" id="transferCancelReason"></p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <a href="#" class="btn btn-outline-info" id="transferDetailPrintBtn" target="_blank">
+                    <i class="bi bi-printer me-1"></i>Print Receipt
+                </a>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const detailLinks = document.querySelectorAll('.transfer-detail-link');
+    let modalInstance = null;
+    if (document.getElementById('transferDetailModal')) {
+        modalInstance = new bootstrap.Modal(document.getElementById('transferDetailModal'));
+    }
+    
+    detailLinks.forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const transferId = this.dataset.transferId;
+            openTransferDetail(transferId);
+        });
+    });
+    
+    function openTransferDetail(transferId) {
+        if (!modalInstance) return;
+        // Reset UI
+        document.getElementById('transferDetailContent').style.display = 'none';
+        document.getElementById('transferDetailLoading').style.display = 'block';
+        document.getElementById('transferDetailPrintBtn').href = `/accounting/cash-transfers/${transferId}/receipt/`;
+        
+        modalInstance.show();
+        
+        // Fetch details
+        fetch(`/accounting/api/cash-transfers/${transferId}/detail/`)
+            .then(response => {
+                if (!response.ok) throw new Error('Failed to fetch details');
+                return response.json();
+            })
+            .then(data => {
+                // Populate data
+                document.getElementById('transferAmount').textContent = '{{ currency_symbol }}' + parseFloat(data.amount).toFixed(2);
+                
+                const statusBadge = document.getElementById('transferStatus');
+                statusBadge.className = 'badge';
+                statusBadge.textContent = data.status;
+                if (data.status === 'Confirmed') statusBadge.classList.add('bg-success');
+                else if (data.status === 'Pending') statusBadge.classList.add('bg-warning', 'text-dark');
+                else statusBadge.classList.add('bg-danger');
+                
+                document.getElementById('transferType').textContent = data.transfer_type;
+                
+                document.getElementById('transferFrom').innerHTML = data.from_user + '<br><small class="text-muted">' + data.from_location + '</small>';
+                document.getElementById('transferTo').innerHTML = data.to_user + '<br><small class="text-muted">' + data.to_location + '</small>';
+                document.getElementById('transferDate').textContent = data.created_at;
+                
+                const notesContainer = document.getElementById('transferNotesContainer');
+                if (data.notes) {
+                    notesContainer.style.display = 'block';
+                    document.getElementById('transferNotes').textContent = data.notes;
+                } else {
+                    notesContainer.style.display = 'none';
+                }
+                
+                const cancelContainer = document.getElementById('transferCancelContainer');
+                if (data.cancellation_reason) {
+                    cancelContainer.style.display = 'block';
+                    document.getElementById('transferCancelReason').textContent = data.cancellation_reason;
+                } else {
+                    cancelContainer.style.display = 'none';
+                }
+                
+                // Show content
+                document.getElementById('transferDetailLoading').style.display = 'none';
+                document.getElementById('transferDetailContent').style.display = 'block';
+            })
+            .catch(error => {
+                console.error('Error fetching transfer details:', error);
+                document.getElementById('transferDetailLoading').innerHTML = `
+                    <div class="text-danger py-4">
+                        <i class="bi bi-exclamation-triangle display-4"></i>
+                        <h5 class="mt-3">Error Loading Details</h5>
+                        <p class="text-muted mb-0">Please try again later.</p>
+                    </div>
+                `;
+            });
+    }
+});
+</script>
 {% endblock %}

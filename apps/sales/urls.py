@@ -15,8 +15,11 @@ urlpatterns = [
     path('shop-payments/<int:shop_id>/', views.AdminShopPaymentConfigView.as_view(), name='admin_shop_payment_settings'),
     
     # Shift Management
+    path('shifts/', views.ShiftListView.as_view(), name='shift_list'),
     path('shift/open/', views.ShiftOpenView.as_view(), name='shift_open'),
     path('shift/<int:pk>/close/', views.ShiftCloseView.as_view(), name='shift_close'),
+    path('shift/<int:pk>/receipt/', views.ShiftReceiptView.as_view(), name='shift_receipt'),
+    path('api/shift/<int:pk>/detail/', views.api_shift_detail, name='api_shift_detail'),
     
     # Sales History
     path('', views.SaleListView.as_view(), name='sale_list'),

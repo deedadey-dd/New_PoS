@@ -52,6 +52,7 @@ class ShopSettings(TenantModel):
     enable_cash_payment = models.BooleanField(default=True)
     enable_credit_payment = models.BooleanField(default=True)
     enable_ecash_payment = models.BooleanField(default=True)
+    enable_momo_payment = models.BooleanField(default=True)
     
     # Paystack settings for E-Cash
     paystack_public_key = models.CharField(max_length=255, blank=True)
@@ -153,6 +154,7 @@ class Sale(TenantModel):
         ('CASH', 'Cash'),
         ('CREDIT', 'Credit (Customer Account)'),
         ('ECASH', 'E-Cash (Paystack)'),
+        ('MOMO', 'Mobile Money'),
         ('MIXED', 'Mixed Payment'),
     ]
     
@@ -239,7 +241,25 @@ class Sale(TenantModel):
     
     # E-Cash / Paystack payment reference
     paystack_reference = models.CharField(max_length=100, blank=True)
-    paystack_status = models.CharField(max_length=20, blank=True)
+    paystack_status = models.CharField(
+        max_length=20,
+        blank=True,
+        help_text="Paystack transaction status"
+    )
+    
+    # Accountant Confirmation (for digital payments)
+    is_accountant_confirmed = models.BooleanField(
+        default=False,
+        help_text="True if accountant has confirmed receipt of this digital payment"
+    )
+    accountant_confirmed_at = models.DateTimeField(null=True, blank=True)
+    accountant_confirmed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='confirmed_sales'
+    )
     
     # Offline sync fields
     client_sale_id = models.CharField(

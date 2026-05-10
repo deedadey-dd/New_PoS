@@ -47,6 +47,10 @@ class Tenant(models.Model):
     require_return_approval = models.BooleanField(default=True)
     credit_limit_warning_percent = models.IntegerField(default=80)
     backdating_allowed_days = models.IntegerField(default=0)
+    allow_momo_payments = models.BooleanField(
+        default=False,
+        help_text="Allow shops to receive Mobile Money payments"
+    )
     
     # Shop Manager permissions
     shop_manager_can_add_products = models.BooleanField(
@@ -56,6 +60,10 @@ class Tenant(models.Model):
     shop_manager_can_receive_stock = models.BooleanField(
         default=False,
         help_text="Allow shop managers to receive stock (create batches)"
+    )
+    shop_manager_can_delete_categories = models.BooleanField(
+        default=False,
+        help_text="Allow shop managers to delete product categories"
     )
     shops_can_see_other_stock = models.BooleanField(
         default=True,

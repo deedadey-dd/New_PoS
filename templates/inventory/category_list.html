@@ -44,10 +44,12 @@
                                 class="btn btn-sm btn-outline-primary">
                                 <i class="bi bi-pencil"></i>
                             </a>
+                            {% if request.user.role.name != 'SHOP_MANAGER' or current_tenant.shop_manager_can_delete_categories %}
                             <a href="{% url 'inventory:category_delete' category.pk %}"
                                 class="btn btn-sm btn-outline-danger">
                                 <i class="bi bi-trash"></i>
                             </a>
+                            {% endif %}
                         </td>
                     </tr>
                     {% endfor %}

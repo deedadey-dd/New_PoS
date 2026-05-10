@@ -204,7 +204,11 @@ def tenant_context(request):
                 status='CONFIRMED'
             ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
             
-            context['cash_on_hand'] = received - sent
+            # Subtract Bank Transfers
+            from apps.accounting.models import BankTransfer
+            banked_cash = BankTransfer.objects.filter(tenant=tenant, fund_source='CASH').aggregate(total=Sum('amount'))['total'] or Decimal('0')
+            
+            context['cash_on_hand'] = received - sent - banked_cash
         
         # Add total credit debt for managers/admin
         if role_name in ['SHOP_MANAGER', 'ADMIN', 'ACCOUNTANT']:
@@ -232,21 +236,57 @@ def tenant_context(request):
                 status='PENDING'
             ).count()
         
-        # E-Cash balance for accountants, managers, and auditors
+        # Digital Balances (E-Cash and Momo)
         if role_name in ['ACCOUNTANT', 'AUDITOR', 'SHOP_MANAGER']:
+            from apps.sales.models import Sale
+            from apps.customers.models import CustomerTransaction
+            
             try:
-                from apps.payments.models import ECashLedger
+                # E-CASH BALANCE
+                ecash_sales_q = Q(tenant=tenant, status='COMPLETED', payment_method='ECASH')
+                ecash_ct_q = Q(tenant=tenant, transaction_type='CREDIT', description__icontains='ECASH')
                 
-                # Shop managers see their shop's e-cash balance
                 if role_name == 'SHOP_MANAGER' and user.location and user.location.location_type == 'SHOP':
-                    ecash_balance = ECashLedger.get_shop_balance(tenant, user.location)
+                    # Shop Manager sees UNCONFIRMED e-cash
+                    shop_sales = Sale.objects.filter(ecash_sales_q, shop=user.location, is_accountant_confirmed=False).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+                    shop_ct = CustomerTransaction.objects.filter(ecash_ct_q, performed_by__location=user.location, is_accountant_confirmed=False).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                    context['ecash_balance'] = shop_sales + shop_ct
                 else:
-                    # Accountants and auditors see tenant total
-                    ecash_balance = ECashLedger.get_current_balance(tenant)
+                    # Accountant sees CONFIRMED e-cash minus BANK TRANSFERS
+                    acc_sales = Sale.objects.filter(ecash_sales_q, is_accountant_confirmed=True).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+                    acc_ct = CustomerTransaction.objects.filter(ecash_ct_q, is_accountant_confirmed=True).aggregate(total=Sum('amount'))['total'] or Decimal('0')
                     
-                context['ecash_balance'] = ecash_balance
-            except Exception:
+                    # Subtract Bank Transfers
+                    from apps.accounting.models import BankTransfer
+                    banked_ecash = BankTransfer.objects.filter(tenant=tenant, fund_source='ECASH').aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                    
+                    context['ecash_balance'] = acc_sales + acc_ct - banked_ecash
+            except Exception as e:
                 context['ecash_balance'] = Decimal('0')
+                
+            try:
+                # MOMO BALANCE
+                if tenant.allow_momo_payments:
+                    momo_sales_q = Q(tenant=tenant, status='COMPLETED', payment_method='MOMO')
+                    momo_ct_q = Q(tenant=tenant, transaction_type='CREDIT', description__icontains='MOMO')
+                    
+                    if role_name == 'SHOP_MANAGER' and user.location and user.location.location_type == 'SHOP':
+                        # Shop Manager sees UNCONFIRMED momo
+                        shop_sales = Sale.objects.filter(momo_sales_q, shop=user.location, is_accountant_confirmed=False).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+                        shop_ct = CustomerTransaction.objects.filter(momo_ct_q, performed_by__location=user.location, is_accountant_confirmed=False).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                        context['momo_balance'] = shop_sales + shop_ct
+                    else:
+                        # Accountant sees CONFIRMED momo minus BANK TRANSFERS
+                        acc_sales = Sale.objects.filter(momo_sales_q, is_accountant_confirmed=True).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+                        acc_ct = CustomerTransaction.objects.filter(momo_ct_q, is_accountant_confirmed=True).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                        
+                        # Subtract Bank Transfers
+                        from apps.accounting.models import BankTransfer
+                        banked_momo = BankTransfer.objects.filter(tenant=tenant, fund_source='MOMO').aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                        
+                        context['momo_balance'] = acc_sales + acc_ct - banked_momo
+            except Exception:
+                context['momo_balance'] = Decimal('0')
         
         # Low stock products for the user's location (Stock Alerts)
         if user.location and role_name in ['SHOP_MANAGER', 'SHOP_ATTENDANT', 'STORES_MANAGER', 'PRODUCTION_MANAGER', 'ADMIN']:

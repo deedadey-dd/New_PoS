@@ -219,3 +219,61 @@ class CashTransferForm(forms.ModelForm):
         
         return amount
 
+class BankTransferForm(forms.ModelForm):
+    class Meta:
+        from .models import BankTransfer
+        model = BankTransfer
+        fields = ['amount', 'fund_source', 'teller_name', 'notes']
+        widgets = {
+            'amount': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
+            'fund_source': forms.Select(attrs={'class': 'form-select'}),
+            'teller_name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Name of bank teller'}),
+            'notes': forms.Textarea(attrs={'class': 'form-control', 'rows': 3, 'placeholder': 'Optional reference details'}),
+        }
+    
+    def __init__(self, *args, **kwargs):
+        self.user = kwargs.pop('user', None)
+        super().__init__(*args, **kwargs)
+        
+    def clean_amount(self):
+        amount = self.cleaned_data.get('amount')
+        fund_source = self.cleaned_data.get('fund_source')
+        
+        if amount and fund_source and self.user:
+            # Check balances
+            from django.db.models import Sum, Q
+            from apps.sales.models import Sale
+            from apps.customers.models import CustomerTransaction
+            from .models import CashTransfer, BankTransfer
+            
+            tenant = self.user.tenant
+            
+            if fund_source == 'CASH':
+                received = CashTransfer.objects.filter(tenant=tenant, to_user=self.user, status='CONFIRMED').aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                sent = CashTransfer.objects.filter(tenant=tenant, from_user=self.user, status='CONFIRMED').aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                banked = BankTransfer.objects.filter(tenant=tenant, fund_source='CASH').aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                available = received - sent - banked
+                
+                if amount > available:
+                    raise forms.ValidationError(f"Insufficient cash. You only have {available:.2f} available.")
+                    
+            elif fund_source == 'ECASH':
+                acc_sales = Sale.objects.filter(tenant=tenant, status='COMPLETED', payment_method='ECASH', is_accountant_confirmed=True).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+                acc_ct = CustomerTransaction.objects.filter(tenant=tenant, transaction_type='CREDIT', description__icontains='ECASH', is_accountant_confirmed=True).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                banked = BankTransfer.objects.filter(tenant=tenant, fund_source='ECASH').aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                available = acc_sales + acc_ct - banked
+                
+                if amount > available:
+                    raise forms.ValidationError(f"Insufficient E-Cash. You only have {available:.2f} available.")
+                    
+            elif fund_source == 'MOMO':
+                acc_sales = Sale.objects.filter(tenant=tenant, status='COMPLETED', payment_method='MOMO', is_accountant_confirmed=True).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+                acc_ct = CustomerTransaction.objects.filter(tenant=tenant, transaction_type='CREDIT', description__icontains='MOMO', is_accountant_confirmed=True).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                banked = BankTransfer.objects.filter(tenant=tenant, fund_source='MOMO').aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                available = acc_sales + acc_ct - banked
+                
+                if amount > available:
+                    raise forms.ValidationError(f"Insufficient Momo. You only have {available:.2f} available.")
+                    
+        return amount
+

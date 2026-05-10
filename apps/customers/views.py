@@ -284,5 +284,19 @@ class CustomerListExportView(LoginRequiredMixin, View):
                 'Yes' if c.is_active else 'No',
             ])
 
-        wb = create_export_workbook('Customers', headers, rows)
-        return build_excel_response(wb, 'customers_export.xlsx')
+        export_format = request.GET.get('format', 'excel')
+        if export_format == 'pdf':
+            from apps.core.pdf_utils import export_to_pdf
+            shop_name = "All Shops"
+            if role_name == 'SHOP_MANAGER':
+                shop_name = user.location.name
+                
+            metadata = {
+                'generator_name': user.get_full_name() or user.email,
+                'shop_name': shop_name,
+                'date_range': "All Time"
+            }
+            return export_to_pdf('customers_export.pdf', 'Customers List', headers, rows, metadata=metadata)
+        else:
+            wb = create_export_workbook('Customers', headers, rows)
+            return build_excel_response(wb, 'customers_export.xlsx')

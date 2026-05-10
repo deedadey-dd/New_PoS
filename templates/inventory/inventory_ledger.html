@@ -91,6 +91,7 @@
                         <th class="text-end" style="width: 100px;">{% sort_link "Unit Cost" "unit_cost" %}</th>
                         <th>User</th>
                         <th>Reference</th>
+                        <th class="text-center">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -166,6 +167,11 @@
                             {% endif %}
                             {% endif %}
                         </td>
+                        <td class="text-center">
+                            <a href="#" class="btn btn-sm btn-outline-info ledger-detail-link" data-ledger-id="{{ entry.pk }}" title="View Details">
+                                <i class="bi bi-eye"></i>
+                            </a>
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -182,4 +188,177 @@
         {% endif %}
     </div>
 </div>
+
+<!-- Ledger Detail Modal -->
+<div class="modal fade" id="ledgerDetailModal" tabindex="-1" aria-labelledby="ledgerDetailModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="ledgerDetailModalLabel">
+                    <i class="bi bi-journal-text me-2"></i>Ledger Entry Details
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="ledgerDetailBody">
+                <!-- Loading spinner -->
+                <div class="text-center py-5" id="ledgerDetailLoading">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="text-muted mt-2">Loading details...</p>
+                </div>
+                <!-- Content (populated by JS) -->
+                <div id="ledgerDetailContent" style="display:none;">
+                    <div class="row mb-3">
+                        <div class="col-8">
+                            <small class="text-muted d-block">Product</small>
+                            <span id="ledgerProduct" class="fw-bold fs-5"></span>
+                            <small class="text-muted d-block" id="ledgerSku"></small>
+                        </div>
+                        <div class="col-4 text-end">
+                            <span id="ledgerType" class="badge"></span>
+                        </div>
+                    </div>
+                    <hr>
+                    <div class="row mb-2">
+                        <div class="col-4 text-muted">Date:</div>
+                        <div class="col-8 text-end" id="ledgerDate"></div>
+                    </div>
+                    <div class="row mb-2">
+                        <div class="col-4 text-muted">Location:</div>
+                        <div class="col-8 text-end fw-medium" id="ledgerLocation"></div>
+                    </div>
+                    <div class="row mb-2">
+                        <div class="col-4 text-muted">Batch:</div>
+                        <div class="col-8 text-end" id="ledgerBatch"></div>
+                    </div>
+                    <div class="row mb-2">
+                        <div class="col-4 text-muted">Quantity:</div>
+                        <div class="col-8 text-end fw-bold fs-5" id="ledgerQuantity"></div>
+                    </div>
+                    <div class="row mb-2">
+                        <div class="col-4 text-muted">Unit Cost:</div>
+                        <div class="col-8 text-end" id="ledgerUnitCost"></div>
+                    </div>
+                    <div class="row mb-2">
+                        <div class="col-4 text-muted">Total Value:</div>
+                        <div class="col-8 text-end fw-medium" id="ledgerTotalValue"></div>
+                    </div>
+                    <div class="row mb-2">
+                        <div class="col-4 text-muted">Reference:</div>
+                        <div class="col-8 text-end" id="ledgerReference"></div>
+                    </div>
+                    <div class="row mb-2">
+                        <div class="col-4 text-muted">User:</div>
+                        <div class="col-8 text-end" id="ledgerUser"></div>
+                    </div>
+                    
+                    <div id="ledgerNotesContainer" style="display:none;" class="mt-3">
+                        <small class="text-muted d-block mb-1">Notes:</small>
+                        <p class="mb-0 border-start border-3 border-secondary ps-2 text-muted" id="ledgerNotes"></p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <a href="#" class="btn btn-outline-info" id="ledgerDetailPrintBtn" target="_blank">
+                    <i class="bi bi-printer me-1"></i>Print Receipt
+                </a>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const detailLinks = document.querySelectorAll('.ledger-detail-link');
+    let modalInstance = null;
+    if (document.getElementById('ledgerDetailModal')) {
+        modalInstance = new bootstrap.Modal(document.getElementById('ledgerDetailModal'));
+    }
+    
+    detailLinks.forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const ledgerId = this.dataset.ledgerId;
+            openLedgerDetail(ledgerId);
+        });
+    });
+    
+    function openLedgerDetail(ledgerId) {
+        if (!modalInstance) return;
+        // Reset UI
+        document.getElementById('ledgerDetailContent').style.display = 'none';
+        document.getElementById('ledgerDetailLoading').style.display = 'block';
+        document.getElementById('ledgerDetailPrintBtn').href = `/inventory/ledger/${ledgerId}/receipt/`;
+        
+        modalInstance.show();
+        
+        // Fetch details
+        fetch(`/inventory/api/ledger/${ledgerId}/detail/`)
+            .then(response => {
+                if (!response.ok) throw new Error('Failed to fetch details');
+                return response.json();
+            })
+            .then(data => {
+                // Populate data
+                document.getElementById('ledgerProduct').textContent = data.product;
+                document.getElementById('ledgerSku').textContent = data.sku ? 'SKU: ' + data.sku : '';
+                
+                const typeBadge = document.getElementById('ledgerType');
+                typeBadge.className = 'badge';
+                typeBadge.textContent = data.transaction_type;
+                if (['IN', 'RETURN_IN', 'ADJUST_ADD'].includes(data.transaction_code)) {
+                    typeBadge.classList.add('bg-success');
+                } else if (['OUT', 'RETURN_OUT', 'ADJUST_SUB', 'DAMAGE', 'EXPIRED'].includes(data.transaction_code)) {
+                    typeBadge.classList.add('bg-danger');
+                } else {
+                    typeBadge.classList.add('bg-info');
+                }
+                
+                document.getElementById('ledgerDate').textContent = data.created_at;
+                document.getElementById('ledgerLocation').textContent = data.location;
+                document.getElementById('ledgerBatch').textContent = data.batch;
+                
+                let qtyPrefix = ['IN', 'RETURN_IN', 'ADJUST_ADD'].includes(data.transaction_code) ? '+' : '-';
+                let qtyClass = qtyPrefix === '+' ? 'text-success' : 'text-danger';
+                document.getElementById('ledgerQuantity').textContent = qtyPrefix + parseFloat(data.quantity).toFixed(0);
+                document.getElementById('ledgerQuantity').className = 'col-8 text-end fw-bold fs-5 ' + qtyClass;
+                
+                document.getElementById('ledgerUnitCost').textContent = '{{ currency_symbol }}' + parseFloat(data.unit_cost).toFixed(2);
+                document.getElementById('ledgerTotalValue').textContent = '{{ currency_symbol }}' + parseFloat(data.total_value).toFixed(2);
+                
+                if (data.reference_type && data.reference_id) {
+                    document.getElementById('ledgerReference').textContent = data.reference_type + ' #' + data.reference_id;
+                } else {
+                    document.getElementById('ledgerReference').textContent = '-';
+                }
+                
+                document.getElementById('ledgerUser').textContent = data.created_by;
+                
+                const notesContainer = document.getElementById('ledgerNotesContainer');
+                if (data.notes) {
+                    notesContainer.style.display = 'block';
+                    document.getElementById('ledgerNotes').textContent = data.notes;
+                } else {
+                    notesContainer.style.display = 'none';
+                }
+                
+                // Show content
+                document.getElementById('ledgerDetailLoading').style.display = 'none';
+                document.getElementById('ledgerDetailContent').style.display = 'block';
+            })
+            .catch(error => {
+                console.error('Error fetching ledger details:', error);
+                document.getElementById('ledgerDetailLoading').innerHTML = `
+                    <div class="text-danger py-4">
+                        <i class="bi bi-exclamation-triangle display-4"></i>
+                        <h5 class="mt-3">Error Loading Details</h5>
+                        <p class="text-muted mb-0">Please try again later.</p>
+                    </div>
+                `;
+            });
+    }
+});
+</script>
 {% endblock %}

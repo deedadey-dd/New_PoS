@@ -1,0 +1,85 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Shop Local Momo Balances{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="fw-bold mb-0">
+                <i class="bi bi-phone me-2" style="color: #eab308;"></i>Shop Local Momo Balances
+            </h2>
+            <p class="text-muted mb-0">Withdraw Local Momo collected at each shop</p>
+        </div>
+        <div class="d-flex align-items-center gap-3">
+            <span class="badge fs-6 text-dark" style="background-color: #eab308;">
+                <i class="bi bi-phone me-1"></i>Total Unconfirmed: {{ currency_symbol }}{{ total_momo|floatformat:"2g" }}
+            </span>
+            <a href="{% url 'accounting:shop_momo_history' %}" class="btn btn-outline-secondary">
+                <i class="bi bi-journal-text me-1"></i>View All History
+            </a>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        {% for item in shop_balances %}
+        <div class="col-md-6 col-lg-4">
+            <div class="card h-100 {% if item.balance > 0 %}border-warning{% endif %}">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <h5 class="card-title mb-1">
+                                <i class="bi bi-shop me-1"></i>{{ item.shop.name }}
+                            </h5>
+                            <p class="text-muted small mb-3">{{ item.shop.address|default:"No address" }}</p>
+                        </div>
+                        {% if item.balance > 0 %}
+                        <span class="badge" style="background-color: #eab308; color: #000;">Active</span>
+                        {% endif %}
+                    </div>
+
+                    <div class="mb-3">
+                        <small class="text-muted">Unconfirmed Momo Balance</small>
+                        <h3 class="mb-0 {% if item.balance > 0 %}text-warning text-darken-2{% else %}text-muted{% endif %}" style="{% if item.balance > 0 %}color: #d97706 !important;{% endif %}">
+                            {{ currency_symbol }}{{ item.balance|floatformat:"2g" }}
+                        </h3>
+                    </div>
+
+                    {% if item.balance > 0 %}
+                    <form action="{% url 'accounting:shop_momo_withdraw' item.shop.pk %}" method="post"
+                        onsubmit="return confirm('Withdraw all {{ currency_symbol }}{{ item.balance|floatformat:"2g" }} Local Momo from {{ item.shop.name }}?');">
+                        {% csrf_token %}
+                        <button type="submit" class="btn w-100 fw-bold" style="background-color: #eab308; color: #000;">
+                            <i class="bi bi-cash-coin me-1"></i>Withdraw
+                            {{ currency_symbol }}{{ item.balance|floatformat:"2g" }}
+                        </button>
+                    </form>
+                    {% else %}
+                    <button class="btn btn-secondary w-100" disabled>
+                        <i class="bi bi-x-circle me-1"></i>No Momo to Withdraw
+                    </button>
+                    {% endif %}
+                </div>
+                <div class="card-footer bg-transparent">
+                    <a href="{% url 'accounting:shop_momo_history' %}?shop={{ item.shop.pk }}"
+                        class="text-decoration-none small" style="color: #d97706;">
+                        <i class="bi bi-clock-history me-1"></i>View Momo History
+                    </a>
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body text-center py-5">
+                    <i class="bi bi-shop display-1 text-muted"></i>
+                    <h4 class="mt-3 text-muted">No Shops Found</h4>
+                    <p class="text-muted">No active shops have been configured yet.</p>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

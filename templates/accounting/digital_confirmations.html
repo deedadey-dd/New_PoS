@@ -1,0 +1,247 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Confirm Digital Payments - {{ request.user.tenant.name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm border-0 bg-white">
+                <div class="card-body p-4 d-flex justify-content-between align-items-center">
+                    <div>
+                        <h4 class="mb-1 fw-bold text-dark">Confirm Digital Payments</h4>
+                        <p class="text-muted mb-0">Select E-Cash and Momo transactions to move them to your dashboard.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm border-0">
+                <div class="card-body">
+                    <form method="get" class="row g-3">
+                        <div class="col-md-2">
+                            <label class="form-label small">From Date</label>
+                            <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label small">To Date</label>
+                            <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small">Payment Method</label>
+                            <select name="payment_method" class="form-select form-select-sm">
+                                <option value="">All Methods</option>
+                                <option value="ECASH" {% if payment_method == 'ECASH' %}selected{% endif %}>E-Cash</option>
+                                <option value="MOMO" {% if payment_method == 'MOMO' %}selected{% endif %}>Momo</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small">Transaction Type</label>
+                            <select name="tx_type" class="form-select form-select-sm">
+                                <option value="">All Types</option>
+                                <option value="SALE" {% if tx_type == 'SALE' %}selected{% endif %}>Sales</option>
+                                <option value="CUST_PAYMENT" {% if tx_type == 'CUST_PAYMENT' %}selected{% endif %}>Customer Payments</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2 d-flex align-items-end gap-2">
+                            <button type="submit" class="btn btn-primary btn-sm flex-grow-1">
+                                <i class="bi bi-filter me-1"></i>Filter
+                            </button>
+                            <a href="{% url 'accounting:digital_confirmations' %}" class="btn btn-outline-secondary btn-sm" title="Clear Filters">
+                                <i class="bi bi-x-lg"></i>
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <form method="post" id="confirmationForm">
+        {% csrf_token %}
+        
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card shadow-sm border-0">
+                    <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0 fw-bold">Unconfirmed Transactions</h5>
+                        <div class="d-flex align-items-center">
+                            <span class="me-3 fw-bold fs-5">Selected Total: GH₵ <span id="selectedTotal">0.00</span></span>
+                            <button type="submit" class="btn btn-primary" id="confirmBtn" disabled>
+                                <i class="bi bi-check-circle me-1"></i> Confirm Selected
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="width: 40px;" class="ps-4">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" id="selectAll">
+                                            </div>
+                                        </th>
+                                        <th>Date</th>
+                                        <th>Type</th>
+                                        <th>Payment Method</th>
+                                        <th>Shop / Performed By</th>
+                                        <th>Reference</th>
+                                        <th class="text-end pe-4">Amount (GH₵)</th>
+                                        <th class="text-end pe-4">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for sale in ecash_sales %}
+                                    <tr>
+                                        <td class="ps-4">
+                                            <div class="form-check">
+                                                <input class="form-check-input tx-checkbox" type="checkbox" name="sale_ids" value="{{ sale.id }}" data-amount="{{ sale.amount_paid }}">
+                                            </div>
+                                        </td>
+                                        <td>{{ sale.created_at|date:"M d, Y H:i" }}</td>
+                                        <td><span class="badge bg-success">Sale</span></td>
+                                        <td><span class="badge bg-info text-dark">E-Cash</span></td>
+                                        <td>{{ sale.shop.name|default:"-" }}</td>
+                                        <td>{{ sale.sale_number }}</td>
+                                        <td class="text-end pe-4 fw-bold">{{ sale.amount_paid|floatformat:2 }}</td>
+                                        <td class="text-end pe-4">
+                                            <button type="submit" name="single_sale_id" value="{{ sale.id }}" class="btn btn-sm btn-outline-success" title="Confirm this transaction">
+                                                <i class="bi bi-check-lg"></i> Confirm
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                    
+                                    {% for ct in ecash_cts %}
+                                    <tr>
+                                        <td class="ps-4">
+                                            <div class="form-check">
+                                                <input class="form-check-input tx-checkbox" type="checkbox" name="ct_ids" value="{{ ct.id }}" data-amount="{{ ct.amount }}">
+                                            </div>
+                                        </td>
+                                        <td>{{ ct.created_at|date:"M d, Y H:i" }}</td>
+                                        <td><span class="badge bg-warning text-dark">Cust. Payment</span></td>
+                                        <td><span class="badge bg-info text-dark">E-Cash</span></td>
+                                        <td>{{ ct.performed_by.get_full_name|default:ct.performed_by.email }}</td>
+                                        <td>{{ ct.customer.name }}</td>
+                                        <td class="text-end pe-4 fw-bold">{{ ct.amount|floatformat:2 }}</td>
+                                        <td class="text-end pe-4">
+                                            <button type="submit" name="single_ct_id" value="{{ ct.id }}" class="btn btn-sm btn-outline-success" title="Confirm this transaction">
+                                                <i class="bi bi-check-lg"></i> Confirm
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                    
+                                    {% for sale in momo_sales %}
+                                    <tr>
+                                        <td class="ps-4">
+                                            <div class="form-check">
+                                                <input class="form-check-input tx-checkbox" type="checkbox" name="sale_ids" value="{{ sale.id }}" data-amount="{{ sale.amount_paid }}">
+                                            </div>
+                                        </td>
+                                        <td>{{ sale.created_at|date:"M d, Y H:i" }}</td>
+                                        <td><span class="badge bg-success">Sale</span></td>
+                                        <td><span class="badge bg-warning text-dark">Momo</span></td>
+                                        <td>{{ sale.shop.name|default:"-" }}</td>
+                                        <td>{{ sale.sale_number }}</td>
+                                        <td class="text-end pe-4 fw-bold">{{ sale.amount_paid|floatformat:2 }}</td>
+                                        <td class="text-end pe-4">
+                                            <button type="submit" name="single_sale_id" value="{{ sale.id }}" class="btn btn-sm btn-outline-success" title="Confirm this transaction">
+                                                <i class="bi bi-check-lg"></i> Confirm
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                    
+                                    {% for ct in momo_cts %}
+                                    <tr>
+                                        <td class="ps-4">
+                                            <div class="form-check">
+                                                <input class="form-check-input tx-checkbox" type="checkbox" name="ct_ids" value="{{ ct.id }}" data-amount="{{ ct.amount }}">
+                                            </div>
+                                        </td>
+                                        <td>{{ ct.created_at|date:"M d, Y H:i" }}</td>
+                                        <td><span class="badge bg-warning text-dark">Cust. Payment</span></td>
+                                        <td><span class="badge bg-warning text-dark">Momo</span></td>
+                                        <td>{{ ct.performed_by.get_full_name|default:ct.performed_by.email }}</td>
+                                        <td>{{ ct.customer.name }}</td>
+                                        <td class="text-end pe-4 fw-bold">{{ ct.amount|floatformat:2 }}</td>
+                                        <td class="text-end pe-4">
+                                            <button type="submit" name="single_ct_id" value="{{ ct.id }}" class="btn btn-sm btn-outline-success" title="Confirm this transaction">
+                                                <i class="bi bi-check-lg"></i> Confirm
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                    
+                                    {% if not ecash_sales and not ecash_cts and not momo_sales and not momo_cts %}
+                                    <tr>
+                                        <td colspan="7" class="text-center py-4 text-muted">
+                                            <i class="bi bi-check2-all fs-1 d-block mb-2 text-success"></i>
+                                            All digital payments are currently confirmed!
+                                        </td>
+                                    </tr>
+                                    {% endif %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const selectAllBtn = document.getElementById('selectAll');
+    const checkboxes = document.querySelectorAll('.tx-checkbox');
+    const totalDisplay = document.getElementById('selectedTotal');
+    const confirmBtn = document.getElementById('confirmBtn');
+    
+    function calculateTotal() {
+        let total = 0;
+        let checkedCount = 0;
+        
+        checkboxes.forEach(cb => {
+            if (cb.checked) {
+                total += parseFloat(cb.dataset.amount);
+                checkedCount++;
+            }
+        });
+        
+        totalDisplay.textContent = total.toFixed(2);
+        confirmBtn.disabled = checkedCount === 0;
+        
+        // Update selectAll state
+        if (checkboxes.length > 0) {
+            selectAllBtn.checked = checkedCount === checkboxes.length;
+        }
+    }
+    
+    // Individual checkbox listener
+    checkboxes.forEach(cb => {
+        cb.addEventListener('change', calculateTotal);
+    });
+    
+    // Select All listener
+    if (selectAllBtn) {
+        selectAllBtn.addEventListener('change', function() {
+            checkboxes.forEach(cb => {
+                cb.checked = this.checked;
+            });
+            calculateTotal();
+        });
+    }
+});
+</script>
+{% endblock %}

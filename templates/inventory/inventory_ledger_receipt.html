@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Inventory Receipt - #{{ entry.pk }}</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        @page {
+            size: auto;
+            margin: 10mm;
+        }
+        body {
+            font-family: 'Courier New', monospace;
+            line-height: 1.4;
+            font-size: 14px;
+            max-width: 400px;
+            margin: 20px auto;
+            border: 1px solid #ccc;
+            padding: 20px;
+        }
+        .receipt-header {
+            text-align: center;
+            margin-bottom: 15px;
+            border-bottom: 2px dashed #000;
+            padding-bottom: 10px;
+        }
+        .receipt-header h1 { font-size: 18px; margin-bottom: 5px; }
+        .receipt-info { margin-bottom: 15px; }
+        .receipt-info table { width: 100%; }
+        .text-right { text-align: right; }
+        .receipt-totals {
+            padding: 15px 0;
+            border-top: 2px dashed #000;
+            border-bottom: 2px dashed #000;
+        }
+        .totals-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+        }
+        .totals-row.total {
+            font-weight: bold;
+            font-size: 16px;
+            border-top: 1px solid #000;
+            margin-top: 8px;
+            padding-top: 8px;
+        }
+        .print-btn {
+            display: block;
+            margin: 20px auto;
+            padding: 10px 30px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        @media print {
+            body { border: none; padding: 0; }
+            .no-print { display: none !important; }
+        }
+    </style>
+</head>
+<body>
+    <div class="receipt-header">
+        <h1>{{ current_tenant.name }}</h1>
+        <p>Inventory Record #{{ entry.pk }}</p>
+    </div>
+
+    <div class="receipt-info">
+        <table>
+            <tr>
+                <td>Type:</td>
+                <td class="text-right"><strong>{{ entry.get_transaction_type_display }}</strong></td>
+            </tr>
+            <tr>
+                <td>Date:</td>
+                <td class="text-right">{{ entry.created_at|date:"d/m/Y H:i" }}</td>
+            </tr>
+            <tr>
+                <td>By:</td>
+                <td class="text-right">{{ entry.created_by.get_full_name|default:entry.created_by.email }}</td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="receipt-info" style="border-top: 1px dashed #000; padding-top: 10px;">
+        <p><strong>Item:</strong> {{ entry.product.name }}</p>
+        {% if entry.product.sku %}<p><small>SKU: {{ entry.product.sku }}</small></p>{% endif %}
+        <p style="margin-top: 8px;"><strong>Location:</strong> {{ entry.location.name|default:"N/A" }}</p>
+        {% if entry.batch %}<p><small>Batch: {{ entry.batch.batch_number }}</small></p>{% endif %}
+    </div>
+
+    <div class="receipt-totals">
+        <div class="totals-row">
+            <span>Quantity:</span>
+            <span>
+                {% if entry.transaction_type in 'IN,RETURN_IN,ADJUST_ADD' %}
+                +{{ entry.quantity|floatformat:"2g" }}
+                {% else %}
+                -{{ entry.quantity|floatformat:"2g" }}
+                {% endif %}
+            </span>
+        </div>
+        {% if entry.unit_cost %}
+        <div class="totals-row">
+            <span>Unit Cost:</span>
+            <span>{{ current_tenant.currency_symbol|default:'$' }}{{ entry.unit_cost|floatformat:"2g" }}</span>
+        </div>
+        <div class="totals-row total">
+            <span>Total Value:</span>
+            <span>{{ current_tenant.currency_symbol|default:'$' }}{% widthratio entry.quantity 1 entry.unit_cost %}</span>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if entry.notes %}
+    <div style="margin-top: 15px; font-size: 12px;">
+        <strong>Notes:</strong><br>
+        <p>{{ entry.notes }}</p>
+    </div>
+    {% endif %}
+
+    <div style="margin-top: 30px; text-align: center; font-size: 12px; border-top: 1px dashed #ccc; padding-top: 10px;">
+        Generated on {{ now|date:"d/m/Y H:i" }}
+    </div>
+
+    <button class="print-btn no-print" onclick="window.print()">
+        🖨️ Print Receipt
+    </button>
+</body>
+</html>

@@ -34,6 +34,8 @@ urlpatterns = [
     path('stock/adjustments/', views.AdjustmentHistoryView.as_view(), name='adjustment_history'),
     path('stock/adjustment/<int:pk>/review/', views.ReviewAdjustmentView.as_view(), name='review_adjustment'),
     path('ledger/', views.InventoryLedgerListView.as_view(), name='inventory_ledger'),
+    path('ledger/<int:pk>/receipt/', views.InventoryLedgerReceiptView.as_view(), name='inventory_ledger_receipt'),
+    path('api/ledger/<int:pk>/detail/', views.api_inventory_ledger_detail, name='api_inventory_ledger_detail'),
     
     # Shop Pricing (for Shop Managers)
     path('shop-prices/', views.ShopPriceListView.as_view(), name='shop_price_list'),
