@@ -6,6 +6,70 @@
     --dark-bg: #1a1d21;
 }
 
+/* --- Toast Animations --- */
+@keyframes slideInRight {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+.toast {
+    animation: slideInRight 0.3s ease-out;
+}
+
+/* --- Print Styles --- */
+@media print {
+    body.modal-open {
+        visibility: hidden !important;
+    }
+    body.modal-open .modal.show {
+        visibility: visible !important;
+        position: absolute;
+        left: 0;
+        top: 0;
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        min-height: 100%;
+    }
+    body.modal-open .modal-dialog {
+        max-width: 100%;
+        margin: 0;
+        padding: 0;
+    }
+    body.modal-open .modal-content {
+        border: none;
+        box-shadow: none;
+    }
+    .no-print {
+        display: none !important;
+    }
+    .print-only {
+        display: block !important;
+    }
+    /* Force background colors */
+    * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+    .row {
+        page-break-inside: avoid;
+    }
+}
+
+/* Default print-only to hidden */
+@media screen {
+    .print-only {
+        display: none !important;
+    }
+}
+
 /* Sidebar Styles */
 .sidebar {
     width: var(--sidebar-width);

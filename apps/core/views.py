@@ -23,7 +23,7 @@ from .forms import (
     UserCreateForm, UserEditForm, TenantSettingsForm
 )
 from .mixins import PaginationMixin
-from .decorators import admin_required, AdminOrManagerRequiredMixin, AdminRequiredMixin
+from .decorators import admin_required, AdminOrManagerRequiredMixin, AdminRequiredMixin, ReportingAccessRequiredMixin
 
 
 class HomePageView(View):
@@ -341,7 +341,7 @@ class DashboardView(LoginRequiredMixin, View):
 
 
 # Location Views
-class LocationListView(LoginRequiredMixin, AdminOrManagerRequiredMixin, ListView):
+class LocationListView(LoginRequiredMixin, ReportingAccessRequiredMixin, ListView):
     """List all locations for the tenant. Restricted to admins and managers."""
     model = Location
     template_name = 'core/location_list.html'
@@ -411,7 +411,7 @@ class LocationDeleteView(LoginRequiredMixin, AdminRequiredMixin, DeleteView):
 
 
 # User Views
-class UserListView(LoginRequiredMixin, PaginationMixin, ListView):
+class UserListView(LoginRequiredMixin, ReportingAccessRequiredMixin, PaginationMixin, ListView):
     """List all users for the tenant."""
     model = User
     template_name = 'core/user_list.html'
@@ -421,7 +421,7 @@ class UserListView(LoginRequiredMixin, PaginationMixin, ListView):
         return User.objects.filter(tenant=self.request.user.tenant).select_related('role', 'location')
 
 
-class UserCreateView(LoginRequiredMixin, CreateView):
+class UserCreateView(LoginRequiredMixin, AdminRequiredMixin, CreateView):
     """Create a new user."""
     model = User
     form_class = UserCreateForm
@@ -441,7 +441,7 @@ class UserCreateView(LoginRequiredMixin, CreateView):
         return super().form_valid(form)
 
 
-class UserUpdateView(LoginRequiredMixin, UpdateView):
+class UserUpdateView(LoginRequiredMixin, AdminRequiredMixin, UpdateView):
     """Update an existing user."""
     model = User
     form_class = UserEditForm
@@ -462,7 +462,7 @@ class UserUpdateView(LoginRequiredMixin, UpdateView):
         return super().form_valid(form)
 
 
-class UserDeleteView(LoginRequiredMixin, DeleteView):
+class UserDeleteView(LoginRequiredMixin, AdminRequiredMixin, DeleteView):
     """Delete a user."""
     model = User
     template_name = 'core/user_confirm_delete.html'
@@ -995,3 +995,150 @@ class ContactSubmitView(View):
                 'error': 'An error occurred. Please try again.'
             }, status=500, content_type='application/json')
 
+
+class LocationSummaryModalView(LoginRequiredMixin, View):
+    """Return an HTML fragment with summary data for a location."""
+    template_name = 'core/modals/location_summary.html'
+
+    def get(self, request, pk):
+        from django.utils import timezone
+        from apps.sales.models import Sale, SaleItem
+        from apps.inventory.models import Product
+        from apps.accounting.models import CashTransfer
+        from apps.customers.models import CustomerTransaction
+        from django.db.models import Sum, Count, Q, F
+        from decimal import Decimal
+
+        location = get_object_or_404(Location, pk=pk, tenant=request.user.tenant)
+        context = {'location': location}
+
+        # Active users count
+        context['active_users'] = location.users.filter(is_active=True).count()
+
+        if location.location_type == 'SHOP':
+            now = timezone.now()
+            current_month = now.month
+            current_year = now.year
+
+            # --- Monthly Revenue ---
+            monthly_sales = Sale.objects.filter(
+                tenant=request.user.tenant,
+                shop=location,
+                status='COMPLETED',
+                created_at__year=current_year,
+                created_at__month=current_month
+            )
+            
+            sales_agg = monthly_sales.aggregate(total_revenue=Sum('total'))
+            context['monthly_revenue'] = sales_agg['total_revenue'] or Decimal('0')
+
+            # --- Top 10 Products (Monthly) ---
+            context['top_products'] = SaleItem.objects.filter(
+                sale__tenant=request.user.tenant,
+                sale__shop=location,
+                sale__status='COMPLETED',
+                sale__created_at__year=current_year,
+                sale__created_at__month=current_month
+            ).values('product__name').annotate(
+                qty_sold=Sum('quantity'),
+                revenue=Sum('total')
+            ).order_by('-revenue')[:10]
+
+            # --- Financial Balances (All Time) ---
+            # 1. Cash on Hand
+            all_time_sales = Sale.objects.filter(tenant=request.user.tenant, shop=location, status='COMPLETED')
+            all_sales_agg = all_time_sales.aggregate(
+                cash_sales=Sum('total', filter=Q(payment_method='CASH')),
+                mixed_paid=Sum('amount_paid', filter=Q(payment_method='MIXED')),
+            )
+            cash_sales_val = (all_sales_agg['cash_sales'] or Decimal('0')) + (all_sales_agg['mixed_paid'] or Decimal('0'))
+            
+            # Customer Cash Payments
+            customer_payments = CustomerTransaction.objects.filter(
+                tenant=request.user.tenant,
+                performed_by__location=location,
+                transaction_type='CREDIT',
+                description__icontains='(CASH)'
+            ).exclude(description__icontains='ECASH').exclude(description__icontains='MOMO').aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
+            deposits = CashTransfer.objects.filter(
+                tenant=request.user.tenant, from_location=location, transfer_type='DEPOSIT', status='CONFIRMED'
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+            
+            floats_received = CashTransfer.objects.filter(
+                tenant=request.user.tenant, to_location=location, transfer_type='FLOAT', status='CONFIRMED'
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+            
+            context['cash_on_hand'] = cash_sales_val + customer_payments + floats_received - deposits
+
+            # 2. E-Cash Balance
+            ecash_sales = all_time_sales.filter(payment_method='ECASH', is_accountant_confirmed=False).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+            ecash_ct = CustomerTransaction.objects.filter(
+                tenant=request.user.tenant, transaction_type='CREDIT', description__icontains='ECASH', performed_by__location=location, is_accountant_confirmed=False
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+            context['ecash_balance'] = ecash_sales + ecash_ct
+
+            # 3. Local Momo Balance
+            context['momo_balance'] = Decimal('0')
+            if hasattr(request.user.tenant, 'allow_momo_payments') and request.user.tenant.allow_momo_payments:
+                momo_sales = all_time_sales.filter(payment_method='MOMO', is_accountant_confirmed=False).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+                momo_ct = CustomerTransaction.objects.filter(
+                    tenant=request.user.tenant, transaction_type='CREDIT', description__icontains='MOMO', performed_by__location=location, is_accountant_confirmed=False
+                ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                context['momo_balance'] = momo_sales + momo_ct
+
+            # 4. Credit (Debt owed by customers to this shop)
+            from apps.customers.models import Customer
+            context['credit_balance'] = Customer.objects.filter(
+                tenant=request.user.tenant, is_active=True, current_balance__gt=0, shop=location
+            ).aggregate(total=Sum('current_balance'))['total'] or Decimal('0')
+
+            # --- Low Stock Items Count ---
+            products = Product.objects.filter(tenant=request.user.tenant, is_active=True, reorder_level__gt=0)
+            low_stock_count = 0
+            for product in products:
+                if product.get_stock_at_location(location) <= product.reorder_level:
+                    low_stock_count += 1
+            context['low_stock_count'] = low_stock_count
+
+        return render(request, self.template_name, context)
+
+class UserSummaryModalView(LoginRequiredMixin, View):
+    """Return an HTML fragment with summary data for a user."""
+    template_name = 'core/modals/user_summary.html'
+
+    def get(self, request, pk):
+        from django.utils import timezone
+        from apps.sales.models import Sale, Shift
+        from django.db.models import Sum
+        from decimal import Decimal
+
+        user_obj = get_object_or_404(User, pk=pk, tenant=request.user.tenant)
+        context = {'user_obj': user_obj}
+
+        now = timezone.now()
+        current_month = now.month
+        current_year = now.year
+
+        # Total Monthly Sales
+        monthly_sales = Sale.objects.filter(
+            tenant=request.user.tenant,
+            attendant=user_obj,
+            status='COMPLETED',
+            created_at__year=current_year,
+            created_at__month=current_month
+        ).aggregate(total=Sum('total'))['total'] or Decimal('0')
+        context['monthly_sales'] = monthly_sales
+
+        # Total Monthly Shift Hours
+        shifts = Shift.objects.filter(
+            tenant=request.user.tenant,
+            attendant=user_obj,
+            start_time__year=current_year,
+            start_time__month=current_month,
+            end_time__isnull=False
+        )
+        total_seconds = sum((s.end_time - s.start_time).total_seconds() for s in shifts)
+        context['monthly_shift_hours'] = round(total_seconds / 3600, 1)
+
+        return render(request, self.template_name, context)

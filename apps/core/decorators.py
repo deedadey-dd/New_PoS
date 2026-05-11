@@ -77,3 +77,11 @@ class AdminRequiredMixin(RoleRequiredMixin):
     """
     allowed_roles = ['ADMIN']
     permission_denied_message = 'Only administrators can access this page.'
+
+
+class ReportingAccessRequiredMixin(RoleRequiredMixin):
+    """
+    Mixin that restricts access to ADMIN, ACCOUNTANT, AUDITOR, and Managers.
+    """
+    allowed_roles = ['ADMIN', 'PRODUCTION_MANAGER', 'STORES_MANAGER', 'SHOP_MANAGER', 'ACCOUNTANT', 'AUDITOR']
+    permission_denied_message = 'You do not have permission to access reporting tools.'

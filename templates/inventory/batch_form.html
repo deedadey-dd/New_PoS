@@ -131,3 +131,21 @@
     </div>
 </div>
 {% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const productSelect = document.querySelector('select[name="product"]');
+        if (productSelect && typeof TomSelect !== 'undefined') {
+            new TomSelect(productSelect, {
+                create: false,
+                sortField: {
+                    field: "text",
+                    direction: "asc"
+                },
+                placeholder: "Search and select a product..."
+            });
+        }
+    });
+</script>
+{% endblock %}

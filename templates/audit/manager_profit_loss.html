@@ -195,7 +195,9 @@
                                         {{ mgr.user.first_name.0|default:"?" }}{{ mgr.user.last_name.0|default:"" }}
                                     </div>
                                     <div>
-                                        <strong>{{ mgr.user.get_full_name|default:mgr.user.email }}</strong>
+                                        <a href="javascript:void(0)" class="text-decoration-none summary-link" data-url="{% url 'core:user_summary' mgr.user.pk %}">
+                                            <strong>{{ mgr.user.get_full_name|default:mgr.user.email }}</strong>
+                                        </a>
                                         <br><small class="text-muted">{{ mgr.user.email }}</small>
                                     </div>
                                 </div>
@@ -278,4 +280,58 @@
         font-size: 0.75rem;
     }
 </style>
+
+<!-- Universal Summary Modal -->
+<div class="modal fade" id="summaryModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content" id="summaryModalContent">
+            <!-- Content loaded via AJAX -->
+            <div class="text-center p-5">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const summaryLinks = document.querySelectorAll('.summary-link');
+    const summaryModal = new bootstrap.Modal(document.getElementById('summaryModal'));
+    const modalContent = document.getElementById('summaryModalContent');
+    const loadingHtml = '<div class="text-center p-5"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div></div>';
+
+    summaryLinks.forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const url = this.getAttribute('data-url');
+            
+            // Show loading state
+            modalContent.innerHTML = loadingHtml;
+            summaryModal.show();
+            
+            // Fetch summary
+            fetch(url, {
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(response => {
+                if (!response.ok) throw new Error('Network response was not ok');
+                return response.text();
+            })
+            .then(html => {
+                modalContent.innerHTML = html;
+            })
+            .catch(error => {
+                console.error('Error fetching summary:', error);
+                modalContent.innerHTML = '<div class="p-4 text-center text-danger"><i class="bi bi-exclamation-triangle fs-1"></i><p class="mt-2">Failed to load summary. Please try again.</p></div>';
+            });
+        });
+    });
+});
+</script>
 {% endblock %}

@@ -1,0 +1,137 @@
+<div class="modal-header d-flex justify-content-between align-items-center">
+    <h5 class="modal-title m-0">Location Summary: {{ location.name }}</h5>
+    <button type="button" class="btn-close no-print" data-bs-dismiss="modal" aria-label="Close"></button>
+</div>
+<div class="modal-body" id="printArea">
+    <!-- Header info -->
+    <div class="d-flex align-items-center mb-4 pb-3 border-bottom">
+        <div class="me-3">
+            <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center" style="width: 50px; height: 50px; font-size: 24px;">
+                <i class="bi bi-geo-alt-fill"></i>
+            </div>
+        </div>
+        <div>
+            <h4 class="mb-0">{{ location.name }}</h4>
+            <div class="text-muted">
+                {{ location.get_location_type_display }}
+                {% if location.is_active %}
+                <span class="badge bg-success ms-2">Active</span>
+                {% else %}
+                <span class="badge bg-secondary ms-2">Inactive</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-sm-6 mb-3">
+            <h6 class="text-muted text-uppercase mb-1" style="font-size: 0.8rem;">Contact Info</h6>
+            <div><i class="bi bi-telephone me-2"></i>{{ location.phone|default:"N/A" }}</div>
+            <div><i class="bi bi-envelope me-2"></i>{{ location.email|default:"N/A" }}</div>
+        </div>
+        <div class="col-sm-6 mb-3">
+            <h6 class="text-muted text-uppercase mb-1" style="font-size: 0.8rem;">Address</h6>
+            <div><i class="bi bi-map me-2"></i>{{ location.address|default:"N/A" }}</div>
+        </div>
+    </div>
+
+    <!-- Active Users & Stock -->
+    <div class="row mb-4 text-center">
+        <div class="col-6 col-md-3 mb-3">
+            <div class="card bg-light border-0">
+                <div class="card-body p-3">
+                    <h3 class="mb-0">{{ active_users }}</h3>
+                    <div class="text-muted small text-uppercase">Active Users</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3 mb-3">
+            <div class="card {% if low_stock_count > 0 %}bg-warning text-dark{% else %}bg-light{% endif %} border-0">
+                <div class="card-body p-3">
+                    <h3 class="mb-0">{{ low_stock_count|default:"0" }}</h3>
+                    <div class="text-muted small text-uppercase">Low Stock Items</div>
+                </div>
+            </div>
+        </div>
+        {% if location.location_type == 'SHOP' %}
+        <div class="col-6 col-md-6 mb-3">
+            <div class="card bg-primary text-white border-0">
+                <div class="card-body p-3">
+                    <h3 class="mb-0">{{ currency_symbol }}{{ monthly_revenue|floatformat:"2g"|default:"0.00" }}</h3>
+                    <div class="text-white-50 small text-uppercase">Total Monthly Revenue</div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if location.location_type == 'SHOP' %}
+    <h5 class="border-bottom pb-2 mb-3">Financial Balances (All Time)</h5>
+    <div class="row mb-4">
+        <div class="col-sm-6 col-md-3 mb-3">
+            <div class="border rounded p-3 text-center h-100">
+                <i class="bi bi-cash fs-3 text-success mb-2"></i>
+                <h5 class="mb-1">{{ currency_symbol }}{{ cash_on_hand|floatformat:"2g"|default:"0.00" }}</h5>
+                <span class="text-muted small">Cash on Hand</span>
+            </div>
+        </div>
+        <div class="col-sm-6 col-md-3 mb-3">
+            <div class="border rounded p-3 text-center h-100">
+                <i class="bi bi-credit-card fs-3 text-info mb-2"></i>
+                <h5 class="mb-1">{{ currency_symbol }}{{ ecash_balance|floatformat:"2g"|default:"0.00" }}</h5>
+                <span class="text-muted small">E-Cash</span>
+            </div>
+        </div>
+        {% if current_tenant.allow_momo_payments %}
+        <div class="col-sm-6 col-md-3 mb-3">
+            <div class="border rounded p-3 text-center h-100" style="border-color: #eab308 !important;">
+                <i class="bi bi-phone fs-3 mb-2" style="color: #eab308;"></i>
+                <h5 class="mb-1">{{ currency_symbol }}{{ momo_balance|floatformat:"2g"|default:"0.00" }}</h5>
+                <span class="text-muted small">Local Momo</span>
+            </div>
+        </div>
+        {% endif %}
+        <div class="col-sm-6 col-md-3 mb-3">
+            <div class="border rounded p-3 text-center h-100">
+                <i class="bi bi-person-dash fs-3 text-warning mb-2"></i>
+                <h5 class="mb-1">{{ currency_symbol }}{{ credit_balance|floatformat:"2g"|default:"0.00" }}</h5>
+                <span class="text-muted small">Outstanding Credit</span>
+            </div>
+        </div>
+    </div>
+
+    {% if top_products %}
+    <h5 class="border-bottom pb-2 mb-3">Top 10 Products (This Month)</h5>
+    <div class="table-responsive">
+        <table class="table table-sm table-striped">
+            <thead>
+                <tr>
+                    <th>Product</th>
+                    <th class="text-end">Qty Sold</th>
+                    <th class="text-end">Revenue</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in top_products %}
+                <tr>
+                    <td>{{ p.product__name }}</td>
+                    <td class="text-end">{{ p.qty_sold|floatformat:"2g" }}</td>
+                    <td class="text-end">{{ currency_symbol }}{{ p.revenue|floatformat:"2g" }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+    {% endif %}
+
+    <div class="text-muted text-center mt-4 small print-only">
+        Report generated on {% now "F j, Y, g:i a" %} by {{ request.user.get_full_name }}
+    </div>
+</div>
+<div class="modal-footer no-print">
+    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+    <button type="button" class="btn btn-primary" onclick="window.print()">
+        <i class="bi bi-printer me-2"></i>Print / Save PDF
+    </button>
+</div>

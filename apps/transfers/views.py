@@ -793,15 +793,25 @@ class StockRequestCreateView(LoginRequiredMixin, View):
                     location_type=location_type
                 ).first()
         
-        # Get low stock products at user's location (match Stock Alerts logic)
+        # Determine preloading behavior based on GET parameter
+        populate = request.GET.get('populate')
         low_stock_products = []
-        if user_location:
+        
+        if populate in ['all_low_stock', 'favourite_low_stock'] and user_location:
             # Get products with reorder level set
             products = Product.objects.filter(
                 tenant=request.user.tenant,
                 is_active=True,
                 reorder_level__gt=0
             )
+            
+            # For favourites, filter products further
+            if populate == 'favourite_low_stock':
+                from apps.inventory.models import FavoriteProduct
+                favorite_product_ids = set(FavoriteProduct.objects.filter(
+                    tenant=request.user.tenant, location=user_location
+                ).values_list('product_id', flat=True))
+                products = products.filter(pk__in=favorite_product_ids)
             
             for product in products:
                 stock_qty = product.get_stock_at_location(user_location)

@@ -20,9 +20,9 @@
         </a>
     </div>
     
-    {% if request.user.role.name == 'STORES_MANAGER' %}
+    {% if request.user.role.name != 'ADMIN' %}
     <div class="alert alert-info py-2 small mt-2 mb-0">
-        <i class="bi bi-info-circle me-1"></i> Adjustments for locations other than your current one will require approval from the Shop Manager.
+        <i class="bi bi-info-circle me-1"></i> All stock adjustments require approval from an Auditor.
     </div>
     {% endif %}
 </div>
@@ -80,4 +80,22 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const productSelect = document.querySelector('select[name="product"]');
+        if (productSelect && typeof TomSelect !== 'undefined') {
+            new TomSelect(productSelect, {
+                create: false,
+                sortField: {
+                    field: "text",
+                    direction: "asc"
+                },
+                placeholder: "Search and select a product..."
+            });
+        }
+    });
+</script>
 {% endblock %}

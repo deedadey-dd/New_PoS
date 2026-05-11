@@ -39,14 +39,12 @@
                         <div class="form-text">Leave empty for top-level category</div>
                     </div>
 
-                    {% if object %}
                     <div class="mb-3">
                         <div class="form-check">
                             {{ form.is_active }}
                             <label class="form-check-label" for="id_is_active">Active</label>
                         </div>
                     </div>
-                    {% endif %}
 
                     <div class="d-flex gap-2">
                         <button type="submit" class="btn btn-primary">

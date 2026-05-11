@@ -903,13 +903,8 @@ class StockAdjustmentView(LoginRequiredMixin, View):
             is_own_location = (user.location_id == location.pk)
             
             # Determine if this needs approval
-            needs_approval = False
-            if role_name == 'STORES_MANAGER' and not is_own_location:
-                needs_approval = True
-            
-            # Admin always auto-approves
-            if role_name == 'ADMIN':
-                needs_approval = False
+            # Stock adjustments must be approved by an auditor
+            needs_approval = role_name != 'ADMIN'
             
             # Create the StockAdjustment record
             adjustment = StockAdjustment.objects.create(
@@ -925,16 +920,16 @@ class StockAdjustmentView(LoginRequiredMixin, View):
             )
             
             if needs_approval:
-                # Notify the target location's manager(s) and admins
+                # Notify the Auditors and Admins
                 from apps.notifications.models import Notification
                 from apps.core.models import User
                 
-                # Find managers of the target location + admins
+                # Find Auditors and Admins
                 target_users = User.objects.filter(
                     tenant=user.tenant,
                     is_active=True,
                 ).filter(
-                    Q(location=location, role__name='SHOP_MANAGER') |
+                    Q(role__name='AUDITOR') |
                     Q(role__name='ADMIN')
                 ).exclude(pk=user.pk)
                 
@@ -1058,11 +1053,11 @@ class ReviewAdjustmentView(LoginRequiredMixin, View):
         user = request.user
         role_name = user.role.name if hasattr(user, 'role') and user.role else ''
         
-        # Only Shop Manager of that location or Admin can review
+        # Only Auditor or Admin can review
         can_review = False
         if role_name == 'ADMIN':
             can_review = True
-        elif role_name == 'SHOP_MANAGER' and user.location_id == adjustment.location_id:
+        elif role_name == 'AUDITOR':
             can_review = True
         
         if not can_review:

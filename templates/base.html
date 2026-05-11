@@ -19,6 +19,8 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="apple-touch-icon" href="{% static 'images/icons/icon-192x192.png' %}">
 
+    <!-- TomSelect CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/css/tom-select.bootstrap5.min.css" rel="stylesheet">
     {% block extra_css %}{% endblock %}
 </head>
 
@@ -282,21 +284,9 @@
                     </li>
                     {% endif %}
 
-                    <!-- Admin -->
+                    <!-- Admin Only Settings -->
                     {% if role_name == 'ADMIN' %}
                     <li class="nav-item mt-3 border-top border-secondary pt-3">
-                        <a class="nav-link text-white {% if 'users' in request.path %}active{% endif %}"
-                            href="{% url 'core:user_list' %}">
-                            <i class="bi bi-person-badge me-2"></i> Users
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link text-white {% if 'locations' in request.path %}active{% endif %}"
-                            href="{% url 'core:location_list' %}">
-                            <i class="bi bi-geo-alt me-2"></i> Locations
-                        </a>
-                    </li>
-                    <li class="nav-item">
                         <a class="nav-link text-white d-flex justify-content-between align-items-center {% if 'settings' in request.path or 'payments' in request.path %}active{% endif %}"
                             data-bs-toggle="collapse" href="#settingsMenu" role="button"
                             aria-expanded="{% if 'settings' in request.path or 'payments' in request.path %}true{% else %}false{% endif %}">
@@ -352,14 +342,26 @@
                     <!-- Auditor/Accountant Tracking & Reports -->
                     {% if role_name == 'AUDITOR' or role_name == 'ACCOUNTANT' or role_name == 'ADMIN' %}
                     <li class="nav-item mt-3 border-top border-secondary pt-3">
-                        <a class="nav-link text-white d-flex justify-content-between align-items-center {% if 'audit' in request.path %}active{% endif %}"
+                        <a class="nav-link text-white d-flex justify-content-between align-items-center {% if 'audit' in request.path or 'users' in request.path or 'locations' in request.path %}active{% endif %}"
                             data-bs-toggle="collapse" href="#auditMenu" role="button"
-                            aria-expanded="{% if 'audit' in request.path %}true{% else %}false{% endif %}">
+                            aria-expanded="{% if 'audit' in request.path or 'users' in request.path or 'locations' in request.path %}true{% else %}false{% endif %}">
                             <span><i class="bi bi-graph-up-arrow me-2"></i>Tracking & Reports</span>
                             <i class="bi bi-chevron-down small"></i>
                         </a>
-                        <div class="collapse {% if 'audit' in request.path %}show{% endif %}" id="auditMenu">
+                        <div class="collapse {% if 'audit' in request.path or 'users' in request.path or 'locations' in request.path %}show{% endif %}" id="auditMenu">
                             <ul class="nav flex-column ms-3 border-start border-secondary ps-2">
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if 'users' in request.path %}text-white{% endif %}"
+                                        href="{% url 'core:user_list' %}">
+                                        <i class="bi bi-person-badge me-2"></i>System Users
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if 'locations' in request.path %}text-white{% endif %}"
+                                        href="{% url 'core:location_list' %}">
+                                        <i class="bi bi-geo-alt me-2"></i>Locations
+                                    </a>
+                                </li>
                                 <li class="nav-item">
                                     <a class="nav-link text-white-50 py-1 {% if 'product-lifecycle' in request.path %}text-white{% endif %}"
                                         href="{% url 'audit:product_lifecycle' %}">
@@ -537,8 +539,8 @@
                     </a>
                     {% endif %}
 
-                    <!-- Local Momo Shortcut -->
-                    {% if role_name in 'SHOP_MANAGER,ACCOUNTANT,ADMIN' and request.user.tenant.allow_momo_payments %}
+                    <!-- Local Momo Shortcut (exclude ADMIN) -->
+                    {% if role_name in 'SHOP_MANAGER,ACCOUNTANT' and request.user.tenant.allow_momo_payments %}
                     <a href="{% if role_name == 'ACCOUNTANT' %}{% url 'accounting:shop_momo_list' %}{% else %}{% url 'accounting:shop_momo_history' %}{% endif %}" class="me-3 text-decoration-none"
                         title="Local Momo {% if role_name == 'ACCOUNTANT' %}Withdrawals{% else %}History{% endif %}">
                         <span class="badge text-dark fs-6" style="background-color: #eab308;">
@@ -858,6 +860,9 @@
             document.getElementById('adjustmentReviewForm').submit();
         }
     </script>
+
+    <!-- TomSelect JS -->
+    <script src="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/js/tom-select.complete.min.js"></script>
 
     <script>
         // Sidebar toggle for mobile

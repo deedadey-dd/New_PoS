@@ -1,0 +1,75 @@
+<div class="modal-header d-flex justify-content-between align-items-center">
+    <h5 class="modal-title m-0">User Summary: {{ user_obj.get_full_name|default:user_obj.email }}</h5>
+    <button type="button" class="btn-close no-print" data-bs-dismiss="modal" aria-label="Close"></button>
+</div>
+<div class="modal-body" id="printArea">
+    <!-- Header info -->
+    <div class="d-flex align-items-center mb-4 pb-3 border-bottom">
+        <div class="me-3">
+            <div class="rounded-circle bg-secondary text-white d-flex align-items-center justify-content-center" style="width: 50px; height: 50px; font-size: 24px;">
+                {% if user_obj.first_name %}
+                    {{ user_obj.first_name|first|upper }}
+                {% else %}
+                    <i class="bi bi-person-fill"></i>
+                {% endif %}
+            </div>
+        </div>
+        <div>
+            <h4 class="mb-0">{{ user_obj.get_full_name|default:user_obj.email }}</h4>
+            <div class="text-muted">
+                {{ user_obj.role.get_name_display|default:"No Role" }}
+                {% if user_obj.is_active %}
+                <span class="badge bg-success ms-2">Active</span>
+                {% else %}
+                <span class="badge bg-secondary ms-2">Inactive</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-sm-6 mb-3">
+            <h6 class="text-muted text-uppercase mb-1" style="font-size: 0.8rem;">Contact Info</h6>
+            <div><i class="bi bi-envelope me-2"></i>{{ user_obj.email }}</div>
+            <div><i class="bi bi-telephone me-2"></i>{{ user_obj.phone|default:"N/A" }}</div>
+        </div>
+        <div class="col-sm-6 mb-3">
+            <h6 class="text-muted text-uppercase mb-1" style="font-size: 0.8rem;">Assignment</h6>
+            <div><i class="bi bi-geo-alt me-2"></i>{{ user_obj.location.name|default:"Not Assigned" }}</div>
+            <div><i class="bi bi-clock-history me-2"></i>Joined: {{ user_obj.date_joined|date:"M d, Y" }}</div>
+        </div>
+    </div>
+
+    <!-- Monthly Performance Stats -->
+    <h5 class="border-bottom pb-2 mb-3">Monthly Performance ({{ request.resolver_match.app_name|default:"This Month" }})</h5>
+    <div class="row mb-4 text-center">
+        <div class="col-6 col-md-6 mb-3">
+            <div class="card bg-light border-0 h-100">
+                <div class="card-body p-3">
+                    <i class="bi bi-cart-check fs-3 text-primary mb-2 d-block"></i>
+                    <h3 class="mb-0">{{ currency_symbol }}{{ monthly_sales|floatformat:"2g"|default:"0.00" }}</h3>
+                    <div class="text-muted small text-uppercase">Total Monthly Sales</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-6 mb-3">
+            <div class="card bg-light border-0 h-100">
+                <div class="card-body p-3">
+                    <i class="bi bi-clock fs-3 text-info mb-2 d-block"></i>
+                    <h3 class="mb-0">{{ monthly_shift_hours|default:"0" }} <span class="fs-6">hrs</span></h3>
+                    <div class="text-muted small text-uppercase">Monthly Shift Hours</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="text-muted text-center mt-4 small print-only">
+        Report generated on {% now "F j, Y, g:i a" %} by {{ request.user.get_full_name }}
+    </div>
+</div>
+<div class="modal-footer no-print">
+    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+    <button type="button" class="btn btn-primary" onclick="window.print()">
+        <i class="bi bi-printer me-2"></i>Print / Save PDF
+    </button>
+</div>

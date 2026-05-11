@@ -39,6 +39,10 @@ urlpatterns = [
     path('users/<int:pk>/delete/', views.UserDeleteView.as_view(), name='user_delete'),
     path('users/<int:pk>/reset-password/', views.AdminPasswordResetView.as_view(), name='admin_password_reset'),
     
+    # Summary Modals (API)
+    path('api/locations/<int:pk>/summary/', views.LocationSummaryModalView.as_view(), name='location_summary'),
+    path('api/users/<int:pk>/summary/', views.UserSummaryModalView.as_view(), name='user_summary'),
+    
     # Password change
     path('change-password/', views.ForcedPasswordChangeView.as_view(), name='forced_password_change'),
     

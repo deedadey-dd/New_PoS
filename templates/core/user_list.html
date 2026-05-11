@@ -8,9 +8,11 @@
         <h2 class="mb-1">Users</h2>
         <p class="text-muted mb-0">Manage staff and their roles</p>
     </div>
+    {% if role_name not in 'ACCOUNTANT,AUDITOR' %}
     <a href="{% url 'core:user_create' %}" class="btn btn-primary">
         <i class="bi bi-person-plus me-2"></i>Add User
     </a>
+    {% endif %}
 </div>
 
 <div class="card">
@@ -25,14 +27,18 @@
                         <th>Role</th>
                         <th>Location</th>
                         <th>Status</th>
+                        {% if role_name not in 'ACCOUNTANT,AUDITOR' %}
                         <th class="text-end">Actions</th>
+                        {% endif %}
                     </tr>
                 </thead>
                 <tbody>
                     {% for usr in users %}
                     <tr>
                         <td>
-                            <strong>{{ usr.get_full_name|default:usr.email }}</strong>
+                            <a href="javascript:void(0)" class="text-decoration-none summary-link" data-url="{% url 'core:user_summary' usr.pk %}">
+                                <strong>{{ usr.get_full_name|default:usr.email }}</strong>
+                            </a>
                         </td>
                         <td>{{ usr.email }}</td>
                         <td>
@@ -50,6 +56,7 @@
                             <span class="badge bg-secondary">Inactive</span>
                             {% endif %}
                         </td>
+                        {% if role_name not in 'ACCOUNTANT,AUDITOR' %}
                         <td class="text-end">
                             <a href="{% url 'core:user_edit' usr.pk %}" class="btn btn-sm btn-outline-primary"
                                 title="Edit User">
@@ -66,6 +73,7 @@
                             </a>
                             {% endif %}
                         </td>
+                        {% endif %}
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -84,4 +92,59 @@
         {% endif %}
     </div>
 </div>
+
+<!-- Universal Summary Modal -->
+<div class="modal fade" id="summaryModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content" id="summaryModalContent">
+            <!-- Content loaded via AJAX -->
+            <div class="text-center p-5">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const summaryLinks = document.querySelectorAll('.summary-link');
+    const summaryModal = new bootstrap.Modal(document.getElementById('summaryModal'));
+    const modalContent = document.getElementById('summaryModalContent');
+    const loadingHtml = '<div class="text-center p-5"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div></div>';
+
+    summaryLinks.forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const url = this.getAttribute('data-url');
+            
+            // Show loading state
+            modalContent.innerHTML = loadingHtml;
+            summaryModal.show();
+            
+            // Fetch summary
+            fetch(url, {
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(response => {
+                if (!response.ok) throw new Error('Network response was not ok');
+                return response.text();
+            })
+            .then(html => {
+                modalContent.innerHTML = html;
+            })
+            .catch(error => {
+                console.error('Error fetching summary:', error);
+                modalContent.innerHTML = '<div class="p-4 text-center text-danger"><i class="bi bi-exclamation-triangle fs-1"></i><p class="mt-2">Failed to load summary. Please try again.</p></div>';
+            });
+        });
+    });
+});
+</script>
 {% endblock %}
