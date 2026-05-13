@@ -112,6 +112,23 @@ class POSView(LoginRequiredMixin, View):
             is_active=True
         ).values('id', 'name', 'phone', 'current_balance', 'credit_limit')
         
+        # Get active payment providers for this shop
+        from apps.payments.services.factory import get_active_payment_providers
+        providers = get_active_payment_providers(request.user.tenant, shop=user_shop)
+        
+        payment_providers_data = []
+        default_provider_name = ''
+        default_provider_public_key = ''
+        
+        if providers:
+            default_provider_name = providers[0].provider_name
+            default_provider_public_key = providers[0].public_key
+            for p in providers:
+                payment_providers_data.append({
+                    'name': p.provider_name,
+                    'public_key': p.public_key,
+                })
+
         context = {
             'shop': user_shop,
             'shop_settings': shop_settings,
@@ -120,6 +137,9 @@ class POSView(LoginRequiredMixin, View):
             'customers': json.dumps(list(customers), default=str),
             'categories': categories,
             'currency_symbol': request.user.tenant.currency_symbol if request.user.tenant.currency else '$',
+            'payment_provider': default_provider_name,
+            'payment_public_key': default_provider_public_key,
+            'payment_providers': json.dumps(payment_providers_data),
         }
         
         return render(request, self.template_name, context)
@@ -657,7 +677,7 @@ def api_complete_sale(request):
     amount_paid = Decimal(str(data.get('amount_paid', 0)))
     discount_amount = Decimal(str(data.get('discount_amount', 0)))
     discount_reason = data.get('discount_reason', '')
-    paystack_ref = data.get('paystack_reference', '')
+    gateway_ref = data.get('paystack_reference', '') or data.get('gateway_reference', '')
     customer_id = data.get('customer_id')
     is_payment_on_account = data.get('is_payment_on_account', False)
     
@@ -785,10 +805,10 @@ def api_complete_sale(request):
                 )
                 
                 # For the sale, record only the total as paid
-                sale.complete(sale.total, payment_method, paystack_ref)
+                sale.complete(sale.total, payment_method, gateway_ref)
             else:
                 # Complete sale (handles partial payments)
-                sale.complete(amount_paid, payment_method, paystack_ref)
+                sale.complete(amount_paid, payment_method, gateway_ref)
             
             return JsonResponse({
                 'success': True,
@@ -1032,8 +1052,22 @@ def initialize_ecash_payment(request):
             }, status=400)
         
         # Get active payment provider (handles shop-level overrides)
-        from apps.payments.services.paystack import get_payment_provider
-        provider = get_payment_provider(tenant, shop=shop)
+        from apps.payments.services.factory import get_payment_provider, get_active_payment_providers
+        
+        provider_name_request = data.get('provider_name')
+        provider = None
+        
+        if provider_name_request:
+            # Find the specific provider requested
+            active_providers = get_active_payment_providers(tenant, shop=shop)
+            for p in active_providers:
+                if p.provider_name == provider_name_request:
+                    provider = p
+                    break
+                    
+        if not provider:
+            # Fallback to default
+            provider = get_payment_provider(tenant, shop=shop)
         
         if not provider or not provider.public_key:
             return JsonResponse({
@@ -1083,75 +1117,100 @@ def initialize_ecash_payment(request):
         import uuid
         reference = f"ECASH-{timezone.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8].upper()}"
         
-        # For payment on account, we don't create a sale - just return Paystack config
-        if is_payment_on_account:
-            return JsonResponse({
-                'success': True,
-                'sale_id': None,  # No sale for payment on account
-                'sale_number': None,
-                'reference': reference,
-                'paystack_public_key': provider.public_key,
-                'customer_email': customer_email,
-                'tenant_id': tenant.pk,
-                'total': str(total),
-                'is_payment_on_account': True,
-                'customer_id': customer_id,
-                'customer_name': customer.name if customer else None
-            })
+        sale_id = None
+        sale_number = None
+        amount_to_pay = total
         
-        # Create pending sale for normal cart checkout
-        with transaction.atomic():
-            # Get current shift if any
-            current_shift = Shift.objects.filter(
-                tenant=tenant,
-                attendant=user,
-                status='OPEN'
-            ).first()
-            
-            sale = Sale.objects.create(
-                tenant=tenant,
-                shop=shop,
-                attendant=user,
-                shift=current_shift,
-                customer=customer,
-                payment_method='ECASH',
-                status='PENDING',
-                discount_amount=discount,
-                paystack_reference=reference
-            )
-            
-            # Create sale items
-            for item_data in items:
-                product = Product.objects.filter(
+        # For payment on account, we don't create a sale
+        if not is_payment_on_account:
+            # Create pending sale for normal cart checkout
+            with transaction.atomic():
+                # Get current shift if any
+                current_shift = Shift.objects.filter(
                     tenant=tenant,
-                    pk=item_data['product_id'],
-                    is_active=True
+                    attendant=user,
+                    status='OPEN'
                 ).first()
                 
-                if product:
-                    SaleItem.objects.create(
+                sale = Sale.objects.create(
+                    tenant=tenant,
+                    shop=shop,
+                    attendant=user,
+                    shift=current_shift,
+                    customer=customer,
+                    payment_method='ECASH',
+                    status='PENDING',
+                    discount_amount=discount,
+                    gateway_reference=reference
+                )
+                
+                # Create sale items
+                for item_data in items:
+                    product = Product.objects.filter(
                         tenant=tenant,
-                        sale=sale,
-                        product=product,
-                        quantity=Decimal(str(item_data['quantity'])),
-                        unit_price=Decimal(str(item_data['unit_price']))
-                    )
-            
-            # Calculate totals
-            sale.calculate_totals()
+                        pk=item_data['product_id'],
+                        is_active=True
+                    ).first()
+                    
+                    if product:
+                        SaleItem.objects.create(
+                            tenant=tenant,
+                            sale=sale,
+                            product=product,
+                            quantity=Decimal(str(item_data['quantity'])),
+                            unit_price=Decimal(str(item_data['unit_price']))
+                        )
+                
+                # Calculate totals
+                sale.calculate_totals()
+                sale_id = sale.pk
+                sale_number = sale.sale_number
+                amount_to_pay = sale.total
         
-        return JsonResponse({
+        # Prepare response
+        response_data = {
             'success': True,
-            'sale_id': sale.pk,
-            'sale_number': sale.sale_number,
+            'sale_id': sale_id,
+            'sale_number': sale_number,
             'reference': reference,
-            'paystack_public_key': provider.public_key,
+            'provider_public_key': provider.public_key,
+            'provider_name': provider.provider_name.upper(),
             'customer_email': customer_email,
             'tenant_id': tenant.pk,
-            'total': str(sale.total)
-        })
+            'total': str(amount_to_pay),
+            'is_payment_on_account': is_payment_on_account,
+            'customer_id': customer_id,
+            'customer_name': customer.name if customer else None,
+            'checkout_url': None
+        }
+        
+        # Initialize Nalo Checkout if needed
+        if provider.provider_name.upper() == 'NALO':
+            # Use POS root URL as callback
+            callback_url = request.build_absolute_uri('/sales/pos/')
+            metadata = {'customer_name': customer.name if customer else 'Customer'}
+            
+            payment_result = provider.initialize_payment(
+                amount=amount_to_pay,
+                email=customer_email,
+                reference=reference,
+                callback_url=callback_url,
+                metadata=metadata
+            )
+            
+            if payment_result.success:
+                response_data['checkout_url'] = payment_result.authorization_url
+            else:
+                return JsonResponse({
+                    'success': False,
+                    'error': f"Failed to initialize Nalo checkout: {payment_result.message}"
+                }, status=400)
+                
+        return JsonResponse(response_data)
         
     except Exception as e:
+        import traceback
+        logger.error(f"Error in initialize_ecash_payment: {traceback.format_exc()}")
         return JsonResponse({
             'success': False,
             'error': str(e)
@@ -1187,7 +1246,7 @@ def verify_ecash_payment(request):
             from apps.core.models import Location
             shop = Location.objects.filter(tenant=tenant, location_type='SHOP', is_active=True).first()
             
-        from apps.payments.services.paystack import get_payment_provider
+        from apps.payments.services.factory import get_payment_provider
         provider = get_payment_provider(tenant, shop=shop)
         
         if not provider:
@@ -1233,7 +1292,7 @@ def verify_ecash_payment(request):
                     customer=customer,
                     transaction_type='CREDIT',
                     amount=amount,
-                    description=f"ECASH Payment (Paystack: {reference[:20]}...)",
+                    description=f"ECASH Payment ({provider.provider_name}: {reference[:20]}...)",
                     reference_id=reference,
                     balance_before=balance_before,
                     balance_after=customer.current_balance,
@@ -1246,7 +1305,7 @@ def verify_ecash_payment(request):
                     tenant=tenant,
                     amount=amount,
                     sale=None,
-                    paystack_ref=reference,
+                    gateway_ref=reference,
                     user=user,
                     notes=f"Payment on account for {customer.name}"
                 )
@@ -1269,7 +1328,7 @@ def verify_ecash_payment(request):
         sale = Sale.objects.filter(
             tenant=tenant,
             pk=sale_id,
-            paystack_reference=reference,
+            gateway_reference=reference,
             status='PENDING'
         ).first()
         
@@ -1284,7 +1343,7 @@ def verify_ecash_payment(request):
             sale.complete(
                 amount_paid=sale.total,
                 payment_method='ECASH',
-                paystack_ref=reference
+                gateway_ref=reference
             )
             
             # Record in e-cash ledger
@@ -1293,7 +1352,7 @@ def verify_ecash_payment(request):
                 tenant=tenant,
                 amount=sale.total,
                 sale=sale,
-                paystack_ref=reference,
+                gateway_ref=reference,
                 user=user
             )
         

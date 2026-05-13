@@ -18,16 +18,19 @@ from django.db import transaction
 from django.utils import timezone
 
 from .models import PaymentProviderSettings, ECashLedger, ECashWithdrawal
-from .services.paystack import get_payment_provider, PaystackProvider
+from .services.factory import get_payment_provider
+from .services.paystack import PaystackProvider
 from apps.core.decorators import role_required
 from apps.core.mixins import SortableMixin
 
 logger = logging.getLogger(__name__)
 
 
-class PaymentProviderSettingsView(LoginRequiredMixin, TemplateView):
-    """View and update payment provider settings."""
+class PaymentProviderSettingsView(LoginRequiredMixin, ListView):
+    """View and manage payment provider settings."""
+    model = PaymentProviderSettings
     template_name = 'payments/provider_settings.html'
+    context_object_name = 'provider_settings'
     
     def dispatch(self, request, *args, **kwargs):
         # Only Admin can access
@@ -36,52 +39,78 @@ class PaymentProviderSettingsView(LoginRequiredMixin, TemplateView):
             return redirect('core:dashboard')
         return super().dispatch(request, *args, **kwargs)
     
+    def get_queryset(self):
+        return PaymentProviderSettings.objects.filter(
+            tenant=self.request.user.tenant
+        ).select_related('shop').order_by('shop__name', 'priority', 'provider')
+        
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         tenant = self.request.user.tenant
         
-        # Get or create Paystack settings
-        settings, created = PaymentProviderSettings.objects.get_or_create(
-            tenant=tenant,
-            provider='PAYSTACK',
-            defaults={'is_active': False}
-        )
-        
-        context['provider_settings'] = settings
-        context['masked_secret_key'] = settings.get_masked_secret_key()
         context['ecash_balance'] = ECashLedger.get_current_balance(tenant)
+        context['provider_choices'] = PaymentProviderSettings.PROVIDER_CHOICES
+        
+        from apps.core.models import Location
+        context['shops'] = Location.objects.filter(tenant=tenant, location_type='SHOP')
         return context
     
     def post(self, request):
         tenant = request.user.tenant
+        action = request.POST.get('action')
         
-        settings, created = PaymentProviderSettings.objects.get_or_create(
-            tenant=tenant,
-            provider='PAYSTACK',
-            defaults={'is_active': False}
-        )
+        if action == 'delete':
+            setting_id = request.POST.get('setting_id')
+            PaymentProviderSettings.objects.filter(id=setting_id, tenant=tenant).delete()
+            messages.success(request, "Payment configuration deleted successfully!")
+            return redirect('payments:provider_settings')
+            
+        provider = request.POST.get('provider')
+        shop_id = request.POST.get('shop')
+        shop = None
+        if shop_id:
+            from apps.core.models import Location
+            shop = get_object_or_404(Location, pk=shop_id, tenant=tenant, location_type='SHOP')
+            
+        setting_id = request.POST.get('setting_id')
         
-        # Update settings
-        settings.is_active = request.POST.get('is_active') == 'on'
-        settings.test_mode = request.POST.get('test_mode') == 'on'
-        settings.public_key = request.POST.get('public_key', '').strip()
-        
-        # Only update secret key if a new one is provided
-        new_secret_key = request.POST.get('secret_key', '').strip()
-        if new_secret_key and not new_secret_key.startswith('sk_'):
-            # Provided but doesn't look like a valid key - might be masked
-            pass
-        elif new_secret_key:
-            settings.secret_key = new_secret_key
-        
-        # Webhook secret (optional)
-        new_webhook_secret = request.POST.get('webhook_secret', '').strip()
-        if new_webhook_secret:
-            settings.webhook_secret = new_webhook_secret
-        
-        settings.save()
-        
-        messages.success(request, "Payment provider settings updated successfully!")
+        try:
+            if setting_id:
+                settings = get_object_or_404(PaymentProviderSettings, id=setting_id, tenant=tenant)
+                settings.provider = provider
+                settings.shop = shop
+            else:
+                settings = PaymentProviderSettings(tenant=tenant, provider=provider, shop=shop)
+                
+            # Update settings
+            settings.is_active = request.POST.get('is_active') == 'on'
+            settings.test_mode = request.POST.get('test_mode') == 'on'
+            settings.public_key = request.POST.get('public_key', '').strip()
+            settings.base_url = request.POST.get('base_url', '').strip()
+            
+            try:
+                settings.priority = int(request.POST.get('priority', 0))
+            except ValueError:
+                settings.priority = 0
+            
+            # Only update secret key if a new one is provided
+            new_secret_key = request.POST.get('secret_key', '').strip()
+            if new_secret_key and not new_secret_key.startswith('sk_') and not new_secret_key.startswith('FLWSECK'):
+                settings.secret_key = new_secret_key
+            elif new_secret_key and not settings.pk:
+                 settings.secret_key = new_secret_key
+            
+            # Webhook secret (optional)
+            new_webhook_secret = request.POST.get('webhook_secret', '').strip()
+            if new_webhook_secret:
+                settings.webhook_secret = new_webhook_secret
+            
+            settings.save()
+            messages.success(request, "Payment provider settings saved successfully!")
+            
+        except Exception as e:
+            messages.error(request, f"Error saving settings: {str(e)}")
+            
         return redirect('payments:provider_settings')
 
 
@@ -730,13 +759,20 @@ class ECashLedgerExportView(LoginRequiredMixin, View):
 
 @csrf_exempt
 @require_POST
-def paystack_webhook(request):
+def payment_webhook(request):
     """
-    Handle Paystack webhook events.
+    Handle Payment Provider webhook events.
     Verifies signature and processes payment confirmations.
     """
-    # Get signature from headers
-    signature = request.headers.get('X-Paystack-Signature', '')
+    # Get signatures from headers
+    paystack_sig = request.headers.get('X-Paystack-Signature', '')
+    flw_sig = request.headers.get('verif-hash', '')
+    
+    provider_name = 'PAYSTACK' if paystack_sig else 'FLUTTERWAVE' if flw_sig else None
+    
+    if not provider_name:
+        return HttpResponse(status=400)
+        
     payload = request.body
     
     try:
@@ -762,7 +798,7 @@ def paystack_webhook(request):
         # Get payment provider settings
         settings = PaymentProviderSettings.objects.filter(
             tenant=tenant,
-            provider='PAYSTACK',
+            provider=provider_name,
             is_active=True
         ).first()
         
@@ -770,27 +806,34 @@ def paystack_webhook(request):
             return HttpResponse(status=200)
         
         # Verify signature
-        provider = PaystackProvider(settings)
-        if not provider.verify_webhook_signature(payload, signature):
+        from apps.payments.services.factory import get_payment_provider
+        provider_svc = get_payment_provider(tenant)
+        if not provider_svc:
+             return HttpResponse(status=200)
+             
+        signature = paystack_sig if provider_name == 'PAYSTACK' else flw_sig
+        if not provider_svc.verify_webhook_signature(payload, signature):
             return HttpResponse(status=400)  # Invalid signature
         
         # Handle events
-        if event == 'charge.success':
-            reference = event_data.get('reference', '')
-            amount = Decimal(event_data.get('amount', 0)) / 100  # Convert from kobo
+        if (provider_name == 'PAYSTACK' and event == 'charge.success') or (provider_name == 'FLUTTERWAVE' and event == 'charge.completed'):
+            reference = event_data.get('reference', '') if provider_name == 'PAYSTACK' else event_data.get('tx_ref', '')
+            amount = Decimal(event_data.get('amount', 0)) 
+            if provider_name == 'PAYSTACK':
+                amount = amount / 100  # Convert from kobo
             
-            # Find the sale by paystack reference
+            # Find the sale by gateway reference
             from apps.sales.models import Sale
             sale = Sale.objects.filter(
                 tenant=tenant,
-                paystack_reference=reference
+                gateway_reference=reference
             ).first()
             
             if sale and sale.status == 'PENDING':
                 # Complete the sale
                 with transaction.atomic():
                     sale.status = 'COMPLETED'
-                    sale.paystack_status = 'success'
+                    sale.gateway_status = 'success'
                     sale.completed_at = timezone.now()
                     sale.save()
                     
@@ -799,7 +842,7 @@ def paystack_webhook(request):
                         tenant=tenant,
                         amount=amount,
                         sale=sale,
-                        paystack_ref=reference,
+                        gateway_ref=reference,
                         user=sale.attendant
                     )
         
@@ -810,4 +853,64 @@ def paystack_webhook(request):
     except Exception as e:
         # Log error but return 200 to prevent retries
         logger.error(f"Paystack webhook error: {e}")
+        return HttpResponse(status=200)
+
+@csrf_exempt
+@require_POST
+def nalo_webhook(request):
+    """
+    Handle Nalo Payment Provider webhook events.
+    """
+    try:
+        payload = request.body
+        data = json.loads(payload)
+        
+        # Payload format for Nalo
+        order_id = data.get('order_id')
+        status = data.get('status')
+        amount = Decimal(str(data.get('amount', 0)))
+        
+        if not order_id:
+            return HttpResponse(status=400)
+            
+        from apps.sales.models import Sale
+        sale = Sale.objects.filter(gateway_reference=order_id).first()
+        
+        if not sale:
+            return HttpResponse(status=200)
+            
+        tenant = sale.tenant
+        
+        # Verify provider settings
+        settings = PaymentProviderSettings.objects.filter(
+            tenant=tenant,
+            provider='NALO',
+            is_active=True
+        ).first()
+        
+        if not settings:
+            return HttpResponse(status=200)
+            
+        if status == 'COMPLETED' and sale.status == 'PENDING':
+            with transaction.atomic():
+                sale.status = 'COMPLETED'
+                sale.gateway_status = 'success'
+                sale.completed_at = timezone.now()
+                sale.save()
+                
+                # Record in e-cash ledger
+                ECashLedger.record_payment(
+                    tenant=tenant,
+                    amount=amount,
+                    sale=sale,
+                    gateway_ref=order_id,
+                    user=sale.attendant
+                )
+                
+        return HttpResponse(status=200)
+        
+    except json.JSONDecodeError:
+        return HttpResponse(status=400)
+    except Exception as e:
+        logger.error(f"Nalo webhook error: {e}")
         return HttpResponse(status=200)

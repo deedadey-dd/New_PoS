@@ -239,12 +239,12 @@ class Sale(TenantModel):
         default=Decimal('0')
     )
     
-    # E-Cash / Paystack payment reference
-    paystack_reference = models.CharField(max_length=100, blank=True)
-    paystack_status = models.CharField(
+    # E-Cash payment reference
+    gateway_reference = models.CharField(max_length=100, blank=True)
+    gateway_status = models.CharField(
         max_length=20,
         blank=True,
-        help_text="Paystack transaction status"
+        help_text="Gateway transaction status"
     )
     
     # Accountant Confirmation (for digital payments)
@@ -351,7 +351,7 @@ class Sale(TenantModel):
         self.total = self.subtotal - self.discount_amount + self.tax_amount
         self.save()
     
-    def complete(self, amount_paid, payment_method='CASH', paystack_ref=''):
+    def complete(self, amount_paid, payment_method='CASH', gateway_ref=''):
         """Complete the sale and deduct inventory."""
         if self.status != 'PENDING':
             raise ValidationError(f"Cannot complete sale in {self.status} status.")
@@ -360,8 +360,8 @@ class Sale(TenantModel):
         self.payment_method = payment_method
         
         if payment_method == 'ECASH':
-            self.paystack_reference = paystack_ref
-            self.paystack_status = 'success'
+            self.gateway_reference = gateway_ref
+            self.gateway_status = 'success'
         
         if self.amount_paid >= self.total:
             self.change_given = self.amount_paid - self.total

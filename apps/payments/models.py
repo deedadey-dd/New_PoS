@@ -62,9 +62,10 @@ class PaymentProviderSettings(TenantModel):
     """
     PROVIDER_CHOICES = [
         ('PAYSTACK', 'Paystack'),
-        ('FLUTTERWAVE', 'Flutterwave'),  # Future
-        ('MTN_MOMO', 'MTN Mobile Money'),  # Future
-        ('VODAFONE_CASH', 'Vodafone Cash'),  # Future
+        ('FLUTTERWAVE', 'Flutterwave'),
+        ('APPSNMOBILE', 'AppsNMobile'),
+        ('HUBTEL', 'Hubtel'),
+        ('NALO', 'Nalo'),
     ]
     
     provider = models.CharField(
@@ -75,6 +76,16 @@ class PaymentProviderSettings(TenantModel):
     is_active = models.BooleanField(
         default=False,
         help_text="Enable this payment provider"
+    )
+    
+    # Scope: If shop is null, applies to entire tenant
+    shop = models.ForeignKey(
+        Location,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='payment_settings',
+        help_text="Leave blank to apply to all shops"
     )
     
     # API Credentials (encrypted at rest)
@@ -102,10 +113,22 @@ class PaymentProviderSettings(TenantModel):
         help_text="Auto-generated webhook URL for this tenant"
     )
     
+    # Custom base URL (e.g., for Nalo)
+    base_url = models.URLField(
+        blank=True,
+        help_text="Custom base URL for the API (if required by provider)"
+    )
+    
     # Test mode
     test_mode = models.BooleanField(
         default=True,
         help_text="Use test/sandbox credentials"
+    )
+    
+    # Priority
+    priority = models.PositiveIntegerField(
+        default=0,
+        help_text="Priority order (0=highest)"
     )
     
     # Audit fields
@@ -115,12 +138,21 @@ class PaymentProviderSettings(TenantModel):
     class Meta:
         verbose_name = "Payment Provider Settings"
         verbose_name_plural = "Payment Provider Settings"
-        unique_together = ['tenant', 'provider']
-    
+        unique_together = ['tenant', 'provider', 'shop']
+        ordering = ['tenant', 'shop', 'priority', 'provider']
+        
+    def clean(self):
+        super().clean()
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
+
     def __str__(self):
         status = "Active" if self.is_active else "Inactive"
         mode = "Test" if self.test_mode else "Live"
-        return f"{self.get_provider_display()} - {self.tenant.name} ({status}, {mode})"
+        scope = self.shop.name if self.shop else "All Shops"
+        return f"{self.get_provider_display()} - {self.tenant.name} - {scope} ({status}, {mode})"
     
     @property
     def secret_key(self):
@@ -193,11 +225,11 @@ class ECashLedger(TenantModel):
         help_text="ID of the source record"
     )
     
-    # Paystack specific
-    paystack_reference = models.CharField(
+    # Gateway specific
+    gateway_reference = models.CharField(
         max_length=100,
         blank=True,
-        help_text="Paystack transaction reference"
+        help_text="Gateway transaction reference"
     )
     provider = models.CharField(
         max_length=20,
@@ -262,7 +294,7 @@ class ECashLedger(TenantModel):
         return result['total'] or Decimal('0')
     
     @classmethod
-    def record_payment(cls, tenant, amount, sale=None, paystack_ref='', user=None, notes='', shop=None):
+    def record_payment(cls, tenant, amount, sale=None, gateway_ref='', user=None, notes='', shop=None):
         """Record an e-cash payment from a sale or payment on account."""
         # Determine reference info based on sale presence
         if sale:
@@ -283,7 +315,7 @@ class ECashLedger(TenantModel):
             amount=amount,
             reference_type=reference_type,
             reference_id=reference_id,
-            paystack_reference=paystack_ref,
+            gateway_reference=gateway_ref,
             created_by=user,
             notes=notes if notes else auto_notes,
             shop=shop

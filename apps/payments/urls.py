@@ -17,8 +17,9 @@ urlpatterns = [
     path('withdrawals/<int:pk>/complete/', views.complete_withdrawal, name='withdrawal_complete'),
     path('withdrawals/<int:pk>/cancel/', views.cancel_withdrawal, name='withdrawal_cancel'),
     
-    # Paystack Webhook (no login required)
-    path('webhook/paystack/', views.paystack_webhook, name='paystack_webhook'),
+    # Payment Webhook (no login required)
+    path('webhook/payment/', views.payment_webhook, name='paystack_webhook'),
+    path('webhook/nalo/', views.nalo_webhook, name='nalo_webhook'),
     
     # E-Cash Ledger
     path('ledger/', views.ECashLedgerView.as_view(), name='ecash_ledger'),

@@ -10,97 +10,151 @@
             <h2 class="fw-bold mb-0">
                 <i class="bi bi-credit-card me-2 text-primary"></i>Payment Provider Settings
             </h2>
-            <p class="text-muted mb-0">Configure e-cash payment processing</p>
+            <p class="text-muted mb-0">Configure e-cash payment gateways</p>
         </div>
         <div>
-            <span class="badge bg-info fs-6">
+            <span class="badge bg-info fs-6 me-2">
                 <i class="bi bi-phone me-1"></i>E-Cash Balance: {{ currency_symbol }}{{ ecash_balance|floatformat:"2g" }}
             </span>
+            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addConfigModal">
+                <i class="bi bi-plus-circle me-1"></i> Add Configuration
+            </button>
         </div>
     </div>
 
     <div class="row">
         <div class="col-lg-8">
-            <form method="post">
-                {% csrf_token %}
-
-                <!-- Paystack Settings Card -->
-                <div class="card mb-4">
-                    <div class="card-header bg-primary text-white d-flex align-items-center">
-                        <img src="https://paystack.com/favicon.ico" alt="Paystack" class="me-2" style="height: 24px;">
-                        <h5 class="mb-0">Paystack Configuration</h5>
+            {% if provider_settings %}
+                {% for setting in provider_settings %}
+                <div class="card mb-4 {% if setting.is_active %}border-success{% endif %}">
+                    <div class="card-header d-flex justify-content-between align-items-center {% if setting.is_active %}bg-success text-white{% else %}bg-light{% endif %}">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-shield-check fs-4 me-2"></i>
+                            <h5 class="mb-0">{{ setting.get_provider_display }}</h5>
+                        </div>
+                        <div>
+                            {% if setting.shop %}
+                                <span class="badge bg-light text-dark border me-2"><i class="bi bi-shop me-1"></i>{{ setting.shop.name }}</span>
+                            {% else %}
+                                <span class="badge bg-light text-dark border me-2"><i class="bi bi-globe me-1"></i>All Shops</span>
+                            {% endif %}
+                            {% if setting.test_mode %}
+                                <span class="badge bg-warning text-dark"><i class="bi bi-cone-striped me-1"></i>Test Mode</span>
+                            {% else %}
+                                <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Live Mode</span>
+                            {% endif %}
+                            <span class="badge bg-secondary ms-1" title="Priority"><i class="bi bi-sort-numeric-down me-1"></i>Pri {{ setting.priority }}</span>
+                        </div>
                     </div>
                     <div class="card-body">
-                        <div class="form-check form-switch mb-4">
-                            <input class="form-check-input" type="checkbox" id="is_active" name="is_active"
-                                {% if provider_settings.is_active %}checked{% endif %}>
-                            <label class="form-check-label" for="is_active">
-                                <strong>Enable Paystack Payments</strong>
-                            </label>
-                            <div class="text-muted small">Allow customers to pay via Paystack (cards, mobile money, bank
-                                transfer)</div>
-                        </div>
+                        <form method="post">
+                            {% csrf_token %}
+                            <input type="hidden" name="setting_id" value="{{ setting.id }}">
+                            <input type="hidden" name="provider" value="{{ setting.provider }}">
+                            <input type="hidden" name="shop" value="{{ setting.shop_id|default:'' }}">
+                            
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-check form-switch mb-3">
+                                        <input class="form-check-input" type="checkbox" id="is_active_{{ setting.id }}" name="is_active" {% if setting.is_active %}checked{% endif %}>
+                                        <label class="form-check-label fw-bold" for="is_active_{{ setting.id }}">Active Provider</label>
+                                    </div>
+                                    <div class="form-check form-switch mb-3">
+                                        <input class="form-check-input" type="checkbox" id="test_mode_{{ setting.id }}" name="test_mode" {% if setting.test_mode %}checked{% endif %}>
+                                        <label class="form-check-label" for="test_mode_{{ setting.id }}">Test Mode</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label for="priority_{{ setting.id }}" class="form-label text-muted small mb-1">Priority</label>
+                                        <input type="number" class="form-control form-control-sm" id="priority_{{ setting.id }}" name="priority" value="{{ setting.priority }}" min="0">
+                                        <div class="form-text" style="font-size: 0.70rem;">Lower number = higher priority.</div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="public_key_{{ setting.id }}" class="form-label text-muted small">Public Key</label>
+                                <input type="text" class="form-control form-control-sm" id="public_key_{{ setting.id }}" name="public_key" value="{{ setting.public_key }}">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="secret_key_{{ setting.id }}" class="form-label text-muted small">Secret Key</label>
+                                <input type="password" class="form-control form-control-sm" id="secret_key_{{ setting.id }}" name="secret_key" placeholder="{% if setting.get_masked_secret_key %}{{ setting.get_masked_secret_key }}{% else %}Enter new secret key{% endif %}">
+                                <div class="form-text" style="font-size: 0.75rem;">Leave blank to keep current key.</div>
+                            </div>
 
-                        <div class="form-check form-switch mb-4">
-                            <input class="form-check-input" type="checkbox" id="test_mode" name="test_mode"
-                                {% if provider_settings.test_mode %}checked{% endif %}>
-                            <label class="form-check-label" for="test_mode">
-                                <strong>Test Mode</strong>
-                            </label>
-                            <div class="text-muted small">Use test/sandbox credentials (no real transactions)</div>
-                        </div>
-
-                        <hr>
-
-                        <div class="mb-3">
-                            <label for="public_key" class="form-label">Public Key</label>
-                            <input type="text" class="form-control" id="public_key" name="public_key"
-                                value="{{ provider_settings.public_key }}" placeholder="pk_test_... or pk_live_...">
-                            <div class="form-text">Found in your Paystack Dashboard → Settings → API Keys</div>
-                        </div>
-
-                        <div class="mb-3">
-                            <label for="secret_key" class="form-label">Secret Key</label>
-                            <input type="password" class="form-control" id="secret_key" name="secret_key"
-                                placeholder="{% if masked_secret_key %}{{ masked_secret_key }}{% else %}sk_test_... or sk_live_...{% endif %}">
-                            <div class="form-text">Leave blank to keep current key. Never share this key!</div>
-                        </div>
-
-                        <div class="mb-3">
-                            <label for="webhook_secret" class="form-label">Webhook Secret (Optional)</label>
-                            <input type="password" class="form-control" id="webhook_secret" name="webhook_secret"
-                                placeholder="Leave blank to use secret key">
-                            <div class="form-text">For extra webhook security (optional)</div>
-                        </div>
-                    </div>
-                    <div class="card-footer">
-                        <button type="submit" class="btn btn-primary">
-                            <i class="bi bi-check-lg me-1"></i>Save Settings
-                        </button>
-                        <button type="button" class="btn btn-outline-secondary" id="testConnectionBtn">
-                            <i class="bi bi-lightning me-1"></i>Test Connection
-                        </button>
-                        <span id="testResult" class="ms-3"></span>
+                            <div class="mb-3">
+                                <label for="webhook_secret_{{ setting.id }}" class="form-label text-muted small">Webhook Secret (Optional)</label>
+                                <input type="password" class="form-control form-control-sm" id="webhook_secret_{{ setting.id }}" name="webhook_secret" placeholder="{% if setting.webhook_secret %}••••••••{% else %}Leave blank to use secret key{% endif %}">
+                            </div>
+                            
+                            <div class="mb-3" id="base_url_container_{{ setting.id }}">
+                                <label for="base_url_{{ setting.id }}" class="form-label text-muted small">Base URL (Required for Nalo)</label>
+                                <input type="url" class="form-control form-control-sm" id="base_url_{{ setting.id }}" name="base_url" value="{{ setting.base_url }}" placeholder="e.g. https://nalosolutions.com/payment-solutions/">
+                                <div class="form-text" style="font-size: 0.75rem;">Only required for certain providers like Nalo.</div>
+                            </div>
+                            
+                            <div class="d-flex justify-content-between mt-4">
+                                <div>
+                                    <button type="submit" class="btn btn-sm btn-primary">
+                                        <i class="bi bi-save me-1"></i> Update
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary ms-2" onclick="testConnection('{{ setting.id }}')">
+                                        <i class="bi bi-lightning me-1"></i> Test
+                                    </button>
+                                    <span id="testResult_{{ setting.id }}" class="ms-2 small"></span>
+                                </div>
+                                <button type="submit" name="action" value="delete" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete this configuration?');">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
-            </form>
+                {% endfor %}
+            {% else %}
+                <div class="alert alert-info border-info d-flex align-items-center" role="alert">
+                    <i class="bi bi-info-circle-fill fs-4 me-3"></i>
+                    <div>
+                        <strong>No payment providers configured.</strong><br>
+                        Click "Add Configuration" to set up your first payment gateway.
+                    </div>
+                </div>
+            {% endif %}
         </div>
 
         <div class="col-lg-4">
             <!-- Webhook URL Card -->
             <div class="card mb-4">
                 <div class="card-header">
-                    <h5 class="mb-0"><i class="bi bi-link-45deg me-2"></i>Webhook Configuration</h5>
+                    <h5 class="mb-0"><i class="bi bi-link-45deg me-2"></i>Webhook URLs</h5>
                 </div>
                 <div class="card-body">
-                    <p class="text-muted small">Add this URL in your Paystack Dashboard under Webhooks:</p>
-                    <div class="input-group">
-                        <input type="text" class="form-control" readonly
-                            value="{{ request.scheme }}://{{ request.get_host }}{% url 'payments:paystack_webhook' %}"
-                            id="webhookUrl">
-                        <button class="btn btn-outline-secondary" type="button" onclick="copyWebhookUrl()">
-                            <i class="bi bi-clipboard"></i>
-                        </button>
+                    <p class="text-muted small mb-2">Use these URLs for your payment provider webhooks:</p>
+                    
+                    <div class="mb-3">
+                        <label class="form-label text-muted small mb-1">Paystack / Flutterwave:</label>
+                        <div class="input-group input-group-sm">
+                            <input type="text" class="form-control" readonly
+                                value="{{ request.scheme }}://{{ request.get_host }}{% url 'payments:paystack_webhook' %}"
+                                id="webhookUrl">
+                            <button class="btn btn-outline-secondary" type="button" onclick="copyWebhookUrl('webhookUrl')">
+                                <i class="bi bi-clipboard"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-2">
+                        <label class="form-label text-muted small mb-1">Nalo Checkout:</label>
+                        <div class="input-group input-group-sm">
+                            <input type="text" class="form-control" readonly
+                                value="{{ request.scheme }}://{{ request.get_host }}{% url 'payments:nalo_webhook' %}"
+                                id="webhookUrlNalo">
+                            <button class="btn btn-outline-secondary" type="button" onclick="copyWebhookUrl('webhookUrlNalo')">
+                                <i class="bi bi-clipboard"></i>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -112,14 +166,11 @@
                 </div>
                 <div class="card-body">
                     <div class="d-grid gap-2">
-                        <a href="{% url 'payments:withdrawal_list' %}" class="btn btn-outline-primary">
+                        <a href="{% url 'payments:withdrawal_list' %}" class="btn btn-sm btn-outline-primary">
                             <i class="bi bi-wallet2 me-1"></i>E-Cash Withdrawals
                         </a>
-                        <a href="{% url 'payments:ecash_ledger' %}" class="btn btn-outline-info">
+                        <a href="{% url 'payments:ecash_ledger' %}" class="btn btn-sm btn-outline-info">
                             <i class="bi bi-journal-text me-1"></i>E-Cash Ledger
-                        </a>
-                        <a href="https://dashboard.paystack.com/" target="_blank" class="btn btn-outline-success">
-                            <i class="bi bi-box-arrow-up-right me-1"></i>Paystack Dashboard
                         </a>
                     </div>
                 </div>
@@ -127,47 +178,94 @@
         </div>
     </div>
 </div>
+
+<!-- Add Configuration Modal -->
+<div class="modal fade" id="addConfigModal" tabindex="-1" aria-labelledby="addConfigModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post">
+                {% csrf_token %}
+                <div class="modal-header">
+                    <h5 class="modal-title" id="addConfigModalLabel">New Payment Configuration</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="new_provider" class="form-label">Gateway Provider *</label>
+                        <select class="form-select" id="new_provider" name="provider" required>
+                            <option value="">Select a provider...</option>
+                            {% for code, name in provider_choices %}
+                            <option value="{{ code }}">{{ name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="new_shop" class="form-label">Scope (Shop)</label>
+                        <select class="form-select" id="new_shop" name="shop">
+                            <option value="">-- Apply to All Shops --</option>
+                            {% for shop in shops %}
+                            <option value="{{ shop.id }}">{{ shop.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">Leave blank to use as the default gateway for the entire tenant.</div>
+                    </div>
+
+                    <div class="form-check form-switch mb-3 mt-4">
+                        <input class="form-check-input" type="checkbox" id="new_is_active" name="is_active" checked>
+                        <label class="form-check-label fw-bold" for="new_is_active">Set as Active</label>
+                    </div>
+
+                    <div class="form-check form-switch mb-4">
+                        <input class="form-check-input" type="checkbox" id="new_test_mode" name="test_mode" checked>
+                        <label class="form-check-label" for="new_test_mode">Test Mode</label>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="new_priority" class="form-label">Priority</label>
+                        <input type="number" class="form-control" id="new_priority" name="priority" value="0" min="0">
+                        <div class="form-text">Lower number = higher priority. e.g. 0 shows before 1.</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="new_public_key" class="form-label">Public Key</label>
+                        <input type="text" class="form-control" id="new_public_key" name="public_key">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="new_secret_key" class="form-label">Secret Key *</label>
+                        <input type="password" class="form-control" id="new_secret_key" name="secret_key" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="new_base_url" class="form-label">Base URL</label>
+                        <input type="url" class="form-control" id="new_base_url" name="base_url" placeholder="https://nalosolutions.com/payment-solutions/">
+                        <div class="form-text">Optional. Only used by certain providers like Nalo.</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Configuration</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-    function copyWebhookUrl() {
-        const url = document.getElementById('webhookUrl');
+    function copyWebhookUrl(elementId) {
+        const url = document.getElementById(elementId);
         url.select();
         navigator.clipboard.writeText(url.value);
         alert('Webhook URL copied to clipboard!');
     }
 
-    document.getElementById('testConnectionBtn').addEventListener('click', function () {
-        const btn = this;
-        const resultSpan = document.getElementById('testResult');
-
-        btn.disabled = true;
-        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Testing...';
-        resultSpan.innerHTML = '';
-
-        fetch('{% url "payments:test_connection" %}', {
-            method: 'POST',
-            headers: {
-                'X-CSRFToken': '{{ csrf_token }}',
-                'Content-Type': 'application/json',
-            }
-        })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    resultSpan.innerHTML = '<span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Connection Successful</span>';
-                } else {
-                    resultSpan.innerHTML = '<span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>' + data.message + '</span>';
-                }
-            })
-            .catch(error => {
-                resultSpan.innerHTML = '<span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>Error</span>';
-            })
-            .finally(() => {
-                btn.disabled = false;
-                btn.innerHTML = '<i class="bi bi-lightning me-1"></i>Test Connection';
-            });
-    });
+    function testConnection(settingId) {
+        // Implementation for testing connection of a specific setting
+        // Would need to update the backend test_connection endpoint to accept a setting ID
+        alert('Test connection functionality for specific configurations will be available soon.');
+    }
 </script>
 {% endblock %}

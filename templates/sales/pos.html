@@ -14,8 +14,12 @@
     <link rel="apple-touch-icon" href="{% static 'images/icons/icon-192x192.png' %}">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
-    <!-- Paystack Inline JS for E-Cash payments -->
-    <script src="https://js.paystack.co/v1/inline.js"></script>
+    <!-- Payment Provider SDK -->
+    {% if payment_provider == 'PAYSTACK' %}
+        <script src="https://js.paystack.co/v1/inline.js"></script>
+    {% elif payment_provider == 'FLUTTERWAVE' %}
+        <script src="https://checkout.flutterwave.com/v3.js"></script>
+    {% endif %}
     <style>
         :root {
             --pos-primary: #4f46e5;
@@ -934,6 +938,13 @@
                     style="background: #e11d48; display: none;">
                     <i class="bi bi-credit-card-2-front"></i> Sell on Credit
                 </button>
+                
+                <div id="ecash-provider-container" class="mb-2" style="display: none;">
+                    <select id="ecash-provider-select" class="form-select bg-dark text-white border-secondary form-select-sm">
+                        <!-- Options populated via JS -->
+                    </select>
+                </div>
+
                 <div class="d-flex gap-2 mb-2">
                     {% if shop_settings.enable_ecash_payment %}
                     <button class="btn-pay btn-pay-ecash flex-fill" id="btn-pay-ecash" disabled>
@@ -1041,6 +1052,7 @@
         const CURRENCY = '{{ currency_symbol }}';
         const PRODUCTS = {{ products| safe }};
         const CUSTOMERS = {{ customers| safe }};
+        const PAYMENT_PROVIDERS = {{ payment_providers|safe|default:"[]" }};
         const CSRF_TOKEN = '{{ csrf_token }}';
         const SYNC_URL = '{% url "sales:api_sync_offline_sales" %}';
         const CHECKOUT_URL = '/sales/api/checkout/';
@@ -1115,6 +1127,7 @@
             loadCartFromStorage();
             initSearchAutocomplete();
             initCustomerSearch(); // NEW
+            initPaymentProviders(); // NEW
 
             // Category tabs
             document.querySelectorAll('.category-tab').forEach(tab => {
@@ -1169,6 +1182,23 @@
                 });
             }
         });
+
+        // Initialize payment providers dropdown
+        function initPaymentProviders() {
+            const container = document.getElementById('ecash-provider-container');
+            const select = document.getElementById('ecash-provider-select');
+            
+            if (PAYMENT_PROVIDERS && PAYMENT_PROVIDERS.length > 1) {
+                // Populate options
+                PAYMENT_PROVIDERS.forEach(provider => {
+                    const option = document.createElement('option');
+                    option.value = provider.name;
+                    option.textContent = provider.name;
+                    select.appendChild(option);
+                });
+                container.style.display = 'block';
+            }
+        }
 
         // Mobile Cart Toggle
         function toggleMobileCart() {
@@ -1801,7 +1831,8 @@
                         discount_amount: discountAmount,
                         customer_id: selectedCustomer ? selectedCustomer.id : null,
                         total: total,
-                        is_payment_on_account: isPaymentOnAccount
+                        is_payment_on_account: isPaymentOnAccount,
+                        provider_name: document.getElementById('ecash-provider-select') ? document.getElementById('ecash-provider-select').value : null
                     })
                 });
 
@@ -1812,35 +1843,74 @@
                     return;
                 }
 
-                // Open Paystack popup
-                const handler = PaystackPop.setup({
-                    key: data.paystack_public_key,
-                    email: data.customer_email || 'customer@example.com',
-                    amount: Math.round(total * 100), // Convert to pesewas
-                    currency: 'GHS',
-                    ref: data.reference,
-                    metadata: {
-                        tenant_id: data.tenant_id,
-                        sale_id: data.sale_id,
-                        custom_fields: [
-                            {
-                                display_name: "Sale Number",
-                                variable_name: "sale_number",
-                                value: data.sale_number
-                            }
-                        ]
-                    },
-                    callback: function (response) {
-                        // Payment successful - verify and complete
-                        verifyECashPayment(response.reference, data.sale_id, data.is_payment_on_account, data.customer_id, total);
-                    },
-                    onClose: function () {
-                        // User closed popup without completing
-                        console.log('Payment popup closed');
+                if (data.provider_name === 'PAYSTACK') {
+                    const handler = PaystackPop.setup({
+                        key: data.provider_public_key,
+                        email: data.customer_email || 'customer@example.com',
+                        amount: Math.round(total * 100), // Convert to pesewas
+                        currency: 'GHS',
+                        ref: data.reference,
+                        metadata: {
+                            tenant_id: data.tenant_id,
+                            sale_id: data.sale_id,
+                            custom_fields: [
+                                {
+                                    display_name: "Sale Number",
+                                    variable_name: "sale_number",
+                                    value: data.sale_number
+                                }
+                            ]
+                        },
+                        callback: function (response) {
+                            // Payment successful - verify and complete
+                            verifyECashPayment(response.reference, data.sale_id, data.is_payment_on_account, data.customer_id, total);
+                        },
+                        onClose: function () {
+                            // User closed popup without completing
+                            console.log('Payment popup closed');
+                        }
+                    });
+                    handler.openIframe();
+                } else if (data.provider_name === 'FLUTTERWAVE') {
+                    FlutterwaveCheckout({
+                        public_key: data.provider_public_key,
+                        tx_ref: data.reference,
+                        amount: total,
+                        currency: "GHS",
+                        payment_options: "card, mobilemoneyghana",
+                        customer: {
+                            email: data.customer_email || 'customer@example.com',
+                        },
+                        customizations: {
+                            title: "E-Cash Payment",
+                            description: "Payment for items",
+                        },
+                        callback: function (data) {
+                            // verify the payment via the backend
+                            verifyECashPayment(data.tx_ref, data.sale_id, data.is_payment_on_account, data.customer_id, total);
+                        },
+                        onclose: function() {
+                            console.log('Payment popup closed');
+                        }
+                    });
+                } else if (data.provider_name === 'NALO') {
+                    if (data.checkout_url) {
+                        const naloWindow = window.open(data.checkout_url, 'NaloCheckout', 'width=600,height=800');
+                        
+                        // Show a prompt asking to verify payment manually once done
+                        if (confirm('The Nalo Payment page has been opened in a popup window.\n\nClick OK ONLY AFTER the customer has successfully completed the payment.')) {
+                            // verify the payment via the backend
+                            verifyECashPayment(data.reference, data.sale_id, data.is_payment_on_account, data.customer_id, total);
+                        } else {
+                            // Fallback if they click cancel - provide a manual verification button
+                            alert('Payment verification cancelled. You can verify it manually in the backend or retry.');
+                        }
+                    } else {
+                        alert('Nalo checkout URL not found. Please try again.');
                     }
-                });
-
-                handler.openIframe();
+                } else {
+                    alert('Unsupported payment provider: ' + data.provider_name);
+                }
 
             } catch (error) {
                 console.error('E-Cash error:', error);
