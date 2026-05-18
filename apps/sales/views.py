@@ -3,6 +3,7 @@ Views for the sales app.
 Includes POS interface and API endpoints for cart operations.
 """
 import json
+import logging
 from decimal import Decimal
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
@@ -23,6 +24,8 @@ from apps.core.models import Location
 from apps.core.mixins import PaginationMixin, SortableMixin
 from apps.core.decorators import AdminOrManagerRequiredMixin, AdminRequiredMixin
 from .forms import ShopManagerSettingsForm, AdminShopPaymentSettingsForm
+
+logger = logging.getLogger(__name__)
 
 
 class POSView(LoginRequiredMixin, View):
@@ -121,11 +124,13 @@ class POSView(LoginRequiredMixin, View):
         default_provider_public_key = ''
         
         if providers:
-            default_provider_name = providers[0].provider_name
+            default_provider_name = providers[0].provider_name.upper()
             default_provider_public_key = providers[0].public_key
             for p in providers:
+                provider_code = p.provider_name.upper()
                 payment_providers_data.append({
-                    'name': p.provider_name,
+                    'name': provider_code,
+                    'label': p.provider_name,
                     'public_key': p.public_key,
                 })
 
@@ -140,6 +145,8 @@ class POSView(LoginRequiredMixin, View):
             'payment_provider': default_provider_name,
             'payment_public_key': default_provider_public_key,
             'payment_providers': json.dumps(payment_providers_data),
+            'has_paystack_provider': any(p['name'] == 'PAYSTACK' for p in payment_providers_data),
+            'has_flutterwave_provider': any(p['name'] == 'FLUTTERWAVE' for p in payment_providers_data),
         }
         
         return render(request, self.template_name, context)
@@ -1061,7 +1068,7 @@ def initialize_ecash_payment(request):
             # Find the specific provider requested
             active_providers = get_active_payment_providers(tenant, shop=shop)
             for p in active_providers:
-                if p.provider_name == provider_name_request:
+                if p.provider_name.upper() == str(provider_name_request).upper():
                     provider = p
                     break
                     
@@ -1233,6 +1240,7 @@ def verify_ecash_payment(request):
         is_payment_on_account = data.get('is_payment_on_account', False)
         customer_id = data.get('customer_id')
         amount = Decimal(str(data.get('amount', 0)))
+        provider_name_request = data.get('provider_name')
         
         if not reference:
             return JsonResponse({
@@ -1246,8 +1254,18 @@ def verify_ecash_payment(request):
             from apps.core.models import Location
             shop = Location.objects.filter(tenant=tenant, location_type='SHOP', is_active=True).first()
             
-        from apps.payments.services.factory import get_payment_provider
-        provider = get_payment_provider(tenant, shop=shop)
+        from apps.payments.services.factory import get_payment_provider, get_active_payment_providers
+        provider = None
+
+        if provider_name_request:
+            active_providers = get_active_payment_providers(tenant, shop=shop)
+            for p in active_providers:
+                if p.provider_name.upper() == str(provider_name_request).upper():
+                    provider = p
+                    break
+
+        if not provider:
+            provider = get_payment_provider(tenant, shop=shop)
         
         if not provider:
             return JsonResponse({
@@ -1307,7 +1325,8 @@ def verify_ecash_payment(request):
                     sale=None,
                     gateway_ref=reference,
                     user=user,
-                    notes=f"Payment on account for {customer.name}"
+                    notes=f"Payment on account for {customer.name}",
+                    provider=provider.provider_name.upper()
                 )
             
             return JsonResponse({
@@ -1353,7 +1372,8 @@ def verify_ecash_payment(request):
                 amount=sale.total,
                 sale=sale,
                 gateway_ref=reference,
-                user=user
+                user=user,
+                provider=provider.provider_name.upper()
             )
         
         return JsonResponse({
@@ -1368,6 +1388,12 @@ def verify_ecash_payment(request):
             'success': False,
             'error': str(e)
         }, status=500)
+
+
+@login_required
+def flutterwave_payment_callback(request):
+    """Bridge Flutterwave's external authorization tab back to the open POS tab."""
+    return render(request, 'sales/flutterwave_callback.html')
 
 
 # ============ Offline Sync API ============

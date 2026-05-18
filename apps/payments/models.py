@@ -294,7 +294,7 @@ class ECashLedger(TenantModel):
         return result['total'] or Decimal('0')
     
     @classmethod
-    def record_payment(cls, tenant, amount, sale=None, gateway_ref='', user=None, notes='', shop=None):
+    def record_payment(cls, tenant, amount, sale=None, gateway_ref='', user=None, notes='', shop=None, provider='PAYSTACK'):
         """Record an e-cash payment from a sale or payment on account."""
         # Determine reference info based on sale presence
         if sale:
@@ -316,6 +316,7 @@ class ECashLedger(TenantModel):
             reference_type=reference_type,
             reference_id=reference_id,
             gateway_reference=gateway_ref,
+            provider=provider,
             created_by=user,
             notes=notes if notes else auto_notes,
             shop=shop

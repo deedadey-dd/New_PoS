@@ -34,6 +34,7 @@ urlpatterns = [
     # E-Cash Payment
     path('api/ecash/initialize/', views.initialize_ecash_payment, name='initialize_ecash_payment'),
     path('api/ecash/verify/', views.verify_ecash_payment, name='verify_ecash_payment'),
+    path('api/ecash/flutterwave/callback/', views.flutterwave_payment_callback, name='flutterwave_callback'),
     
     # Offline Sync
     path('api/sync-offline/', views.api_sync_offline_sales, name='api_sync_offline_sales'),

@@ -15,10 +15,11 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
     <!-- Payment Provider SDK -->
-    {% if payment_provider == 'PAYSTACK' %}
-        <script src="https://js.paystack.co/v1/inline.js"></script>
-    {% elif payment_provider == 'FLUTTERWAVE' %}
-        <script src="https://checkout.flutterwave.com/v3.js"></script>
+    {% if has_paystack_provider %}
+    <script src="https://js.paystack.co/v1/inline.js"></script>
+    {% endif %}
+    {% if has_flutterwave_provider %}
+    <script src="https://checkout.flutterwave.com/v3.js"></script>
     {% endif %}
     <style>
         :root {
@@ -1056,6 +1057,7 @@
         const CSRF_TOKEN = '{{ csrf_token }}';
         const SYNC_URL = '{% url "sales:api_sync_offline_sales" %}';
         const CHECKOUT_URL = '/sales/api/checkout/';
+        const FLUTTERWAVE_CALLBACK_URL = '{% url "sales:flutterwave_callback" %}';
         const HAS_SHIFT = {% if shift %}true{% else %} false{% endif %};
 
         let cart = [];
@@ -1064,6 +1066,9 @@
         let selectedCustomer = null;
         let paymentMode = 'CASH'; // CASH, ECASH, CREDIT
         let pendingPaymentMode = null; // For shift check continuation
+        let activeFlutterwaveCheckout = null;
+        const processedFlutterwaveReferences = new Set();
+        let flutterwaveReturnPollTimer = null;
 
         // Initialize OfflineSyncManager
         const syncManager = new OfflineSyncManager({
@@ -1128,6 +1133,7 @@
             initSearchAutocomplete();
             initCustomerSearch(); // NEW
             initPaymentProviders(); // NEW
+            initFlutterwaveReturnListener();
 
             // Category tabs
             document.querySelectorAll('.category-tab').forEach(tab => {
@@ -1193,11 +1199,301 @@
                 PAYMENT_PROVIDERS.forEach(provider => {
                     const option = document.createElement('option');
                     option.value = provider.name;
-                    option.textContent = provider.name;
+                    option.textContent = provider.label || provider.name;
                     select.appendChild(option);
                 });
                 container.style.display = 'block';
             }
+        }
+
+        function initFlutterwaveReturnListener() {
+            window.addEventListener('message', function (event) {
+                if (event.origin !== window.location.origin) return;
+                handleFlutterwaveReturn(event.data);
+            });
+
+            window.addEventListener('storage', function (event) {
+                if (event.key !== 'pos_flutterwave_payment_return' || !event.newValue) return;
+                try {
+                    handleFlutterwaveReturn(JSON.parse(event.newValue));
+                } catch (error) {
+                    console.warn('Invalid Flutterwave return payload:', error);
+                }
+            });
+
+            try {
+                const channel = new BroadcastChannel('pos_flutterwave_payments');
+                channel.onmessage = function (event) {
+                    handleFlutterwaveReturn(event.data);
+                };
+            } catch (error) {
+                console.info('BroadcastChannel unavailable for Flutterwave payment returns.');
+            }
+
+            // On return to this tab (after OTP / 3DS in another window), read any bridge payload
+            // the other tab may have written while we were in the background.
+            document.addEventListener('visibilitychange', function () {
+                if (document.visibilityState === 'visible') {
+                    drainFlutterwaveBridgeFromStorage();
+                }
+            });
+            window.addEventListener('focus', function () {
+                drainFlutterwaveBridgeFromStorage();
+            });
+        }
+
+        function drainFlutterwaveBridgeFromStorage() {
+            try {
+                const raw = localStorage.getItem('pos_flutterwave_payment_return');
+                if (!raw) return;
+                const payload = JSON.parse(raw);
+                handleFlutterwaveReturn(payload);
+            } catch (error) {
+                console.warn('Flutterwave bridge read failed:', error);
+            }
+        }
+
+        function startFlutterwaveReturnPolling(reference) {
+            stopFlutterwaveReturnPolling();
+            flutterwaveReturnPollTimer = setInterval(function () {
+                drainFlutterwaveBridgeFromStorage();
+            }, 400);
+        }
+
+        function stopFlutterwaveReturnPolling() {
+            if (flutterwaveReturnPollTimer) {
+                clearInterval(flutterwaveReturnPollTimer);
+                flutterwaveReturnPollTimer = null;
+            }
+        }
+
+        async function handleFlutterwaveReturn(payload) {
+            if (!payload || payload.type !== 'FLUTTERWAVE_PAYMENT_RETURN') return;
+
+            const reference = payload.reference || '';
+            if (!reference || processedFlutterwaveReferences.has(reference)) return;
+            processedFlutterwaveReferences.add(reference);
+
+            let pendingPayment = {};
+            try {
+                pendingPayment = JSON.parse(localStorage.getItem(`pos_flutterwave_pending_${reference}`) || '{}');
+            } catch (error) {
+                console.warn('Invalid stored Flutterwave payment context:', error);
+            }
+
+            // Single close schedules SDK + DOM teardown and delayed strip passes for stubborn overlays.
+            closeFlutterwaveCheckoutModal();
+
+            const flutterwaveStatus = (payload.status || '').toLowerCase();
+            const definitelyFailed = ['failed', 'cancelled', 'canceled', 'error', 'aborted', 'timeout'].some(
+                function (bad) { return flutterwaveStatus === bad || flutterwaveStatus.startsWith(bad); }
+            );
+            if (definitelyFailed) {
+                processedFlutterwaveReferences.delete(reference);
+                stopFlutterwaveReturnPolling();
+                try {
+                    localStorage.removeItem('pos_flutterwave_payment_return');
+                } catch (e) { /* ignore */ }
+                alert('Flutterwave payment was not completed. You can try again from the POS.');
+                return;
+            }
+
+            const verified = await verifyECashPayment(
+                reference,
+                payload.sale_id || pendingPayment.sale_id || null,
+                Boolean(payload.is_payment_on_account || pendingPayment.is_payment_on_account),
+                payload.customer_id || pendingPayment.customer_id || null,
+                parseFloat(payload.amount || pendingPayment.amount) || 0,
+                payload.provider_name || pendingPayment.provider_name || 'FLUTTERWAVE'
+            );
+
+            if (!verified) {
+                try {
+                    localStorage.removeItem('pos_flutterwave_payment_return');
+                } catch (e) { /* ignore */ }
+                stopFlutterwaveReturnPolling();
+                return;
+            }
+
+            try {
+                localStorage.removeItem(`pos_flutterwave_pending_${reference}`);
+                localStorage.removeItem('pos_flutterwave_payment_return');
+            } catch (error) {
+                // Ignore storage cleanup failures.
+            }
+
+            stopFlutterwaveReturnPolling();
+
+            // Reload the page to update stock quantities after successful e-cash payment
+            setTimeout(() => location.reload(), 600);
+        }
+
+        /**
+         * Flutterwave hosts checkout UI inside an iframe (their Vue app is not ours —
+         * same-origin rules prevent scripting inside it). We dismiss the overlay by
+         * calling the SDK close() and force-removing any injected overlays from our page.
+         *
+         * The SDK injects a full-screen fixed wrapper div containing an iframe.
+         * After OTP redirects the iframe src may have changed, so we can't rely
+         * solely on URL matching — we also remove by DOM structure heuristics.
+         */
+        function stripFlutterwaveOverlayFromDocument() {
+            const srcMatchesFw = function (src) {
+                if (!src) return false;
+                return /checkout\.flutterwave\.com|api\.flutterwave\.com\/checkout|flutterwave\.com\/(v3\/)?inline|rave\.flutterwave/i.test(src);
+            };
+
+            // IDs of our own POS elements that should never be removed
+            const knownPosIds = new Set([
+                'checkout-modal', 'shift-prompt-modal', 'sync-status-bar',
+                'products-grid', 'cart-items', 'mobile-cart-toggle',
+                'search-suggestions', 'customer-suggestions'
+            ]);
+
+            function isOurElement(el) {
+                if (el.id && knownPosIds.has(el.id)) return true;
+                // Our POS layout elements
+                if (el.classList && (
+                    el.classList.contains('pos-header') ||
+                    el.classList.contains('pos-main') ||
+                    el.classList.contains('checkout-modal') ||
+                    el.classList.contains('shift-banner') ||
+                    el.classList.contains('sync-status-bar') ||
+                    el.classList.contains('mobile-cart-toggle') ||
+                    el.classList.contains('cart-section') ||
+                    el.classList.contains('products-section')
+                )) return true;
+                // Script and link tags
+                if (['SCRIPT', 'LINK', 'STYLE', 'HEADER', 'MAIN', 'FOOTER', 'NAV'].includes(el.tagName)) return true;
+                return false;
+            }
+
+            // --- Pass 1: Remove iframes with Flutterwave URLs and walk up to their wrapper ---
+            document.querySelectorAll('iframe').forEach(function (frame) {
+                const src = frame.src || frame.getAttribute('src') || '';
+                if (!srcMatchesFw(src)) return;
+                let node = frame;
+                while (node.parentElement && node.parentElement !== document.body) {
+                    node = node.parentElement;
+                }
+                if (node.parentElement === document.body) {
+                    node.remove();
+                } else {
+                    frame.remove();
+                }
+            });
+
+            // --- Pass 2: Remove by Flutterwave-specific selectors ---
+            const closeSelectors = [
+                'iframe[src*="flutterwave"]',
+                'iframe[src*="rave"]',
+                'iframe[name*="flutterwave" i]',
+                'iframe[name*="rave" i]',
+                '[class*="flutterwave" i]',
+                '[class*="rave" i]',
+                '[id*="flutterwave" i]',
+                '[id*="rave" i]',
+                '.flwpug_getpaid',
+                '.flutterwave-payment-modal',
+                '[class*="flw-" i]',
+                '[class*="flw_" i]'
+            ];
+
+            closeSelectors.forEach(function (selector) {
+                try {
+                    document.querySelectorAll(selector).forEach(function (element) {
+                        const removable = element.closest('[role="dialog"], .modal, .iframe-container, .flwpug_getpaid, .flutterwave-payment-modal') || element;
+                        removable.remove();
+                    });
+                } catch (e) {
+                    // Ignore invalid selectors in older browsers.
+                }
+            });
+
+            // --- Pass 3: Remove any body > div that contains an iframe AND is fixed/absolute ---
+            // Our POS page NEVER creates fixed-position divs with iframes, so any such
+            // element is a third-party overlay (Flutterwave SDK, etc.)
+            document.querySelectorAll('body > div').forEach(function (el) {
+                if (isOurElement(el)) return;
+                try {
+                    var hasIframe = el.querySelector && el.querySelector('iframe');
+                    if (!hasIframe) return;
+                    var st = window.getComputedStyle(el);
+                    if (st.position === 'fixed' || st.position === 'absolute') {
+                        el.remove();
+                    }
+                } catch (e2) {
+                    // Ignore.
+                }
+            });
+
+            // --- Pass 4: Remove any body > div with a very high z-index that isn't ours ---
+            // Flutterwave SDK typically uses z-index 99999 or similar
+            document.querySelectorAll('body > div').forEach(function (el) {
+                if (isOurElement(el)) return;
+                try {
+                    var st = window.getComputedStyle(el);
+                    var zIndex = parseInt(st.zIndex, 10);
+                    if (isNaN(zIndex) || zIndex < 9000) return;
+                    // High z-index div that isn't ours — likely a payment overlay
+                    if (st.position === 'fixed' || st.position === 'absolute') {
+                        el.remove();
+                    }
+                } catch (e3) {
+                    // Ignore.
+                }
+            });
+
+            // --- Pass 5: Remove any full-screen fixed/absolute overlays injected into body ---
+            // These are divs with inline styles like width:100%;height:100%;position:fixed
+            document.querySelectorAll('body > div').forEach(function (el) {
+                if (isOurElement(el)) return;
+                try {
+                    var st = window.getComputedStyle(el);
+                    if (st.position !== 'fixed' && st.position !== 'absolute') return;
+                    // Check if it covers the full viewport
+                    var rect = el.getBoundingClientRect();
+                    if (rect.width >= window.innerWidth * 0.9 && rect.height >= window.innerHeight * 0.9) {
+                        el.remove();
+                    }
+                } catch (e4) {
+                    // Ignore.
+                }
+            });
+
+            document.body.classList.remove('modal-open');
+            document.body.style.overflow = '';
+            document.body.style.pointerEvents = '';
+        }
+
+        function closeFlutterwaveCheckoutModal() {
+            // Try the SDK's own close method first
+            if (activeFlutterwaveCheckout && typeof activeFlutterwaveCheckout.close === 'function') {
+                try {
+                    activeFlutterwaveCheckout.close();
+                } catch (error) {
+                    console.warn('Flutterwave checkout close failed:', error);
+                }
+            }
+
+            // Try the global closePaymentModal if it exists (some SDK versions expose this)
+            if (typeof closePaymentModal === 'function') {
+                try {
+                    closePaymentModal();
+                } catch (error) {
+                    console.warn('Flutterwave closePaymentModal failed:', error);
+                }
+            }
+
+            activeFlutterwaveCheckout = null;
+
+            // Force-strip the overlay from the DOM immediately and with staggered retries.
+            // The SDK sometimes re-renders or delays its own cleanup, so we hit it
+            // multiple times over a few seconds to be sure.
+            stripFlutterwaveOverlayFromDocument();
+            [60, 200, 600, 1000, 2000, 3000].forEach(function (ms) {
+                setTimeout(stripFlutterwaveOverlayFromDocument, ms);
+            });
         }
 
         // Mobile Cart Toggle
@@ -1844,6 +2140,10 @@
                 }
 
                 if (data.provider_name === 'PAYSTACK') {
+                    if (typeof PaystackPop === 'undefined') {
+                        alert('Paystack checkout could not load. Please check your internet connection and try again.');
+                        return;
+                    }
                     const handler = PaystackPop.setup({
                         key: data.provider_public_key,
                         email: data.customer_email || 'customer@example.com',
@@ -1863,7 +2163,7 @@
                         },
                         callback: function (response) {
                             // Payment successful - verify and complete
-                            verifyECashPayment(response.reference, data.sale_id, data.is_payment_on_account, data.customer_id, total);
+                            verifyECashPayment(response.reference, data.sale_id, data.is_payment_on_account, data.customer_id, total, data.provider_name);
                         },
                         onClose: function () {
                             // User closed popup without completing
@@ -1872,12 +2172,43 @@
                     });
                     handler.openIframe();
                 } else if (data.provider_name === 'FLUTTERWAVE') {
-                    FlutterwaveCheckout({
+                    if (typeof FlutterwaveCheckout === 'undefined') {
+                        alert('Flutterwave checkout could not load. Please check your internet connection and try again.');
+                        return;
+                    }
+
+                    try {
+                        localStorage.setItem(`pos_flutterwave_pending_${data.reference}`, JSON.stringify({
+                            sale_id: data.sale_id || null,
+                            is_payment_on_account: Boolean(data.is_payment_on_account),
+                            customer_id: data.customer_id || null,
+                            amount: total,
+                            provider_name: data.provider_name,
+                            timestamp: Date.now()
+                        }));
+                    } catch (error) {
+                        console.warn('Unable to store Flutterwave payment context:', error);
+                    }
+
+                    startFlutterwaveReturnPolling();
+
+                    const redirectWithContext = new URL(FLUTTERWAVE_CALLBACK_URL, window.location.origin);
+                    if (data.sale_id != null && data.sale_id !== '') {
+                        redirectWithContext.searchParams.set('pos_sale_id', String(data.sale_id));
+                    }
+                    redirectWithContext.searchParams.set('pos_payment_on_account', data.is_payment_on_account ? '1' : '0');
+                    if (data.customer_id != null && data.customer_id !== '') {
+                        redirectWithContext.searchParams.set('pos_customer_id', String(data.customer_id));
+                    }
+                    redirectWithContext.searchParams.set('pos_amount', String(total));
+
+                    activeFlutterwaveCheckout = FlutterwaveCheckout({
                         public_key: data.provider_public_key,
                         tx_ref: data.reference,
                         amount: total,
                         currency: "GHS",
                         payment_options: "card, mobilemoneyghana",
+                        redirect_url: redirectWithContext.toString(),
                         customer: {
                             email: data.customer_email || 'customer@example.com',
                         },
@@ -1885,12 +2216,43 @@
                             title: "E-Cash Payment",
                             description: "Payment for items",
                         },
-                        callback: function (data) {
-                            // verify the payment via the backend
-                            verifyECashPayment(data.tx_ref, data.sale_id, data.is_payment_on_account, data.customer_id, total);
+                        callback: async function (payment) {
+                            // SDK inline callback — payment completed without redirect
+                            await handleFlutterwaveReturn({
+                                type: 'FLUTTERWAVE_PAYMENT_RETURN',
+                                provider_name: data.provider_name,
+                                reference: payment.tx_ref || data.reference,
+                                transaction_id: payment.transaction_id || '',
+                                status: payment.status || '',
+                                sale_id: data.sale_id,
+                                is_payment_on_account: data.is_payment_on_account,
+                                customer_id: data.customer_id,
+                                amount: total,
+                                timestamp: Date.now()
+                            });
                         },
                         onclose: function() {
-                            console.log('Payment popup closed');
+                            // The SDK fires onclose both when the user cancels
+                            // AND when an OTP/3DS redirect opens in a new tab.
+                            // We CANNOT reliably distinguish the two at this moment.
+                            //
+                            // Strategy: always keep polling alive after onclose.
+                            // If the user cancelled, the polling is harmless and
+                            // auto-expires after 5 minutes. If an OTP redirect is
+                            // happening, the callback page will communicate back
+                            // via localStorage/BroadcastChannel and handleFlutterwaveReturn
+                            // will process it, clear the cart, and reload the page.
+                            console.log('Flutterwave modal closed — keeping poll alive for OTP/redirect return.');
+                            activeFlutterwaveCheckout = null;
+
+                            // Auto-expire polling after 5 minutes to prevent resource leaks
+                            // if the user truly cancelled without completing payment.
+                            setTimeout(function() {
+                                if (flutterwaveReturnPollTimer) {
+                                    console.log('Flutterwave polling auto-expired after 5 min timeout.');
+                                    stopFlutterwaveReturnPolling();
+                                }
+                            }, 5 * 60 * 1000);
                         }
                     });
                 } else if (data.provider_name === 'NALO') {
@@ -1900,7 +2262,7 @@
                         // Show a prompt asking to verify payment manually once done
                         if (confirm('The Nalo Payment page has been opened in a popup window.\n\nClick OK ONLY AFTER the customer has successfully completed the payment.')) {
                             // verify the payment via the backend
-                            verifyECashPayment(data.reference, data.sale_id, data.is_payment_on_account, data.customer_id, total);
+                            verifyECashPayment(data.reference, data.sale_id, data.is_payment_on_account, data.customer_id, total, data.provider_name);
                         } else {
                             // Fallback if they click cancel - provide a manual verification button
                             alert('Payment verification cancelled. You can verify it manually in the backend or retry.');
@@ -1919,7 +2281,7 @@
         }
 
         // Verify and complete e-cash payment
-        async function verifyECashPayment(reference, saleId, isPaymentOnAccount = false, customerId = null, amount = 0) {
+        async function verifyECashPayment(reference, saleId, isPaymentOnAccount = false, customerId = null, amount = 0, providerName = null) {
             try {
                 const response = await fetch('{% url "sales:verify_ecash_payment" %}', {
                     method: 'POST',
@@ -1932,7 +2294,8 @@
                         sale_id: saleId,
                         is_payment_on_account: isPaymentOnAccount,
                         customer_id: customerId,
-                        amount: amount
+                        amount: amount,
+                        provider_name: providerName
                     })
                 });
 
@@ -1964,12 +2327,15 @@
                         window.open(`/sales/${data.sale_id}/receipt/`, '_blank');
                     }
                     {% endif %}
+                    return true;
                 } else {
                     alert(data.error || 'Payment verification failed. Please contact support.');
+                    return false;
                 }
             } catch (error) {
                 console.error('Verification error:', error);
                 alert('Failed to verify payment. Please check your transaction history.');
+                return false;
             }
         }
 

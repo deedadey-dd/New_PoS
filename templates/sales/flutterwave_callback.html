@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Completing Flutterwave Payment</title>
+    <style>
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            background: #111827;
+            color: #f9fafb;
+            font-family: Arial, sans-serif;
+        }
+
+        .panel {
+            width: min(90vw, 420px);
+            padding: 24px;
+            border: 1px solid #374151;
+            border-radius: 8px;
+            background: #1f2937;
+            text-align: center;
+        }
+
+        .muted {
+            color: #9ca3af;
+            font-size: 14px;
+            line-height: 1.45;
+        }
+
+        .spinner {
+            width: 32px;
+            height: 32px;
+            border: 3px solid #374151;
+            border-top-color: #6366f1;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 16px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .status-icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+        }
+
+        .close-note {
+            margin-top: 16px;
+            font-size: 12px;
+            color: #6b7280;
+        }
+
+        .btn-close-manual {
+            margin-top: 16px;
+            padding: 10px 24px;
+            background: #4f46e5;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            display: none;
+        }
+
+        .btn-close-manual:hover {
+            background: #4338ca;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="panel">
+        <div class="spinner" id="spinner"></div>
+        <div class="status-icon" id="status-icon" style="display:none;"></div>
+        <h2 id="title">Completing payment...</h2>
+        <p class="muted" id="message">Please wait while the POS confirms this payment.</p>
+        <button class="btn-close-manual" id="btn-close" onclick="tryClose()">Close This Tab</button>
+        <p class="close-note" id="close-note"></p>
+    </div>
+
+    <script>
+        (function () {
+            var params = new URLSearchParams(window.location.search);
+
+            function pickRef() {
+                var keys = ['tx_ref', 'Tx_ref', 'TX_REF', 'reference', 'ref'];
+                for (var i = 0; i < keys.length; i++) {
+                    var v = params.get(keys[i]);
+                    if (v) return v;
+                }
+                return '';
+            }
+            function pickTxnId() {
+                var v = params.get('transaction_id') || params.get('Transaction_id') || params.get('id');
+                return v || '';
+            }
+            function pickStatus() {
+                var s = params.get('status') || params.get('Status') || '';
+                return (s + '').toLowerCase();
+            }
+
+            var saleFromPos = params.get('pos_sale_id');
+            var paymentOnAccountPos = params.get('pos_payment_on_account') === '1';
+            var customerFromPos = params.get('pos_customer_id');
+            var amountFromPos = params.get('pos_amount');
+
+            var payload = {
+                type: 'FLUTTERWAVE_PAYMENT_RETURN',
+                provider_name: params.get('provider_name') || 'FLUTTERWAVE',
+                reference: pickRef(),
+                transaction_id: pickTxnId(),
+                status: pickStatus(),
+                sale_id: saleFromPos || params.get('sale_id') || null,
+                is_payment_on_account: paymentOnAccountPos || params.get('is_payment_on_account') === 'true',
+                customer_id: (customerFromPos !== null && customerFromPos !== '')
+                    ? customerFromPos : (params.get('customer_id') || null),
+                amount: (amountFromPos !== null && amountFromPos !== '')
+                    ? amountFromPos : (params.get('amount') || '0'),
+                timestamp: Date.now()
+            };
+
+            // --- Notify the POS tab through every available channel ---
+            function notifyPosTab() {
+                var origins = window.location.origin;
+
+                // 1. postMessage to opener (if POS opened this as a popup)
+                function postTo(win) {
+                    if (!win || win.closed) return;
+                    try { win.postMessage(payload, origins); } catch (e) { /* ignore */ }
+                    try {
+                        if (win.parent && win.parent !== win) win.parent.postMessage(payload, origins);
+                    } catch (e2) { /* ignore */ }
+                }
+                postTo(window.opener);
+                try {
+                    if (window.opener && window.opener.top) postTo(window.opener.top);
+                } catch (e3) { /* cross-origin */ }
+
+                // 2. postMessage to parent (if in an iframe)
+                if (window.parent && window.parent !== window) {
+                    try { window.parent.postMessage(payload, origins); } catch (e4) { /* ignore */ }
+                }
+
+                // 3. BroadcastChannel (reliable cross-tab communication)
+                try {
+                    var channel = new BroadcastChannel('pos_flutterwave_payments');
+                    channel.postMessage(payload);
+                    channel.close();
+                } catch (error) {
+                    // BroadcastChannel is not available in every embedded browser.
+                }
+
+                // 4. localStorage bridge (works even when BroadcastChannel is unavailable)
+                try {
+                    localStorage.setItem('pos_flutterwave_payment_return', JSON.stringify(payload));
+                } catch (error) {
+                    // Storage can be blocked in some privacy modes.
+                }
+            }
+
+            // Send notifications at staggered intervals for reliability.
+            // The POS tab may take a moment to regain focus and start listening.
+            notifyPosTab();
+            setTimeout(notifyPosTab, 120);
+            setTimeout(notifyPosTab, 400);
+            setTimeout(notifyPosTab, 800);
+            setTimeout(notifyPosTab, 1500);
+            setTimeout(notifyPosTab, 3000);
+
+            // --- Update UI based on payment status ---
+            var ok = payload.status === 'successful' || payload.status === 'completed' || payload.status === '';
+            var spinnerEl = document.getElementById('spinner');
+            var iconEl = document.getElementById('status-icon');
+            var titleEl = document.getElementById('title');
+            var messageEl = document.getElementById('message');
+            var btnClose = document.getElementById('btn-close');
+            var closeNote = document.getElementById('close-note');
+
+            spinnerEl.style.display = 'none';
+            iconEl.style.display = 'block';
+
+            if (ok) {
+                iconEl.textContent = '✅';
+                titleEl.textContent = 'Payment received';
+                messageEl.textContent = 'Returning to POS. This tab will close automatically...';
+            } else {
+                iconEl.textContent = '❌';
+                titleEl.textContent = 'Payment not completed';
+                messageEl.textContent = 'Return to the POS tab and try again.';
+            }
+
+            // --- Attempt to close this tab ---
+            var closeAttempts = 0;
+            var maxCloseAttempts = 5;
+
+            function tryClose() {
+                closeAttempts++;
+                try {
+                    window.close();
+                } catch (e) { /* ignore */ }
+
+                // window.close() is silently ignored if the browser blocks it.
+                // After a moment, check if we're still open.
+                setTimeout(function() {
+                    if (!window.closed) {
+                        if (closeAttempts < maxCloseAttempts) {
+                            tryClose();
+                        } else {
+                            // We can't auto-close. Show manual close button.
+                            messageEl.textContent = ok
+                                ? 'Payment confirmed! Please close this tab manually and return to the POS.'
+                                : 'Please close this tab manually and return to the POS.';
+                            btnClose.style.display = 'inline-block';
+                            closeNote.textContent = 'Your browser prevented this tab from closing automatically.';
+                        }
+                    }
+                }, 400);
+            }
+
+            // Make tryClose available globally for the button onclick
+            window.tryClose = tryClose;
+
+            // Start closing attempts after a short delay to let notifications propagate
+            setTimeout(tryClose, 900);
+        })();
+    </script>
+</body>
+
+</html>
