@@ -26,6 +26,7 @@ urlpatterns = [
     # Batches
     path('batches/', views.BatchListView.as_view(), name='batch_list'),
     path('batches/receive/', views.BatchCreateView.as_view(), name='batch_create'),
+    path('batches/bulk-receive/', views.BulkBatchReceiveView.as_view(), name='batch_bulk_receive'),
     path('batches/<int:pk>/', views.BatchDetailView.as_view(), name='batch_detail'),
     
     # Stock

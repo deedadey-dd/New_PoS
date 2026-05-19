@@ -763,6 +763,188 @@ class BatchCreateView(LoginRequiredMixin, CreateView):
         return response
 
 
+class BulkBatchReceiveView(LoginRequiredMixin, View):
+    """
+    Receive multiple products in one bulk session.
+    Each item gets its own Batch with a shared group prefix so they're
+    identifiable as a single delivery (e.g. GRP-20260519-A3X-01, -02, -03).
+    """
+    template_name = 'inventory/batch_bulk_receive.html'
+
+    def _check_permission(self, request):
+        role_name = request.user.role.name if request.user.role else None
+        if role_name == 'SHOP_MANAGER' and not request.user.tenant.shop_manager_can_receive_stock:
+            messages.error(request, "You don't have permission to receive stock.")
+            return False
+        allowed = ['STORES_MANAGER', 'PRODUCTION_MANAGER', 'ADMIN', 'SHOP_MANAGER']
+        if role_name not in allowed:
+            messages.error(request, "You don't have permission to receive stock.")
+            return False
+        return True
+
+    def _generate_group_prefix(self, tenant):
+        """Generate a unique group code like GRP-20260519-A3X."""
+        import random, string
+        from django.utils import timezone
+        today = timezone.localdate().strftime('%Y%m%d')
+        suffix = ''.join(random.choices(string.ascii_uppercase + string.digits, k=3))
+        prefix = f"GRP-{today}-{suffix}"
+        # Extremely unlikely collision, but guard anyway
+        while Batch.objects.filter(tenant=tenant, batch_number__startswith=prefix).exists():
+            suffix = ''.join(random.choices(string.ascii_uppercase + string.digits, k=3))
+            prefix = f"GRP-{today}-{suffix}"
+        return prefix
+
+    def _get_allowed_locations(self, request):
+        role_name = request.user.role.name if request.user.role else None
+        allowed_types = ['PRODUCTION', 'STORES']
+        if role_name == 'STORES_MANAGER':
+            allowed_types = ['STORES']
+        elif role_name == 'PRODUCTION_MANAGER':
+            allowed_types = ['PRODUCTION']
+        return Location.objects.filter(
+            tenant=request.user.tenant,
+            is_active=True,
+            location_type__in=allowed_types,
+        )
+
+    def get(self, request):
+        if not self._check_permission(request):
+            return redirect('inventory:batch_list')
+
+        group_prefix = self._group_prefix_for_session(request)
+        locations = self._get_allowed_locations(request)
+
+        # Auto-select user's location if applicable
+        auto_location = None
+        if request.user.location and request.user.location.location_type in ['PRODUCTION', 'STORES']:
+            auto_location = request.user.location
+        elif locations.count() == 1:
+            auto_location = locations.first()
+
+        return render(request, self.template_name, {
+            'group_prefix': group_prefix,
+            'locations': locations,
+            'auto_location': auto_location,
+        })
+
+    def _group_prefix_for_session(self, request):
+        """Persist group prefix in session so page refresh keeps the same prefix."""
+        key = 'bulk_receive_group_prefix'
+        prefix = request.session.get(key)
+        if not prefix:
+            prefix = self._generate_group_prefix(request.user.tenant)
+            request.session[key] = prefix
+        return prefix
+
+    def post(self, request):
+        if not self._check_permission(request):
+            return redirect('inventory:batch_list')
+
+        import json
+        from django.db import transaction
+
+        # Clear the session prefix so next bulk receive gets a fresh code
+        request.session.pop('bulk_receive_group_prefix', None)
+
+        location_id = request.POST.get('location')
+        items_data = request.POST.get('items_data', '[]')
+        group_prefix = request.POST.get('group_prefix', '')
+
+        try:
+            location = Location.objects.get(pk=location_id, tenant=request.user.tenant)
+        except Location.DoesNotExist:
+            messages.error(request, "Invalid location selected.")
+            return redirect('inventory:batch_bulk_receive')
+
+        try:
+            items = json.loads(items_data)
+        except (json.JSONDecodeError, ValueError):
+            messages.error(request, "Invalid item data submitted.")
+            return redirect('inventory:batch_bulk_receive')
+
+        if not items:
+            messages.error(request, "Please add at least one item.")
+            return redirect('inventory:batch_bulk_receive')
+
+        errors = []
+        created_batches = []
+
+        with transaction.atomic():
+            for idx, item in enumerate(items, start=1):
+                product_id = item.get('product_id')
+                try:
+                    product = Product.objects.get(pk=product_id, tenant=request.user.tenant, is_active=True)
+                except Product.DoesNotExist:
+                    errors.append(f"Row {idx}: Product not found.")
+                    continue
+
+                try:
+                    quantity = Decimal(str(item.get('quantity', 0)))
+                    unit_cost = Decimal(str(item.get('unit_cost', 0)))
+                    if quantity <= 0:
+                        errors.append(f"Row {idx} ({product.name}): Quantity must be greater than 0.")
+                        continue
+                    if unit_cost < 0:
+                        errors.append(f"Row {idx} ({product.name}): Unit cost cannot be negative.")
+                        continue
+                except Exception:
+                    errors.append(f"Row {idx}: Invalid numeric values.")
+                    continue
+
+                batch_number = f"{group_prefix}-{str(idx).zfill(2)}"
+                manufacture_date = item.get('manufacture_date') or None
+                expiry_date = item.get('expiry_date') or None
+                notes = item.get('notes', '')
+
+                # Duplicate check
+                if Batch.objects.filter(
+                    tenant=request.user.tenant,
+                    product=product,
+                    batch_number=batch_number,
+                    location=location,
+                ).exists():
+                    batch_number = f"{batch_number}-X"
+
+                batch = Batch.objects.create(
+                    tenant=request.user.tenant,
+                    product=product,
+                    location=location,
+                    batch_number=batch_number,
+                    unit_cost=unit_cost,
+                    initial_quantity=quantity,
+                    current_quantity=Decimal('0'),  # ledger.save() will add
+                    manufacture_date=manufacture_date,
+                    expiry_date=expiry_date,
+                    notes=notes,
+                )
+
+                InventoryLedger.objects.create(
+                    tenant=request.user.tenant,
+                    product=product,
+                    batch=batch,
+                    location=location,
+                    transaction_type='IN',
+                    quantity=quantity,
+                    unit_cost=unit_cost,
+                    reference_type='BulkBatch',
+                    reference_id=batch.pk,
+                    notes=f"Bulk receive — Group {group_prefix}. {notes}".strip('. '),
+                    created_by=request.user,
+                )
+                created_batches.append(batch)
+
+        if errors:
+            for e in errors:
+                messages.error(request, e)
+        if created_batches:
+            messages.success(
+                request,
+                f"✅ Bulk receive complete — {len(created_batches)} batch(es) created under group {group_prefix}."
+            )
+        return redirect('inventory:batch_list')
+
+
 class BatchDetailView(LoginRequiredMixin, DetailView):
     """View batch details."""
     model = Batch

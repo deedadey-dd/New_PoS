@@ -1,0 +1,536 @@
+{% extends 'base.html' %}
+{% block title %}Bulk Stock Receive{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-boxes me-2"></i>Bulk Stock Receive</h2>
+        <p class="text-muted mb-0">Add multiple products in one delivery session</p>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+        <span class="text-muted small">Delivery Group:</span>
+        <span class="badge bg-dark fs-6 px-3 py-2 font-monospace" id="group-prefix-badge">{{ group_prefix }}</span>
+        <a href="{% url 'inventory:batch_list' %}" class="btn btn-outline-secondary btn-sm ms-2">
+            <i class="bi bi-arrow-left me-1"></i>Back
+        </a>
+    </div>
+</div>
+
+{# Messages #}
+{% if messages %}
+{% for message in messages %}
+<div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+    {{ message }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endfor %}
+{% endif %}
+
+<form method="post" id="bulk-receive-form" novalidate>
+    {% csrf_token %}
+    <input type="hidden" name="group_prefix" value="{{ group_prefix }}">
+    <input type="hidden" name="items_data" id="items_data_input">
+
+    {# ── Location selector ── #}
+    <div class="card mb-4 border-0 shadow-sm">
+        <div class="card-body">
+            <div class="row align-items-end g-3">
+                <div class="col-md-4">
+                    <label class="form-label fw-semibold"><i class="bi bi-geo-alt me-1"></i>Receiving Location</label>
+                    {% if auto_location %}
+                    <input type="text" class="form-control" value="{{ auto_location.name }}" readonly>
+                    <input type="hidden" name="location" value="{{ auto_location.pk }}" id="location-select">
+                    {% else %}
+                    <select name="location" class="form-select" id="location-select" required>
+                        <option value="">— Select location —</option>
+                        {% for loc in locations %}
+                        <option value="{{ loc.pk }}">{{ loc.name }} ({{ loc.get_location_type_display }})</option>
+                        {% endfor %}
+                    </select>
+                    {% endif %}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label fw-semibold"><i class="bi bi-calendar-date me-1"></i>Receive Date</label>
+                    <input type="date" id="global-receive-date" class="form-control"
+                        value="{% now 'Y-m-d' %}">
+                    <small class="text-muted">Applied to all items (can override per row)</small>
+                </div>
+                <div class="col-md-4 d-flex align-items-end">
+                    <div class="alert alert-info mb-0 py-2 w-100 small">
+                        <i class="bi bi-info-circle me-1"></i>
+                        All items will share group prefix <strong>{{ group_prefix }}</strong>.
+                        Individual batch numbers: <strong>{{ group_prefix }}-01</strong>, <strong>-02</strong>…
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# ── Items Table ── #}
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <span class="fw-semibold"><i class="bi bi-list-check me-2"></i>Items to Receive</span>
+            <button type="button" class="btn btn-sm btn-primary" id="add-row-btn">
+                <i class="bi bi-plus-lg me-1"></i>Add Product
+            </button>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle" id="items-table">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width:32px;" class="text-center">#</th>
+                        <th style="min-width:220px;">Product</th>
+                        <th style="width:100px;">Qty</th>
+                        <th style="width:130px;">Unit Cost</th>
+                        <th style="width:130px;">Total Cost</th>
+                        <th style="width:120px;">Mfg Date</th>
+                        <th style="width:120px;">Expiry Date</th>
+                        <th style="width:160px;">Notes</th>
+                        <th style="width:48px;"></th>
+                    </tr>
+                </thead>
+                <tbody id="items-body">
+                    {# Rows injected by JS #}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="card-footer bg-white" id="empty-state">
+            <p class="text-center text-muted py-3 mb-0">
+                <i class="bi bi-inbox fs-3 d-block mb-2 opacity-50"></i>
+                No items yet. Click <strong>Add Product</strong> to begin.
+            </p>
+        </div>
+    </div>
+
+    {# ── Grand Total Panel ── #}
+    <div class="card border-0 shadow-sm mb-4" id="totals-panel" style="display:none!important;">
+        <div class="card-body py-3">
+            <div class="row g-3 align-items-center">
+                <div class="col-sm-4">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="rounded-circle bg-primary bg-opacity-10 p-3 text-primary">
+                            <i class="bi bi-boxes fs-4"></i>
+                        </div>
+                        <div>
+                            <div class="small text-muted">Total Items</div>
+                            <div class="fs-5 fw-bold" id="summary-item-count">0</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-sm-4">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="rounded-circle bg-success bg-opacity-10 p-3 text-success">
+                            <i class="bi bi-stack fs-4"></i>
+                        </div>
+                        <div>
+                            <div class="small text-muted">Total Units</div>
+                            <div class="fs-5 fw-bold" id="summary-total-qty">0</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-sm-4">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="rounded-circle bg-warning bg-opacity-10 p-3 text-warning">
+                            <i class="bi bi-cash-stack fs-4"></i>
+                        </div>
+                        <div>
+                            <div class="small text-muted">Grand Total Cost</div>
+                            <div class="fs-5 fw-bold" id="summary-grand-total">0.00</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# ── Preview Table ── #}
+    <div id="preview-section" style="display:none;">
+        <div class="card border-success border-2 mb-4">
+            <div class="card-header bg-success text-white">
+                <i class="bi bi-check2-all me-2"></i>Preview — Verify before saving
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Batch #</th>
+                            <th>Product</th>
+                            <th>Qty</th>
+                            <th>Unit Cost</th>
+                            <th>Total Cost</th>
+                            <th>Expiry</th>
+                        </tr>
+                    </thead>
+                    <tbody id="preview-body"></tbody>
+                    <tfoot class="table-light fw-bold">
+                        <tr>
+                            <td colspan="4" class="text-end">Grand Total:</td>
+                            <td id="preview-grand-total" colspan="2">0.00</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    {# ── Action Buttons ── #}
+    <div class="d-flex justify-content-between align-items-center mb-5">
+        <button type="button" class="btn btn-outline-info" id="preview-btn" style="display:none;">
+            <i class="bi bi-eye me-1"></i>Preview
+        </button>
+        <div class="ms-auto d-flex gap-2">
+            <a href="{% url 'inventory:batch_list' %}" class="btn btn-outline-secondary">Cancel</a>
+            <button type="submit" class="btn btn-success px-4" id="submit-btn" style="display:none;">
+                <i class="bi bi-cloud-arrow-up me-1"></i>Save All Batches
+            </button>
+        </div>
+    </div>
+</form>
+
+{# ── Row Template (hidden, cloned by JS) ── #}
+<template id="row-template">
+    <tr class="item-row" data-row-index="">
+        <td class="text-center text-muted fw-bold row-num"></td>
+        <td class="position-relative">
+            <input type="text" class="form-control form-control-sm product-search-input"
+                placeholder="Type to search product…" autocomplete="off">
+            <input type="hidden" class="product-id-input">
+            <input type="hidden" class="product-name-hidden">
+            <div class="autocomplete-dropdown list-group shadow position-absolute w-100 z-3" style="display:none; top:100%; max-height:220px; overflow-y:auto;"></div>
+        </td>
+        <td>
+            <input type="number" class="form-control form-control-sm qty-input"
+                min="0.01" step="0.01" placeholder="0" value="">
+        </td>
+        <td>
+            <div class="input-group input-group-sm">
+                <input type="number" class="form-control unit-cost-input"
+                    min="0" step="0.01" placeholder="0.00">
+            </div>
+        </td>
+        <td>
+            <div class="input-group input-group-sm">
+                <input type="number" class="form-control total-cost-input"
+                    min="0" step="0.01" placeholder="0.00">
+            </div>
+        </td>
+        <td>
+            <input type="date" class="form-control form-control-sm mfg-date-input">
+        </td>
+        <td>
+            <input type="date" class="form-control form-control-sm expiry-date-input">
+        </td>
+        <td>
+            <input type="text" class="form-control form-control-sm notes-input" placeholder="Optional…">
+        </td>
+        <td>
+            <button type="button" class="btn btn-sm btn-outline-danger remove-row-btn" title="Remove">
+                <i class="bi bi-trash"></i>
+            </button>
+        </td>
+    </tr>
+</template>
+
+<style>
+.autocomplete-dropdown .list-group-item {
+    cursor: pointer;
+    font-size: .85rem;
+}
+.autocomplete-dropdown .list-group-item:hover,
+.autocomplete-dropdown .list-group-item.active {
+    background: #e9f0ff;
+    color: #0d47a1;
+}
+#items-table input.is-invalid { border-color: #dc3545; }
+.row-cost-cell { font-variant-numeric: tabular-nums; }
+</style>
+
+<script>
+const GROUP_PREFIX = "{{ group_prefix }}";
+const SEARCH_URL = "{% url 'inventory:api_product_search' %}";
+const CSRF = "{{ csrf_token }}";
+
+let rowCount = 0;
+
+// ── Helpers ──────────────────────────────────────────────────────────────
+
+function fmt(n) {
+    return parseFloat(n || 0).toFixed(2);
+}
+
+function reindex() {
+    document.querySelectorAll('.item-row').forEach((tr, i) => {
+        tr.dataset.rowIndex = i;
+        tr.querySelector('.row-num').textContent = i + 1;
+    });
+    rowCount = document.querySelectorAll('.item-row').length;
+    toggleEmptyState();
+    updateTotals();
+}
+
+function toggleEmptyState() {
+    const empty = document.getElementById('empty-state');
+    const panel = document.getElementById('totals-panel');
+    const previewBtn = document.getElementById('preview-btn');
+    const submitBtn = document.getElementById('submit-btn');
+    const hasRows = rowCount > 0;
+    empty.style.display = hasRows ? 'none' : '';
+    panel.style.display = hasRows ? '' : 'none!important';
+    panel.classList.toggle('d-none', !hasRows);
+    previewBtn.style.display = hasRows ? '' : 'none';
+    submitBtn.style.display = hasRows ? '' : 'none';
+}
+
+// ── Grand Total ───────────────────────────────────────────────────────────
+
+function updateTotals() {
+    let totalQty = 0, grandTotal = 0, itemCount = 0;
+    document.querySelectorAll('.item-row').forEach(tr => {
+        const pid = tr.querySelector('.product-id-input').value;
+        const qty = parseFloat(tr.querySelector('.qty-input').value) || 0;
+        const tc = parseFloat(tr.querySelector('.total-cost-input').value) || 0;
+        if (pid && qty > 0) { itemCount++; totalQty += qty; grandTotal += tc; }
+    });
+    document.getElementById('summary-item-count').textContent = itemCount;
+    document.getElementById('summary-total-qty').textContent = fmt(totalQty);
+    document.getElementById('summary-grand-total').textContent = fmt(grandTotal);
+}
+
+// ── Unit ↔ Total Cost sync ────────────────────────────────────────────────
+
+function bindCostSync(tr) {
+    const qtyInput = tr.querySelector('.qty-input');
+    const ucInput = tr.querySelector('.unit-cost-input');
+    const tcInput = tr.querySelector('.total-cost-input');
+    let lastEdited = 'unit'; // track which field the user typed in last
+
+    function calcFromUnit() {
+        lastEdited = 'unit';
+        const qty = parseFloat(qtyInput.value) || 0;
+        const uc = parseFloat(ucInput.value) || 0;
+        if (qty > 0 && uc >= 0) {
+            tcInput.value = fmt(qty * uc);
+        }
+        updateTotals();
+    }
+
+    function calcFromTotal() {
+        lastEdited = 'total';
+        const qty = parseFloat(qtyInput.value) || 0;
+        const tc = parseFloat(tcInput.value) || 0;
+        if (qty > 0 && tc >= 0) {
+            ucInput.value = fmt(tc / qty);
+        }
+        updateTotals();
+    }
+
+    function calcFromQty() {
+        const qty = parseFloat(qtyInput.value) || 0;
+        if (lastEdited === 'unit') {
+            const uc = parseFloat(ucInput.value) || 0;
+            if (qty > 0) tcInput.value = fmt(qty * uc);
+        } else {
+            const tc = parseFloat(tcInput.value) || 0;
+            if (qty > 0) ucInput.value = fmt(tc / qty);
+        }
+        updateTotals();
+    }
+
+    ucInput.addEventListener('input', calcFromUnit);
+    tcInput.addEventListener('input', calcFromTotal);
+    qtyInput.addEventListener('input', calcFromQty);
+}
+
+// ── Product Autocomplete ──────────────────────────────────────────────────
+
+function bindAutocomplete(tr) {
+    const input = tr.querySelector('.product-search-input');
+    const idInput = tr.querySelector('.product-id-input');
+    const nameHidden = tr.querySelector('.product-name-hidden');
+    const dropdown = tr.querySelector('.autocomplete-dropdown');
+    let timer, activeIdx = -1;
+
+    function showDropdown(products) {
+        dropdown.innerHTML = '';
+        activeIdx = -1;
+        if (!products.length) { dropdown.style.display = 'none'; return; }
+        products.forEach((p, i) => {
+            const li = document.createElement('button');
+            li.type = 'button';
+            li.className = 'list-group-item list-group-item-action py-1 px-2';
+            li.innerHTML = `<span class="fw-medium">${p.name}</span><span class="text-muted ms-2 small">${p.sku}</span>${p.category ? `<span class="badge bg-light text-dark ms-1 small">${p.category}</span>` : ''}`;
+            li.addEventListener('mousedown', e => { e.preventDefault(); selectProduct(p); });
+            dropdown.appendChild(li);
+        });
+        dropdown.style.display = 'block';
+    }
+
+    function selectProduct(p) {
+        input.value = p.name;
+        idInput.value = p.id;
+        nameHidden.value = p.name;
+        dropdown.style.display = 'none';
+        tr.querySelector('.qty-input').focus();
+    }
+
+    input.addEventListener('input', () => {
+        idInput.value = '';
+        nameHidden.value = '';
+        const q = input.value.trim();
+        clearTimeout(timer);
+        if (q.length < 2) { dropdown.style.display = 'none'; return; }
+        timer = setTimeout(() => {
+            fetch(`${SEARCH_URL}?q=${encodeURIComponent(q)}`, {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+            .then(r => r.json())
+            .then(data => showDropdown(data.products || []));
+        }, 220);
+    });
+
+    input.addEventListener('keydown', e => {
+        const items = dropdown.querySelectorAll('.list-group-item');
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            activeIdx = Math.min(activeIdx + 1, items.length - 1);
+            items.forEach((el, i) => el.classList.toggle('active', i === activeIdx));
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            activeIdx = Math.max(activeIdx - 1, 0);
+            items.forEach((el, i) => el.classList.toggle('active', i === activeIdx));
+        } else if (e.key === 'Enter' && activeIdx >= 0) {
+            e.preventDefault();
+            items[activeIdx].dispatchEvent(new MouseEvent('mousedown'));
+        } else if (e.key === 'Escape') {
+            dropdown.style.display = 'none';
+        }
+    });
+
+    document.addEventListener('click', e => {
+        if (!tr.contains(e.target)) dropdown.style.display = 'none';
+    });
+}
+
+// ── Add Row ───────────────────────────────────────────────────────────────
+
+function addRow() {
+    const tmpl = document.getElementById('row-template');
+    const tr = tmpl.content.cloneNode(true).querySelector('tr');
+    const body = document.getElementById('items-body');
+    body.appendChild(tr);
+
+    // Set global receive date on new row's mfg/expiry placeholder
+    const gDate = document.getElementById('global-receive-date').value;
+    // (expiry left blank by default)
+
+    bindAutocomplete(tr);
+    bindCostSync(tr);
+
+    tr.querySelector('.remove-row-btn').addEventListener('click', () => {
+        tr.remove();
+        reindex();
+    });
+
+    reindex();
+    tr.querySelector('.product-search-input').focus();
+}
+
+document.getElementById('add-row-btn').addEventListener('click', addRow);
+
+// ── Preview ───────────────────────────────────────────────────────────────
+
+document.getElementById('preview-btn').addEventListener('click', () => {
+    const items = collectItems();
+    if (!items.length) return;
+    const tbody = document.getElementById('preview-body');
+    tbody.innerHTML = '';
+    let grand = 0;
+    items.forEach((item, i) => {
+        const tc = (parseFloat(item.unit_cost) * parseFloat(item.quantity)).toFixed(2);
+        grand += parseFloat(tc);
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td class="font-monospace small">${GROUP_PREFIX}-${String(i+1).padStart(2,'0')}</td>
+            <td>${item.product_name}</td>
+            <td>${item.quantity}</td>
+            <td>${parseFloat(item.unit_cost).toFixed(2)}</td>
+            <td>${tc}</td>
+            <td>${item.expiry_date || '—'}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+    document.getElementById('preview-grand-total').textContent = grand.toFixed(2);
+    const sec = document.getElementById('preview-section');
+    sec.style.display = '';
+    sec.scrollIntoView({ behavior: 'smooth' });
+});
+
+// ── Collect + Validate ────────────────────────────────────────────────────
+
+function collectItems() {
+    const rows = document.querySelectorAll('.item-row');
+    const items = [];
+    let hasError = false;
+
+    rows.forEach((tr, i) => {
+        const pid = tr.querySelector('.product-id-input').value;
+        const name = tr.querySelector('.product-name-hidden').value;
+        const qty = parseFloat(tr.querySelector('.qty-input').value) || 0;
+        const uc = parseFloat(tr.querySelector('.unit-cost-input').value) || 0;
+        const mfg = tr.querySelector('.mfg-date-input').value;
+        const exp = tr.querySelector('.expiry-date-input').value;
+        const notes = tr.querySelector('.notes-input').value;
+        const searchInput = tr.querySelector('.product-search-input');
+
+        // Mark invalid
+        searchInput.classList.toggle('is-invalid', !pid);
+        tr.querySelector('.qty-input').classList.toggle('is-invalid', qty <= 0);
+
+        if (!pid || qty <= 0) { hasError = true; return; }
+
+        items.push({
+            product_id: pid,
+            product_name: name,
+            quantity: qty,
+            unit_cost: uc,
+            manufacture_date: mfg,
+            expiry_date: exp,
+            notes: notes,
+        });
+    });
+
+    return hasError ? [] : items;
+}
+
+// ── Form Submit ───────────────────────────────────────────────────────────
+
+document.getElementById('bulk-receive-form').addEventListener('submit', e => {
+    e.preventDefault();
+    const items = collectItems();
+    if (!items.length) {
+        alert('Please fix the highlighted errors before saving.');
+        return;
+    }
+    // Validate location
+    const loc = document.getElementById('location-select');
+    if (loc && loc.tagName === 'SELECT' && !loc.value) {
+        loc.classList.add('is-invalid');
+        loc.focus();
+        return;
+    }
+    document.getElementById('items_data_input').value = JSON.stringify(items);
+    e.target.submit();
+});
+
+// ── Global date propagation ───────────────────────────────────────────────
+
+document.getElementById('global-receive-date').addEventListener('change', function() {
+    // No direct mapping needed; used for reference
+});
+
+// ── Init: add one empty row ───────────────────────────────────────────────
+addRow();
+</script>
+{% endblock %}

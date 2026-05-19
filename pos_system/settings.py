@@ -108,11 +108,22 @@ if os.getenv('DATABASE_URL'):
         'default': dj_database_url.config(default=os.getenv('DATABASE_URL'))
     }
 else:
-    # Development: SQLite
+    # Development: SQLite — one database per git branch
+    import subprocess as _sp
+    try:
+        _branch = _sp.check_output(
+            ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+            cwd=BASE_DIR,
+            stderr=_sp.DEVNULL,
+            text=True
+        ).strip() or 'main'
+    except Exception:
+        _branch = 'main'
+
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
+            'NAME': BASE_DIR / f'db_{_branch}.sqlite3',
         }
     }
 

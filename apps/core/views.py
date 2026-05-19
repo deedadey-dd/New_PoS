@@ -814,36 +814,84 @@ class SettingsView(LoginRequiredMixin, View):
     Admin settings page for tenant configuration.
     """
     template_name = 'core/settings.html'
-    
+
     def dispatch(self, request, *args, **kwargs):
-        # Only allow ADMIN role
         if not request.user.role or request.user.role.name != 'ADMIN':
             messages.error(request, 'Only administrators can access settings.')
             return redirect('core:dashboard')
         return super().dispatch(request, *args, **kwargs)
-    
+
+    def _expenditure_categories(self, tenant):
+        from apps.accounting.models import ExpenditureCategory
+        return ExpenditureCategory.objects.filter(tenant=tenant).order_by('is_default', 'name')
+
     def get(self, request):
         tenant = request.user.tenant
         if not tenant:
             messages.error(request, 'No tenant associated with your account.')
             return redirect('core:dashboard')
-        
         form = TenantSettingsForm(instance=tenant)
-        return render(request, self.template_name, {'form': form, 'tenant': tenant})
-    
+        return render(request, self.template_name, {
+            'form': form,
+            'tenant': tenant,
+            'expenditure_categories': self._expenditure_categories(tenant),
+        })
+
     def post(self, request):
         tenant = request.user.tenant
         if not tenant:
             messages.error(request, 'No tenant associated with your account.')
             return redirect('core:dashboard')
-        
+
+        action = request.POST.get('action')
+
+        if action == 'add_category':
+            from apps.accounting.models import ExpenditureCategory
+            name = request.POST.get('category_name', '').strip()
+            if not name:
+                messages.error(request, 'Category name cannot be empty.')
+            elif ExpenditureCategory.objects.filter(tenant=tenant, name__iexact=name).exists():
+                messages.warning(request, f'Category "{name}" already exists.')
+            else:
+                ExpenditureCategory.objects.create(tenant=tenant, name=name, is_active=True)
+                messages.success(request, f'Category "{name}" added.')
+            return redirect('core:settings')
+
+        if action == 'delete_category':
+            from apps.accounting.models import ExpenditureCategory
+            cat = get_object_or_404(ExpenditureCategory, pk=request.POST.get('category_id'), tenant=tenant)
+            if cat.is_default:
+                messages.warning(request, f'"{cat.name}" is a default category and cannot be deleted.')
+            elif cat.items.exists():
+                messages.warning(request, f'"{cat.name}" has existing expenditures. Deactivate it instead.')
+            else:
+                cat.delete()
+                messages.success(request, 'Category deleted.')
+            return redirect('core:settings')
+
+        if action == 'toggle_category':
+            from apps.accounting.models import ExpenditureCategory
+            cat = get_object_or_404(ExpenditureCategory, pk=request.POST.get('category_id'), tenant=tenant)
+            if cat.is_default and cat.is_active:
+                messages.warning(request, 'Default categories cannot be deactivated.')
+            else:
+                cat.is_active = not cat.is_active
+                cat.save()
+                state = 'activated' if cat.is_active else 'deactivated'
+                messages.success(request, f'Category "{cat.name}" {state}.')
+            return redirect('core:settings')
+
+        # Main tenant settings form
         form = TenantSettingsForm(request.POST, instance=tenant)
         if form.is_valid():
             form.save()
             messages.success(request, 'Settings updated successfully!')
             return redirect('core:settings')
-        
-        return render(request, self.template_name, {'form': form, 'tenant': tenant})
+        return render(request, self.template_name, {
+            'form': form,
+            'tenant': tenant,
+            'expenditure_categories': self._expenditure_categories(tenant),
+        })
 
 
 class AdminPasswordResetView(LoginRequiredMixin, View):

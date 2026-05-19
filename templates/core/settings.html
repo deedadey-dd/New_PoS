@@ -139,8 +139,74 @@
                 </div>
             </div>
         </div>
-    </div>
 
+        <!-- Expenditure Categories -->
+        <div class="col-12 mb-4">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="bi bi-wallet2 me-2"></i>Expenditure Categories</h5>
+                    <span class="badge bg-secondary">{{ expenditure_categories|length }} categories</span>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small mb-3">
+                        Manage expenditure categories for your organisation. Custom categories are unique to your account.
+                        Default system categories are marked with <i class="bi bi-lock text-secondary"></i> and cannot be deleted.
+                    </p>
+                    <!-- Existing categories -->
+                    <div class="row g-2 mb-4">
+                        {% for cat in expenditure_categories %}
+                        <div class="col-auto">
+                            <div class="d-flex align-items-center gap-1 border rounded px-3 py-2 {% if not cat.is_active %}opacity-50{% endif %}" style="background:#f8f9fa;">
+                                {% if cat.is_default %}<i class="bi bi-lock text-secondary small" title="Default category"></i>{% endif %}
+                                <span class="small fw-medium">{{ cat.name }}</span>
+                                {% if cat.is_active %}
+                                <span class="badge bg-success rounded-pill ms-1" style="font-size:0.65em;">Active</span>
+                                {% else %}
+                                <span class="badge bg-secondary rounded-pill ms-1" style="font-size:0.65em;">Inactive</span>
+                                {% endif %}
+                                <form method="post" class="d-inline ms-1">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="action" value="toggle_category">
+                                    <input type="hidden" name="category_id" value="{{ cat.pk }}">
+                                    <button type="submit" class="btn btn-link p-0 text-decoration-none"
+                                        title="{% if cat.is_active %}Deactivate{% else %}Activate{% endif %}"
+                                        {% if cat.is_default and cat.is_active %}disabled{% endif %}>
+                                        <i class="bi {% if cat.is_active %}bi-toggle-on text-success{% else %}bi-toggle-off text-secondary{% endif %}"></i>
+                                    </button>
+                                </form>
+                                {% if not cat.is_default %}
+                                <form method="post" class="d-inline" onsubmit="return confirm('Delete this category?')">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="action" value="delete_category">
+                                    <input type="hidden" name="category_id" value="{{ cat.pk }}">
+                                    <button type="submit" class="btn btn-link p-0 text-decoration-none text-danger" title="Delete">
+                                        <i class="bi bi-x-circle small"></i>
+                                    </button>
+                                </form>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% empty %}
+                        <div class="col-12 text-muted small">No categories yet.</div>
+                        {% endfor %}
+                    </div>
+                    <!-- Add new category -->
+                    <form method="post" class="d-flex gap-2 align-items-end" style="max-width:420px;">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="add_category">
+                        <div class="flex-grow-1">
+                            <label class="form-label small mb-1">New Category Name</label>
+                            <input type="text" name="category_name" class="form-control form-control-sm"
+                                placeholder="e.g. Office Supplies, Utilities..." maxlength="100" required>
+                        </div>
+                        <button type="submit" class="btn btn-sm btn-dark">
+                            <i class="bi bi-plus-lg me-1"></i>Add
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
     <div class="d-flex justify-content-end gap-2">
         <a href="{% url 'core:dashboard' %}" class="btn btn-secondary">Cancel</a>
         <button type="submit" class="btn btn-primary">
