@@ -1,0 +1,238 @@
+{% extends 'base.html' %}
+
+{% block title %}Expenditures - {{ current_tenant.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1">
+            <i class="bi bi-wallet2 me-2"></i>Expenditures
+            {% if can_view_all_shops and pending_count %}
+            <span class="badge bg-warning text-dark ms-2" style="font-size:0.55em;vertical-align:middle;">
+                {{ pending_count }} Pending
+            </span>
+            {% endif %}
+        </h2>
+        <p class="text-muted mb-0">
+            {% if can_view_all_shops %}Review and approve expenditure requests from all shops
+            {% elif is_shop_manager %}Your submitted expenditure vouchers
+            {% else %}Expenditure vouchers{% endif %}
+        </p>
+    </div>
+    <div class="d-flex gap-2">
+        {% if is_accountant %}
+        <a href="{% url 'accounting:expenditure_categories' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-tags me-1"></i>Categories
+        </a>
+        <a href="{% url 'accounting:expenditure_report' %}" class="btn btn-outline-info">
+            <i class="bi bi-bar-chart me-1"></i>Report
+        </a>
+        {% elif is_auditor %}
+        <a href="{% url 'accounting:expenditure_report' %}" class="btn btn-outline-info">
+            <i class="bi bi-bar-chart me-1"></i>Report
+        </a>
+        {% endif %}
+        {% if is_shop_manager or request.user.role.name == 'ADMIN' %}
+        <a href="{% url 'accounting:expenditure_create' %}" class="btn btn-primary">
+            <i class="bi bi-plus-lg me-1"></i>New Expenditure
+        </a>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Summary Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm h-100 {% if is_accountant %}border-start border-4 border-secondary{% endif %}">
+            <div class="card-body text-center py-3">
+                <div class="text-muted small mb-1"><i class="bi bi-receipt me-1"></i>Total Requested</div>
+                <div class="fw-bold fs-5">{{ currency_symbol }}{{ exp_total_requested|floatformat:"2g"|default:"0.00" }}</div>
+                <div class="text-muted small">{{ voucher_count }} voucher{{ voucher_count|pluralize }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm h-100 {% if is_accountant %}border-start border-4 border-success{% endif %}">
+            <div class="card-body text-center py-3">
+                <div class="text-muted small mb-1"><i class="bi bi-check-circle me-1 text-success"></i>Approved</div>
+                <div class="fw-bold fs-5 text-success">{{ currency_symbol }}{{ exp_total_approved|floatformat:"2g"|default:"0.00" }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm h-100 {% if is_accountant %}border-start border-4 border-warning{% endif %}">
+            <div class="card-body text-center py-3">
+                <div class="text-muted small mb-1"><i class="bi bi-hourglass-split me-1 text-warning"></i>Pending</div>
+                <div class="fw-bold fs-5 text-warning">{{ currency_symbol }}{{ exp_total_pending|floatformat:"2g"|default:"0.00" }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm h-100 {% if is_accountant %}border-start border-4 border-danger{% endif %}">
+            <div class="card-body text-center py-3">
+                <div class="text-muted small mb-1"><i class="bi bi-x-circle me-1 text-danger"></i>Rejected</div>
+                <div class="fw-bold fs-5 text-danger">{{ currency_symbol }}{{ exp_total_rejected|floatformat:"2g"|default:"0.00" }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if can_view_all_shops and category_breakdown %}
+<!-- Category Breakdown (Accountant only) -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white py-3">
+        <h6 class="mb-0 fw-bold"><i class="bi bi-pie-chart me-2 text-primary"></i>Approved Spend by Category</h6>
+    </div>
+    <div class="card-body py-2">
+        <div class="row g-2">
+            {% for cat in category_breakdown %}
+            <div class="col-auto">
+                <span class="badge rounded-pill bg-light text-dark border px-3 py-2">
+                    <span class="text-muted small me-1">{{ cat.category__name|default:"Uncategorised" }}</span>
+                    <strong>{{ currency_symbol }}{{ cat.total|floatformat:"2g" }}</strong>
+                    <span class="text-muted small">({{ cat.count }})</span>
+                </span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Filters -->
+<div class="card mb-3 border-0 shadow-sm">
+    <div class="card-body py-2">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-6 col-md-2">
+                <label class="form-label small mb-1">Status</label>
+                <select name="status" class="form-select form-select-sm">
+                    <option value="">All Statuses</option>
+                    <option value="PENDING" {% if selected_status == 'PENDING' %}selected{% endif %}>⏳ Pending</option>
+                    <option value="PARTIAL" {% if selected_status == 'PARTIAL' %}selected{% endif %}>◑ Partial</option>
+                    <option value="FULLY_APPROVED" {% if selected_status == 'FULLY_APPROVED' %}selected{% endif %}>✅ Approved</option>
+                    <option value="REJECTED" {% if selected_status == 'REJECTED' %}selected{% endif %}>❌ Rejected</option>
+                </select>
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label small mb-1">Category</label>
+                <select name="category" class="form-select form-select-sm">
+                    <option value="">All Categories</option>
+                    {% for cat in categories %}
+                    <option value="{{ cat.pk }}" {% if selected_category == cat.pk|stringformat:"s" %}selected{% endif %}>{{ cat.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label small mb-1">From Date</label>
+                <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label small mb-1">To Date</label>
+                <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
+            </div>
+            <div class="col-12 col-md-4 d-flex gap-2 align-items-end">
+                <button type="submit" class="btn btn-sm btn-primary flex-fill">
+                    <i class="bi bi-filter me-1"></i>Filter
+                </button>
+                <a href="{% url 'accounting:expenditure_list' %}" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-x-lg"></i>
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Vouchers Table -->
+<div class="card shadow-sm border-0">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Voucher #</th>
+                        {% if can_view_all_shops %}<th>Shop</th>{% endif %}
+                        <th>Items</th>
+                        <th class="text-end">Total</th>
+                        <th>Requested By</th>
+                        <th>Date</th>
+                        <th class="text-center">Status</th>
+                        <th class="text-end">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for voucher in vouchers %}
+                    <tr class="{% if can_view_all_shops and voucher.status == 'PENDING' %}table-warning bg-opacity-25{% endif %}">
+                        <td class="fw-bold">{{ voucher.voucher_number }}</td>
+                        {% if can_view_all_shops %}<td class="small">{{ voucher.location.name }}</td>{% endif %}
+                        <td>
+                            <span class="badge bg-secondary">
+                                {{ voucher.items.count }} item{{ voucher.items.count|pluralize }}
+                            </span>
+                        </td>
+                        <td class="text-end fw-bold">{{ current_tenant.currency }} {{ voucher.total_amount|floatformat:"2g" }}</td>
+                        <td class="small">{{ voucher.requested_by.get_full_name }}</td>
+                        <td class="small text-muted">{{ voucher.created_at|date:"d M Y H:i" }}</td>
+                        <td class="text-center">
+                            {% if voucher.status == 'PENDING' %}
+                            <span class="badge bg-warning text-dark">Pending</span>
+                            {% elif voucher.status == 'PARTIAL' %}
+                            <span class="badge bg-info text-dark">Partial</span>
+                            {% elif voucher.status == 'FULLY_APPROVED' %}
+                            <span class="badge bg-success">Approved</span>
+                            {% else %}
+                            <span class="badge bg-danger">Rejected</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">
+                            <a href="{% url 'accounting:expenditure_detail' voucher.pk %}"
+                               class="btn btn-sm {% if is_accountant and voucher.status == 'PENDING' %}btn-warning{% else %}btn-outline-primary{% endif %}"
+                               title="{% if is_accountant and voucher.status == 'PENDING' %}Review &amp; Approve{% else %}View Details{% endif %}">
+                                {% if is_accountant and voucher.status == 'PENDING' %}
+                                <i class="bi bi-pen me-1"></i>Review
+                                {% else %}
+                                <i class="bi bi-eye me-1"></i>View
+                                {% endif %}
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="{% if can_view_all_shops %}8{% else %}7{% endif %}" class="text-center py-5 text-muted">
+                            <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+                            {% if selected_status or selected_category or date_from or date_to %}
+                                No vouchers match your filters.
+                                <a href="{% url 'accounting:expenditure_list' %}" class="d-block mt-1 small">Clear filters</a>
+                            {% elif is_shop_manager %}
+                                No expenditure vouchers yet.
+                                <a href="{% url 'accounting:expenditure_create' %}" class="d-block mt-1 small">Create your first voucher →</a>
+                            {% else %}
+                                No expenditure vouchers found.
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% if page_obj.has_other_pages %}
+<nav class="mt-3">
+    <ul class="pagination pagination-sm justify-content-center">
+        {% if page_obj.has_previous %}
+        <li class="page-item">
+            <a class="page-link" href="?page={{ page_obj.previous_page_number }}&status={{ selected_status }}&category={{ selected_category }}&date_from={{ date_from }}&date_to={{ date_to }}">«</a>
+        </li>
+        {% endif %}
+        <li class="page-item disabled"><span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span></li>
+        {% if page_obj.has_next %}
+        <li class="page-item">
+            <a class="page-link" href="?page={{ page_obj.next_page_number }}&status={{ selected_status }}&category={{ selected_category }}&date_from={{ date_from }}&date_to={{ date_to }}">»</a>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+
+{% endblock %}

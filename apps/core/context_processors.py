@@ -130,9 +130,9 @@ def tenant_context(request):
             sent = CashTransfer.objects.filter(
                 tenant=tenant,
                 from_user=user,
-                status='CONFIRMED'
-            ).exclude(
-                to_user=user  # Exclude self-transfers (shop manager shift closings)
+                status='CONFIRMED',
+                # Only count outgoing cash: deposits to accountant + shop-cash expenditures
+                transfer_type__in=['DEPOSIT', 'EXPENDITURE'],
             ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
             
             # Cash from current open shift (if manager has one)
@@ -196,6 +196,8 @@ def tenant_context(request):
                 tenant=tenant,
                 to_user=user,
                 status='CONFIRMED'
+            ).exclude(
+                transfer_type='EXPENDITURE'  # Exclude shop-cash expenditures — money went to expense, not to accountant
             ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
             
             sent = CashTransfer.objects.filter(

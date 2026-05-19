@@ -1,0 +1,211 @@
+{% extends 'base.html' %}
+
+{% block title %}Request Expenditure Voucher - {{ current_tenant.name }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-10">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h2 class="mb-1"><i class="bi bi-receipt-cutoff me-2"></i>New Expenditure Voucher</h2>
+                <p class="text-muted mb-0">Create a voucher with multiple line items for approval.</p>
+            </div>
+            <a href="{% url 'accounting:expenditure_list' %}" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left me-2"></i>Back
+            </a>
+        </div>
+
+        <form method="post" id="voucher-form">
+            {% csrf_token %}
+            
+            <!-- Voucher Header -->
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-body p-4">
+                    <div class="row align-items-center">
+                        <div class="col-md-4">
+                            <h5 class="fw-bold mb-1">Voucher Details</h5>
+                            <p class="text-muted small mb-0">Location: <span class="badge bg-secondary">{{ request.user.location.name }}</span></p>
+                        </div>
+                        <div class="col-md-8">
+                            <label for="{{ form.notes.id_for_label }}" class="form-label small fw-bold text-muted uppercase">Voucher Notes (Optional)</label>
+                            {{ form.notes }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Voucher Items -->
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0 fw-bold">Line Items</h5>
+                    <button type="button" class="btn btn-sm btn-outline-primary" id="add-item">
+                        <i class="bi bi-plus-lg me-1"></i>Add Item
+                    </button>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        {{ formset.management_form }}
+                        <table class="table table-hover mb-0" id="items-table">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 200px;">Category</th>
+                                    <th>Description</th>
+                                    <th style="width: 180px;">Amount ({{ current_tenant.currency }})</th>
+                                    <th style="width: 50px;"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="formset-container">
+                                {% for item_form in formset %}
+                                <div class="item-form-row">
+                                    {{ item_form.id }}
+                                    <tr>
+                                        <td>
+                                            {{ item_form.category }}
+                                            {% if item_form.category.errors %}<div class="text-danger small mt-1">{{ item_form.category.errors|join:", " }}</div>{% endif %}
+                                        </td>
+                                        <td>
+                                            {{ item_form.description }}
+                                            {% if item_form.description.errors %}<div class="text-danger small mt-1">{{ item_form.description.errors|join:", " }}</div>{% endif %}
+                                        </td>
+                                        <td>
+                                            {{ item_form.amount }}
+                                            {% if item_form.amount.errors %}<div class="text-danger small mt-1">{{ item_form.amount.errors|join:", " }}</div>{% endif %}
+                                        </td>
+                                        <td class="text-center">
+                                            {% if formset.can_delete %}
+                                                <div style="display:none;">{{ item_form.DELETE }}</div>
+                                            {% endif %}
+                                            <button type="button" class="btn btn-outline-danger btn-sm remove-item" {% if forloop.first and formset.total_form_count == 1 %}disabled{% endif %}>
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </div>
+                                {% endfor %}
+                            </tbody>
+                            <tfoot class="table-light">
+                                <tr>
+                                    <td colspan="2" class="text-end fw-bold">Total Voucher Amount:</td>
+                                    <td class="fw-bold fs-5" id="voucher-total">{{ current_tenant.currency }} 0.00</td>
+                                    <td></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+                <div class="card-footer bg-white py-3">
+                    <div class="d-flex justify-content-end gap-2">
+                        <a href="{% url 'accounting:expenditure_list' %}" class="btn btn-light">Cancel</a>
+                        <button type="submit" class="btn btn-primary px-5">
+                            <i class="bi bi-send me-2"></i>Submit Voucher
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Empty form template for JS -->
+<template id="empty-form">
+    <tr>
+        <td>
+            {{ formset.empty_form.category }}
+        </td>
+        <td>
+            {{ formset.empty_form.description }}
+        </td>
+        <td>
+            {{ formset.empty_form.amount }}
+        </td>
+        <td class="text-center">
+            <button type="button" class="btn btn-outline-danger btn-sm remove-item">
+                <i class="bi bi-trash"></i>
+            </button>
+        </td>
+    </tr>
+</template>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const formsetContainer = document.getElementById('formset-container');
+    const addItemBtn = document.getElementById('add-item');
+    const totalForms = document.getElementById('id_items-TOTAL_FORMS');
+    const emptyFormTemplate = document.getElementById('empty-form').innerHTML;
+    const totalDisplay = document.getElementById('voucher-total');
+    const currency = "{{ current_tenant.currency }}";
+
+    function updateTotals() {
+        let total = 0;
+        document.querySelectorAll('.item-amount').forEach(input => {
+            const val = parseFloat(input.value);
+            if (!isNaN(val)) total += val;
+        });
+        totalDisplay.textContent = `${currency} ${total.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+    }
+
+    addItemBtn.addEventListener('click', function() {
+        const formIdx = parseInt(totalForms.value);
+        const newFormHtml = emptyFormTemplate.replace(/__prefix__/g, formIdx);
+        
+        const tempElement = document.createElement('tbody');
+        tempElement.innerHTML = newFormHtml;
+        const newRow = tempElement.firstElementChild;
+        
+        formsetContainer.appendChild(newRow);
+        totalForms.value = formIdx + 1;
+        
+        // Enable remove buttons if more than 1 row
+        if (document.querySelectorAll('#formset-container tr').length > 1) {
+            document.querySelectorAll('.remove-item').forEach(btn => btn.disabled = false);
+        }
+
+        // Add event listener to new amount input
+        newRow.querySelector('.item-amount').addEventListener('input', updateTotals);
+    });
+
+    formsetContainer.addEventListener('click', function(e) {
+        if (e.target.closest('.remove-item')) {
+            const row = e.target.closest('tr');
+            const rows = document.querySelectorAll('#formset-container tr');
+            
+            if (rows.length > 1) {
+                row.remove();
+                updateTotals();
+                
+                // Re-index remaining forms
+                const remainingRows = document.querySelectorAll('#formset-container tr');
+                totalForms.value = remainingRows.length;
+                
+                remainingRows.forEach((r, idx) => {
+                    r.querySelectorAll('input, select, textarea').forEach(field => {
+                        if (field.name) {
+                            field.name = field.name.replace(/items-\d+-/, `items-${idx}-`);
+                        }
+                        if (field.id) {
+                            field.id = field.id.replace(/id_items-\d+-/, `id_items-${idx}-`);
+                        }
+                    });
+                });
+
+                if (remainingRows.length === 1) {
+                    remainingRows[0].querySelector('.remove-item').disabled = true;
+                }
+            }
+        }
+    });
+
+    // Initial event listeners for amounts
+    document.querySelectorAll('.item-amount').forEach(input => {
+        input.addEventListener('input', updateTotals);
+    });
+
+    // Run initial calculation
+    updateTotals();
+});
+</script>
+{% endblock %}
+

@@ -6,15 +6,20 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib import messages
 from django.views import View
-from django.views.generic import ListView, TemplateView
+from django.views.generic import ListView, TemplateView, CreateView, DetailView
 from django.db.models import Q, Sum, Count
+from django.http import JsonResponse
+from django.urls import reverse_lazy
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 from datetime import timedelta, datetime
 from decimal import Decimal
 
-from .models import CashTransfer
-from .forms import CashTransferForm, BankTransferForm
+from .models import CashTransfer, ExpenditureRequest, ExpenditureCategory, ExpenditureItem
+from .forms import (
+    CashTransferForm, BankTransferForm,
+    ExpenditureRequestForm, ExpenditureItemForm, ExpenditureItemFormSet, ExpenditureCategoryForm,
+)
 from apps.core.models import User, Location
 from apps.core.mixins import SortableMixin
 
@@ -1503,3 +1508,573 @@ class ShopMomoExportView(LoginRequiredMixin, View):
         else:
             wb = create_export_workbook('Momo History', headers, rows)
             return build_excel_response(wb, 'local_momo_history.xlsx')
+
+
+# --- Expenditure Views (ported from alpha) ---
+
+class ApiAddExpenditureCategoryView(LoginRequiredMixin, View):
+    """API endpoint to add a new expenditure category."""
+    
+    def post(self, request):
+        from django.http import JsonResponse
+        if not request.user.role or request.user.role.name != 'ADMIN':
+            return JsonResponse({'success': False, 'error': 'Unauthorized'}, status=403)
+            
+        import json
+        name = request.POST.get('name', '').strip()
+        if not name:
+            try:
+                data = json.loads(request.body)
+                name = data.get('name', '').strip()
+            except:
+                pass
+                
+        if not name:
+            return JsonResponse({'success': False, 'error': 'Category name is required'})
+            
+        from .models import ExpenditureCategory
+        try:
+            cat, created = ExpenditureCategory.objects.get_or_create(
+                tenant=request.user.tenant,
+                name=name,
+                defaults={'is_active': True}
+            )
+            if not created and not cat.is_active:
+                cat.is_active = True
+                cat.save()
+            elif not created:
+                return JsonResponse({'success': False, 'error': 'Category already exists'})
+                
+            return JsonResponse({
+                'success': True, 
+                'category': {'id': cat.id, 'name': cat.name, 'is_default': cat.is_default}
+            })
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+
+
+class ApiDeleteExpenditureCategoryView(LoginRequiredMixin, View):
+    """API endpoint to soft-delete an expenditure category."""
+    
+    def post(self, request, pk):
+        from django.http import JsonResponse
+        if not request.user.role or request.user.role.name != 'ADMIN':
+            return JsonResponse({'success': False, 'error': 'Unauthorized'}, status=403)
+            
+        from .models import ExpenditureCategory
+        try:
+            cat = ExpenditureCategory.objects.get(pk=pk, tenant=request.user.tenant)
+            if cat.is_default:
+                return JsonResponse({'success': False, 'error': 'Cannot delete a default category'})
+                
+            cat.is_active = False
+            cat.save()
+            return JsonResponse({'success': True})
+        except ExpenditureCategory.DoesNotExist:
+            return JsonResponse({'success': False, 'error': 'Category not found'}, status=404)
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+
+
+class ExpenditureListView(LoginRequiredMixin, ListView):
+    """List expenditure vouchers; filterable by status, date and category."""
+    model = ExpenditureRequest
+    template_name = 'accounting/expenditure_list.html'
+    context_object_name = 'vouchers'
+    paginate_by = 20
+
+    def get_queryset(self):
+        role_name = self.request.user.role.name if self.request.user.role else None
+        qs = ExpenditureRequest.objects.select_related(
+            'requested_by', 'location'
+        ).prefetch_related('items').filter(tenant=self.request.user.tenant)
+
+        # Shop-level roles only see their own location's vouchers
+        # Accountant, Auditor, and Admin see all shops
+        if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER', 'SHOP_ATTENDANT']:
+            if self.request.user.location:
+                qs = qs.filter(location=self.request.user.location)
+
+        # Apply filters from GET params
+        status = self.request.GET.get('status')
+        if status:
+            qs = qs.filter(status=status)
+
+        category = self.request.GET.get('category')
+        if category:
+            qs = qs.filter(items__category_id=category).distinct()
+
+        date_from = self.request.GET.get('date_from', '')
+        date_to = self.request.GET.get('date_to', '')
+        if date_from:
+            try:
+                qs = qs.filter(created_at__date__gte=datetime.strptime(date_from, '%Y-%m-%d').date())
+            except ValueError:
+                pass
+        if date_to:
+            try:
+                qs = qs.filter(created_at__date__lte=datetime.strptime(date_to, '%Y-%m-%d').date())
+            except ValueError:
+                pass
+
+        # Accountants and Auditors see pending vouchers first
+        if role_name in ['ACCOUNTANT', 'ADMIN', 'AUDITOR']:
+            from django.db.models import Case, When, IntegerField
+            qs = qs.annotate(
+                status_order=Case(
+                    When(status='PENDING', then=0),
+                    When(status='PARTIAL', then=1),
+                    When(status='FULLY_APPROVED', then=2),
+                    When(status='REJECTED', then=3),
+                    default=4,
+                    output_field=IntegerField(),
+                )
+            ).order_by('status_order', '-created_at')
+        else:
+            qs = qs.order_by('-created_at')
+
+        return qs
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        role_name = self.request.user.role.name if self.request.user.role else None
+        ctx['is_accountant'] = role_name in ['ACCOUNTANT', 'ADMIN']
+        ctx['is_auditor'] = role_name == 'AUDITOR'
+        ctx['is_shop_manager'] = role_name == 'SHOP_MANAGER'
+        # Auditors share the same broad view as accountants but cannot approve
+        ctx['can_view_all_shops'] = role_name in ['ACCOUNTANT', 'ADMIN', 'AUDITOR']
+        ctx['selected_status'] = self.request.GET.get('status', '')
+        ctx['selected_category'] = self.request.GET.get('category', '')
+        ctx['date_from'] = self.request.GET.get('date_from', '')
+        ctx['date_to'] = self.request.GET.get('date_to', '')
+
+        # Categories for filter dropdown
+        ctx['categories'] = ExpenditureCategory.objects.filter(
+            tenant=self.request.user.tenant
+        ).order_by('name')
+
+        # Aggregate totals across the filtered queryset
+        full_qs = self.get_queryset()
+        item_agg = ExpenditureItem.objects.filter(request__in=full_qs).aggregate(
+            total_requested=Sum('amount'),
+            total_approved=Sum('amount', filter=Q(status='APPROVED')),
+            total_pending=Sum('amount', filter=Q(status='PENDING')),
+            total_rejected=Sum('amount', filter=Q(status='REJECTED')),
+        )
+        ctx['exp_total_requested'] = item_agg['total_requested'] or Decimal('0')
+        ctx['exp_total_approved'] = item_agg['total_approved'] or Decimal('0')
+        ctx['exp_total_pending'] = item_agg['total_pending'] or Decimal('0')
+        ctx['exp_total_rejected'] = item_agg['total_rejected'] or Decimal('0')
+        ctx['voucher_count'] = full_qs.count()
+
+        # Count of vouchers awaiting accountant action (for badge)
+        ctx['pending_count'] = ExpenditureRequest.objects.filter(
+            tenant=self.request.user.tenant,
+            status__in=['PENDING', 'PARTIAL']
+        ).count()
+
+        # Category breakdown for accountant/auditor summary
+        if ctx['is_accountant'] or ctx['is_auditor']:
+            from django.db.models import Count
+            ctx['category_breakdown'] = ExpenditureItem.objects.filter(
+                request__in=full_qs,
+                status='APPROVED'
+            ).values('category__name').annotate(
+                total=Sum('amount'), count=Count('id')
+            ).order_by('-total')
+
+        return ctx
+
+
+class ExpenditureCreateView(LoginRequiredMixin, View):
+    """Create a new expenditure voucher (Shop Manager / Admin only)."""
+    template_name = 'accounting/expenditure_form.html'
+    success_url = reverse_lazy('accounting:expenditure_list')
+
+    def _check_access(self, request):
+        """Return an error redirect if the user isn't allowed to create expenditures."""
+        role_name = request.user.role.name if request.user.role else None
+        if role_name not in ['SHOP_MANAGER', 'ADMIN']:
+            messages.error(request, "Only Shop Managers can submit expenditure vouchers.")
+            return redirect('accounting:expenditure_list')
+        if not request.user.location:
+            messages.error(request, "You must be assigned to a shop location to create an expenditure.")
+            return redirect('accounting:expenditure_list')
+        return None
+
+    def get(self, request):
+        redirect_response = self._check_access(request)
+        if redirect_response:
+            return redirect_response
+
+        form = ExpenditureRequestForm()
+        formset = ExpenditureItemFormSet(form_kwargs={'tenant': request.user.tenant})
+        return render(request, self.template_name, {'form': form, 'formset': formset})
+
+    def post(self, request):
+        redirect_response = self._check_access(request)
+        if redirect_response:
+            return redirect_response
+
+        form = ExpenditureRequestForm(request.POST)
+        formset = ExpenditureItemFormSet(request.POST, form_kwargs={'tenant': request.user.tenant})
+
+        if form.is_valid() and formset.is_valid():
+            voucher = form.save(commit=False)
+            voucher.tenant = request.user.tenant
+            voucher.requested_by = request.user
+            voucher.location = request.user.location
+            voucher.save()
+
+            items = formset.save(commit=False)
+            for item in items:
+                item.tenant = request.user.tenant
+                item.request = voucher
+                item.save()
+            formset.save_m2m()
+
+            # --- Notify all accountants that a new voucher needs review ---
+            from apps.notifications.models import Notification
+            from apps.core.models import User as CoreUser
+            accountants = CoreUser.objects.filter(
+                tenant=request.user.tenant,
+                is_active=True,
+                role__name__in=['ACCOUNTANT', 'ADMIN'],
+            )
+            item_count = voucher.items.count()
+            for accountant in accountants:
+                Notification.objects.create(
+                    tenant=request.user.tenant,
+                    user=accountant,
+                    title="New Expenditure Voucher Submitted",
+                    message=(
+                        f"{request.user.get_full_name()} ({voucher.location.name}) "
+                        f"submitted expenditure voucher {voucher.voucher_number} "
+                        f"with {item_count} item{'s' if item_count != 1 else ''} "
+                        f"totalling {request.user.tenant.currency} {voucher.total_amount}. "
+                        f"Please review and approve."
+                    ),
+                    notification_type='SYSTEM',
+                    reference_type='ExpenditureRequest',
+                    reference_id=voucher.pk,
+                )
+
+            messages.success(request, f"Expenditure voucher {voucher.voucher_number} submitted for approval.")
+            return redirect(self.success_url)
+
+        return render(request, self.template_name, {'form': form, 'formset': formset})
+
+
+class ExpenditureDetailView(LoginRequiredMixin, DetailView):
+    """View details of an expenditure voucher, including its items."""
+    model = ExpenditureRequest
+    template_name = 'accounting/expenditure_detail.html'
+    context_object_name = 'voucher'
+
+    def get_queryset(self):
+        return ExpenditureRequest.objects.filter(tenant=self.request.user.tenant)
+
+
+class ExpenditureItemActionView(LoginRequiredMixin, View):
+    """Approve or Reject an individual expenditure item (Accountant / Admin only)."""
+
+    def post(self, request, pk, action):
+        role_name = request.user.role.name if request.user.role else None
+        if role_name not in ['ACCOUNTANT', 'ADMIN']:
+            messages.error(request, 'Only accountants or admins can process expenditures.')
+            return redirect('accounting:expenditure_list')
+
+        item = get_object_or_404(ExpenditureItem, pk=pk, tenant=request.user.tenant)
+
+        if item.status != 'PENDING':
+            messages.error(request, 'This item is already processed.')
+            return redirect('accounting:expenditure_detail', pk=item.request.pk)
+
+        try:
+            if action == 'approve':
+                source_of_funds = request.POST.get('source_of_funds')
+                item.approve(request.user, source_of_funds)
+                messages.success(request, f"Item approved.")
+            elif action == 'reject':
+                reason = request.POST.get('reason', '')
+                item.reject(request.user, reason)
+                messages.success(request, f"Item rejected.")
+        except ValidationError as e:
+            messages.error(request, str(e))
+            
+        return redirect('accounting:expenditure_detail', pk=item.request.pk)
+
+
+
+class ExpenditureCategoryView(LoginRequiredMixin, View):
+    """Manage expenditure categories (Admin / Accountant only)."""
+    template_name = 'accounting/expenditure_categories.html'
+
+    def _check_permission(self, request):
+        role_name = request.user.role.name if request.user.role else None
+        return role_name in ['ADMIN', 'ACCOUNTANT']
+
+    def get(self, request):
+        if not self._check_permission(request):
+            messages.error(request, 'Permission denied.')
+            return redirect('accounting:expenditure_list')
+        categories = ExpenditureCategory.objects.filter(tenant=request.user.tenant)
+        form = ExpenditureCategoryForm()
+        return render(request, self.template_name, {'categories': categories, 'form': form})
+
+    def post(self, request):
+        if not self._check_permission(request):
+            messages.error(request, 'Permission denied.')
+            return redirect('accounting:expenditure_list')
+
+        action = request.POST.get('action')
+        if action == 'create':
+            form = ExpenditureCategoryForm(request.POST)
+            if form.is_valid():
+                cat = form.save(commit=False)
+                cat.tenant = request.user.tenant
+                cat.save()
+                messages.success(request, f'Category "{cat.name}" created.')
+            else:
+                messages.error(request, 'Invalid category name.')
+        elif action == 'toggle':
+            cat = get_object_or_404(ExpenditureCategory, pk=request.POST.get('pk'), tenant=request.user.tenant)
+            if cat.is_default and cat.is_active:
+                messages.warning(request, 'Default categories cannot be deactivated.')
+            else:
+                cat.is_active = not cat.is_active
+                cat.save()
+                messages.success(request, f'Category "{cat.name}" updated.')
+        elif action == 'delete':
+            cat = get_object_or_404(ExpenditureCategory, pk=request.POST.get('pk'), tenant=request.user.tenant)
+            if cat.is_default:
+                messages.warning(request, 'Default categories cannot be deleted, but you can deactivate them.')
+            elif cat.items.exists():
+                messages.warning(request, f'Cannot delete "{cat.name}" — it has existing expenditures. Deactivate it instead.')
+            else:
+                cat.delete()
+                messages.success(request, f'Category deleted.')
+        return redirect('accounting:expenditure_categories')
+
+
+class ExpenditureReportView(LoginRequiredMixin, View):
+    """Expenditure report grouped by category and date range."""
+    template_name = 'accounting/expenditure_report.html'
+    ALLOWED_ROLES = ['CASHIER', 'SHOP_MANAGER', 'SHOP_CASHIER', 'ACCOUNTANT', 'AUDITOR', 'ADMIN']
+
+    def get(self, request):
+        from datetime import datetime
+        from django.db.models import Sum, Count
+        from decimal import Decimal
+        role_name = request.user.role.name if request.user.role else None
+        if role_name not in self.ALLOWED_ROLES:
+            messages.error(request, 'You do not have permission to view expenditure reports.')
+            return redirect('core:dashboard')
+
+        tenant = request.user.tenant
+        date_from_str = request.GET.get('date_from', '')
+        date_to_str = request.GET.get('date_to', '')
+        location_id = request.GET.get('location', '')
+
+        # Default: current month
+        today = timezone.localdate()
+        if date_from_str:
+            try:
+                date_from = datetime.strptime(date_from_str, '%Y-%m-%d').date()
+            except ValueError:
+                date_from = today.replace(day=1)
+        else:
+            date_from = today.replace(day=1)
+
+        if date_to_str:
+            try:
+                date_to = datetime.strptime(date_to_str, '%Y-%m-%d').date()
+            except ValueError:
+                date_to = today
+        else:
+            date_to = today
+
+        qs = ExpenditureItem.objects.select_related('request').filter(
+            tenant=tenant,
+            status='APPROVED',
+            request__created_at__date__gte=date_from,
+            request__created_at__date__lte=date_to,
+        )
+
+        # Shop-level roles see only their location
+        if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER'] and request.user.location:
+            qs = qs.filter(request__location=request.user.location)
+        elif location_id:
+            qs = qs.filter(request__location_id=location_id)
+
+        # Aggregate by category
+        by_category = (
+            qs.values('category__name')
+            .annotate(total=Sum('amount'), count=Count('id'))
+            .order_by('-total')
+        )
+
+        grand_total = qs.aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
+        locations = Location.objects.filter(tenant=tenant, is_active=True) if role_name in ['ACCOUNTANT', 'AUDITOR', 'ADMIN'] else []
+
+        return render(request, self.template_name, {
+            'by_category': by_category,
+            'grand_total': grand_total,
+            'date_from': date_from,
+            'date_to': date_to,
+            'location_id': location_id,
+            'locations': locations,
+            'expenditures': qs.select_related('category', 'request__location', 'request__requested_by').order_by('-created_at'),
+        })
+
+class CashTransferPrintView(LoginRequiredMixin, View):
+    """Printable view for a cash transfer deposit slip."""
+    template_name = 'accounting/cash_transfer_print.html'
+    
+    def get(self, request, pk):
+        transfer = get_object_or_404(
+            CashTransfer,
+            pk=pk,
+            tenant=request.user.tenant
+        )
+        return render(request, self.template_name, {'transfer': transfer})
+
+
+class CashHistoryView(LoginRequiredMixin, ListView):
+    """
+    Cash history page linked from the Cash-on-Hand navbar badge.
+    Shows cash sales, cash customer payments and cash transfers
+    for the current user's shop with date filtering and totals.
+    """
+    template_name = 'accounting/cash_history.html'
+    context_object_name = 'cash_sales'
+    paginate_by = 30
+
+    def get_queryset(self):
+        from apps.sales.models import Sale
+        user = self.request.user
+        role_name = user.role.name if user.role else None
+        qs = Sale.objects.filter(
+            tenant=user.tenant,
+            status='COMPLETED',
+            payment_method__in=['CASH', 'MIXED'],
+        ).select_related('attendant', 'shop')
+
+        # Scope to user's shop unless accountant/admin
+        if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER', 'SHOP_ATTENDANT']:
+            if user.location:
+                qs = qs.filter(shop=user.location)
+            else:
+                qs = qs.filter(attendant=user)
+
+        date_from = self.request.GET.get('date_from', '')
+        date_to = self.request.GET.get('date_to', '')
+        if date_from:
+            try:
+                qs = qs.filter(created_at__date__gte=datetime.strptime(date_from, '%Y-%m-%d').date())
+            except ValueError:
+                pass
+        if date_to:
+            try:
+                qs = qs.filter(created_at__date__lte=datetime.strptime(date_to, '%Y-%m-%d').date())
+            except ValueError:
+                pass
+
+        # Sorting
+        sort = self.request.GET.get('sort', 'date_desc')
+        sort_map = {
+            'date_asc': 'created_at',
+            'date_desc': '-created_at',
+            'amount_asc': 'total',
+            'amount_desc': '-total',
+            'attendant_asc': 'attendant__first_name',
+            'attendant_desc': '-attendant__first_name',
+        }
+        qs = qs.order_by(sort_map.get(sort, '-created_at'))
+        return qs
+
+    def get_context_data(self, **kwargs):
+        from apps.sales.models import Sale
+        from apps.customers.models import CustomerTransaction
+        context = super().get_context_data(**kwargs)
+        user = self.request.user
+        role_name = user.role.name if user.role else None
+
+        date_from = self.request.GET.get('date_from', '')
+        date_to = self.request.GET.get('date_to', '')
+        sort = self.request.GET.get('sort', 'date_desc')
+        context['date_from'] = date_from
+        context['date_to'] = date_to
+        context['sort'] = sort
+
+        # ---- Filtered queryset totals ----
+        qs = self.get_queryset()
+        agg = qs.aggregate(
+            total_cash=Sum('total', filter=Q(payment_method='CASH')),
+            total_mixed=Sum('amount_paid', filter=Q(payment_method='MIXED')),
+            sale_count=Count('id'),
+        )
+        total_cash = (agg['total_cash'] or Decimal('0')) + (agg['total_mixed'] or Decimal('0'))
+        context['total_cash_sales'] = total_cash
+        context['sale_count'] = agg['sale_count'] or 0
+
+        # ---- Cash transfers (outgoing deposits) ----
+        transfer_qs = CashTransfer.objects.filter(
+            tenant=user.tenant,
+        ).order_by('-created_at')
+        if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER', 'SHOP_ATTENDANT']:
+            transfer_qs = transfer_qs.filter(Q(from_user=user) | Q(to_user=user))
+        if date_from:
+            try:
+                transfer_qs = transfer_qs.filter(
+                    created_at__date__gte=datetime.strptime(date_from, '%Y-%m-%d').date()
+                )
+            except ValueError:
+                pass
+        if date_to:
+            try:
+                transfer_qs = transfer_qs.filter(
+                    created_at__date__lte=datetime.strptime(date_to, '%Y-%m-%d').date()
+                )
+            except ValueError:
+                pass
+        context['cash_transfers'] = transfer_qs[:20]
+        context['total_transferred'] = transfer_qs.filter(
+            status='CONFIRMED', transfer_type='DEPOSIT'
+        ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
+        # ---- Cash customer payments ----
+        cust_qs = CustomerTransaction.objects.filter(
+            tenant=user.tenant,
+            transaction_type='CREDIT',
+            description__icontains='(CASH)',
+        ).exclude(description__icontains='ECASH').order_by('-created_at')
+        if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER', 'SHOP_ATTENDANT']:
+            cust_qs = cust_qs.filter(performed_by=user)
+        if date_from:
+            try:
+                cust_qs = cust_qs.filter(
+                    created_at__date__gte=datetime.strptime(date_from, '%Y-%m-%d').date()
+                )
+            except ValueError:
+                pass
+        if date_to:
+            try:
+                cust_qs = cust_qs.filter(
+                    created_at__date__lte=datetime.strptime(date_to, '%Y-%m-%d').date()
+                )
+            except ValueError:
+                pass
+        context['cash_customer_payments'] = cust_qs[:20]
+        context['total_customer_cash'] = cust_qs.aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
+        # ---- Permissions ----
+        if getattr(user.tenant, 'use_strict_sales_workflow', False):
+            context['can_create_transfer'] = role_name in ['SHOP_CASHIER', 'ACCOUNTANT', 'ADMIN']
+        else:
+            context['can_create_transfer'] = role_name in ['SHOP_ATTENDANT', 'SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN', 'SHOP_CASHIER']
+
+        context['role_name'] = role_name
+        return context
+

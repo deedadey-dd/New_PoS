@@ -32,4 +32,15 @@ urlpatterns = [
     path('shop-momo/<int:shop_id>/withdraw/', views.ShopMomoWithdrawView.as_view(), name='shop_momo_withdraw'),
     path('shop-momo/history/', views.ShopMomoHistoryView.as_view(), name='shop_momo_history'),
     path('shop-momo/history/export/', views.ShopMomoExportView.as_view(), name='shop_momo_export'),
+
+    # Expenditures
+    path('expenditures/', views.ExpenditureListView.as_view(), name='expenditure_list'),
+    path('expenditures/new/', views.ExpenditureCreateView.as_view(), name='expenditure_create'),
+    path('expenditures/<int:pk>/', views.ExpenditureDetailView.as_view(), name='expenditure_detail'),
+    path('expenditures/item/<int:pk>/<str:action>/', views.ExpenditureItemActionView.as_view(), name='expenditure_item_action'),
+    path('expenditures/categories/', views.ExpenditureCategoryView.as_view(), name='expenditure_categories'),
+    path('expenditures/categories/api/add/', views.ApiAddExpenditureCategoryView.as_view(), name='api_add_category'),
+    path('expenditures/categories/api/<int:pk>/delete/', views.ApiDeleteExpenditureCategoryView.as_view(), name='api_delete_category'),
+    path('expenditures/report/', views.ExpenditureReportView.as_view(), name='expenditure_report'),
 ]
+
