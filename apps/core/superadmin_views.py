@@ -770,3 +770,71 @@ class EmailComposeView(SuperuserRequiredMixin, View):
             
         messages.success(request, f"Email scheduled to send on {scheduled_dt.strftime('%B %d, %Y at %I:%M %p')}.")
         return redirect('superadmin:email_list')
+
+# ============== FEATURE MESSAGES VIEWS ==============
+
+class FeatureMessageListView(SuperuserRequiredMixin, ListView):
+    """View all feature messages available for monthly distribution."""
+    template_name = 'superadmin/feature_message_list.html'
+    context_object_name = 'messages'
+    paginate_by = 20
+    
+    def get_queryset(self):
+        from apps.core.models import FeatureMessage
+        return FeatureMessage.objects.all().order_by('-created_at')
+
+
+class FeatureMessageCreateView(SuperuserRequiredMixin, View):
+    """Create a new feature introduction message."""
+    template_name = 'superadmin/feature_message_form.html'
+    
+    def get(self, request):
+        return render(request, self.template_name)
+        
+    def post(self, request):
+        from apps.core.models import FeatureMessage
+        
+        feature_key = request.POST.get('feature_key')
+        title = request.POST.get('title')
+        content = request.POST.get('content')
+        is_active = request.POST.get('is_active') == 'on'
+        
+        if not feature_key or not title or not content:
+            messages.error(request, "Feature key, title, and content are required.")
+            return redirect('superadmin:feature_message_create')
+            
+        if FeatureMessage.objects.filter(feature_key=feature_key).exists():
+            messages.error(request, "A feature message with this key already exists.")
+            return redirect('superadmin:feature_message_create')
+            
+        FeatureMessage.objects.create(
+            feature_key=feature_key,
+            title=title,
+            content=content,
+            is_active=is_active,
+            created_by=request.user
+        )
+        
+        messages.success(request, "Feature message created successfully.")
+        return redirect('superadmin:feature_message_list')
+
+
+class FeatureMessageDetailView(SuperuserRequiredMixin, DetailView):
+    """View feature message stats and history."""
+    template_name = 'superadmin/feature_message_detail.html'
+    context_object_name = 'feature_message'
+    
+    def get_queryset(self):
+        from apps.core.models import FeatureMessage
+        return FeatureMessage.objects.all()
+        
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        # Add history stats
+        from apps.core.models import FeatureIntroHistory
+        history = FeatureIntroHistory.objects.filter(feature_message=self.object)
+        context['sent_count'] = history.count()
+        context['helpful_count'] = history.filter(feedback_helpful=True).count()
+        context['not_helpful_count'] = history.filter(feedback_helpful=False).count()
+        context['recent_history'] = history.select_related('tenant').order_by('-sent_at')[:20]
+        return context

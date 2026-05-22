@@ -66,3 +66,5 @@ class Notification(TenantModel):
     def get_recent_for_user(cls, user, limit=10):
         """Get recent notifications for a user."""
         return cls.objects.filter(user=user).select_related('tenant')[:limit]
+
+

@@ -100,8 +100,7 @@
                             {{ batch.expiry_date }}
                             {% if batch.is_expired %}
                             <span class="badge bg-danger">Expired</span>
-                            {% elif batch.days_until_expiry < 30 %} <span class="badge bg-warning">{{
-                                batch.days_until_expiry }}d</span>
+                            {% elif batch.days_until_expiry < 30 %} <span class="badge bg-warning">{{ batch.days_until_expiry }}d</span>
                             {% endif %}
                             {% else %}
                             -

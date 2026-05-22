@@ -616,17 +616,42 @@ class ScheduledEmail(models.Model):
         return f"{self.subject} - {self.scheduled_time.strftime('%Y-%m-%d %H:%M')}"
 
 
+class FeatureMessage(models.Model):
+    """
+    Ready-made feature introduction messages that are sent monthly to tenants.
+    Managed by Superadmins.
+    """
+    feature_key = models.CharField(max_length=100, unique=True, help_text="A unique identifier (e.g. 'transfer_discrepancy')")
+    title = models.CharField(max_length=255, help_text="Email Subject Line")
+    content = models.TextField(help_text="HTML content of the email")
+    is_active = models.BooleanField(default=True, help_text="If active, it is eligible to be randomly sent to tenants")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_feature_messages')
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.title} ({self.feature_key})"
+
+
 class FeatureIntroHistory(models.Model):
     """
     Tracks which Feature Introductions have been sent to which tenants to avoid repetition.
+    Also tracks user feedback (helpful/not helpful) on the feature intro.
     """
     tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='feature_intros')
-    feature_key = models.CharField(max_length=100)
+    feature_message = models.ForeignKey(FeatureMessage, on_delete=models.CASCADE, related_name='history', null=True)
     sent_at = models.DateTimeField(auto_now_add=True)
     
+    # Feedback tracking
+    feedback_helpful = models.BooleanField(null=True, blank=True)
+    feedback_at = models.DateTimeField(null=True, blank=True)
+    
     class Meta:
-        unique_together = ['tenant', 'feature_key']
+        unique_together = ['tenant', 'feature_message']
         
     def __str__(self):
-        return f"{self.tenant.name} - {self.feature_key}"
+        return f"{self.tenant.name} - {self.feature_message.feature_key if self.feature_message else 'Unknown'}"
 

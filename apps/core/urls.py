@@ -59,4 +59,7 @@ urlpatterns = [
     # Custom Emails (Tenant Admin)
     path('emails/', views.TenantEmailListView.as_view(), name='email_list'),
     path('emails/compose/', views.TenantEmailComposeView.as_view(), name='email_compose'),
+    
+    # Feature Feedback (Public)
+    path('features/feedback/', views.FeatureFeedbackView.as_view(), name='feature_feedback'),
 ]

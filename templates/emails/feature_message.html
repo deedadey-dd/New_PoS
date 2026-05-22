@@ -1,0 +1,26 @@
+{% extends "emails/base_email.html" %}
+
+{% block content %}
+<div style="margin-bottom: 25px;">
+    <h2>{{ feature.title }}</h2>
+</div>
+
+<div style="margin-bottom: 30px;">
+    {{ feature.content|safe }}
+</div>
+
+<div style="background-color: #f8f9fa; padding: 20px; border-radius: 6px; border: 1px solid #e9ecef; text-align: center; margin-top: 30px;">
+    <p style="margin-top: 0; margin-bottom: 15px; font-weight: 600; color: #495057;">Was this feature introduction helpful?</p>
+    
+    <!-- Feedback Links -->
+    <a href="{{ platform_url }}{% url 'core:feature_feedback' %}?tenant_id={{ tenant.id }}&msg_id={{ feature.id }}&helpful=1" 
+       style="display: inline-block; padding: 8px 16px; margin: 0 5px; background-color: #198754; color: white; text-decoration: none; border-radius: 4px; font-weight: bold;">
+        👍 Yes, helpful
+    </a>
+    
+    <a href="{{ platform_url }}{% url 'core:feature_feedback' %}?tenant_id={{ tenant.id }}&msg_id={{ feature.id }}&helpful=0" 
+       style="display: inline-block; padding: 8px 16px; margin: 0 5px; background-color: #dc3545; color: white; text-decoration: none; border-radius: 4px; font-weight: bold;">
+        👎 No, not helpful
+    </a>
+</div>
+{% endblock %}

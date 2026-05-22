@@ -36,4 +36,9 @@ urlpatterns = [
     # Emails
     path('emails/', superadmin_views.EmailListView.as_view(), name='email_list'),
     path('emails/compose/', superadmin_views.EmailComposeView.as_view(), name='email_compose'),
+    
+    # Feature Messages
+    path('features/', superadmin_views.FeatureMessageListView.as_view(), name='feature_message_list'),
+    path('features/create/', superadmin_views.FeatureMessageCreateView.as_view(), name='feature_message_create'),
+    path('features/<int:pk>/', superadmin_views.FeatureMessageDetailView.as_view(), name='feature_message_detail'),
 ]

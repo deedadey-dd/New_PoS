@@ -19,6 +19,7 @@ from apps.core.tests.test_recent_fixes import (
     LogoutRedirectTests,
     CashTransferFormRecipientTests,
 )
+from apps.transfers.tests import TransferDiscrepancyTests
 
 
 class RollbackTestResult(unittest.TextTestResult):
@@ -62,7 +63,11 @@ def main():
     suite4a = unittest.TestLoader().loadTestsFromTestCase(LogoutRedirectTests)
     suite4b = unittest.TestLoader().loadTestsFromTestCase(CashTransferFormRecipientTests)
 
-    suite = unittest.TestSuite([suite1, suite2, suite3, suite4a, suite4b])
+    # --- Suite 5: Transfer Discrepancy Tests ---
+    print("[5/5] Transfer Discrepancy Tests")
+    suite5 = unittest.TestLoader().loadTestsFromTestCase(TransferDiscrepancyTests)
+
+    suite = unittest.TestSuite([suite1, suite2, suite3, suite4a, suite4b, suite5])
 
     runner = RollbackTestRunner(verbosity=2)
     result = runner.run(suite)

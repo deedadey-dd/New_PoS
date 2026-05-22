@@ -326,28 +326,78 @@ class Transfer(TenantModel):
                     created_by=user
                 )
             
-            # Handle discrepancy based on action choice
+            # Handle discrepancy based on reason
             discrepancy_qty = item.quantity_sent - item.quantity_received
-            action = item_disc.get('action', 'RETURN')  # Default to RETURN
             
-            if discrepancy_qty > 0 and action == 'RETURN':
+            if discrepancy_qty > 0:
                 reason_display = dict(TransferItem.DISCREPANCY_REASONS).get(
                     item.discrepancy_reason, item.discrepancy_reason
                 )
-                InventoryLedger.objects.create(
-                    tenant=self.tenant,
-                    product=item.product,
-                    batch=item.batch,
-                    location=self.source_location,
-                    transaction_type='DISPUTE_REVERSAL',
-                    quantity=discrepancy_qty,
-                    unit_cost=item.unit_cost,
-                    reference_type='Transfer',
-                    reference_id=self.pk,
-                    notes=f"Auto-return: {discrepancy_qty} units. Reason: {reason_display}. {item.discrepancy_notes}".strip(),
-                    created_by=user
-                )
-                returned_items.append(f"{item.product.name} x{discrepancy_qty}")
+                
+                if item.discrepancy_reason == 'SHORT':
+                    # Return short quantity to sender's inventory
+                    InventoryLedger.objects.create(
+                        tenant=self.tenant,
+                        product=item.product,
+                        batch=item.batch,
+                        location=self.source_location,
+                        transaction_type='DISPUTE_REVERSAL',
+                        quantity=discrepancy_qty,
+                        unit_cost=item.unit_cost,
+                        reference_type='Transfer',
+                        reference_id=self.pk,
+                        notes=f"Auto-return: {discrepancy_qty} units. Reason: {reason_display}. {item.discrepancy_notes}".strip(),
+                        created_by=user
+                    )
+                    returned_items.append(f"{item.product.name} x{discrepancy_qty} (Short)")
+                else:
+                    # For other reasons (Damaged, Expired, etc.), the receiver "receives" the items
+                    # and an automatic StockAdjustment is created to write them off.
+                    
+                    # 1. Add the discrepancy qty to destination inventory so it can be written off
+                    dest_batch = None
+                    if item.batch:
+                        dest_batch, _ = Batch.objects.get_or_create(
+                            tenant=self.tenant,
+                            product=item.product,
+                            location=self.destination_location,
+                            batch_number=item.batch.batch_number,
+                            defaults={
+                                'unit_cost': item.unit_cost,
+                                'initial_quantity': Decimal('0'),
+                                'current_quantity': Decimal('0'),
+                                'expiry_date': item.batch.expiry_date,
+                                'manufacture_date': item.batch.manufacture_date,
+                            }
+                        )
+                    
+                    InventoryLedger.objects.create(
+                        tenant=self.tenant,
+                        product=item.product,
+                        batch=dest_batch,
+                        location=self.destination_location,
+                        transaction_type='TRANSFER_IN',
+                        quantity=discrepancy_qty,
+                        unit_cost=item.unit_cost,
+                        reference_type='Transfer',
+                        reference_id=self.pk,
+                        notes=f"Received damaged/discrepant: {discrepancy_qty} units. Reason: {reason_display}",
+                        created_by=user
+                    )
+                    
+                    # 2. Create a pending StockAdjustment
+                    from apps.inventory.models import StockAdjustment
+                    StockAdjustment.objects.create(
+                        tenant=self.tenant,
+                        product=item.product,
+                        batch=dest_batch,
+                        location=self.destination_location,
+                        adjustment_type='DAMAGE',
+                        quantity=-discrepancy_qty,  # Negative to remove stock
+                        reason=f"Transfer {self.transfer_number} discrepancy: {reason_display}. {item.discrepancy_notes}".strip(),
+                        status='PENDING',
+                        requested_by=user
+                    )
         
         self.status = 'RECEIVED' if all_complete else 'PARTIAL'
         self.received_by = user

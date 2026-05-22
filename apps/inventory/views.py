@@ -1860,3 +1860,63 @@ def get_adjustment_details_api(request, pk):
     }
     
     return JsonResponse(data)
+
+class PriceChangeCenterView(LoginRequiredMixin, SortableMixin, ListView):
+    """
+    Dedicated view for Shop Managers to review and filter all historical price changes.
+    Visiting this page automatically marks all unread price notifications as read.
+    """
+    template_name = 'inventory/price_change_center.html'
+    context_object_name = 'notifications'
+    paginate_by = 20
+    sortable_fields = ['created_at']
+    default_sort = '-created_at'
+    
+    def dispatch(self, request, *args, **kwargs):
+        role_name = request.user.role.name if hasattr(request.user, 'role') and request.user.role else ''
+        if role_name not in ['SHOP_MANAGER', 'ADMIN', 'ACCOUNTANT']:
+            messages.error(request, 'You do not have permission to view the Price Change Center.')
+            return redirect('core:dashboard')
+            
+        return super().dispatch(request, *args, **kwargs)
+        
+    def get_queryset(self):
+        from apps.notifications.models import Notification
+        from datetime import timedelta
+        
+        user = self.request.user
+        queryset = Notification.objects.filter(
+            user=user,
+            notification_type='PRICE_CHANGE'
+        )
+        
+        # Mark all unread price notifications as read when this page is loaded
+        unread = queryset.filter(is_read=False)
+        if unread.exists():
+            unread.update(is_read=True)
+            
+        # Date filtering
+        date_range = self.request.GET.get('range', '14days')
+        today = timezone.now().date()
+        
+        if date_range == 'today':
+            queryset = queryset.filter(created_at__date=today)
+        elif date_range == 'week':
+            queryset = queryset.filter(created_at__date__gte=today - timedelta(days=7))
+        elif date_range == '14days':
+            queryset = queryset.filter(created_at__date__gte=today - timedelta(days=14))
+        elif date_range == 'month':
+            queryset = queryset.filter(created_at__date__gte=today - timedelta(days=30))
+            
+        # Search
+        search = self.request.GET.get('q')
+        if search:
+            queryset = queryset.filter(message__icontains=search)
+            
+        return self.apply_sorting(queryset)
+        
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['current_range'] = self.request.GET.get('range', '14days')
+        context['current_search'] = self.request.GET.get('q', '')
+        return context

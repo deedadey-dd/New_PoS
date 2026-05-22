@@ -1,0 +1,123 @@
+{% extends "core/base.html" %}
+{% load custom_filters %}
+
+{% block title %}Price Change Center | HendAxis PoS{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1 text-white">Price Change Center</h2>
+        <p class="text-muted mb-0">Review historical price changes for your location.</p>
+    </div>
+</div>
+
+<div class="card bg-dark border-secondary mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label text-muted">Search Products/Messages</label>
+                <div class="input-group">
+                    <span class="input-group-text bg-dark border-secondary text-muted">
+                        <i class="bi bi-search"></i>
+                    </span>
+                    <input type="text" name="q" class="form-control bg-dark text-white border-secondary" 
+                           placeholder="Search..." value="{{ current_search }}">
+                </div>
+            </div>
+            
+            <div class="col-md-3">
+                <label class="form-label text-muted">Date Range</label>
+                <select name="range" class="form-select bg-dark text-white border-secondary">
+                    <option value="today" {% if current_range == 'today' %}selected{% endif %}>Today</option>
+                    <option value="week" {% if current_range == 'week' %}selected{% endif %}>Last 7 Days</option>
+                    <option value="14days" {% if current_range == '14days' %}selected{% endif %}>Last 14 Days</option>
+                    <option value="month" {% if current_range == 'month' %}selected{% endif %}>Last 30 Days</option>
+                </select>
+            </div>
+            
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary w-100">Filter</button>
+            </div>
+            <div class="col-md-2">
+                <a href="{% url 'inventory:price_change_center' %}" class="btn btn-outline-secondary w-100">Reset</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card bg-dark border-secondary overflow-hidden">
+    {% if notifications %}
+    <div class="table-responsive">
+        <table class="table table-dark table-hover mb-0">
+            <thead class="bg-dark bg-opacity-50">
+                <tr>
+                    <th class="ps-4">
+                        <a href="?{% query_transform request sort='created_at' direction=direction|default:'asc'|toggle_direction %}" class="text-white text-decoration-none">
+                            Date <i class="bi bi-arrow-down-up small ms-1"></i>
+                        </a>
+                    </th>
+                    <th>Message</th>
+                    <th>Reference Type</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for notification in notifications %}
+                <tr>
+                    <td class="ps-4">{{ notification.created_at|date:"M d, Y H:i" }}</td>
+                    <td>
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-tag text-info me-2 fs-5"></i>
+                            <div>
+                                <div class="fw-bold text-white">{{ notification.title }}</div>
+                                <div class="text-muted small">{{ notification.message }}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td>
+                        {% if notification.reference_type %}
+                            <span class="badge bg-secondary">{{ notification.reference_type }}</span>
+                        {% else %}
+                            <span class="text-muted">-</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+    {% if is_paginated %}
+    <div class="card-footer bg-transparent border-top border-secondary p-3">
+        <nav aria-label="Page navigation">
+            <ul class="pagination pagination-sm justify-content-center mb-0">
+                {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link bg-dark text-white border-secondary" href="?{% query_transform request page=page_obj.previous_page_number %}">Previous</a>
+                </li>
+                {% endif %}
+                
+                <li class="page-item disabled">
+                    <span class="page-link bg-dark text-white border-secondary">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+                </li>
+                
+                {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link bg-dark text-white border-secondary" href="?{% query_transform request page=page_obj.next_page_number %}">Next</a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+    
+    {% else %}
+    <div class="text-center py-5">
+        <i class="bi bi-tag text-muted display-1 mb-3 d-block"></i>
+        <h4 class="text-white">No Price Changes Found</h4>
+        <p class="text-muted">There are no price change notifications matching your filters.</p>
+        <a href="{% url 'inventory:price_change_center' %}" class="btn btn-outline-secondary mt-2">Clear Filters</a>
+    </div>
+    {% endif %}
+</div>
+
+{% endblock %}

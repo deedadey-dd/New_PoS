@@ -21,6 +21,7 @@ class ShopManagerSettingsForm(forms.ModelForm):
             'enable_momo_payment',
         ]
         widgets = {
+            'hide_zero_stock_in_pos': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'receipt_printer_type': forms.Select(attrs={'class': 'form-select'}),
             'show_logo_on_receipt': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'receipt_header': forms.Textarea(attrs={'class': 'form-control', 'rows': 3, 'placeholder': 'Optional custom header text'}),

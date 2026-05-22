@@ -352,10 +352,13 @@ def tenant_context(request):
             
         # Price Change Alerts for Shop Manager
         if role_name == 'SHOP_MANAGER':
+            from datetime import timedelta
+            fourteen_days_ago = timezone.now() - timedelta(days=14)
             price_notifications = Notification.objects.filter(
                 user=user, 
                 notification_type='PRICE_CHANGE', 
-                is_read=False
+                is_read=False,
+                created_at__gte=fourteen_days_ago
             ).order_by('-created_at')
             context['price_change_notifications'] = price_notifications[:10]
             context['price_change_count'] = price_notifications.count()

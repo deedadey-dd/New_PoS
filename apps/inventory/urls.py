@@ -41,6 +41,7 @@ urlpatterns = [
     # Shop Pricing (for Shop Managers)
     path('shop-prices/', views.ShopPriceListView.as_view(), name='shop_price_list'),
     path('shop-prices/<int:pk>/set/', views.ShopPriceSetView.as_view(), name='shop_price_set'),
+    path('price-changes/', views.PriceChangeCenterView.as_view(), name='price_change_center'),
     
     # API
     path('api/batches/', views.get_batches_for_product, name='api_batches'),

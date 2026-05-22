@@ -1261,3 +1261,36 @@ class TenantEmailComposeView(LoginRequiredMixin, View):
         
         messages.success(request, "Email scheduled successfully.")
         return redirect('core:email_list')
+
+class FeatureFeedbackView(View):
+    """
+    Public view for tracking feedback on feature introduction emails.
+    Called when a user clicks 'Helpful' or 'Not Helpful' in the email.
+    """
+    def get(self, request):
+        from apps.core.models import FeatureMessage, FeatureIntroHistory, Tenant
+        
+        tenant_id = request.GET.get('tenant_id')
+        msg_id = request.GET.get('msg_id')
+        helpful_str = request.GET.get('helpful')
+        
+        if tenant_id and msg_id and helpful_str is not None:
+            helpful = helpful_str == '1'
+            try:
+                # Find the history record
+                history = FeatureIntroHistory.objects.get(
+                    tenant_id=tenant_id,
+                    feature_message_id=msg_id
+                )
+                
+                # Update feedback
+                history.feedback_helpful = helpful
+                history.feedback_at = timezone.now()
+                history.save(update_fields=['feedback_helpful', 'feedback_at'])
+                
+            except FeatureIntroHistory.DoesNotExist:
+                pass
+                
+        # Always return a thank you page regardless of success/failure 
+        # (prevents enumeration and provides a smooth UX)
+        return render(request, 'emails/feedback_thank_you.html', {'helpful': helpful_str == '1'})

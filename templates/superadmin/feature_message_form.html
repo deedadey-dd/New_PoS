@@ -1,0 +1,64 @@
+{% extends "superadmin/base.html" %}
+
+{% block title %}Create Feature Message | Superadmin{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <a href="{% url 'superadmin:feature_message_list' %}" class="btn btn-sm btn-outline-secondary mb-3">
+        <i class="bi bi-arrow-left me-1"></i>Back to Messages
+    </a>
+    <h2 class="mb-1 text-white">Create Feature Message</h2>
+    <p class="text-muted">Draft a new feature introduction for monthly distribution.</p>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="sa-card p-4">
+            <form method="post" action="{% url 'superadmin:feature_message_create' %}">
+                {% csrf_token %}
+                
+                <div class="mb-4">
+                    <label for="feature_key" class="form-label">Feature Key <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control bg-dark text-white border-secondary" id="feature_key" name="feature_key" required placeholder="e.g. transfer_discrepancy">
+                    <div class="form-text text-muted">A unique identifier used to track if a tenant has already received this message. Avoid spaces.</div>
+                </div>
+
+                <div class="mb-4">
+                    <label for="title" class="form-label">Email Subject <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control bg-dark text-white border-secondary" id="title" name="title" required placeholder="e.g. New Feature: Transfer Discrepancy Handling!">
+                </div>
+                
+                <div class="mb-4">
+                    <label for="content" class="form-label">Email Content (HTML) <span class="text-danger">*</span></label>
+                    <textarea class="form-control bg-dark text-white border-secondary" id="content" name="content" rows="12" required placeholder="<h1>Introducing Transfer Discrepancies...</h1>"></textarea>
+                    <div class="form-text text-muted">You can use standard HTML. The system will wrap this in the standard HendAxis email template.</div>
+                </div>
+
+                <div class="mb-4 form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="is_active" name="is_active" checked>
+                    <label class="form-check-label text-white" for="is_active">Active</label>
+                    <div class="form-text text-muted">If active, this message is eligible to be automatically sent during the next monthly batch.</div>
+                </div>
+                
+                <hr class="border-secondary my-4">
+                
+                <div class="d-flex justify-content-end gap-2">
+                    <a href="{% url 'superadmin:feature_message_list' %}" class="btn btn-secondary">Cancel</a>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-save me-2"></i>Save Message
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <div class="col-lg-4">
+        <div class="sa-stat-card info mb-4">
+            <h5 class="text-info mb-3"><i class="bi bi-info-circle me-2"></i>How this works</h5>
+            <p class="text-light mb-2">Feature messages are collected into a pool.</p>
+            <p class="text-light mb-2">On the first Tuesday of every month, the background scheduler runs.</p>
+            <p class="text-light mb-0">Each active tenant will randomly receive one active feature message they haven't seen yet.</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
