@@ -408,8 +408,8 @@ class ShopECashHistoryView(LoginRequiredMixin, SortableMixin, ListView):
     default_sort = '-created_at'
     
     def dispatch(self, request, *args, **kwargs):
-        # Shop managers, accountants, auditors, and admins can access
-        allowed_roles = ['SHOP_MANAGER', 'ACCOUNTANT', 'AUDITOR', 'ADMIN']
+        # Shop managers, accountants, auditors, admins, and cashiers can access
+        allowed_roles = ['SHOP_MANAGER', 'ACCOUNTANT', 'AUDITOR', 'ADMIN', 'SHOP_CASHIER']
         if request.user.role and request.user.role.name not in allowed_roles:
             messages.error(request, "You don't have permission to view e-cash history.")
             return redirect('core:dashboard')
@@ -519,7 +519,7 @@ class ShopECashExportView(LoginRequiredMixin, View):
     """Export shop e-cash history to Excel or PDF."""
     
     def dispatch(self, request, *args, **kwargs):
-        allowed_roles = ['SHOP_MANAGER', 'ACCOUNTANT', 'AUDITOR', 'ADMIN']
+        allowed_roles = ['SHOP_MANAGER', 'ACCOUNTANT', 'AUDITOR', 'ADMIN', 'SHOP_CASHIER']
         if request.user.role and request.user.role.name not in allowed_roles:
             messages.error(request, "You don't have permission to export e-cash history.")
             return redirect('core:dashboard')

@@ -13,6 +13,7 @@ from django.utils import timezone
 from apps.core.decorators import AdminRequiredMixin
 from .models import SubscriptionPlan, SubscriptionPayment, TenantPricingOverride
 from .services.pdf_service import PDFReceiptService
+from decimal import Decimal
 
 
 class SubscriptionStatusView(LoginRequiredMixin, AdminRequiredMixin, TemplateView):
@@ -193,6 +194,7 @@ class TenantManagerDashboardView(LoginRequiredMixin, TenantManagerRequiredMixin,
         context['active_tenants'] = sum(1 for t in tenants if t.subscription_status == 'ACTIVE')
         context['expiring_soon'] = sum(1 for t in tenants if t.days_until_expiry and 0 < t.days_until_expiry <= 14)
         context['expired_tenants'] = sum(1 for t in tenants if t.subscription_status in ['EXPIRED', 'INACTIVE'])
+        context['plans'] = SubscriptionPlan.objects.filter(is_active=True)
         
         return context
 
@@ -381,4 +383,103 @@ class TenantManagerPaymentHistoryView(LoginRequiredMixin, TenantManagerRequiredM
         context = super().get_context_data(**kwargs)
         context['tenant'] = self.tenant
         return context
+
+
+# ============== PROFORMA INVOICE VIEWS ==============
+
+class ProformaAccessMixin:
+    """Mixin to allow access to Superusers and Tenant Managers."""
+    def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return redirect('core:login')
+        
+        is_su = request.user.is_superuser
+        is_tm = request.user.role and request.user.role.name == 'TENANT_MANAGER'
+        
+        if not (is_su or is_tm):
+            messages.error(request, "Access denied. Only Superusers or Tenant Managers can generate proforma invoices.")
+            return redirect('core:dashboard')
+        return super().dispatch(request, *args, **kwargs)
+
+
+class ProformaInvoicePrintView(ProformaAccessMixin, View):
+    """
+    Renders a Proforma Invoice HTML that can be printed.
+    Expects POST request from a form to render it in a new tab.
+    """
+    template_name = 'subscriptions/proforma_invoice.html'
+    
+    def post(self, request):
+        client_name = request.POST.get('client_name', 'Potential Client')
+        client_email = request.POST.get('client_email', '')
+        client_phone = request.POST.get('client_phone', '')
+        client_company = request.POST.get('client_company', '')
+        
+        plan_id = request.POST.get('subscription_plan')
+        billing_cycle = request.POST.get('billing_cycle', 'monthly')
+        shop_count = int(request.POST.get('shop_count', 1))
+        
+        try:
+            onboarding_fee = Decimal(request.POST.get('onboarding_fee', '4500.00'))
+        except:
+            onboarding_fee = Decimal('4500.00')
+            
+        try:
+            discount = Decimal(request.POST.get('discount', '0'))
+        except:
+            discount = Decimal('0')
+            
+        plan = get_object_or_404(SubscriptionPlan, pk=plan_id)
+        
+        is_annual = (billing_cycle == 'annual')
+        
+        # Calculate Base Pricing
+        base = plan.annual_base_price if is_annual and plan.annual_base_price else plan.base_price
+        shop_extra = plan.annual_additional_shop_price if is_annual and plan.annual_additional_shop_price else plan.additional_shop_price
+        
+        additional_shops = max(0, shop_count - plan.max_shops) if plan.code == 'PREMIUM' else 0
+        additional_shop_cost = additional_shops * shop_extra
+        
+        subtotal = base + additional_shop_cost
+        
+        # Multiply by 12 if annual
+        subscription_total = subtotal * 12 if is_annual else subtotal
+        
+        discount_amount = (subscription_total * discount) / 100
+        
+        total_due = subscription_total - discount_amount + onboarding_fee
+        
+        invoice_date = timezone.now().date()
+        from datetime import timedelta
+        valid_until = invoice_date + timedelta(days=14)
+        
+        # Generate random proforma number
+        import uuid
+        proforma_number = f"PF-{timezone.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:4].upper()}"
+
+        context = {
+            'client_name': client_name,
+            'client_email': client_email,
+            'client_phone': client_phone,
+            'client_company': client_company,
+            'plan': plan,
+            'billing_cycle': billing_cycle,
+            'is_annual': is_annual,
+            'shop_count': shop_count,
+            'base_price': base,
+            'additional_shops': additional_shops,
+            'additional_shop_cost': additional_shop_cost,
+            'subtotal': subtotal,
+            'subscription_total': subscription_total,
+            'onboarding_fee': onboarding_fee,
+            'discount': discount,
+            'discount_amount': discount_amount,
+            'total_due': total_due,
+            'invoice_date': invoice_date,
+            'valid_until': valid_until,
+            'proforma_number': proforma_number,
+        }
+        
+        return render(request, self.template_name, context)
+
 

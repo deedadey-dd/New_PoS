@@ -47,7 +47,7 @@ class ProductForm(forms.ModelForm):
         fields = ['sku', 'name', 'description', 'category', 'unit_of_measure', 
                   'default_selling_price', 'reorder_level', 'image', 'is_active']
         widgets = {
-            'sku': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'SKU/Barcode'}),
+            'sku': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Leave blank to auto-generate'}),
             'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Product Name'}),
             'description': forms.Textarea(attrs={'class': 'form-control', 'rows': 2, 'placeholder': 'Description'}),
             'category': forms.Select(attrs={'class': 'form-select'}),
@@ -64,6 +64,8 @@ class ProductForm(forms.ModelForm):
             self.fields['category'].queryset = Category.objects.filter(tenant=tenant, is_active=True)
         else:
             self.fields['category'].queryset = Category.objects.none()
+        # SKU is auto-generated if blank — make it optional at form level
+        self.fields['sku'].required = False
     
     def clean_image(self):
         """Compress uploaded image to WebP format at 150x150px (center-cropped square)."""
@@ -199,10 +201,18 @@ class BatchForm(forms.ModelForm):
         
         if tenant:
             self.fields['product'].queryset = Product.objects.filter(tenant=tenant, is_active=True)
-            
-            # Only Production and Stores can receive batches
+
+            # Build allowed location types for this user
+            # Shop Managers can receive into SHOP locations if the setting allows it
+            if user and user.role and user.role.name == 'SHOP_MANAGER':
+                if tenant.shop_manager_can_receive_stock:
+                    allowed_types = ['SHOP']
+                else:
+                    allowed_types = []
+
+            # Only the allowed location types can be selected
             self.fields['location'].queryset = Location.objects.filter(
-                tenant=tenant, 
+                tenant=tenant,
                 is_active=True,
                 location_type__in=allowed_types
             )

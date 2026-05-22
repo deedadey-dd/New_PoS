@@ -45,9 +45,4 @@ class Migration(migrations.Migration):
             name='sync_status',
             field=models.CharField(choices=[('pending', 'Pending'), ('synced', 'Synced'), ('conflict', 'Conflict'), ('failed', 'Failed')], default='pending', max_length=20),
         ),
-        migrations.AddField(
-            model_name='sale',
-            name='synced_at',
-            field=models.DateTimeField(blank=True, null=True),
-        ),
     ]

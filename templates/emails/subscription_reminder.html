@@ -1,0 +1,17 @@
+{% extends "emails/base_email.html" %}
+
+{% block content %}
+    <h2>Subscription Reminder: {{ tenant.name }}</h2>
+    
+    <p>Hello,</p>
+    
+    <p>This is a reminder that your HendAxis PoS subscription (<strong>{{ plan_name }}</strong>) will expire on <strong>{{ expiry_date|date:"F j, Y" }}</strong>.</p>
+    
+    <p>To avoid any interruption in service, please renew your subscription before the expiration date.</p>
+    
+    <div style="text-align: center; margin: 30px 0;">
+        <a href="{{ platform_url }}/subscription/" class="btn">Renew Subscription</a>
+    </div>
+    
+    <p>Thank you for using HendAxis PoS!</p>
+{% endblock %}

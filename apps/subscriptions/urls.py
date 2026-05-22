@@ -21,5 +21,8 @@ urlpatterns = [
     path('manager/tenant/<int:pk>/', views.TenantManagerTenantDetailView.as_view(), name='tm_tenant_detail'),
     path('manager/tenant/<int:pk>/record-payment/', views.TenantManagerRecordPaymentView.as_view(), name='tm_record_payment'),
     path('manager/tenant/<int:pk>/payments/', views.TenantManagerPaymentHistoryView.as_view(), name='tm_payment_history'),
+    
+    # Proforma Invoice
+    path('proforma/print/', views.ProformaInvoicePrintView.as_view(), name='proforma_print'),
 ]
 

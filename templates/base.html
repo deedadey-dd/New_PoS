@@ -52,7 +52,7 @@
                     {% with role_name=user.role.name %}
 
                     <!-- POS -->
-                    {% if role_name == 'ADMIN' or role_name == 'SHOP_MANAGER' or role_name == 'SHOP_ATTENDANT' %}
+                    {% if role_name == 'ADMIN' or role_name == 'SHOP_MANAGER' or role_name == 'SHOP_ATTENDANT' or role_name == 'SHOP_CASHIER' %}
                     <li class="nav-item">
                         <a class="nav-link text-white {% if 'pos' in request.path %}active{% endif %}"
                             href="{% url 'sales:pos' %}">
@@ -66,18 +66,25 @@
                             <span>Customers</span>
                         </a>
                     </li>
+                    <li class="nav-item">
+                        <a href="{% url 'sales:sale_list' %}?payment=PENDING_INVOICE"
+                            class="nav-link {% if 'payment=PENDING_INVOICE' in request.get_full_path %}active{% endif %}">
+                            <i class="bi bi-receipt"></i>
+                            <span>Invoices</span>
+                        </a>
+                    </li>
                     {% endif %}
 
                     <!-- Sales Menu (Shop Manager, Accountant, Auditor, Admin) -->
                     {% if role_name == 'SHOP_MANAGER' or role_name == 'ACCOUNTANT' or role_name == 'AUDITOR' or role_name == 'ADMIN' %}
                     <li class="nav-item">
-                        <a class="nav-link text-white d-flex justify-content-between align-items-center {% if 'sales' in request.path or 'price-history' in request.path %}active{% endif %}"
+                        <a class="nav-link text-white d-flex justify-content-between align-items-center {% if 'sales' in request.path and 'payment=PENDING_INVOICE' not in request.get_full_path or 'price-history' in request.path %}active{% endif %}"
                             data-bs-toggle="collapse" href="#salesMenu" role="button"
-                            aria-expanded="{% if 'sales' in request.path or 'price-history' in request.path %}true{% else %}false{% endif %}">
+                            aria-expanded="{% if 'sales' in request.path and 'payment=PENDING_INVOICE' not in request.get_full_path or 'price-history' in request.path %}true{% else %}false{% endif %}">
                             <span><i class="bi bi-receipt me-2"></i>Sales</span>
                             <i class="bi bi-chevron-down small"></i>
                         </a>
-                        <div class="collapse {% if 'sales' in request.path or 'price-history' in request.path %}show{% endif %}"
+                        <div class="collapse {% if 'sales' in request.path and 'payment=PENDING_INVOICE' not in request.get_full_path or 'price-history' in request.path %}show{% endif %}"
                             id="salesMenu">
                             <ul class="nav flex-column ms-3 border-start border-secondary ps-2">
                                 <li class="nav-item">
@@ -133,7 +140,7 @@
                     {% endif %}
 
                     <!-- Accountant/Auditor/Admin Financial Menu -->
-                    {% if role_name == 'ACCOUNTANT' or role_name == 'AUDITOR' or role_name == 'ADMIN' %}
+                    {% if role_name == 'ACCOUNTANT' or role_name == 'AUDITOR' or role_name == 'ADMIN' or role_name == 'SHOP_CASHIER' %}
                     <li class="nav-item">
                         <a class="nav-link text-white d-flex justify-content-between align-items-center {% if 'accounting' in request.path and 'price-history' not in request.path %}active{% endif %}"
                             data-bs-toggle="collapse" href="#accountingMenu" role="button">
@@ -144,25 +151,19 @@
                         <div class="collapse {% if 'accounting' in request.path and 'price-history' not in request.path %}show{% endif %}"
                             id="accountingMenu">
                             <ul class="nav flex-column ms-3">
-                                {% if role_name == 'ACCOUNTANT' or role_name == 'ADMIN' %}
+                                {% if role_name == 'ACCOUNTANT' or role_name == 'ADMIN' or role_name == 'SHOP_CASHIER' or role_name == 'AUDITOR' %}
                                 <li class="nav-item">
                                     <a class="nav-link text-white-50 py-1 {% if request.resolver_match.url_name == 'accountant_dashboard' %}active text-white{% endif %}"
                                         href="{% url 'accounting:accountant_dashboard' %}">
-                                        <i class="bi bi-graph-up-arrow me-1"></i>Accountant Dashboard
-                                    </a>
-                                </li>
-                                <li class="nav-item">
-                                    <a class="nav-link text-white-50 py-1 {% if 'sales-report' in request.path %}active text-white{% endif %}"
-                                        href="{% url 'accounting:sales_report' %}">
-                                        <i class="bi bi-bar-chart me-1"></i>Accountant Sales Report
+                                        <i class="bi bi-graph-up-arrow me-1"></i>{% if role_name == 'SHOP_CASHIER' %}Cashier Dashboard{% elif role_name == 'AUDITOR' %}Auditor Dashboard{% else %}Accountant Dashboard{% endif %}
                                     </a>
                                 </li>
                                 {% endif %}
-                                {% if role_name == 'AUDITOR' or role_name == 'ADMIN' %}
+                                {% if role_name == 'ACCOUNTANT' or role_name == 'ADMIN' or role_name == 'AUDITOR' %}
                                 <li class="nav-item">
-                                    <a class="nav-link text-white-50 py-1 {% if request.resolver_match.url_name == 'auditor_dashboard' %}active text-white{% endif %}"
-                                        href="{% url 'core:auditor_dashboard' %}">
-                                        <i class="bi bi-shield-check me-1"></i>Auditor Dashboard
+                                    <a class="nav-link text-white-50 py-1 {% if 'sales-report' in request.path %}active text-white{% endif %}"
+                                        href="{% url 'accounting:sales_report' %}">
+                                        <i class="bi bi-bar-chart me-1"></i>Financial Sales Report
                                     </a>
                                 </li>
                                 {% endif %}
@@ -172,18 +173,29 @@
                                         <i class="bi bi-cash-stack me-1"></i>Cash Transfers
                                     </a>
                                 </li>
+                                {% if role_name == 'ACCOUNTANT' or role_name == 'AUDITOR' or role_name == 'ADMIN' %}
                                 <li class="nav-item">
                                     <a class="nav-link text-white-50 py-1 {% if 'digital-confirmations' in request.path %}active text-white{% endif %}"
                                         href="{% url 'accounting:digital_confirmations' %}">
                                         <i class="bi bi-check-circle me-1"></i>Digital Confirmations
                                     </a>
                                 </li>
+                                {% if role_name == 'ACCOUNTANT' or role_name == 'ADMIN' %}
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if 'inventory/shop-pricing' in request.path %}active text-white{% endif %}"
+                                        href="{% url 'inventory:shop_price_list' %}">
+                                        <i class="bi bi-tags me-1"></i>Manage Pricing
+                                    </a>
+                                </li>
+                                {% endif %}
+                                {% if role_name == 'ACCOUNTANT' or role_name == 'ADMIN' %}
                                 <li class="nav-item">
                                     <a class="nav-link text-white-50 py-1 {% if 'bank-transfers/new' in request.path %}active text-white{% endif %}"
                                         href="{% url 'accounting:bank_transfer_create' %}">
                                         <i class="bi bi-bank me-1"></i>Bank Transfers
                                     </a>
                                 </li>
+                                {% endif %}
 
                                 <!-- Expenditure submenu (Accountant / Admin) -->
                                 <li class="nav-item mt-1 pt-1 border-top border-secondary">
@@ -216,6 +228,7 @@
                                         </ul>
                                     </div>
                                 </li>
+                                {% endif %}
                             </ul>
                         </div>
                     </li>
@@ -345,25 +358,52 @@
                     <!-- Admin Only Settings -->
                     {% if role_name == 'ADMIN' %}
                     <li class="nav-item mt-3 border-top border-secondary pt-3">
-                        <a class="nav-link text-white d-flex justify-content-between align-items-center {% if 'settings' in request.path or 'payments' in request.path %}active{% endif %}"
+                        <a class="nav-link text-white d-flex justify-content-between align-items-center {% if 'settings' in request.path or 'payments' in request.path or 'users' in request.path or 'locations' in request.path %}active{% endif %}"
                             data-bs-toggle="collapse" href="#settingsMenu" role="button"
-                            aria-expanded="{% if 'settings' in request.path or 'payments' in request.path %}true{% else %}false{% endif %}">
-                            <span><i class="bi bi-gear me-2"></i>Settings</span>
+                            aria-expanded="{% if 'settings' in request.path or 'payments' in request.path or 'users' in request.path or 'locations' in request.path %}true{% else %}false{% endif %}">
+                            <span><i class="bi bi-gear me-2"></i>Settings &amp; Admin</span>
                             <i class="bi bi-chevron-down small"></i>
                         </a>
-                        <div class="collapse {% if 'settings' in request.path or 'payments' in request.path %}show{% endif %}"
+                        <div class="collapse {% if 'settings' in request.path or 'payments' in request.path or 'users' in request.path or 'locations' in request.path %}show{% endif %}"
                             id="settingsMenu">
                             <ul class="nav flex-column ms-3 border-start border-secondary ps-2">
                                 <li class="nav-item">
+                                    <span class="nav-link text-white-50 py-0 fw-bold small text-uppercase" style="letter-spacing:0.5px;font-size:0.7rem;">Organisation</span>
+                                </li>
+                                <li class="nav-item">
                                     <a class="nav-link text-white-50 py-1 {% if request.path == '/settings/' %}text-white{% endif %}"
                                         href="{% url 'core:settings' %}">
-                                        <i class="bi bi-sliders me-2"></i>General
+                                        <i class="bi bi-sliders me-2"></i>General Settings
                                     </a>
                                 </li>
                                 <li class="nav-item">
                                     <a class="nav-link text-white-50 py-1 {% if 'payments' in request.path %}text-white{% endif %}"
                                         href="{% url 'payments:provider_settings' %}">
                                         <i class="bi bi-credit-card me-2"></i>Payment Provider
+                                    </a>
+                                </li>
+                                <li class="nav-item mt-1 pt-1 border-top border-secondary">
+                                    <span class="nav-link text-white-50 py-0 fw-bold small text-uppercase" style="letter-spacing:0.5px;font-size:0.7rem;">User Management</span>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if 'users' in request.path %}text-white{% endif %}"
+                                        href="{% url 'core:user_list' %}">
+                                        <i class="bi bi-people me-2"></i>Users
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if 'locations' in request.path %}text-white{% endif %}"
+                                        href="{% url 'core:location_list' %}">
+                                        <i class="bi bi-geo-alt me-2"></i>Locations
+                                    </a>
+                                </li>
+                                <li class="nav-item mt-1 pt-1 border-top border-secondary">
+                                    <span class="nav-link text-white-50 py-0 fw-bold small text-uppercase" style="letter-spacing:0.5px;font-size:0.7rem;">Communications</span>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if 'emails' in request.path %}text-white{% endif %}"
+                                        href="{% url 'core:email_list' %}">
+                                        <i class="bi bi-envelope-paper me-2"></i>Targeted Emails
                                     </a>
                                 </li>
                             </ul>
@@ -408,6 +448,7 @@
                         </a>
                         <div class="collapse {% if 'audit' in request.path or 'users' in request.path or 'locations' in request.path %}show{% endif %}" id="auditMenu">
                             <ul class="nav flex-column ms-3 border-start border-secondary ps-2">
+                                {% if role_name != 'ADMIN' %}
                                 <li class="nav-item">
                                     <a class="nav-link text-white-50 py-1 {% if 'users' in request.path %}text-white{% endif %}"
                                         href="{% url 'core:user_list' %}">
@@ -420,6 +461,7 @@
                                         <i class="bi bi-geo-alt me-2"></i>Locations
                                     </a>
                                 </li>
+                                {% endif %}
                                 <li class="nav-item">
                                     <a class="nav-link text-white-50 py-1 {% if 'product-lifecycle' in request.path %}text-white{% endif %}"
                                         href="{% url 'audit:product_lifecycle' %}">
@@ -492,6 +534,15 @@
                                         <i class="bi bi-arrow-left-right me-1"></i>Transfers
                                     </a>
                                 </li>
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if 'adjustments' in request.path %}text-white{% endif %}"
+                                        href="{% url 'inventory:adjustment_history' %}">
+                                        <i class="bi bi-sliders me-1"></i>Stock Adjustments
+                                        {% if pending_count and pending_count > 0 %}
+                                        <span class="badge bg-danger rounded-pill float-end">{{ pending_count }}</span>
+                                        {% endif %}
+                                    </a>
+                                </li>
                             </ul>
                         </div>
                     </li>
@@ -560,6 +611,34 @@
                     </div>
                 </div>
                 {% endif %}
+
+                <!-- Price Change Alerts Panel (Shop Manager) -->
+                {% if price_change_count and price_change_count > 0 %}
+                <div class="stock-alerts-panel mt-3 border-top border-secondary pt-3">
+                    <a class="nav-link text-white d-flex justify-content-between align-items-center px-2"
+                        data-bs-toggle="collapse" href="#priceAlertsMenu" role="button">
+                        <span>
+                            <i class="bi bi-tags me-2 text-primary"></i>
+                            Price Alerts
+                        </span>
+                        <span class="badge bg-primary">{{ price_change_count }}</span>
+                    </a>
+                    <div class="collapse" id="priceAlertsMenu">
+                        <div class="stock-alerts-list px-2 py-2" style="max-height: 200px; overflow-y: auto;">
+                            {% for notif in price_change_notifications %}
+                            <div class="d-flex justify-content-between align-items-center py-1 px-2 rounded mb-1 bg-primary bg-opacity-25 border border-primary border-opacity-50">
+                                <span class="small text-truncate me-2 text-white" style="max-width: 170px;" title="{{ notif.message }}">
+                                    {{ notif.message }}
+                                </span>
+                            </div>
+                            {% endfor %}
+                            <div class="text-center mt-2">
+                                <a href="{% url 'inventory:shop_price_list' %}" class="small text-info">View Pricing</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
             </nav>
         </div>
         <div class="sidebar-overlay" id="sidebarOverlay"></div>
@@ -568,13 +647,16 @@
         <!-- Main Content -->
         <div class="flex-grow-1 main-content">
             {% if user.is_authenticated %}
-            {% if user.tenant.name == 'Demo Company' %}
+            {% if user.tenant.name == 'Demo Company' or user.tenant.name == 'Strict Demo Company' %}
             <div class="bg-warning text-dark text-center py-2 px-3 fw-bold shadow-sm d-flex justify-content-center align-items-center flex-wrap gap-2">
                 <span>
                     <i class="bi bi-info-circle-fill me-1"></i> You are exploring the demo as 
                     <span class="badge bg-dark text-white rounded-pill px-2">{{ user.role.name }}</span>
                 </span>
-                <a href="{% url 'core:demo_hub' %}" class="btn btn-sm btn-outline-dark rounded-pill fw-bold px-3">Switch Role / Go to Organogram</a>
+                <div class="d-flex align-items-center">
+                    <a href="{% url 'core:demo_hub' %}" class="btn btn-sm btn-outline-dark rounded-pill fw-bold px-3">Switch Role / Go to Organogram</a>
+                    <a href="{% url 'core:logout' %}?next={% url 'core:home' %}" class="btn btn-sm btn-dark rounded-pill fw-bold px-3 ms-2"><i class="bi bi-house me-1"></i> Return to Home</a>
+                </div>
             </div>
             {% endif %}
             <nav class="navbar navbar-light bg-white shadow-sm px-4">
@@ -589,7 +671,7 @@
                     </div>
 
                     <!-- Cash on Hand Dropdown (exclude ADMIN) -->
-                    {% if role_name == 'SHOP_ATTENDANT' or role_name == 'SHOP_MANAGER' or role_name == 'ACCOUNTANT' %}
+                    {% if role_name == 'SHOP_ATTENDANT' or role_name == 'SHOP_MANAGER' or role_name == 'ACCOUNTANT' or role_name == 'SHOP_CASHIER' %}
                     <div class="dropdown me-3">
                         <a href="#" class="text-decoration-none dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" title="Cash on Hand">
                             <span class="badge bg-success fs-6">
@@ -603,7 +685,7 @@
                                 </a>
                             </li>
                             <li>
-                                <a class="dropdown-item" href="{% url 'sales:sale_list' %}?payment=CASH">
+                                <a class="dropdown-item" href="{% url 'accounting:cash_history' %}">
                                     <i class="bi bi-clock-history me-2"></i>Cash History
                                 </a>
                             </li>
@@ -612,8 +694,8 @@
                     {% endif %}
 
                     <!-- E-Cash Balance Badge (exclude ADMIN and AUDITOR) -->
-                    {% if ecash_balance is not None and role_name in 'SHOP_MANAGER,ACCOUNTANT' %}
-                    <a href="{% if role_name == 'SHOP_MANAGER' %}{% url 'payments:shop_ecash_history' %}{% elif role_name == 'ACCOUNTANT' %}{% url 'payments:shop_ecash_list' %}{% else %}{% url 'payments:ecash_ledger' %}{% endif %}"
+                    {% if ecash_balance is not None and role_name in 'SHOP_MANAGER,ACCOUNTANT,SHOP_CASHIER' %}
+                    <a href="{% if role_name == 'SHOP_MANAGER' or role_name == 'SHOP_CASHIER' %}{% url 'payments:shop_ecash_history' %}{% elif role_name == 'ACCOUNTANT' %}{% url 'payments:shop_ecash_list' %}{% else %}{% url 'payments:ecash_ledger' %}{% endif %}"
                         class="me-3 text-decoration-none"
                         title="E-Cash Balance - Click to {% if role_name == 'ACCOUNTANT' %}withdraw{% else %}view history{% endif %}">
                         <span class="badge bg-info fs-6">
@@ -624,7 +706,7 @@
                     {% endif %}
 
                     <!-- Local Momo Shortcut (exclude ADMIN) -->
-                    {% if role_name in 'SHOP_MANAGER,ACCOUNTANT' and request.user.tenant.allow_momo_payments %}
+                    {% if role_name in 'SHOP_MANAGER,ACCOUNTANT,SHOP_CASHIER' and request.user.tenant.allow_momo_payments %}
                     <a href="{% if role_name == 'ACCOUNTANT' %}{% url 'accounting:shop_momo_list' %}{% else %}{% url 'accounting:shop_momo_history' %}{% endif %}" class="me-3 text-decoration-none"
                         title="Local Momo {% if role_name == 'ACCOUNTANT' %}Withdrawals{% else %}History{% endif %}">
                         <span class="badge text-dark fs-6" style="background-color: #eab308;">
@@ -696,6 +778,8 @@
                                         <i class="bi bi-exclamation-circle text-warning"></i>
                                         {% elif notification.notification_type == 'STOCK_ADJUSTMENT' %}
                                         <i class="bi bi-sliders text-info"></i>
+                                        {% elif notification.notification_type == 'PRICE_CHANGE' %}
+                                        <i class="bi bi-tags text-primary"></i>
                                         {% else %}
                                         <i class="bi bi-info-circle text-info"></i>
                                         {% endif %}
@@ -968,6 +1052,12 @@
                     overlay.classList.remove('show');
                 });
             }
+            
+            // Initialize Bootstrap Tooltips
+            var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+            var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+                return new bootstrap.Tooltip(tooltipTriggerEl)
+            })
         });
     </script>
 

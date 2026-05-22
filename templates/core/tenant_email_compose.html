@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block title %}Compose Email{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <a href="{% url 'core:email_list' %}" class="btn btn-sm btn-outline-secondary mb-3">
+        <i class="bi bi-arrow-left"></i> Back to Emails
+    </a>
+    <h2><i class="bi bi-pencil-square me-2"></i>Compose Scheduled Email</h2>
+    <p class="text-muted">Create a targeted message for your staff. The email will automatically include professional headers and footers.</p>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <form method="post" action="{% url 'core:email_compose' %}">
+                    {% csrf_token %}
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Subject</label>
+                        <input type="text" name="subject" class="form-control" required placeholder="e.g. Upcoming Stock Count">
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">Email Body (HTML supported)</label>
+                        <textarea name="body" class="form-control" rows="8" required placeholder="<p>Hello Team,</p><p>Your message here...</p>"></textarea>
+                        <div class="form-text">You can use basic HTML tags like &lt;h3&gt;, &lt;p&gt;, &lt;strong&gt;, &lt;ul&gt;, and &lt;a&gt;.</div>
+                    </div>
+                    
+                    <h5 class="border-bottom pb-2 mb-3">Targeting</h5>
+                    
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">Audience</label>
+                        <select name="target_audience" class="form-select">
+                            <option value="ADMINS">Tenant Admins Only (Default)</option>
+                            <option value="ALL_USERS">All Users in Your Tenant</option>
+                        </select>
+                    </div>
+                    
+                    <h5 class="border-bottom pb-2 mb-3">Scheduling</h5>
+                    
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Date</label>
+                            <input type="date" name="scheduled_date" class="form-control" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Time</label>
+                            <input type="time" name="scheduled_time" class="form-control" value="10:15" required>
+                            <div class="form-text">Time is in the server's timezone. Standard dispatch is usually 10:15 AM.</div>
+                        </div>
+                    </div>
+                    
+                    <div class="d-flex justify-content-end gap-2">
+                        <a href="{% url 'core:email_list' %}" class="btn btn-secondary">Cancel</a>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-clock me-1"></i> Schedule Email
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-4">
+        <div class="card shadow-sm bg-light">
+            <div class="card-body">
+                <h5 class="card-title"><i class="bi bi-info-circle me-1"></i> About Sending</h5>
+                <p class="small text-muted">
+                    When the scheduled time arrives, the background processor will package your message inside the standard HendAxis PoS email template.
+                </p>
+                <div class="border rounded bg-white p-3 mb-3 text-center" style="font-size: 0.9em;">
+                    <div class="bg-primary text-white p-2 fw-bold mb-2 rounded-top">HendAxis PoS Header</div>
+                    <div class="text-start text-muted mb-2"><em>[Your HTML Body Here]</em></div>
+                    <div class="bg-secondary text-white p-1 rounded-bottom" style="font-size: 0.8em;">Footer & Copyright</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,80 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Shop E-Cash Balances{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="fw-bold mb-0 text-success">
+                <i class="bi bi-wallet2 me-2"></i>Shop E-Cash Balances
+            </h2>
+            <p class="text-muted mb-0">Withdraw E-Cash collected at each shop</p>
+        </div>
+        <div class="d-flex align-items-center gap-3">
+            <span class="badge fs-6 bg-success text-white">
+                <i class="bi bi-wallet2 me-1"></i>Total Unconfirmed: {{ currency_symbol }}{{ total_ecash|floatformat:"2g" }}
+            </span>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        {% for item in shop_balances %}
+        <div class="col-md-6 col-lg-4">
+            <div class="card h-100 {% if item.balance > 0 %}border-success{% endif %}">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <h5 class="card-title mb-1">
+                                <i class="bi bi-shop me-1"></i>{{ item.shop.name }}
+                            </h5>
+                            <p class="text-muted small mb-3">{{ item.shop.address|default:"No address" }}</p>
+                        </div>
+                        {% if item.balance > 0 %}
+                        <span class="badge bg-success">Active</span>
+                        {% endif %}
+                    </div>
+
+                    <div class="mb-3">
+                        <small class="text-muted">Available E-Cash Balance</small>
+                        <h3 class="mb-0 {% if item.balance > 0 %}text-success{% else %}text-muted{% endif %}">
+                            {{ currency_symbol }}{{ item.balance|floatformat:"2g" }}
+                        </h3>
+                    </div>
+
+                    {% if item.balance > 0 %}
+                    <form action="{% url 'accounting:shop_ecash_withdraw' item.shop.pk %}" method="post"
+                        onsubmit="return confirm('Confirm withdrawal of ' + document.getElementById('amount_{{ item.shop.pk }}').value + ' E-Cash from {{ item.shop.name }}?');">
+                        {% csrf_token %}
+                        <div class="input-group mb-2">
+                            <span class="input-group-text">{{ currency_symbol }}</span>
+                            <input type="number" id="amount_{{ item.shop.pk }}" name="amount" class="form-control fw-bold text-end text-success" step="0.01" min="0.01" max="{{ item.balance|stringformat:'f' }}" value="{{ item.balance|stringformat:'f' }}" required>
+                        </div>
+                        <input type="text" name="notes" class="form-control form-control-sm mb-3" placeholder="Optional notes or reference...">
+                        <button type="submit" class="btn btn-success w-100 fw-bold">
+                            <i class="bi bi-cash-coin me-1"></i>Withdraw E-Cash
+                        </button>
+                    </form>
+                    {% else %}
+                    <button class="btn btn-secondary w-100" disabled>
+                        <i class="bi bi-x-circle me-1"></i>No E-Cash to Withdraw
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body text-center py-5">
+                    <i class="bi bi-shop display-1 text-muted"></i>
+                    <h4 class="mt-3 text-muted">No Shops Found</h4>
+                    <p class="text-muted">No active shops have been configured yet.</p>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

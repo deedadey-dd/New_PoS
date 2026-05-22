@@ -48,11 +48,15 @@
 
                     {% if item.balance > 0 %}
                     <form action="{% url 'accounting:shop_momo_withdraw' item.shop.pk %}" method="post"
-                        onsubmit="return confirm('Withdraw all {{ currency_symbol }}{{ item.balance|floatformat:"2g" }} Local Momo from {{ item.shop.name }}?');">
+                        onsubmit="return confirm('Confirm withdrawal of ' + document.getElementById('amount_{{ item.shop.pk }}').value + ' Local Momo from {{ item.shop.name }}?');">
                         {% csrf_token %}
+                        <div class="input-group mb-2">
+                            <span class="input-group-text">{{ currency_symbol }}</span>
+                            <input type="number" id="amount_{{ item.shop.pk }}" name="amount" class="form-control fw-bold text-end text-warning text-darken-2" step="0.01" min="0.01" max="{{ item.balance|stringformat:'f' }}" value="{{ item.balance|stringformat:'f' }}" required>
+                        </div>
+                        <input type="text" name="notes" class="form-control form-control-sm mb-3" placeholder="Optional notes or reference...">
                         <button type="submit" class="btn w-100 fw-bold" style="background-color: #eab308; color: #000;">
-                            <i class="bi bi-cash-coin me-1"></i>Withdraw
-                            {{ currency_symbol }}{{ item.balance|floatformat:"2g" }}
+                            <i class="bi bi-cash-coin me-1"></i>Withdraw Momo
                         </button>
                     </form>
                     {% else %}

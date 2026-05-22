@@ -108,6 +108,7 @@ class TenantListView(SuperuserRequiredMixin, ListView):
         context['current_status'] = self.request.GET.get('status', '')
         context['current_active'] = self.request.GET.get('active', '')
         context['search_query'] = self.request.GET.get('q', '')
+        context['plans'] = SubscriptionPlan.objects.filter(is_active=True)
         return context
 
 
@@ -710,3 +711,62 @@ class AllPaymentsView(SuperuserRequiredMixin, ListView):
         ).aggregate(total=Sum('amount'))['total'] or 0
         
         return context
+
+# ============== EMAILS MANAGEMENT VIEWS ==============
+
+class EmailListView(SuperuserRequiredMixin, ListView):
+    """View all scheduled and sent custom emails."""
+    template_name = 'superadmin/email_list.html'
+    context_object_name = 'emails'
+    paginate_by = 20
+    
+    def get_queryset(self):
+        from apps.core.models import ScheduledEmail
+        return ScheduledEmail.objects.all().order_by('-created_at')
+
+class EmailComposeView(SuperuserRequiredMixin, View):
+    """Compose and schedule a new custom email."""
+    template_name = 'superadmin/email_compose.html'
+    
+    def get(self, request):
+        return render(request, self.template_name, {
+            'tenants': Tenant.objects.filter(is_active=True).order_by('name'),
+        })
+        
+    def post(self, request):
+        from apps.core.models import ScheduledEmail
+        
+        subject = request.POST.get('subject')
+        body = request.POST.get('body')
+        target_audience = request.POST.get('target_audience', 'ADMINS')
+        target_tenant_ids = request.POST.getlist('target_tenants')
+        scheduled_date = request.POST.get('scheduled_date')
+        scheduled_time = request.POST.get('scheduled_time')
+        
+        if not subject or not body or not scheduled_date or not scheduled_time:
+            messages.error(request, "Subject, body, and schedule time are required.")
+            return redirect('superadmin:email_compose')
+            
+        from datetime import datetime
+        try:
+            naive_dt = datetime.strptime(f"{scheduled_date} {scheduled_time}", "%Y-%m-%d %H:%M")
+            scheduled_dt = timezone.make_aware(naive_dt)
+        except ValueError:
+            messages.error(request, "Invalid date or time format.")
+            return redirect('superadmin:email_compose')
+            
+        email = ScheduledEmail.objects.create(
+            subject=subject,
+            body=body,
+            created_by=request.user,
+            target_audience=target_audience,
+            scheduled_time=scheduled_dt,
+            status='PENDING'
+        )
+        
+        if target_tenant_ids:
+            tenants = Tenant.objects.filter(id__in=target_tenant_ids)
+            email.target_tenants.set(tenants)
+            
+        messages.success(request, f"Email scheduled to send on {scheduled_dt.strftime('%B %d, %Y at %I:%M %p')}.")
+        return redirect('superadmin:email_list')

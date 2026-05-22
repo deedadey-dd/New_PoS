@@ -29,12 +29,23 @@ class CashTransfer(TenantModel):
     ]
     
     # Transfer details
+    DESTINATION_CHOICES = [
+        ('ACCOUNTANT', 'Accountant'),
+        ('BANK', 'Bank'),
+    ]
+
     amount = models.DecimalField(
         max_digits=12,
         decimal_places=2,
         validators=[MinValueValidator(Decimal('0.01'))]
     )
     transfer_type = models.CharField(max_length=15, choices=TYPE_CHOICES)
+    destination = models.CharField(
+        max_length=20,
+        choices=DESTINATION_CHOICES,
+        default='BANK',
+        help_text="Where the cash is being transferred to"
+    )
     status = models.CharField(max_length=15, choices=STATUS_CHOICES, default='PENDING')
     
     # Sender
@@ -144,6 +155,44 @@ class CashTransfer(TenantModel):
                     reference_type='CashTransfer',
                     reference_id=self.pk
                 )
+
+class DigitalFundWithdrawal(TenantModel):
+    """
+    Tracks withdrawals of digital funds (E-Cash, Local Momo) from a shop's 
+    collected balance by an accountant. This allows for partial withdrawals 
+    without relying on transaction-level boolean flags.
+    """
+    FUND_CHOICES = [
+        ('ECASH', 'E-Cash'),
+        ('MOMO', 'Local Momo'),
+    ]
+    
+    shop = models.ForeignKey(
+        Location,
+        on_delete=models.PROTECT,
+        related_name='digital_withdrawals'
+    )
+    accountant = models.ForeignKey(
+        User,
+        on_delete=models.PROTECT,
+        related_name='digital_withdrawals_performed'
+    )
+    amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal('0.01'))]
+    )
+    fund_source = models.CharField(max_length=10, choices=FUND_CHOICES)
+    notes = models.TextField(blank=True, help_text="Optional reference notes")
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = "Digital Fund Withdrawal"
+        verbose_name_plural = "Digital Fund Withdrawals"
+        
+    def __str__(self):
+        return f"{self.get_fund_source_display()} - {self.amount} from {self.shop.name}"
 
 class BankTransfer(TenantModel):
     """

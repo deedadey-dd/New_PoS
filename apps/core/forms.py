@@ -212,13 +212,20 @@ class TenantSettingsForm(forms.ModelForm):
         model = Tenant
         fields = [
             'name', 'email', 'phone', 'address', 'currency',
-            'allow_negative_stock', 'require_refund_approval', 'require_return_approval',
+            'allow_negative_stock', 'enable_refunds', 'require_refund_approval', 'require_return_approval',
             'credit_limit_warning_percent', 'backdating_allowed_days',
             'shop_manager_can_add_products', 'shop_manager_can_receive_stock',
             'shop_manager_can_delete_categories',
             'shops_can_see_other_stock',
             'allow_accountant_to_shop_transfers',
             'allow_momo_payments',
+            'accountants_can_approve_adjustments',
+            'pricing_control_mode',
+            # Workflow mode settings
+            'use_strict_sales_workflow',
+            'use_cashier_workflow',
+            'waive_shift_requirement',
+            'cashier_transfers_to_bank',
         ]
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control'}),
@@ -229,13 +236,19 @@ class TenantSettingsForm(forms.ModelForm):
             'credit_limit_warning_percent': forms.NumberInput(attrs={'class': 'form-control', 'min': 0, 'max': 100}),
             'backdating_allowed_days': forms.NumberInput(attrs={'class': 'form-control', 'min': 0}),
             'allow_negative_stock': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'enable_refunds': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'require_refund_approval': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'require_return_approval': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'shop_manager_can_add_products': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'shop_manager_can_receive_stock': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'shop_manager_can_delete_categories': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'shops_can_see_other_stock': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'allow_accountant_to_shop_transfers': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'allow_momo_payments': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'use_strict_sales_workflow': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'use_cashier_workflow': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'waive_shift_requirement': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'cashier_transfers_to_bank': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         }
 
 

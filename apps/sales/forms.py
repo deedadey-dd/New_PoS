@@ -13,6 +13,7 @@ class ShopManagerSettingsForm(forms.ModelForm):
     class Meta:
         model = ShopSettings
         fields = [
+            'hide_zero_stock_in_pos',
             'receipt_printer_type', 
             'show_logo_on_receipt',
             'receipt_header', 

@@ -377,6 +377,11 @@ class ProductCreateView(LoginRequiredMixin, CreateView):
     
     def form_valid(self, form):
         form.instance.tenant = self.request.user.tenant
+        # Auto-generate SKU if the user left it blank
+        if not form.instance.sku:
+            import uuid
+            short_id = uuid.uuid4().hex[:8].upper()
+            form.instance.sku = f"SKU-{short_id}"
         messages.success(self.request, f'Product "{form.instance.name}" created successfully!')
         return super().form_valid(form)
 
@@ -802,6 +807,9 @@ class BulkBatchReceiveView(LoginRequiredMixin, View):
             allowed_types = ['STORES']
         elif role_name == 'PRODUCTION_MANAGER':
             allowed_types = ['PRODUCTION']
+        elif role_name == 'SHOP_MANAGER':
+            # Shop managers receive directly into their SHOP location
+            allowed_types = ['SHOP']
         return Location.objects.filter(
             tenant=request.user.tenant,
             is_active=True,
@@ -1199,14 +1207,14 @@ class AdjustmentHistoryView(LoginRequiredMixin, SortableMixin, ListView):
         context['status_choices'] = StockAdjustment.STATUS_CHOICES
         
         # Pending count for the user's location (for the badge)
-        if role_name in ('SHOP_MANAGER', 'ADMIN'):
+        if role_name in ('SHOP_MANAGER', 'ADMIN', 'AUDITOR'):
             if role_name == 'SHOP_MANAGER' and user.location:
                 context['pending_count'] = StockAdjustment.objects.filter(
                     tenant=user.tenant,
                     location=user.location,
                     status='PENDING'
                 ).count()
-            elif role_name == 'ADMIN':
+            elif role_name in ('ADMIN', 'AUDITOR'):
                 context['pending_count'] = StockAdjustment.objects.filter(
                     tenant=user.tenant,
                     status='PENDING'
@@ -1235,11 +1243,13 @@ class ReviewAdjustmentView(LoginRequiredMixin, View):
         user = request.user
         role_name = user.role.name if hasattr(user, 'role') and user.role else ''
         
-        # Only Auditor or Admin can review
+        # Only Auditor or Admin can review (or Accountant if enabled)
         can_review = False
         if role_name == 'ADMIN':
             can_review = True
         elif role_name == 'AUDITOR':
+            can_review = True
+        elif role_name == 'ACCOUNTANT' and user.tenant.accountants_can_approve_adjustments:
             can_review = True
         
         if not can_review:
@@ -1475,28 +1485,49 @@ class ShopPriceListView(LoginRequiredMixin, View):
     
     def dispatch(self, request, *args, **kwargs):
         role_name = request.user.role.name if request.user.role else None
-        if role_name not in ['SHOP_MANAGER', 'ADMIN']:
-            messages.error(request, 'Only shop managers can access pricing.')
+        if role_name not in ['SHOP_MANAGER', 'ADMIN', 'ACCOUNTANT']:
+            messages.error(request, 'You do not have permission to access pricing.')
             return redirect('core:dashboard')
         return super().dispatch(request, *args, **kwargs)
     
     def get(self, request):
         user = request.user
-        shop = user.location
+        role_name = user.role.name if user.role else None
+        tenant = user.tenant
+        mode = tenant.pricing_control_mode
         
-        # Admin can select a shop
-        if not shop or shop.location_type != 'SHOP':
+        # Determine read-only status based on mode and role
+        is_read_only = False
+        if mode == 'SHOP_MANAGER' and role_name == 'ACCOUNTANT':
+            is_read_only = True
+        elif mode in ['ACCOUNTANT_PER_SHOP', 'ACCOUNTANT_UNIFORM'] and role_name == 'SHOP_MANAGER':
+            is_read_only = True
+            
+        shop = user.location if user.location and user.location.location_type == 'SHOP' else None
+        
+        # Admin or Accountant can select a shop (unless UNIFORM)
+        if not shop and mode != 'ACCOUNTANT_UNIFORM':
             shop_id = request.GET.get('shop')
             if shop_id:
                 shop = Location.objects.filter(
-                    tenant=user.tenant, pk=shop_id, location_type='SHOP'
+                    tenant=tenant, pk=shop_id, location_type='SHOP'
                 ).first()
+                
+        context = {
+            'shop': shop, 
+            'mode': mode,
+            'is_read_only': is_read_only,
+            'is_uniform': mode == 'ACCOUNTANT_UNIFORM'
+        }
         
-        context = {'shop': shop}
-        
-        if not shop or shop.location_type != 'SHOP':
+        # In uniform mode, we don't strictly need a selected shop to show products,
+        # but we need to fetch the current prices from SOME shop (since they are uniform).
+        # Or we can just get the first active shop to pull prices from.
+        if mode == 'ACCOUNTANT_UNIFORM':
+            shop = Location.objects.filter(tenant=tenant, location_type='SHOP', is_active=True).first()
+        elif not shop:
             context['shops'] = Location.objects.filter(
-                tenant=user.tenant, location_type='SHOP', is_active=True
+                tenant=tenant, location_type='SHOP', is_active=True
             )
             return render(request, self.template_name, context)
         
@@ -1550,21 +1581,35 @@ class ShopPriceSetView(LoginRequiredMixin, View):
     
     def dispatch(self, request, *args, **kwargs):
         role_name = request.user.role.name if request.user.role else None
-        if role_name not in ['SHOP_MANAGER', 'ADMIN']:
-            messages.error(request, 'Only shop managers can set pricing.')
+        if role_name not in ['SHOP_MANAGER', 'ADMIN', 'ACCOUNTANT']:
+            messages.error(request, 'You do not have permission to access pricing.')
             return redirect('core:dashboard')
+            
+        mode = request.user.tenant.pricing_control_mode
+        if mode == 'SHOP_MANAGER' and role_name == 'ACCOUNTANT':
+            messages.error(request, 'Pricing is currently controlled by Shop Managers.')
+            return redirect('inventory:shop_price_list')
+        elif mode in ['ACCOUNTANT_PER_SHOP', 'ACCOUNTANT_UNIFORM'] and role_name == 'SHOP_MANAGER':
+            messages.error(request, 'Pricing is currently controlled by Accountants.')
+            return redirect('inventory:shop_price_list')
+            
         return super().dispatch(request, *args, **kwargs)
     
     def get_shop_and_product(self, request, product_pk):
         user = request.user
-        shop = user.location
+        shop = user.location if user.location and user.location.location_type == 'SHOP' else None
         
-        if not shop or shop.location_type != 'SHOP':
+        mode = user.tenant.pricing_control_mode
+        if not shop and mode != 'ACCOUNTANT_UNIFORM':
             shop_id = request.GET.get('shop')
             if shop_id:
                 shop = Location.objects.filter(
                     tenant=user.tenant, pk=shop_id, location_type='SHOP'
                 ).first()
+                
+        # In uniform mode, default to the first active shop just to show current price
+        if mode == 'ACCOUNTANT_UNIFORM' and not shop:
+            shop = Location.objects.filter(tenant=user.tenant, location_type='SHOP', is_active=True).first()
         
         product = get_object_or_404(Product, pk=product_pk, tenant=user.tenant)
         return shop, product
@@ -1613,23 +1658,85 @@ class ShopPriceSetView(LoginRequiredMixin, View):
             messages.error(request, 'Invalid price. Please enter a valid number.')
             return redirect('inventory:shop_price_set', pk=pk)
         
-        # Deactivate old prices for this product/shop
-        ShopPrice.objects.filter(
-            product=product,
-            location=shop,
-            is_active=True
-        ).update(is_active=False)
+        mode = request.user.tenant.pricing_control_mode
         
-        # Create new shop price
-        ShopPrice.objects.create(
-            tenant=request.user.tenant,
-            product=product,
-            location=shop,
-            selling_price=selling_price,
-            is_active=True
-        )
-        
-        messages.success(request, f'Price for "{product.name}" set to {request.user.tenant.currency_symbol}{selling_price}')
+        if mode == 'ACCOUNTANT_UNIFORM':
+            # Apply to ALL active shops
+            shops = Location.objects.filter(tenant=request.user.tenant, location_type='SHOP', is_active=True)
+            ShopPrice.objects.filter(
+                product=product,
+                location__in=shops,
+                is_active=True
+            ).update(is_active=False)
+            
+            for s in shops:
+                ShopPrice.objects.create(
+                    tenant=request.user.tenant,
+                    product=product,
+                    location=s,
+                    selling_price=selling_price,
+                    is_active=True
+                )
+                
+            # Create notifications for all shop managers
+            from apps.notifications.models import Notification
+            from apps.core.models import User
+            shop_managers = User.objects.filter(
+                tenant=request.user.tenant,
+                location__in=shops,
+                role__name='SHOP_MANAGER'
+            )
+            for mgr in shop_managers:
+                Notification.objects.create(
+                    tenant=request.user.tenant,
+                    user=mgr,
+                    title='Global Price Change',
+                    message=f'The price for {product.name} has been globally updated to {request.user.tenant.currency_symbol}{selling_price} by the Accountant.',
+                    notification_type='PRICE_CHANGE',
+                    reference_type='Product',
+                    reference_id=product.id
+                )
+                
+            messages.success(request, f'Global uniform price for "{product.name}" set to {request.user.tenant.currency_symbol}{selling_price} for all shops.')
+            
+        else:
+            # Per-shop update
+            ShopPrice.objects.filter(
+                product=product,
+                location=shop,
+                is_active=True
+            ).update(is_active=False)
+            
+            ShopPrice.objects.create(
+                tenant=request.user.tenant,
+                product=product,
+                location=shop,
+                selling_price=selling_price,
+                is_active=True
+            )
+            
+            # Notify shop manager if changed by accountant/admin
+            if request.user.location != shop:
+                from apps.notifications.models import Notification
+                from apps.core.models import User
+                shop_managers = User.objects.filter(
+                    tenant=request.user.tenant,
+                    location=shop,
+                    role__name='SHOP_MANAGER'
+                )
+                for mgr in shop_managers:
+                    Notification.objects.create(
+                        tenant=request.user.tenant,
+                        user=mgr,
+                        title='Price Change Alert',
+                        message=f'The price for {product.name} at your shop has been updated to {request.user.tenant.currency_symbol}{selling_price}.',
+                        notification_type='PRICE_CHANGE',
+                        reference_type='Product',
+                        reference_id=product.id
+                    )
+            
+            messages.success(request, f'Price for "{product.name}" at {shop.name} set to {request.user.tenant.currency_symbol}{selling_price}')
+            
         return redirect('inventory:shop_price_list')
 
 

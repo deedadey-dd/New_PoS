@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Proforma Invoice - {{ proforma_number }}</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+        }
+        
+        body {
+            background-color: #f8f9fa;
+            color: #333;
+            line-height: 1.6;
+            padding: 20px;
+        }
+
+        .invoice-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+
+        .company-details h1 {
+            color: #27ae60;
+            margin-bottom: 5px;
+            font-size: 28px;
+        }
+
+        .company-details p {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .invoice-title {
+            text-align: right;
+        }
+
+        .invoice-title h2 {
+            color: #2c3e50;
+            font-size: 32px;
+            letter-spacing: 1px;
+            margin-bottom: 5px;
+        }
+
+        .invoice-title p {
+            font-size: 14px;
+            color: #666;
+        }
+
+        .details-section {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 40px;
+        }
+
+        .bill-to h3, .invoice-info h3 {
+            font-size: 16px;
+            color: #2c3e50;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .bill-to p, .invoice-info p {
+            font-size: 14px;
+            color: #444;
+            margin-bottom: 3px;
+        }
+
+        .invoice-info table {
+            width: 100%;
+        }
+
+        .invoice-info td {
+            padding: 2px 0;
+            font-size: 14px;
+        }
+
+        .invoice-info td:first-child {
+            font-weight: 600;
+            padding-right: 15px;
+            color: #555;
+        }
+
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 30px;
+        }
+
+        .items-table th {
+            background-color: #f8f9fa;
+            color: #2c3e50;
+            text-align: left;
+            padding: 12px;
+            font-size: 14px;
+            border-bottom: 2px solid #dee2e6;
+        }
+
+        .items-table th.text-right, .items-table td.text-right {
+            text-align: right;
+        }
+
+        .items-table td {
+            padding: 15px 12px;
+            border-bottom: 1px solid #eee;
+            font-size: 14px;
+        }
+
+        .totals-section {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 40px;
+        }
+
+        .totals-table {
+            width: 350px;
+            border-collapse: collapse;
+        }
+
+        .totals-table td {
+            padding: 8px 12px;
+            font-size: 14px;
+        }
+
+        .totals-table .total-row td {
+            border-top: 2px solid #2c3e50;
+            font-weight: 700;
+            font-size: 18px;
+            color: #27ae60;
+            padding-top: 15px;
+        }
+
+        .notes-section {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 6px;
+            border-left: 4px solid #3498db;
+        }
+
+        .notes-section h4 {
+            color: #2c3e50;
+            margin-bottom: 5px;
+            font-size: 14px;
+            text-transform: uppercase;
+        }
+
+        .notes-section p {
+            font-size: 13px;
+            color: #666;
+        }
+
+        /* Print styles */
+        @media print {
+            body {
+                background: none;
+                padding: 0;
+            }
+            .invoice-container {
+                box-shadow: none;
+                max-width: 100%;
+                padding: 0;
+            }
+            .no-print {
+                display: none !important;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="no-print" style="text-align: center; margin-bottom: 20px;">
+    <button onclick="window.print()" style="padding: 10px 20px; background: #27ae60; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 16px;">
+        Print / Save as PDF
+    </button>
+</div>
+
+<div class="invoice-container">
+    <div class="header">
+        <div class="company-details">
+            <h1>{{ PLATFORM_COMPANY_NAME }}</h1>
+            <p>Smart Retail Solutions</p>
+            <p>Email: {{ PLATFORM_EMAIL }}</p>
+            <p>Phone: {{ PLATFORM_PHONE }}</p>
+        </div>
+        <div class="invoice-title">
+            <h2>PROFORMA INVOICE</h2>
+            <p>Number: {{ proforma_number }}</p>
+        </div>
+    </div>
+
+    <div class="details-section">
+        <div class="bill-to">
+            <h3>Prepared For:</h3>
+            {% if client_company %}<p><strong>{{ client_company }}</strong></p>{% endif %}
+            <p>{{ client_name }}</p>
+            {% if client_email %}<p>{{ client_email }}</p>{% endif %}
+            {% if client_phone %}<p>{{ client_phone }}</p>{% endif %}
+        </div>
+        <div class="invoice-info">
+            <h3>Invoice Details:</h3>
+            <table>
+                <tr>
+                    <td>Date:</td>
+                    <td>{{ invoice_date|date:"M d, Y" }}</td>
+                </tr>
+                <tr>
+                    <td>Valid Until:</td>
+                    <td>{{ valid_until|date:"M d, Y" }}</td>
+                </tr>
+                <tr>
+                    <td>Plan:</td>
+                    <td>{{ plan.name }} ({{ billing_cycle|title }})</td>
+                </tr>
+            </table>
+        </div>
+    </div>
+
+    <table class="items-table">
+        <thead>
+            <tr>
+                <th>Description</th>
+                <th class="text-right">Amount (GH₵)</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>
+                    <strong>Subscription: {{ plan.name }} Plan</strong><br>
+                    <small style="color: #666;">
+                        Base coverage for up to {{ plan.max_shops }} shop(s). 
+                        {% if is_annual %}Billed annually.{% else %}Billed monthly.{% endif %}
+                    </small>
+                </td>
+                <td class="text-right">
+                    {% if is_annual %}
+                        {{ base_price|floatformat:"2g" }} x 12
+                    {% else %}
+                        {{ base_price|floatformat:"2g" }}
+                    {% endif %}
+                </td>
+            </tr>
+            
+            {% if additional_shops > 0 %}
+            <tr>
+                <td>
+                    <strong>Additional Shops (Premium)</strong><br>
+                    <small style="color: #666;">
+                        {{ additional_shops }} extra shop(s) at GH₵{{ additional_shop_cost|floatformat:"2g" }}
+                        {% if is_annual %}billed annually.{% else %}billed monthly.{% endif %}
+                    </small>
+                </td>
+                <td class="text-right">
+                    {% if is_annual %}
+                        {{ additional_shop_cost|floatformat:"2g" }} x 12
+                    {% else %}
+                        {{ additional_shop_cost|floatformat:"2g" }}
+                    {% endif %}
+                </td>
+            </tr>
+            {% endif %}
+            
+            <tr>
+                <td>
+                    <strong>Onboarding & Setup Fee</strong><br>
+                    <small style="color: #666;">One-time fee for system setup, training, and initial support.</small>
+                </td>
+                <td class="text-right">{{ onboarding_fee|floatformat:"2g" }}</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="totals-section">
+        <table class="totals-table">
+            <tr>
+                <td>Subtotal</td>
+                <td class="text-right">GH₵ {{ subscription_total|add:onboarding_fee|floatformat:"2g" }}</td>
+            </tr>
+            {% if discount_amount > 0 %}
+            <tr>
+                <td style="color: #e74c3c;">Discount ({{ discount|floatformat:"0g" }}%)</td>
+                <td class="text-right" style="color: #e74c3c;">- GH₵ {{ discount_amount|floatformat:"2g" }}</td>
+            </tr>
+            {% endif %}
+            <tr class="total-row">
+                <td>Total Due</td>
+                <td class="text-right">GH₵ {{ total_due|floatformat:"2g" }}</td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="notes-section">
+        <h4>Important Notes</h4>
+        <p>This is a Proforma Invoice and does not constitute a formal tax invoice. Prices are valid until the date specified above. Once payment is received, a final tax receipt and your platform credentials will be issued. The onboarding fee is a mandatory one-time charge for new accounts.</p>
+    </div>
+</div>
+
+<script>
+    // Automatically trigger print dialog on load
+    window.onload = function() {
+        setTimeout(function() {
+            window.print();
+        }, 500);
+    };
+</script>
+
+</body>
+</html>

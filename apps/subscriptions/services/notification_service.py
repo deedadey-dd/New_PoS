@@ -108,7 +108,7 @@ class NotificationService:
             send_mail(
                 subject=f'Payment Confirmation - {payment.receipt_number}',
                 message=plain_message,
-                from_email=settings.DEFAULT_FROM_EMAIL,
+                from_email=getattr(settings, 'SALES_EMAIL', 'sales@hendaxis.com'),
                 recipient_list=recipient_list,
                 html_message=html_message,
                 fail_silently=False,

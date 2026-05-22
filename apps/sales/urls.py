@@ -24,12 +24,16 @@ urlpatterns = [
     # Sales History
     path('', views.SaleListView.as_view(), name='sale_list'),
     path('<int:pk>/receipt/', views.SaleDetailView.as_view(), name='sale_receipt'),
+    path('<int:pk>/waybill/', views.SaleWaybillView.as_view(), name='sale_waybill'),
     path('api/<int:pk>/detail/', views.api_sale_detail, name='api_sale_detail'),
     
     # API Endpoints
     path('api/products/search/', views.api_product_search, name='api_product_search'),
     path('api/checkout/', views.api_complete_sale, name='api_checkout'),
     path('api/<int:pk>/void/', views.api_void_sale, name='api_void_sale'),
+    path('api/<int:pk>/refund/', views.api_refund_sale, name='api_refund_sale'),
+    path('api/invoices/<int:pk>/pay/', views.api_pay_invoice, name='api_pay_invoice'),
+    path('api/sales/<int:pk>/dispatch/', views.api_dispatch_sale, name='api_dispatch_sale'),
     
     # E-Cash Payment
     path('api/ecash/initialize/', views.initialize_ecash_payment, name='initialize_ecash_payment'),

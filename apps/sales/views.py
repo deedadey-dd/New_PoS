@@ -88,6 +88,9 @@ class POSView(LoginRequiredMixin, View):
                 # Get quantity from pre-fetched dict
                 quantity = stock_by_product.get(product.pk, 0) or 0
                 
+                if shop_settings.hide_zero_stock_in_pos and float(quantity) <= 0:
+                    continue
+                
                 products_with_prices.append({
                     'id': product.pk,
                     'name': product.name,
@@ -114,11 +117,12 @@ class POSView(LoginRequiredMixin, View):
         
         context = {
             'shop': user_shop,
+            'products': json.dumps(products_with_prices),
+            'categories': categories,
+            'customers': json.dumps(list(customers), default=str),
             'shop_settings': shop_settings,
             'shift': open_shift,
-            'products': json.dumps(products_with_prices),
-            'customers': json.dumps(list(customers), default=str),
-            'categories': categories,
+            'allow_negative_stock': request.user.tenant.allow_negative_stock,
             'currency_symbol': request.user.tenant.currency_symbol if request.user.tenant.currency else '$',
         }
         
@@ -169,6 +173,26 @@ class ShiftOpenView(LoginRequiredMixin, View):
         
         messages.success(request, f"Shift opened with {opening_cash} opening cash.")
         return redirect('sales:pos')
+
+
+class SaleWaybillView(LoginRequiredMixin, View):
+    """View and print a waybill (delivery note) for a sale."""
+    template_name = 'sales/sale_waybill.html'
+    
+    def get(self, request, pk):
+        sale = get_object_or_404(
+            Sale.objects.select_related('shop', 'attendant', 'customer', 'dispatched_by'),
+            pk=pk,
+            tenant=request.user.tenant
+        )
+        try:
+            shop_settings = ShopSettings.objects.get(shop=sale.shop)
+        except ShopSettings.DoesNotExist:
+            shop_settings = None
+        return render(request, self.template_name, {
+            'sale': sale,
+            'shop_settings': shop_settings,
+        })
 
 
 class ShiftCloseView(LoginRequiredMixin, View):
@@ -257,25 +281,14 @@ class ShiftCloseView(LoginRequiredMixin, View):
             
             # Check if the user closing shift IS the shop manager
             if user_role == 'SHOP_MANAGER':
-                # Shop manager's shift - no transfer needed, cash goes directly to their balance
-                # Create a confirmed transfer to self for record-keeping
-                transfer = CashTransfer.objects.create(
-                    tenant=request.user.tenant,
-                    amount=closing_cash,
-                    transfer_type='DEPOSIT',
-                    from_user=request.user,
-                    from_location=shift.shop,
-                    to_user=request.user,
-                    to_location=shift.shop,
-                    notes=f"Shop Manager shift closing - Shift #{shift.pk}",
-                    status='CONFIRMED'  # Auto-confirmed
-                )
-                transfer.confirmed_at = timezone.now()
-                transfer.save()
-                
-                messages.info(request, f"Shift cash of {closing_cash} added to your cash on hand.")
+                # Shop manager's own shift — no transfer is needed.
+                # The closing cash stays in their hand and is reflected in cash-on-hand
+                # by summing their own closed-shift totals in the context processor.
+                # Creating a self-transfer here causes double-counting (added as received,
+                # then immediately subtracted as sent) so we skip it entirely.
+                messages.info(request, f"Shift closed. Cash on hand updated with {request.user.tenant.currency_symbol}{closing_cash}.")
             else:
-                # Attendant shift - create pending transfer to shop manager
+                # Attendant shift — create pending transfer to shop manager
                 shop_manager = User.objects.filter(
                     tenant=request.user.tenant,
                     location=shift.shop,
@@ -309,7 +322,7 @@ class ShiftCloseView(LoginRequiredMixin, View):
                     
                     messages.info(request, f"Cash transfer of {closing_cash} sent to {shop_manager.get_full_name()} for confirmation.")
                 else:
-                    messages.warning(request, "No shop manager found. Please manually transfer your cash.")
+                    messages.warning(request, "No shop manager found. Cash is on your hand — please transfer it manually.")
         
         return redirect('core:dashboard')
 
@@ -436,6 +449,12 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
     sortable_fields = ['created_at', 'sale_number', 'total', 'amount_paid', 'status', 'payment_method', 'attendant__username']
     default_sort = '-created_at'
     
+    def get_paginate_by(self, queryset):
+        try:
+            return int(self.request.GET.get('per_page', 25))
+        except (ValueError, TypeError):
+            return 25
+            
     def get_queryset(self):
         from datetime import datetime
         
@@ -451,6 +470,10 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
         if role_name not in ['AUDITOR', 'ACCOUNTANT', 'ADMIN']:
             if user.location and user.location.location_type == 'SHOP':
                 queryset = queryset.filter(shop=user.location)
+                
+            # Attendants only see their own sales/invoices
+            if role_name == 'SHOP_ATTENDANT':
+                queryset = queryset.filter(attendant=user)
         else:
             # Shop filter for Auditor/Accountant/Admin
             shop_id = self.request.GET.get('shop')
@@ -484,12 +507,21 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
         status = self.request.GET.get('status')
         if status:
             queryset = queryset.filter(status=status)
-        
-        # Payment method filter
+            # Payment method filter
         payment = self.request.GET.get('payment')
         if payment:
             queryset = queryset.filter(payment_method=payment)
-        
+            
+        # Dispatch status filter
+        dispatch_status = self.request.GET.get('dispatch_status')
+        if dispatch_status == 'pending':
+            from django.db.models import Q
+            queryset = queryset.filter(
+                Q(status='PENDING_DISPATCH') | Q(status='COMPLETED', is_dispatched=False)
+            )
+        elif dispatch_status in ['dispatched', 'completed']:
+            queryset = queryset.filter(status='COMPLETED', is_dispatched=True)
+         
         return self.apply_sorting(queryset)
     
     def get_context_data(self, **kwargs):
@@ -516,12 +548,14 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
             ).order_by('first_name', 'email')
         
         # Preserve filter values
+        context['per_page'] = self.get_paginate_by(None)
         context['date_from'] = self.request.GET.get('date_from', '')
         context['date_to'] = self.request.GET.get('date_to', '')
         context['selected_shop'] = self.request.GET.get('shop', '')
         context['selected_attendant'] = self.request.GET.get('attendant', '')
         context['selected_status'] = self.request.GET.get('status', '')
         context['selected_payment'] = self.request.GET.get('payment', '')
+        context['selected_dispatch_status'] = self.request.GET.get('dispatch_status', '')
         
         return context
 
@@ -586,11 +620,49 @@ def api_sale_detail(request, pk):
         'total': str(sale.total),
         'amount_paid': str(sale.amount_paid),
         'change_given': str(sale.change_given) if sale.change_given else None,
-        'customer': sale.customer.name if sale.customer else None,
+        'customer': sale.customer.name if sale.customer else (sale.customer_name or None),
+        'customer_name': sale.customer_name,
+        'customer_phone': sale.customer_phone,
+        'is_dispatched': sale.is_dispatched,
         'items': items,
     }
     return JsonResponse(data)
 
+
+@login_required
+@require_POST
+def api_refund_sale(request, pk):
+    """Refund a completed sale."""
+    import json
+    
+    # Check if refunds are enabled for the tenant
+    if not request.user.tenant.enable_refunds:
+        return JsonResponse({'success': False, 'error': 'Refunds are disabled for this tenant.'}, status=403)
+        
+    # Only Admin (or user with specific permission) can refund?
+    # Actually, the requirement just says "Formal refund functionality (triggered by toggle in tenant admin)"
+    # We'll allow it if tenant has it enabled.
+    
+    sale = get_object_or_404(Sale, pk=pk, tenant=request.user.tenant)
+    
+    if sale.status == 'REFUNDED':
+        return JsonResponse({'success': False, 'error': 'Sale is already refunded.'}, status=400)
+        
+    if sale.status not in ['COMPLETED', 'PENDING_DISPATCH']:
+        return JsonResponse({'success': False, 'error': 'Only completed or pending dispatch sales can be refunded.'}, status=400)
+        
+    try:
+        data = json.loads(request.body)
+        reason = data.get('reason', 'Customer requested refund')
+    except:
+        reason = 'Customer requested refund'
+        
+    try:
+        with transaction.atomic():
+            sale.refund(reason=reason, user=request.user)
+            return JsonResponse({'success': True, 'message': f'Sale {sale.sale_number} successfully refunded.'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
 
 # ============ API Views for POS ============
 
@@ -648,18 +720,21 @@ def api_complete_sale(request):
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
     
-    cart_items = data.get('items', [])
+    cart_items  = data.get('items', []) or data.get('cart', [])
     payment_method = data.get('payment_method', 'CASH')
     # Ensure payment_method is valid - handle empty string or invalid values
-    valid_payment_methods = ['CASH', 'CREDIT', 'ECASH', 'MIXED', 'PAYMENT_ON_ACCOUNT', 'MOMO']
+    valid_payment_methods = ['CASH', 'CREDIT', 'ECASH', 'MIXED', 'PAYMENT_ON_ACCOUNT', 'MOMO', 'PENDING_INVOICE']
     if not payment_method or payment_method not in valid_payment_methods:
         payment_method = 'CASH'
     amount_paid = Decimal(str(data.get('amount_paid', 0)))
-    discount_amount = Decimal(str(data.get('discount_amount', 0)))
+    discount_amount = Decimal(str(data.get('discount_amount', 0) or data.get('discount', 0)))
     discount_reason = data.get('discount_reason', '')
     paystack_ref = data.get('paystack_reference', '')
     customer_id = data.get('customer_id')
     is_payment_on_account = data.get('is_payment_on_account', False)
+    # Cashier workflow fields (used by PENDING_INVOICE path only)
+    customer_name  = data.get('customer_name', '').strip()
+    customer_phone = data.get('customer_phone', '').strip()
     
     shop = request.user.location
     
@@ -671,8 +746,57 @@ def api_complete_sale(request):
     if customer_id:
         from apps.customers.models import Customer, CustomerTransaction
         customer = Customer.objects.filter(pk=customer_id, tenant=request.user.tenant).first()
-    
-    # Handle payment on account (no cart items, just payment to customer)
+
+    # ── PENDING INVOICE path (Cashier Workflow) ──────────────────────────────
+    # Creates a PENDING sale without deducting stock. The cashier will later
+    # complete the sale and trigger stock deduction at that point.
+    if payment_method == 'PENDING_INVOICE':
+        if not cart_items:
+            return JsonResponse({'error': 'Cart is empty'}, status=400)
+        if not customer_name or not customer_phone:
+            return JsonResponse({'error': 'Customer name and phone are required for invoices'}, status=400)
+
+        shift = Shift.objects.filter(
+            tenant=request.user.tenant,
+            shop=shop,
+            attendant=request.user,
+            status='OPEN'
+        ).first()
+
+        try:
+            with transaction.atomic():
+                sale = Sale.objects.create(
+                    tenant=request.user.tenant,
+                    shop=shop,
+                    attendant=request.user,
+                    shift=shift,
+                    customer=customer,
+                    payment_method='PENDING_INVOICE',
+                    status='PENDING',
+                    discount_amount=discount_amount,
+                    customer_name=customer_name,
+                    customer_phone=customer_phone,
+                )
+                for item in cart_items:
+                    product = Product.objects.get(pk=item['product_id'])
+                    SaleItem.objects.create(
+                        tenant=request.user.tenant,
+                        sale=sale,
+                        product=product,
+                        quantity=Decimal(str(item['quantity'])),
+                        unit_price=Decimal(str(item['unit_price'])),
+                    )
+                sale.calculate_totals()
+                return JsonResponse({
+                    'success': True,
+                    'sale_id': sale.pk,
+                    'sale_number': sale.sale_number,
+                    'total': str(sale.total),
+                })
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+
+    # ── Handle payment on account (no cart items, just payment to customer) ──
     if is_payment_on_account or payment_method == 'PAYMENT_ON_ACCOUNT':
         if not customer:
             return JsonResponse({'error': 'Customer required for payment on account'}, status=400)
@@ -818,6 +942,99 @@ def api_void_sale(request, pk):
     try:
         sale.void(reason)
         return JsonResponse({'success': True})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@login_required
+def api_pay_invoice(request, pk):
+    """Complete payment for a pending invoice (Cashier Workflow)."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+        
+    sale = get_object_or_404(
+        Sale,
+        pk=pk,
+        tenant=request.user.tenant,
+        status='PENDING'
+    )
+    
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+        
+    payment_method = data.get('payment_method', 'CASH')
+    valid_payment_methods = ['CASH', 'CREDIT', 'ECASH', 'MIXED', 'PAYMENT_ON_ACCOUNT', 'MOMO']
+    if not payment_method or payment_method not in valid_payment_methods:
+        payment_method = 'CASH'
+        
+    amount_paid = Decimal(str(data.get('amount_paid', 0)))
+    paystack_ref = data.get('paystack_reference', '')
+    
+    try:
+        with transaction.atomic():
+            sale.complete(amount_paid, payment_method, paystack_ref, cashier=request.user)
+            if payment_method == 'ECASH':
+                from apps.payments.models import ECashLedger
+                ECashLedger.record_payment(
+                    tenant=request.user.tenant,
+                    amount=sale.total,
+                    sale=sale,
+                    paystack_ref=paystack_ref,
+                    user=request.user
+                )
+            
+        return JsonResponse({
+            'success': True,
+            'sale_id': sale.pk,
+            'sale_number': sale.sale_number,
+            'total': str(sale.total),
+            'change': str(sale.change_given),
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@login_required
+def api_dispatch_sale(request, pk):
+    """Dispatch the goods for a completed sale (Shop Manager Workflow)."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+        
+    role_name = request.user.role.name if request.user.role else None
+    if role_name not in ['SHOP_MANAGER', 'ADMIN']:
+        return JsonResponse({'error': 'Only shop managers and admins can dispatch goods.'}, status=403)
+        
+    sale = get_object_or_404(
+        Sale,
+        pk=pk,
+        tenant=request.user.tenant,
+        status__in=['COMPLETED', 'PENDING_DISPATCH']
+    )
+    
+    if sale.is_dispatched:
+        return JsonResponse({'error': 'This sale has already been dispatched.'}, status=400)
+        
+    try:
+        with transaction.atomic():
+            if sale.status == 'PENDING_DISPATCH':
+                sale.status = 'COMPLETED'
+                sale.deduct_inventory()
+            
+            sale.is_dispatched = True
+            sale.dispatched_at = timezone.now()
+            sale.dispatched_by = request.user
+            sale.save()
+            
+        from django.urls import reverse
+        return JsonResponse({
+            'success': True,
+            'sale_id': sale.pk,
+            'sale_number': sale.sale_number,
+            'message': 'Goods dispatched successfully.',
+            'waybill_url': reverse('sales:sale_waybill', args=[sale.pk])
+        })
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=400)
 

@@ -39,6 +39,12 @@
 <div class="card mb-4">
     <div class="card-body">
         <form method="get" class="row g-3">
+            {% if selected_payment %}
+            <input type="hidden" name="payment" value="{{ selected_payment }}">
+            {% endif %}
+            {% if selected_dispatch_status %}
+            <input type="hidden" name="dispatch_status" value="{{ selected_dispatch_status }}">
+            {% endif %}
             <div class="col-md-2">
                 <label class="form-label">From Date</label>
                 <input type="date" name="date_from" class="form-control" value="{{ date_from }}">
@@ -104,6 +110,7 @@
                         <th>{% sort_link "Sale #" "sale_number" %}</th>
                         <th>{% sort_link "Date" "created_at" %}</th>
                         <th>Shop</th>
+                        <th>Customer</th>
                         <th>{% sort_link "Attendant" "attendant__username" %}</th>
                         <th>{% sort_link "Payment" "payment_method" %}</th>
                         <th>{% sort_link "Total" "total" %}</th>
@@ -122,6 +129,21 @@
                         </td>
                         <td>{{ sale.created_at|date:"M d, Y H:i" }}</td>
                         <td>{{ sale.shop.name }}</td>
+                        <td>
+                            {% if sale.customer %}
+                                <span class="badge bg-light text-dark border" data-bs-toggle="tooltip" title="Registered Customer">
+                                    <i class="bi bi-person-check-fill text-success me-1"></i>{{ sale.customer.name }}
+                                </span>
+                            {% elif sale.customer_name %}
+                                <span class="badge bg-light text-dark border" data-bs-toggle="tooltip" title="Walk-in Customer">
+                                    <i class="bi bi-person-fill text-muted me-1"></i>{{ sale.customer_name }}
+                                </span>
+                            {% else %}
+                                <span class="badge bg-light text-dark border" data-bs-toggle="tooltip" title="Walk-in Customer">
+                                    <i class="bi bi-person-fill text-muted me-1"></i>Walk-in Customer
+                                </span>
+                            {% endif %}
+                        </td>
                         <td>{{ sale.attendant.get_full_name|default:sale.attendant.email }}</td>
                         <td>
                             {% if sale.payment_method == 'CASH' %}
@@ -147,8 +169,35 @@
                             {% endif %}
                         </td>
                         <td class="text-end">
+                            {% if role_name == 'SHOP_CASHIER' %}
+                                {% if sale.status == 'PENDING' %}
+                                    <button class="btn btn-sm btn-success pay-invoice-btn me-1"
+                                            data-sale-id="{{ sale.id }}"
+                                            data-sale-number="{{ sale.sale_number }}"
+                                            data-sale-total="{{ sale.total }}">
+                                        Pay
+                                    </button>
+                                {% elif sale.status == 'COMPLETED' or sale.status == 'PENDING_DISPATCH' %}
+                                    {% if current_tenant.require_refund_approval %}
+                                        <button class="btn btn-sm btn-outline-warning me-1" onclick="alert('Refund feature coming soon!')">Refund</button>
+                                    {% endif %}
+                                {% endif %}
+                            {% elif role_name == 'SHOP_MANAGER' and request.user.tenant.use_strict_sales_workflow %}
+                                {% if sale.status == 'PENDING_DISPATCH' %}
+                                    <button class="btn btn-sm btn-success dispatch-inline-btn me-1"
+                                            data-sale-id="{{ sale.id }}"
+                                            data-sale-number="{{ sale.sale_number }}">
+                                        <i class="bi bi-send me-1"></i>Dispatch
+                                    </button>
+                                {% elif sale.is_dispatched %}
+                                    <a href="{% url 'sales:sale_waybill' sale.pk %}" class="btn btn-sm btn-outline-secondary me-1"
+                                        target="_blank" data-bs-toggle="tooltip" title="View Waybill">
+                                        <i class="bi bi-file-earmark-text"></i>
+                                    </a>
+                                {% endif %}
+                            {% endif %}
                             <a href="{% url 'sales:sale_receipt' sale.pk %}" class="btn btn-sm btn-outline-info"
-                                target="_blank">
+                                target="_blank" data-bs-toggle="tooltip" title="Print Receipt">
                                 <i class="bi bi-receipt"></i>
                             </a>
                         </td>
@@ -195,6 +244,21 @@
                 <div id="saleDetailContent" style="display:none;"></div>
             </div>
             <div class="modal-footer">
+                {% if role_name == 'SHOP_MANAGER' and request.user.tenant.use_strict_sales_workflow %}
+                <button type="button" class="btn btn-success" id="saleDetailDispatchBtn" style="display: none;">
+                    <i class="bi bi-send me-1"></i>Dispatch Goods
+                </button>
+                {% endif %}
+                {% if role_name == 'SHOP_CASHIER' %}
+                <button type="button" class="btn btn-success" id="saleDetailPayBtn" style="display: none;">
+                    <i class="bi bi-credit-card me-1"></i>Pay Invoice
+                </button>
+                {% endif %}
+                {% if request.user.tenant.enable_refunds %}
+                <button type="button" class="btn btn-warning text-dark" id="saleDetailRefundBtn" style="display: none;">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i>Refund
+                </button>
+                {% endif %}
                 <a href="#" class="btn btn-outline-info" id="saleDetailPrintBtn" target="_blank">
                     <i class="bi bi-printer me-1"></i>Print Receipt
                 </a>
@@ -203,6 +267,77 @@
         </div>
     </div>
 </div>
+
+<!-- Payment Modal -->
+{% if role_name == 'SHOP_CASHIER' %}
+<div class="modal fade" id="payInvoiceModal" tabindex="-1" aria-labelledby="payInvoiceModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-4 border-0 shadow">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold text-success" id="payInvoiceModalLabel">
+                    <i class="bi bi-credit-card-fill me-2"></i>Receive Payment
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="bg-light rounded-3 p-3 mb-3 d-flex justify-content-between align-items-center">
+                    <div>
+                        <span class="text-muted small">Invoice #</span>
+                        <h5 class="fw-bold mb-0 text-dark" id="modalInvoiceNumber">-</h5>
+                    </div>
+                    <div class="text-end">
+                        <span class="text-muted small">Total Due</span>
+                        <h4 class="fw-bold mb-0 text-success" id="modalTotalDue">-</h4>
+                    </div>
+                </div>
+
+                <form id="payInvoiceForm">
+                    {% csrf_token %}
+                    <input type="hidden" id="modalInvoiceId">
+                    
+                    <div class="mb-3">
+                        <label for="paymentMethodSelect" class="form-label fw-bold">Payment Method</label>
+                        <select class="form-select rounded-3" id="paymentMethodSelect" required>
+                            <option value="CASH" selected>Cash</option>
+                            <option value="ECASH">E-Cash</option>
+                            <option value="MOMO">Local Momo</option>
+                            <option value="CREDIT">Credit</option>
+                            <option value="MIXED">Mixed</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="amountPaidInput" class="form-label fw-bold">Amount Paid</label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-light fw-bold">{{ current_tenant.currency_symbol|default:"$" }}</span>
+                            <input type="number" step="0.01" class="form-control rounded-3" id="amountPaidInput" placeholder="0.00" required>
+                        </div>
+                        <div class="form-text text-danger d-none" id="amountError">Amount paid must be at least total due unless it's a credit sale.</div>
+                    </div>
+
+                    <!-- Digital Ref (Momo / E-cash) -->
+                    <div class="mb-3 d-none" id="digitalRefContainer">
+                        <label for="paystackReferenceInput" class="form-label fw-bold">Paystack / Transaction Reference</label>
+                        <input type="text" class="form-control rounded-3" id="paystackReferenceInput" placeholder="Enter reference ID">
+                    </div>
+
+                    <!-- Change Calculation Display -->
+                    <div class="bg-success-light rounded-3 p-3 mb-3 d-flex justify-content-between align-items-center d-none" id="changeDisplayContainer">
+                        <span class="fw-bold text-success">Change to Return</span>
+                        <h4 class="fw-bold mb-0 text-success" id="modalChangeValue">{{ current_tenant.currency_symbol|default:"$" }}0.00</h4>
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-success btn-lg rounded-pill fw-bold py-2" id="submitPaymentBtn">
+                            <i class="bi bi-check-circle me-2"></i>Complete Payment
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 {% endblock %}
 
 {% block extra_js %}
@@ -234,6 +369,41 @@ document.addEventListener('DOMContentLoaded', function() {
                 .then(function(response) { return response.json(); })
                 .then(function(data) {
                     renderSaleDetail(data);
+                    
+                    const dispatchBtn = document.getElementById('saleDetailDispatchBtn');
+                    if (dispatchBtn) {
+                        if (data.status_code === 'PENDING_DISPATCH' || (data.status_code === 'COMPLETED' && !data.is_dispatched)) {
+                            dispatchBtn.style.display = 'inline-block';
+                            dispatchBtn.dataset.saleId = saleId;
+                            dispatchBtn.dataset.saleNumber = data.sale_number;
+                        } else {
+                            dispatchBtn.style.display = 'none';
+                        }
+                    }
+                    
+                    const payBtn = document.getElementById('saleDetailPayBtn');
+                    if (payBtn) {
+                        if (data.status_code === 'PENDING') {
+                            payBtn.style.display = 'inline-block';
+                            payBtn.dataset.saleId = saleId;
+                            payBtn.dataset.saleNumber = data.sale_number;
+                            payBtn.dataset.saleTotal = data.total;
+                        } else {
+                            payBtn.style.display = 'none';
+                        }
+                    }
+                    
+                    const refundBtn = document.getElementById('saleDetailRefundBtn');
+                    if (refundBtn) {
+                        if (data.status_code === 'COMPLETED' || data.status_code === 'PENDING_DISPATCH') {
+                            refundBtn.style.display = 'inline-block';
+                            refundBtn.dataset.saleId = saleId;
+                            refundBtn.dataset.saleNumber = data.sale_number;
+                        } else {
+                            refundBtn.style.display = 'none';
+                        }
+                    }
+                    
                     loadingEl.style.display = 'none';
                     contentEl.style.display = 'block';
                 })
@@ -306,6 +476,9 @@ document.addEventListener('DOMContentLoaded', function() {
             html += '<div class="col-sm-6">';
             html += '<small class="text-muted d-block">Customer</small>';
             html += '<span class="fw-medium">' + data.customer + '</span>';
+            if (data.customer_phone) {
+                html += '<br><small class="text-muted"><i class="bi bi-telephone me-1"></i>' + data.customer_phone + '</small>';
+            }
             html += '</div>';
         }
         html += '</div>';
@@ -365,6 +538,261 @@ document.addEventListener('DOMContentLoaded', function() {
 
         contentEl.innerHTML = html;
     }
+
+    const dispatchBtn = document.getElementById('saleDetailDispatchBtn');
+    if (dispatchBtn) {
+        dispatchBtn.addEventListener('click', function() {
+            const saleId = this.dataset.saleId;
+            const saleNumber = this.dataset.saleNumber;
+            if (confirm('Are you sure you want to dispatch goods for sale ' + saleNumber + '?')) {
+                const csrfToken = '{{ csrf_token }}';
+                fetch('/sales/api/sales/' + saleId + '/dispatch/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrfToken
+                    }
+                })
+                .then(function(response) {
+                    if (!response.ok) {
+                        return response.json().then(function(err) { throw new Error(err.error || 'Dispatch failed') });
+                    }
+                    return response.json();
+                })
+                .then(function(res) {
+                    alert(res.message || 'Goods dispatched successfully.');
+                    location.reload();
+                })
+                .catch(function(err) {
+                    alert(err.message);
+                });
+            }
+        });
+    }
+
+    const refundBtn = document.getElementById('saleDetailRefundBtn');
+    if (refundBtn) {
+        refundBtn.addEventListener('click', function() {
+            const saleId = this.dataset.saleId;
+            const saleNumber = this.dataset.saleNumber;
+            const reason = prompt('Please enter a reason for refunding sale ' + saleNumber + ':');
+            if (reason !== null) {
+                const csrfToken = '{{ csrf_token }}';
+                fetch('/sales/api/' + saleId + '/refund/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrfToken
+                    },
+                    body: JSON.stringify({ reason: reason })
+                })
+                .then(function(response) {
+                    if (!response.ok) {
+                        return response.json().then(function(err) { throw new Error(err.error || 'Refund failed') });
+                    }
+                    return response.json();
+                })
+                .then(function(res) {
+                    alert(res.message || 'Sale refunded successfully.');
+                    location.reload();
+                })
+                .catch(function(err) {
+                    alert(err.message);
+                });
+            }
+        });
+    }
+
+    // Payment Logic
+    const payInvoiceModalEl = document.getElementById('payInvoiceModal');
+    if (payInvoiceModalEl) {
+        const payModal = new bootstrap.Modal(payInvoiceModalEl);
+        const payForm = document.getElementById('payInvoiceForm');
+        const amountPaidInput = document.getElementById('amountPaidInput');
+        const paymentMethodSelect = document.getElementById('paymentMethodSelect');
+        const digitalRefContainer = document.getElementById('digitalRefContainer');
+        const paystackReferenceInput = document.getElementById('paystackReferenceInput');
+        const changeDisplayContainer = document.getElementById('changeDisplayContainer');
+        const modalChangeValue = document.getElementById('modalChangeValue');
+        const amountError = document.getElementById('amountError');
+
+        let currentTotalDue = 0;
+
+        document.querySelectorAll('.pay-invoice-btn').forEach(function(button) {
+            button.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const saleId = this.dataset.saleId;
+                const saleNumber = this.dataset.saleNumber;
+                currentTotalDue = parseFloat(this.dataset.saleTotal);
+
+                document.getElementById('modalInvoiceId').value = saleId;
+                document.getElementById('modalInvoiceNumber').innerText = saleNumber;
+                document.getElementById('modalTotalDue').innerText = currencySymbol + currentTotalDue.toFixed(2);
+                
+                amountPaidInput.value = currentTotalDue.toFixed(2);
+                paymentMethodSelect.value = 'CASH';
+                digitalRefContainer.classList.add('d-none');
+                paystackReferenceInput.value = '';
+                changeDisplayContainer.classList.add('d-none');
+                amountError.classList.add('d-none');
+
+                payModal.show();
+            });
+        });
+        
+        const saleDetailPayBtn = document.getElementById('saleDetailPayBtn');
+        if (saleDetailPayBtn) {
+            saleDetailPayBtn.addEventListener('click', function() {
+                modal.hide();
+                
+                const saleId = this.dataset.saleId;
+                const saleNumber = this.dataset.saleNumber;
+                currentTotalDue = parseFloat(this.dataset.saleTotal);
+
+                document.getElementById('modalInvoiceId').value = saleId;
+                document.getElementById('modalInvoiceNumber').innerText = saleNumber;
+                document.getElementById('modalTotalDue').innerText = currencySymbol + currentTotalDue.toFixed(2);
+                
+                amountPaidInput.value = currentTotalDue.toFixed(2);
+                paymentMethodSelect.value = 'CASH';
+                digitalRefContainer.classList.add('d-none');
+                paystackReferenceInput.value = '';
+                changeDisplayContainer.classList.add('d-none');
+                amountError.classList.add('d-none');
+
+                setTimeout(function() {
+                    payModal.show();
+                }, 150);
+            });
+        }
+
+        paymentMethodSelect.addEventListener('change', function() {
+            const method = this.value;
+            if (method === 'ECASH' || method === 'MOMO') {
+                digitalRefContainer.classList.remove('d-none');
+                paystackReferenceInput.required = true;
+            } else {
+                digitalRefContainer.classList.add('d-none');
+                paystackReferenceInput.required = false;
+                paystackReferenceInput.value = '';
+            }
+            calculateChange();
+        });
+
+        amountPaidInput.addEventListener('input', calculateChange);
+
+        function calculateChange() {
+            const paid = parseFloat(amountPaidInput.value) || 0;
+            const method = paymentMethodSelect.value;
+
+            if (method !== 'CREDIT') {
+                if (paid >= currentTotalDue) {
+                    const change = paid - currentTotalDue;
+                    changeDisplayContainer.classList.remove('d-none');
+                    modalChangeValue.innerText = currencySymbol + change.toFixed(2);
+                    amountError.classList.add('d-none');
+                } else {
+                    changeDisplayContainer.classList.add('d-none');
+                    if (method !== 'MIXED') {
+                        amountError.classList.remove('d-none');
+                    } else {
+                        amountError.classList.add('d-none');
+                    }
+                }
+            } else {
+                changeDisplayContainer.classList.add('d-none');
+                amountError.classList.add('d-none');
+            }
+        }
+
+        payForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const saleId = document.getElementById('modalInvoiceId').value;
+            const method = paymentMethodSelect.value;
+            const paid = parseFloat(amountPaidInput.value) || 0;
+            const ref = paystackReferenceInput.value.trim();
+
+            if (method !== 'CREDIT' && method !== 'MIXED' && paid < currentTotalDue) {
+                amountError.classList.remove('d-none');
+                return;
+            }
+
+            const data = {
+                payment_method: method,
+                amount_paid: paid,
+                paystack_reference: ref
+            };
+
+            const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+            fetch(`/sales/api/invoices/${saleId}/pay/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(err => { throw new Error(err.error || 'Payment failed') });
+                }
+                return response.json();
+            })
+            .then(res => {
+                payModal.hide();
+                const receiptWindow = window.open(`/sales/${res.sale_id}/receipt/`, '_blank');
+                if (receiptWindow) {
+                    receiptWindow.focus();
+                }
+                location.reload();
+            })
+            .catch(err => {
+                alert(err.message);
+            });
+        });
+    }
 });
+    // ── Inline Dispatch Goods buttons (Shop Manager in sale list) ──
+    document.querySelectorAll('.dispatch-inline-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            const saleId = this.dataset.saleId;
+            const saleNumber = this.dataset.saleNumber;
+            if (!confirm(`Dispatch goods for sale ${saleNumber}? This will open the waybill for printing.`)) return;
+
+            const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]') 
+                ? document.querySelector('[name=csrfmiddlewaretoken]').value
+                : '{{ csrf_token }}';
+
+            this.disabled = true;
+            this.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Dispatching...';
+            const self = this;
+
+            fetch(`/sales/api/sales/${saleId}/dispatch/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(err => { throw new Error(err.error || 'Dispatch failed'); });
+                }
+                return response.json();
+            })
+            .then(res => {
+                if (res.waybill_url) {
+                    window.open(res.waybill_url, '_blank');
+                }
+                location.reload();
+            })
+            .catch(err => {
+                alert(err.message);
+                self.disabled = false;
+                self.innerHTML = '<i class="bi bi-send me-1"></i>Dispatch';
+            });
+        });
+    });
 </script>
 {% endblock %}

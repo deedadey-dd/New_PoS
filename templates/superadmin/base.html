@@ -184,6 +184,10 @@
                     href="{% url 'superadmin:all_payments' %}">
                     <i class="bi bi-credit-card me-2"></i> All Payments
                 </a>
+                <a class="nav-link {% if 'email' in request.resolver_match.url_name %}active{% endif %}"
+                    href="{% url 'superadmin:email_list' %}">
+                    <i class="bi bi-envelope-paper me-2"></i> Targeted Emails
+                </a>
                 <hr class="my-3 border-secondary">
                 <a class="nav-link" href="/super_office/" target="_blank">
                     <i class="bi bi-gear me-2"></i> Django Admin

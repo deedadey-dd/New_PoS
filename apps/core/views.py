@@ -138,6 +138,9 @@ class LogoutView(View):
     
     def get(self, request):
         logout(request)
+        next_url = request.GET.get('next', None)
+        if next_url:
+            return redirect(next_url)
         messages.info(request, 'You have been logged out.')
         return redirect('core:login')
 
@@ -1120,20 +1123,23 @@ class LocationSummaryModalView(LoginRequiredMixin, View):
             context['cash_on_hand'] = cash_sales_val + customer_payments + floats_received - deposits
 
             # 2. E-Cash Balance
-            ecash_sales = all_time_sales.filter(payment_method='ECASH', is_accountant_confirmed=False).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+            ecash_sales = all_time_sales.filter(payment_method='ECASH').aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
             ecash_ct = CustomerTransaction.objects.filter(
-                tenant=request.user.tenant, transaction_type='CREDIT', description__icontains='ECASH', performed_by__location=location, is_accountant_confirmed=False
+                tenant=request.user.tenant, transaction_type='CREDIT', description__icontains='ECASH', performed_by__location=location
             ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
-            context['ecash_balance'] = ecash_sales + ecash_ct
+            from apps.accounting.models import DigitalFundWithdrawal
+            withdrawn_ecash = DigitalFundWithdrawal.objects.filter(tenant=request.user.tenant, shop=location, fund_source='ECASH').aggregate(total=Sum('amount'))['total'] or Decimal('0')
+            context['ecash_balance'] = ecash_sales + ecash_ct - withdrawn_ecash
 
             # 3. Local Momo Balance
             context['momo_balance'] = Decimal('0')
             if hasattr(request.user.tenant, 'allow_momo_payments') and request.user.tenant.allow_momo_payments:
-                momo_sales = all_time_sales.filter(payment_method='MOMO', is_accountant_confirmed=False).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+                momo_sales = all_time_sales.filter(payment_method='MOMO').aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
                 momo_ct = CustomerTransaction.objects.filter(
-                    tenant=request.user.tenant, transaction_type='CREDIT', description__icontains='MOMO', performed_by__location=location, is_accountant_confirmed=False
+                    tenant=request.user.tenant, transaction_type='CREDIT', description__icontains='MOMO', performed_by__location=location
                 ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
-                context['momo_balance'] = momo_sales + momo_ct
+                withdrawn_momo = DigitalFundWithdrawal.objects.filter(tenant=request.user.tenant, shop=location, fund_source='MOMO').aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                context['momo_balance'] = momo_sales + momo_ct - withdrawn_momo
 
             # 4. Credit (Debt owed by customers to this shop)
             from apps.customers.models import Customer
@@ -1190,3 +1196,68 @@ class UserSummaryModalView(LoginRequiredMixin, View):
         context['monthly_shift_hours'] = round(total_seconds / 3600, 1)
 
         return render(request, self.template_name, context)
+
+class TenantEmailListView(LoginRequiredMixin, View):
+    """View sent and scheduled emails for a tenant."""
+    template_name = 'core/tenant_email_list.html'
+    
+    def get(self, request):
+        if not request.user.role or request.user.role.name != 'ADMIN':
+            messages.error(request, 'Only tenant admins can access this page.')
+            return redirect('core:dashboard')
+            
+        from apps.core.models import ScheduledEmail
+        emails = ScheduledEmail.objects.filter(
+            tenant=request.user.tenant, 
+            created_by=request.user
+        ).order_by('-created_at')
+        
+        return render(request, self.template_name, {'emails': emails})
+
+class TenantEmailComposeView(LoginRequiredMixin, View):
+    """Compose and schedule an email within a tenant."""
+    template_name = 'core/tenant_email_compose.html'
+    
+    def get(self, request):
+        if not request.user.role or request.user.role.name != 'ADMIN':
+            messages.error(request, 'Only tenant admins can compose emails.')
+            return redirect('core:dashboard')
+        return render(request, self.template_name)
+        
+    def post(self, request):
+        if not request.user.role or request.user.role.name != 'ADMIN':
+            messages.error(request, 'Only tenant admins can compose emails.')
+            return redirect('core:dashboard')
+            
+        from apps.core.models import ScheduledEmail
+        
+        subject = request.POST.get('subject')
+        body = request.POST.get('body')
+        target_audience = request.POST.get('target_audience', 'ALL')
+        scheduled_date = request.POST.get('scheduled_date')
+        scheduled_time = request.POST.get('scheduled_time')
+        
+        if not subject or not body or not scheduled_date or not scheduled_time:
+            messages.error(request, "Subject, body, and schedule time are required.")
+            return redirect('core:email_compose')
+            
+        from datetime import datetime
+        try:
+            naive_dt = datetime.strptime(f"{scheduled_date} {scheduled_time}", "%Y-%m-%d %H:%M")
+            scheduled_dt = timezone.make_aware(naive_dt)
+        except ValueError:
+            messages.error(request, "Invalid date or time format.")
+            return redirect('core:email_compose')
+            
+        ScheduledEmail.objects.create(
+            tenant=request.user.tenant,
+            subject=subject,
+            body=body,
+            created_by=request.user,
+            target_audience=target_audience,
+            scheduled_time=scheduled_dt,
+            status='PENDING'
+        )
+        
+        messages.success(request, "Email scheduled successfully.")
+        return redirect('core:email_list')

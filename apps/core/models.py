@@ -43,6 +43,10 @@ class Tenant(models.Model):
     
     # Settings (can be expanded via JSON in the future)
     allow_negative_stock = models.BooleanField(default=False)
+    enable_refunds = models.BooleanField(
+        default=False,
+        help_text="Allow processed sales to be formally refunded"
+    )
     require_refund_approval = models.BooleanField(default=True)
     require_return_approval = models.BooleanField(default=True)
     credit_limit_warning_percent = models.IntegerField(default=80)
@@ -74,6 +78,41 @@ class Tenant(models.Model):
     allow_accountant_to_shop_transfers = models.BooleanField(
         default=False,
         help_text="Allow accountants to send cash (float/change) to shops"
+    )
+
+    # Pricing Control Settings
+    PRICING_CONTROL_CHOICES = [
+        ('SHOP_MANAGER', 'Shop Managers Set Prices (Per Shop)'),
+        ('ACCOUNTANT_PER_SHOP', 'Accountant Sets Prices (Per Shop)'),
+        ('ACCOUNTANT_UNIFORM', 'Accountant Sets Uniform Prices (All Shops)'),
+    ]
+    pricing_control_mode = models.CharField(
+        max_length=50,
+        choices=PRICING_CONTROL_CHOICES,
+        default='SHOP_MANAGER',
+        help_text="Determine who controls product pricing and how."
+    )
+
+    # Workflow mode settings
+    use_strict_sales_workflow = models.BooleanField(
+        default=False,
+        help_text="Enforce strict Attendant -> Cashier -> Manager dispatch workflow"
+    )
+    accountants_can_approve_adjustments = models.BooleanField(
+        default=False,
+        help_text="Allow accountants to approve stock adjustments in addition to auditors/admins"
+    )
+    use_cashier_workflow = models.BooleanField(
+        default=False,
+        help_text="Enable dedicated Cashier role (Attendant creates invoice, Cashier collects payment)"
+    )
+    waive_shift_requirement = models.BooleanField(
+        default=False,
+        help_text="Allow sales without opening a shift first"
+    )
+    cashier_transfers_to_bank = models.BooleanField(
+        default=False,
+        help_text="In cashier workflow, transfers go to bank (not accountant)"
     )
     
     # Subscription Management
@@ -370,6 +409,7 @@ class Role(models.Model):
         ('PRODUCTION_MANAGER', 'Production Manager'),
         ('STORES_MANAGER', 'Stores Manager'),
         ('SHOP_MANAGER', 'Shop Manager'),
+        ('SHOP_CASHIER', 'Shop Cashier'),
         ('SHOP_ATTENDANT', 'Shop Attendant'),
         ('ACCOUNTANT', 'Accountant'),
         ('AUDITOR', 'Auditor'),
@@ -531,4 +571,62 @@ class ContactMessage(models.Model):
             self.is_read = True
             self.read_at = timezone.now()
             self.save(update_fields=['is_read', 'read_at'])
+
+
+class ScheduledEmail(models.Model):
+    """
+    Emails composed by Superadmin or Tenant Admins to be scheduled and sent.
+    """
+    AUDIENCE_CHOICES = [
+        ('ADMINS', 'Tenant Admins Only'),
+        ('ALL_USERS', 'All Users in Tenant'),
+    ]
+
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('SENT', 'Sent'),
+        ('FAILED', 'Failed'),
+    ]
+
+    subject = models.CharField(max_length=255)
+    body = models.TextField(help_text="HTML content of the email")
+    
+    # Who scheduled it?
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='scheduled_emails')
+    
+    # If null, it's from the Superadmin (platform wide). If set, it's from a specific Tenant Admin.
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, null=True, blank=True, related_name='custom_emails')
+    
+    # If it's a superadmin email, they can select specific target tenants. (If empty, goes to all active tenants)
+    target_tenants = models.ManyToManyField(Tenant, blank=True, related_name='targeted_emails')
+    
+    target_audience = models.CharField(max_length=20, choices=AUDIENCE_CHOICES, default='ADMINS')
+    
+    scheduled_time = models.DateTimeField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    error_log = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-scheduled_time']
+        
+    def __str__(self):
+        return f"{self.subject} - {self.scheduled_time.strftime('%Y-%m-%d %H:%M')}"
+
+
+class FeatureIntroHistory(models.Model):
+    """
+    Tracks which Feature Introductions have been sent to which tenants to avoid repetition.
+    """
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='feature_intros')
+    feature_key = models.CharField(max_length=100)
+    sent_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        unique_together = ['tenant', 'feature_key']
+        
+    def __str__(self):
+        return f"{self.tenant.name} - {self.feature_key}"
 

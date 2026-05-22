@@ -1,0 +1,10 @@
+{% extends "emails/base_email.html" %}
+
+{% block content %}
+    <h2>{{ subject }}</h2>
+    
+    <!-- Render the raw HTML from the message body safely -->
+    <div>
+        {{ body|safe }}
+    </div>
+{% endblock %}

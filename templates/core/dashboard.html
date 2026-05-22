@@ -227,6 +227,491 @@
 </div>
 {% endif %}
 
+{% if pending_dispatches is not None or recent_dispatches is not None or pending_invoices is not None %}
+<!-- CSRF Token for AJAX dispatch -->
+<input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+
+<!-- Management Sections (Strict Sales Workflow) -->
+<div class="row g-4 mb-4">
+    <!-- Pending Dispatches -->
+    <div class="col-12">
+        <div class="card border-0 shadow-sm rounded-4">
+            <div class="card-header bg-white border-0 pt-4 pb-0 d-flex justify-content-between align-items-center">
+                <h5 class="fw-bold mb-0 text-dark">
+                    <i class="bi bi-box-seam text-warning me-2"></i>Pending Dispatches (Awaiting Release)
+                </h5>
+                <a href="{% url 'sales:sale_list' %}?dispatch_status=pending" class="btn btn-sm btn-outline-warning rounded-pill px-3">
+                    View All Pending
+                </a>
+            </div>
+            <div class="card-body">
+                {% if pending_dispatches %}
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th scope="col">Receipt #</th>
+                                <th scope="col">Paid At</th>
+                                <th scope="col">Customer</th>
+                                <th scope="col">Attendant</th>
+                                <th scope="col" class="text-end">Amount</th>
+                                <th scope="col" class="text-center">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for sale in pending_dispatches %}
+                            <tr>
+                                <td>
+                                    <a href="#" class="fw-bold text-decoration-none manager-sale-detail-btn" data-sale-id="{{ sale.id }}">
+                                        {{ sale.sale_number }}
+                                    </a>
+                                </td>
+                                <td>{{ sale.completed_at|date:"M d, Y H:i" }}</td>
+                                <td>
+                                    {% if sale.customer %}
+                                        <span class="badge bg-light text-dark border" data-bs-toggle="tooltip" title="Registered Customer">
+                                            <i class="bi bi-person-check-fill text-success me-1"></i>{{ sale.customer.name }}
+                                        </span>
+                                    {% elif sale.customer_name %}
+                                        <span class="badge bg-light text-dark border" data-bs-toggle="tooltip" title="Walk-in Customer">
+                                            <i class="bi bi-person-fill text-muted me-1"></i>{{ sale.customer_name }}
+                                        </span>
+                                    {% else %}
+                                        <span class="badge bg-light text-dark border" data-bs-toggle="tooltip" title="Walk-in Customer">
+                                            <i class="bi bi-person-fill text-muted me-1"></i>Walk-in Customer
+                                        </span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ sale.attendant.get_full_name|default:sale.attendant.email }}</td>
+                                <td class="text-end fw-bold">{{ currency_symbol }}{{ sale.total|floatformat:"2g" }}</td>
+                                <td class="text-center">
+                                    <button class="btn btn-sm btn-success dispatch-btn rounded-pill px-3" 
+                                            data-sale-id="{{ sale.id }}" 
+                                            data-sale-number="{{ sale.sale_number }}">
+                                        <i class="bi bi-send me-1"></i>Dispatch Goods
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-5">
+                    <i class="bi bi-check2-circle text-success fs-1"></i>
+                    <p class="text-muted mt-2 mb-0">No pending dispatches. All completed sales have been released.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Dispatches -->
+    <div class="col-12">
+        <div class="card border-0 shadow-sm rounded-4">
+            <div class="card-header bg-white border-0 pt-4 pb-0 d-flex justify-content-between align-items-center">
+                <h5 class="fw-bold mb-0 text-dark">
+                    <i class="bi bi-check-circle text-success me-2"></i>Recent Dispatches (Handed Over)
+                </h5>
+                <a href="{% url 'sales:sale_list' %}?dispatch_status=completed" class="btn btn-sm btn-outline-success rounded-pill px-3">
+                    View All Dispatched
+                </a>
+            </div>
+            <div class="card-body">
+                {% if recent_dispatches %}
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th scope="col">Receipt #</th>
+                                <th scope="col">Dispatched At</th>
+                                <th scope="col">Customer</th>
+                                <th scope="col">Dispatched By</th>
+                                <th scope="col" class="text-end">Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for sale in recent_dispatches %}
+                            <tr>
+                                <td>
+                                    <a href="#" class="fw-bold text-decoration-none manager-sale-detail-btn" data-sale-id="{{ sale.id }}">
+                                        {{ sale.sale_number }}
+                                    </a>
+                                </td>
+                                <td>{{ sale.dispatched_at|date:"M d, Y H:i" }}</td>
+                                <td>
+                                    {% if sale.customer %}
+                                        <span class="badge bg-light text-dark border" data-bs-toggle="tooltip" title="Registered Customer">
+                                            <i class="bi bi-person-check-fill text-success me-1"></i>{{ sale.customer.name }}
+                                        </span>
+                                    {% elif sale.customer_name %}
+                                        <span class="badge bg-light text-dark border" data-bs-toggle="tooltip" title="Walk-in Customer">
+                                            <i class="bi bi-person-fill text-muted me-1"></i>{{ sale.customer_name }}
+                                        </span>
+                                    {% else %}
+                                        <span class="badge bg-light text-dark border" data-bs-toggle="tooltip" title="Walk-in Customer">
+                                            <i class="bi bi-person-fill text-muted me-1"></i>Walk-in Customer
+                                        </span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ sale.dispatched_by.get_full_name|default:sale.dispatched_by.email }}</td>
+                                <td class="text-end fw-bold">{{ currency_symbol }}{{ sale.total|floatformat:"2g" }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-5">
+                    <i class="bi bi-inbox text-muted fs-1"></i>
+                    <p class="text-muted mt-2 mb-0">No recent dispatches recorded.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    {% if pending_invoices is not None %}
+    <!-- Pending Invoices -->
+    <div class="col-12 mt-4">
+        <div class="card border-0 shadow-sm rounded-4 mb-4">
+            <div class="card-header bg-white border-0 pt-4 pb-0 d-flex justify-content-between align-items-center">
+                <h5 class="fw-bold mb-0 text-dark">
+                    <i class="bi bi-receipt text-danger me-2"></i>Pending Invoices (Awaiting Payment)
+                </h5>
+                <a href="{% url 'sales:sale_list' %}?payment=PENDING_INVOICE" class="btn btn-sm btn-outline-danger rounded-pill px-3">
+                    View All Invoices
+                </a>
+            </div>
+            <div class="card-body">
+                {% if pending_invoices %}
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th scope="col">Receipt #</th>
+                                <th scope="col">Created At</th>
+                                <th scope="col">Customer</th>
+                                <th scope="col">Attendant</th>
+                                <th scope="col" class="text-end">Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for sale in pending_invoices %}
+                            <tr>
+                                <td>
+                                    <a href="#" class="fw-bold text-decoration-none manager-sale-detail-btn" data-sale-id="{{ sale.id }}">
+                                        {{ sale.sale_number }}
+                                    </a>
+                                </td>
+                                <td>{{ sale.created_at|date:"M d, Y H:i" }}</td>
+                                <td>
+                                    {% if sale.customer %}
+                                        <span class="badge bg-light text-dark border" data-bs-toggle="tooltip" title="Registered Customer">
+                                            <i class="bi bi-person-check-fill text-success me-1"></i>{{ sale.customer.name }}
+                                        </span>
+                                    {% elif sale.customer_name %}
+                                        <span class="badge bg-light text-dark border" data-bs-toggle="tooltip" title="Walk-in Customer">
+                                            <i class="bi bi-person-fill text-muted me-1"></i>{{ sale.customer_name }}
+                                        </span>
+                                    {% else %}
+                                        <span class="badge bg-light text-dark border" data-bs-toggle="tooltip" title="Walk-in Customer">
+                                            <i class="bi bi-person-fill text-muted me-1"></i>Walk-in Customer
+                                        </span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ sale.attendant.get_full_name|default:sale.attendant.email }}</td>
+                                <td class="text-end fw-bold text-danger">{{ currency_symbol }}{{ sale.total|floatformat:"2g" }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-5">
+                    <i class="bi bi-check2-circle text-success fs-1"></i>
+                    <p class="text-muted mt-2 mb-0">No pending invoices awaiting payment.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Sale Detail Modal -->
+<div class="modal fade" id="saleDetailModal" tabindex="-1" aria-labelledby="saleDetailModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable modal-lg">
+        <div class="modal-content rounded-4 border-0 shadow">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold" id="saleDetailModalLabel">
+                    <i class="bi bi-receipt-cutoff me-2"></i>Invoice Details
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="saleDetailBody">
+                <div class="text-center py-5" id="saleDetailLoading">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="text-muted mt-2">Loading details...</p>
+                </div>
+                <div id="saleDetailContent" style="display:none;"></div>
+            </div>
+            <div class="modal-footer border-0">
+                <button type="button" class="btn btn-success rounded-pill px-4" id="saleDetailDispatchBtn" style="display: none;">
+                    <i class="bi bi-send me-1"></i>Dispatch Goods
+                </button>
+                <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const currencySymbol = "{{ currency_symbol }}";
+
+    // Enable Bootstrap Tooltips
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+
+    // Handle Dispatch Action
+    document.querySelectorAll('.dispatch-btn').forEach(function(button) {
+        button.addEventListener('click', function(e) {
+            e.stopPropagation();
+            const saleId = this.dataset.saleId;
+            const saleNumber = this.dataset.saleNumber;
+            if (confirm(`Are you sure you want to dispatch goods for sale ${saleNumber}?`)) {
+                const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+                fetch(`/sales/api/sales/${saleId}/dispatch/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrfToken
+                    }
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        return response.json().then(err => { throw new Error(err.error || 'Dispatch failed') });
+                    }
+                    return response.json();
+                })
+                .then(res => {
+                    if (res.waybill_url) {
+                        window.open(res.waybill_url, '_blank');
+                    }
+                    location.reload();
+                })
+                .catch(err => {
+                    alert(err.message);
+                });
+            }
+        });
+    });
+
+    // Detail Modal elements
+    const detailModal = new bootstrap.Modal(document.getElementById('saleDetailModal'));
+    const loadingEl = document.getElementById('saleDetailLoading');
+    const contentEl = document.getElementById('saleDetailContent');
+    const modalDispatchBtn = document.getElementById('saleDetailDispatchBtn');
+
+    // Attach click events to detail link elements
+    document.querySelectorAll('.manager-sale-detail-btn').forEach(function(link) {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const saleId = this.dataset.saleId;
+            
+            loadingEl.style.display = 'block';
+            contentEl.style.display = 'none';
+            contentEl.innerHTML = '';
+            
+            if (modalDispatchBtn) {
+                modalDispatchBtn.style.display = 'none';
+            }
+            
+            detailModal.show();
+            
+            fetch('/sales/api/' + saleId + '/detail/')
+                .then(response => {
+                    if (!response.ok) throw new Error('Network response was not ok');
+                    return response.json();
+                })
+                .then(data => {
+                    loadingEl.style.display = 'none';
+                    contentEl.style.display = 'block';
+                    renderSaleDetail(data);
+                    
+                    if (modalDispatchBtn) {
+                        modalDispatchBtn.dataset.saleId = saleId;
+                        modalDispatchBtn.dataset.saleNumber = data.sale_number;
+                        
+                        if (data.status_code === 'COMPLETED' && !data.is_dispatched) {
+                            modalDispatchBtn.style.display = 'inline-block';
+                        } else {
+                            modalDispatchBtn.style.display = 'none';
+                        }
+                    }
+                })
+                .catch(error => {
+                    loadingEl.style.display = 'none';
+                    contentEl.style.display = 'block';
+                    contentEl.innerHTML = '<div class="alert alert-danger">Failed to load invoice details.</div>';
+                });
+        });
+    });
+
+    function getStatusBadge(code, display) {
+        const colors = {
+            'PENDING': 'warning',
+            'COMPLETED': 'success',
+            'VOIDED': 'danger',
+        };
+        const color = colors[code] || 'secondary';
+        return '<span class="badge bg-' + color + '">' + display + '</span>';
+    }
+
+    function getPaymentBadge(code, display) {
+        const colors = {
+            'CASH': 'success',
+            'ECASH': 'primary',
+            'MOMO': 'warning',
+            'CREDIT': 'danger',
+            'MIXED': 'info',
+        };
+        const color = colors[code] || 'secondary';
+        return '<span class="badge bg-' + color + '">' + display + '</span>';
+    }
+
+    function renderSaleDetail(data) {
+        let html = '';
+
+        // Header info
+        html += '<div class="row mb-3">';
+        html += '<div class="col-sm-6">';
+        html += '<h6 class="text-muted mb-1">Invoice Number</h6>';
+        html += '<p class="fw-bold fs-5 mb-2">' + data.sale_number + '</p>';
+        html += '</div>';
+        html += '<div class="col-sm-6 text-sm-end">';
+        html += '<h6 class="text-muted mb-1">Status</h6>';
+        html += '<p class="mb-2">' + getStatusBadge(data.status_code, data.status) + '</p>';
+        html += '</div>';
+        html += '</div>';
+
+        // Details row
+        html += '<div class="row mb-3 py-2 bg-light rounded">';
+        html += '<div class="col-sm-4">';
+        html += '<small class="text-muted d-block">Date</small>';
+        html += '<span class="fw-medium">' + data.created_at + '</span>';
+        html += '</div>';
+        html += '<div class="col-sm-4">';
+        html += '<small class="text-muted d-block">Shop</small>';
+        html += '<span class="fw-medium">' + data.shop + '</span>';
+        html += '</div>';
+        html += '<div class="col-sm-4">';
+        html += '<small class="text-muted d-block">Attendant</small>';
+        html += '<span class="fw-medium">' + data.attendant + '</span>';
+        html += '</div>';
+        html += '</div>';
+
+        // Customer and payment
+        html += '<div class="row mb-3">';
+        html += '<div class="col-sm-6">';
+        html += '<small class="text-muted d-block">Payment Method</small>';
+        html += getPaymentBadge(data.payment_method_code, data.payment_method);
+        html += '</div>';
+        if (data.customer) {
+            html += '<div class="col-sm-6">';
+            html += '<small class="text-muted d-block">Customer</small>';
+            html += '<span class="fw-medium">' + data.customer + '</span>';
+            if (data.customer_phone) {
+                html += '<br><small class="text-muted"><i class="bi bi-telephone me-1"></i>' + data.customer_phone + '</small>';
+            }
+            html += '</div>';
+        }
+        html += '</div>';
+
+        // Items table
+        html += '<h6 class="border-bottom pb-2 mb-0">Items</h6>';
+        html += '<div class="table-responsive">';
+        html += '<table class="table table-sm mb-0">';
+        html += '<thead class="table-light"><tr>';
+        html += '<th>Product</th><th class="text-center">Qty</th>';
+        html += '<th class="text-end">Price</th><th class="text-end">Total</th>';
+        html += '</tr></thead><tbody>';
+
+        data.items.forEach(function(item) {
+            html += '<tr>';
+            html += '<td>' + item.product_name + '<br><small class="text-muted">' + item.sku + '</small></td>';
+            html += '<td class="text-center">' + parseFloat(item.quantity) + '</td>';
+            html += '<td class="text-end">' + currencySymbol + parseFloat(item.unit_price).toFixed(2) + '</td>';
+            html += '<td class="text-end">' + currencySymbol + parseFloat(item.total).toFixed(2) + '</td>';
+            html += '</tr>';
+        });
+
+        html += '</tbody></table></div>';
+
+        // Totals
+        html += '<div class="border-top pt-2 mt-2">';
+        html += '<div class="d-flex justify-content-between mb-1">';
+        html += '<span>Subtotal</span><span>' + currencySymbol + parseFloat(data.subtotal).toFixed(2) + '</span>';
+        html += '</div>';
+
+        if (data.discount_amount) {
+            html += '<div class="d-flex justify-content-between mb-1 text-danger">';
+            html += '<span>Discount</span><span>-' + currencySymbol + parseFloat(data.discount_amount).toFixed(2) + '</span>';
+            html += '</div>';
+        }
+        if (data.tax_amount) {
+            html += '<div class="d-flex justify-content-between mb-1">';
+            html += '<span>Tax</span><span>' + currencySymbol + parseFloat(data.tax_amount).toFixed(2) + '</span>';
+            html += '</div>';
+        }
+
+        html += '<div class="d-flex justify-content-between fw-bold fs-5 border-top pt-2">';
+        html += '<span>Total</span><span>' + currencySymbol + parseFloat(data.total).toFixed(2) + '</span>';
+        html += '</div>';
+
+        contentEl.innerHTML = html;
+    }
+
+    if (modalDispatchBtn) {
+        modalDispatchBtn.addEventListener('click', function() {
+            const saleId = this.dataset.saleId;
+            const saleNumber = this.dataset.saleNumber;
+            if (confirm(`Are you sure you want to dispatch goods for sale ${saleNumber}?`)) {
+                const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+                fetch(`/sales/api/sales/${saleId}/dispatch/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrfToken
+                    }
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        return response.json().then(err => { throw new Error(err.error || 'Dispatch failed') });
+                    }
+                    return response.json();
+                })
+                .then(res => {
+                    if (res.waybill_url) {
+                        window.open(res.waybill_url, '_blank');
+                    }
+                    location.reload();
+                })
+                .catch(err => {
+                    alert(err.message);
+                });
+            }
+        });
+    }
+});
+</script>
+{% endif %}
+
 <!-- Locations Overview - Hidden from Shop Attendants -->
 {% if locations_by_type and user.role.name != 'SHOP_ATTENDANT' %}
 <div class="row g-4">

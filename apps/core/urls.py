@@ -55,4 +55,8 @@ urlpatterns = [
     
     # Contact form
     path('contact/submit/', views.ContactSubmitView.as_view(), name='contact_submit'),
+    
+    # Custom Emails (Tenant Admin)
+    path('emails/', views.TenantEmailListView.as_view(), name='email_list'),
+    path('emails/compose/', views.TenantEmailComposeView.as_view(), name='email_compose'),
 ]

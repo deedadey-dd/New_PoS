@@ -130,6 +130,7 @@
                             <a class="nav-link" href="#notifications-section">Notifications</a>
                             <a class="nav-link" href="#settings">Settings & Admin</a>
                             <a class="nav-link sub-link" href="#shop-settings">Shop Settings</a>
+                            <a class="nav-link sub-link" href="#workflow-settings">Workflow Settings</a>
                             <a class="nav-link sub-link" href="#ecash-config">E-Cash API Config</a>
                             <a class="nav-link" href="#subscription">Subscription Management</a>
                             <a class="nav-link" href="#troubleshooting">Troubleshooting</a>
@@ -311,12 +312,17 @@
                                 <tr>
                                     <td><span class="badge bg-primary">Shop Manager</span></td>
                                     <td>Manages retail shop</td>
-                                    <td>POS, sales, local inventory, cash transfers</td>
+                                    <td>POS, sales, local inventory, cash transfers, invoice dispatch (Cashier Workflow)</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge" style="background:#7c3aed;">Shop Cashier</span></td>
+                                    <td>Receives payment for pending invoices</td>
+                                    <td>Invoice lookup by code, payment collection (Cash/MoMo/E-Cash), cash transfer to accountant/bank</td>
                                 </tr>
                                 <tr>
                                     <td><span class="badge bg-secondary">Shop Attendant</span></td>
                                     <td>Front-line sales staff</td>
-                                    <td>POS, basic sales only</td>
+                                    <td>POS, basic sales, create pending invoices (Cashier Workflow)</td>
                                 </tr>
                                 <tr>
                                     <td><span class="badge bg-success">Accountant</span></td>
@@ -375,12 +381,19 @@
                     <div class="card border-primary mb-4">
                         <div class="card-body">
                             <p><strong>Before making sales, you must open a shift:</strong></p>
-                            <ol class="mb-0">
+                            <ol class="mb-2">
                                 <li>Click <strong>Point of Sale</strong> in the sidebar</li>
                                 <li>If no shift is open, you'll see "Open Shift" prompt</li>
                                 <li>Enter the <strong>Opening Cash</strong> amount (cash in the drawer)</li>
                                 <li>Click <strong>Open Shift</strong></li>
                             </ol>
+                            <div class="alert alert-info py-2 mb-0 small">
+                                <i class="bi bi-info-circle me-1"></i>
+                                If <strong>Waive Shift Requirement</strong> is enabled for your organisation,
+                                you can process sales without opening a shift. Cash from those shiftless sales
+                                will accumulate in your <strong>Cash on Hand</strong> balance until you
+                                manually transfer it to the Shop Manager.
+                            </div>
                         </div>
                     </div>
 
@@ -437,8 +450,13 @@
                                 </tr>
                                 <tr>
                                     <td><i class="bi bi-phone text-info me-2"></i><strong>E-Cash</strong></td>
-                                    <td>Mobile money (Paystack)</td>
-                                    <td>Paystack integration enabled</td>
+                                    <td>Mobile money / digital gateway</td>
+                                    <td>Payment gateway integration enabled</td>
+                                </tr>
+                                <tr>
+                                    <td><i class="bi bi-phone text-warning me-2"></i><strong>Local MoMo</strong></td>
+                                    <td>Mobile Money recorded locally</td>
+                                    <td>Allow MoMo Payments enabled in Settings</td>
                                 </tr>
                                 <tr>
                                     <td><i class="bi bi-credit-card text-warning me-2"></i><strong>Credit</strong></td>
@@ -449,6 +467,11 @@
                                     <td><i class="bi bi-wallet2 text-secondary me-2"></i><strong>Mixed</strong></td>
                                     <td>Partial cash + credit</td>
                                     <td>Customer must be selected</td>
+                                </tr>
+                                <tr>
+                                    <td><i class="bi bi-receipt text-purple me-2" style="color:#7c3aed"></i><strong>Pending Invoice</strong></td>
+                                    <td>Creates a PENDING sale for the cashier to collect later</td>
+                                    <td>Cashier Workflow enabled; customer name &amp; phone required</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -476,6 +499,46 @@
                         <li>Any discrepancy will be highlighted</li>
                         <li>Click <strong>Close Shift</strong></li>
                     </ol>
+                    <div class="alert alert-success">
+                        <i class="bi bi-cash me-2"></i><strong>After closing:</strong>
+                        <ul class="mb-0">
+                            <li><strong>Attendants</strong> &mdash; a <em>pending</em> cash transfer is automatically sent to the Shop Manager. The manager must confirm receipt. Your Cash on Hand resets to zero.</li>
+                            <li><strong>Shop Managers</strong> &mdash; the shift cash is added directly to your Cash on Hand balance. No self-transfer is created.</li>
+                        </ul>
+                    </div>
+
+                    <h3 id="pos-cashier-workflow">Cashier Workflow &mdash; 3-Step Sales Cycle</h3>
+                    <div class="alert alert-info">
+                        <i class="bi bi-diagram-3 me-2"></i>
+                        This workflow is activated from <strong>Settings &rarr; Sales Workflow Mode</strong>.
+                        When enabled, the sales process is separated across three roles:
+                        <strong>Attendant &rarr; Cashier &rarr; Manager</strong>.
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-bordered">
+                            <thead class="table-dark">
+                                <tr><th>Step</th><th>Role</th><th>Action</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>1</td>
+                                    <td><span class="badge bg-secondary">Attendant</span></td>
+                                    <td>Adds items to cart &rarr; clicks <strong>Create Invoice</strong> &rarr; enters customer name &amp; phone &rarr; receives <strong>Invoice Code</strong></td>
+                                </tr>
+                                <tr>
+                                    <td>2</td>
+                                    <td><span class="badge" style="background:#7c3aed;">Cashier</span></td>
+                                    <td>Looks up invoice by code &rarr; collects payment (Cash / MoMo / E-Cash) &rarr; marks as PAID</td>
+                                </tr>
+                                <tr>
+                                    <td>3</td>
+                                    <td><span class="badge bg-primary">Manager</span></td>
+                                    <td>Reviews <strong>Pending Dispatch</strong> list &rarr; physically hands over goods &rarr; marks as DISPATCHED</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="small text-muted">Stock is deducted only when the Cashier completes payment &mdash; not at invoice creation time.</p>
                 </section>
 
                 <!-- Offline Mode & Sync -->

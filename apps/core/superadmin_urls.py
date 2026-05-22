@@ -32,4 +32,8 @@ urlpatterns = [
     path('contacts/<int:pk>/notes/', superadmin_views.ContactMessageUpdateNotesView.as_view(), name='contact_notes'),
     path('contacts/<int:pk>/mark-read/', superadmin_views.ContactMessageMarkReadView.as_view(), name='contact_mark_read'),
     path('contacts/<int:pk>/delete/', superadmin_views.ContactMessageDeleteView.as_view(), name='contact_delete'),
+    
+    # Emails
+    path('emails/', superadmin_views.EmailListView.as_view(), name='email_list'),
+    path('emails/compose/', superadmin_views.EmailComposeView.as_view(), name='email_compose'),
 ]

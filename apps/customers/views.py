@@ -21,8 +21,8 @@ class CustomerListView(LoginRequiredMixin, PaginationMixin, ListView):
         
         # Role config
         role_name = user.role.name if user.role else 'ATTENDANT'
-        if role_name == 'SHOP_MANAGER':
-             # Shop managers only see their shop's customers
+        if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER']:
+             # Shop managers and cashiers only see their shop's customers
              queryset = queryset.filter(shop=user.location)
         
         search_query = self.request.GET.get('search')
@@ -41,9 +41,9 @@ class CustomerCreateView(LoginRequiredMixin, CreateView):
     success_url = reverse_lazy('customers:customer_list')
 
     def dispatch(self, request, *args, **kwargs):
-        # Only Shop Managers and Admins can create customers
+        # Only Shop Managers, Cashiers and Admins can create customers
         role = request.user.role.name if request.user.role else None
-        if role not in ['SHOP_MANAGER', 'ADMIN']:
+        if role not in ['SHOP_MANAGER', 'ADMIN', 'SHOP_CASHIER']:
             messages.error(request, "Only shop managers can add customers.")
             return redirect('customers:customer_list')
         return super().dispatch(request, *args, **kwargs)
@@ -87,9 +87,9 @@ class CustomerUpdateView(LoginRequiredMixin, UpdateView):
     success_url = reverse_lazy('customers:customer_list')
 
     def dispatch(self, request, *args, **kwargs):
-        # Only Shop Managers and Admins can edit customers
+        # Only Shop Managers, Cashiers and Admins can edit customers
         role = request.user.role.name if request.user.role else None
-        if role not in ['SHOP_MANAGER', 'ADMIN']:
+        if role not in ['SHOP_MANAGER', 'ADMIN', 'SHOP_CASHIER']:
             messages.error(request, "Only shop managers can edit customers.")
             return redirect('customers:customer_list')
         return super().dispatch(request, *args, **kwargs)
@@ -99,7 +99,7 @@ class CustomerUpdateView(LoginRequiredMixin, UpdateView):
         user = self.request.user
         role_name = user.role.name if user.role else 'ATTENDANT'
         
-        if role_name == 'SHOP_MANAGER':
+        if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER']:
             qs = qs.filter(shop=user.location)
             
         return qs
@@ -130,7 +130,12 @@ class CustomerDetailView(LoginRequiredMixin, DetailView):
     context_object_name = 'customer'
 
     def get_queryset(self):
-        return Customer.objects.filter(tenant=self.request.user.tenant)
+        qs = Customer.objects.filter(tenant=self.request.user.tenant)
+        user = self.request.user
+        role_name = user.role.name if user.role else 'ATTENDANT'
+        if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER']:
+            qs = qs.filter(shop=user.location)
+        return qs
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -205,7 +210,8 @@ class CustomerPaymentView(LoginRequiredMixin, View):
                         sale=None,  # No sale, this is a payment on account
                         paystack_ref='',
                         user=request.user,
-                        notes=f"E-Cash payment from customer: {customer.name}"
+                        notes=f"E-Cash payment from customer: {customer.name}",
+                        shop=request.user.location or customer.shop
                     )
             
             # Success message with receipt link
@@ -251,15 +257,15 @@ class CustomerListExportView(LoginRequiredMixin, View):
         user = request.user
         role_name = user.role.name if user.role else None
 
-        # Only shop managers, accountants, auditors, and admins can export
-        if role_name not in ['SHOP_MANAGER', 'ACCOUNTANT', 'AUDITOR', 'ADMIN']:
+        # Only shop managers, cashiers, accountants, auditors, and admins can export
+        if role_name not in ['SHOP_MANAGER', 'ACCOUNTANT', 'AUDITOR', 'ADMIN', 'SHOP_CASHIER']:
             messages.error(request, 'You do not have permission to export customers.')
             return redirect('customers:customer_list')
 
         queryset = Customer.objects.filter(tenant=user.tenant).select_related('shop')
 
-        # Shop managers only see their shop's customers
-        if role_name == 'SHOP_MANAGER':
+        # Shop managers and cashiers only see their shop's customers
+        if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER']:
             queryset = queryset.filter(shop=user.location)
 
         # Search filter

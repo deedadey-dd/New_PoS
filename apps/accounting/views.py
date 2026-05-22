@@ -102,7 +102,7 @@ class CashTransferListView(LoginRequiredMixin, SortableMixin, ListView):
         ).count()
         
         # Check if user can create transfers (Auditor cannot create)
-        context['can_create'] = role_name in ['SHOP_ATTENDANT', 'SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN']
+        context['can_create'] = role_name in ['SHOP_ATTENDANT', 'SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN', 'SHOP_CASHIER']
         
         # Show filters for all roles
         context['show_filters'] = True
@@ -149,7 +149,7 @@ class CashTransferReceiptView(LoginRequiredMixin, View):
         # Security check: User must be involved in the transfer or have financial role
         role_name = request.user.role.name if request.user.role else ''
         is_involved = request.user == transfer.from_user or request.user == transfer.to_user
-        has_financial_role = role_name in ['ADMIN', 'ACCOUNTANT', 'AUDITOR', 'SHOP_MANAGER']
+        has_financial_role = role_name in ['ADMIN', 'ACCOUNTANT', 'AUDITOR', 'SHOP_MANAGER', 'SHOP_CASHIER']
         
         if not (is_involved or has_financial_role):
             from django.contrib import messages
@@ -174,7 +174,7 @@ def api_cash_transfer_detail(request, pk):
         # Security check
         role_name = request.user.role.name if request.user.role else ''
         is_involved = request.user == transfer.from_user or request.user == transfer.to_user
-        has_financial_role = role_name in ['ADMIN', 'ACCOUNTANT', 'AUDITOR', 'SHOP_MANAGER']
+        has_financial_role = role_name in ['ADMIN', 'ACCOUNTANT', 'AUDITOR', 'SHOP_MANAGER', 'SHOP_CASHIER']
         
         if not (is_involved or has_financial_role):
             return JsonResponse({'error': 'Permission denied'}, status=403)
@@ -192,7 +192,8 @@ def api_cash_transfer_detail(request, pk):
             'confirmed_at': transfer.confirmed_at.strftime('%b %d, %Y %H:%M') if transfer.confirmed_at else None,
             'cancelled_at': transfer.cancelled_at.strftime('%b %d, %Y %H:%M') if transfer.cancelled_at else None,
             'notes': transfer.notes,
-            'cancellation_reason': transfer.cancellation_reason
+            'cancellation_reason': transfer.cancellation_reason,
+            'destination': transfer.get_destination_display()
         }
         return JsonResponse(data)
     except CashTransfer.DoesNotExist:
@@ -204,9 +205,9 @@ class CashTransferCreateView(LoginRequiredMixin, View):
     template_name = 'accounting/cash_transfer_form.html'
     
     def dispatch(self, request, *args, **kwargs):
-        # Shop Attendants, Shop Managers, Accountants and Admins can create transfers
+        # Shop Attendants, Shop Managers, Cashiers, Accountants and Admins can create transfers
         role_name = request.user.role.name if request.user.role else None
-        if role_name not in ['SHOP_ATTENDANT', 'SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN']:
+        if role_name not in ['SHOP_ATTENDANT', 'SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN', 'SHOP_CASHIER']:
             messages.error(request, 'You do not have permission to create cash transfers.')
             return redirect('accounting:cash_transfer_list')
         return super().dispatch(request, *args, **kwargs)
@@ -223,13 +224,16 @@ class CashTransferCreateView(LoginRequiredMixin, View):
             transfer.from_user = request.user
             transfer.from_location = request.user.location
             
-            # Set transfer type based on sender's role
+            # Set transfer type and destination based on sender's role
             role_name = request.user.role.name if request.user.role else None
             if role_name == 'ACCOUNTANT':
                 transfer.transfer_type = 'FLOAT'
             else:
                 transfer.transfer_type = 'DEPOSIT'
-            
+
+            # Enforce destination from form's clean() logic
+            transfer.destination = form.cleaned_data.get('destination', 'ACCOUNTANT')
+
             transfer.save()
             
             # Create notification for recipient
@@ -304,8 +308,8 @@ class AccountantDashboardView(LoginRequiredMixin, View):
     
     def dispatch(self, request, *args, **kwargs):
         role_name = request.user.role.name if request.user.role else None
-        if role_name not in ['ACCOUNTANT', 'ADMIN']:
-            messages.error(request, 'Only accountants can access this dashboard.')
+        if role_name not in ['ACCOUNTANT', 'ADMIN', 'SHOP_CASHIER', 'AUDITOR']:
+            messages.error(request, 'Only accountants, auditors, and cashiers can access this dashboard.')
             return redirect('core:dashboard')
         return super().dispatch(request, *args, **kwargs)
     
@@ -314,6 +318,48 @@ class AccountantDashboardView(LoginRequiredMixin, View):
         
         user = request.user
         tenant = user.tenant
+        role_name = user.role.name if user.role else None
+        
+        if role_name == 'SHOP_CASHIER':
+            if not user.location or user.location.location_type != 'SHOP':
+                messages.error(request, 'You must be assigned to a shop to access the Cashier Dashboard.')
+                return redirect('core:dashboard')
+                
+            pending_invoices = Sale.objects.filter(
+                tenant=tenant,
+                shop=user.location,
+                status='PENDING',
+                payment_method='PENDING_INVOICE'
+            ).select_related('attendant', 'customer').order_by('-created_at')
+            
+            recent_sales = Sale.objects.filter(
+                tenant=tenant,
+                shop=user.location,
+                status='COMPLETED'
+            ).select_related('attendant', 'customer').order_by('-created_at')
+            
+            today_sales_total = Sale.objects.filter(
+                tenant=tenant,
+                shop=user.location,
+                status='COMPLETED',
+                completed_at__date=timezone.now().date()
+            ).aggregate(total=Sum('total'))['total'] or Decimal('0')
+            
+            pending_deposits_count = CashTransfer.objects.filter(
+                tenant=tenant,
+                from_user=user,
+                status='PENDING'
+            ).count()
+            
+            context = {
+                'pending_invoices': pending_invoices[:10],
+                'pending_invoices_count': pending_invoices.count(),
+                'recent_sales': recent_sales[:10],
+                'today_sales_total': today_sales_total,
+                'pending_deposits_count': pending_deposits_count,
+                'shop': user.location,
+            }
+            return render(request, 'accounting/cashier_dashboard.html', context)
         
         # Date range filter
         date_range = request.GET.get('range', 'today')
@@ -360,6 +406,8 @@ class AccountantDashboardView(LoginRequiredMixin, View):
         
         # ===== SALES SUMMARY =====
         sales_filter = Q(tenant=tenant, status='COMPLETED') & get_date_filter()
+        if role_name == 'SHOP_CASHIER' and user.location:
+            sales_filter &= Q(shop=user.location)
         
         context['sales_summary'] = Sale.objects.filter(sales_filter).aggregate(
             total_revenue=Sum('total'),
@@ -368,16 +416,12 @@ class AccountantDashboardView(LoginRequiredMixin, View):
             ecash_total=Sum('total', filter=Q(payment_method='ECASH')),
         )
         
-        # Sales by shop
-        context['sales_by_shop'] = Sale.objects.filter(sales_filter).values(
-            'shop__id', 'shop__name'
-        ).annotate(
-            revenue=Sum('total'),
-            count=Count('id')
-        ).order_by('-revenue')
+        # Sales by shop will be built from location_summary below
         
         # ===== CASH DEPOSITS =====
         deposit_filter = Q(tenant=tenant, transfer_type='DEPOSIT') & get_date_filter()
+        if role_name == 'SHOP_CASHIER' and user.location:
+            deposit_filter &= Q(from_location=user.location)
         
         context['deposits_summary'] = CashTransfer.objects.filter(deposit_filter).aggregate(
             pending_amount=Sum('amount', filter=Q(status='PENDING')),
@@ -386,23 +430,17 @@ class AccountantDashboardView(LoginRequiredMixin, View):
             confirmed_count=Count('id', filter=Q(status='CONFIRMED')),
         )
         
-        # Deposits by shop
-        context['deposits_by_shop'] = CashTransfer.objects.filter(
-            deposit_filter,
-            status='CONFIRMED'
-        ).values(
-            'from_location__id', 'from_location__name'
-        ).annotate(
-            total=Sum('amount'),
-            count=Count('id')
-        ).order_by('-total')
+        # Deposits by shop will be built from location_summary below
         
         # Recent confirmed deposits
-        context['recent_deposits'] = CashTransfer.objects.filter(
+        recent_deposits_qs = CashTransfer.objects.filter(
             tenant=tenant,
             transfer_type='DEPOSIT',
             status='CONFIRMED'
-        ).select_related('from_user', 'from_location').order_by('-confirmed_at')[:10]
+        )
+        if role_name == 'SHOP_CASHIER' and user.location:
+            recent_deposits_qs = recent_deposits_qs.filter(from_location=user.location)
+        context['recent_deposits'] = recent_deposits_qs.select_related('from_user', 'from_location').order_by('-confirmed_at')[:10]
         
         # Pending deposits awaiting confirmation
         context['pending_deposits'] = CashTransfer.objects.filter(
@@ -417,6 +455,8 @@ class AccountantDashboardView(LoginRequiredMixin, View):
         shops = Location.objects.filter(
             tenant=tenant, location_type='SHOP', is_active=True
         )
+        if role_name == 'SHOP_CASHIER' and user.location:
+            shops = shops.filter(id=user.location.id)
         
         from apps.sales.models import Sale
         
@@ -466,6 +506,29 @@ class AccountantDashboardView(LoginRequiredMixin, View):
         
         context['location_summary'] = location_summary
         
+        # Build sales_by_shop and deposits_by_shop from location_summary to guarantee 0-value shops appear
+        sales_by_shop = [
+            {'shop__name': loc['shop_name'], 'revenue': loc['total_revenue'], 'count': loc['sale_count']}
+            for loc in location_summary
+        ]
+        sales_by_shop.sort(key=lambda x: x['revenue'], reverse=True)
+        context['sales_by_shop'] = sales_by_shop
+        
+        # For deposits, location_summary aggregates the total. We need the count too.
+        # It's okay to just query it properly without dropping shops
+        for loc in location_summary:
+            shop_obj = next(s for s in shops if s.name == loc['shop_name'])
+            loc['deposits_count'] = CashTransfer.objects.filter(
+                Q(tenant=tenant, from_location=shop_obj, transfer_type='DEPOSIT', status='CONFIRMED') & get_date_filter()
+            ).count()
+            
+        deposits_by_shop = [
+            {'from_location__name': loc['shop_name'], 'total': loc['deposits'], 'count': loc['deposits_count']}
+            for loc in location_summary
+        ]
+        deposits_by_shop.sort(key=lambda x: x['total'], reverse=True)
+        context['deposits_by_shop'] = deposits_by_shop
+        
         # ===== USER ACTIVITY SUMMARY =====
         from apps.core.models import User as TenantUser
         
@@ -474,6 +537,8 @@ class AccountantDashboardView(LoginRequiredMixin, View):
             role__name__in=['SHOP_MANAGER', 'SHOP_ATTENDANT'],
             is_active=True
         ).select_related('role', 'location')
+        if role_name == 'SHOP_CASHIER' and user.location:
+            shop_users = shop_users.filter(location=user.location)
         
         sales_by_user = []
         for u in shop_users:
@@ -1145,6 +1210,7 @@ class ShopMomoListView(LoginRequiredMixin, TemplateView):
         from apps.core.models import Location
         from apps.sales.models import Sale
         from apps.customers.models import CustomerTransaction
+        from apps.accounting.models import DigitalFundWithdrawal
         from django.db.models import Sum, Q
         
         shops = Location.objects.filter(
@@ -1163,8 +1229,7 @@ class ShopMomoListView(LoginRequiredMixin, TemplateView):
                 tenant=tenant, 
                 shop=shop, 
                 status='COMPLETED', 
-                payment_method='MOMO',
-                is_accountant_confirmed=False
+                payment_method='MOMO'
             ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
             
             # Customer Debt Payments Momo
@@ -1172,11 +1237,17 @@ class ShopMomoListView(LoginRequiredMixin, TemplateView):
                 tenant=tenant,
                 performed_by__location=shop,
                 transaction_type='CREDIT',
-                description__icontains='MOMO',
-                is_accountant_confirmed=False
+                description__icontains='MOMO'
             ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
             
-            balance = sales_momo + ct_momo
+            # Withdrawn Momo
+            withdrawn_momo = DigitalFundWithdrawal.objects.filter(
+                tenant=tenant,
+                shop=shop,
+                fund_source='MOMO'
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+            
+            balance = (sales_momo + ct_momo) - withdrawn_momo
             
             shop_balances.append({
                 'shop': shop,
@@ -1203,44 +1274,133 @@ class ShopMomoWithdrawView(LoginRequiredMixin, View):
         tenant = request.user.tenant
         
         from apps.core.models import Location
-        from apps.sales.models import Sale
-        from apps.customers.models import CustomerTransaction
+        from apps.accounting.models import DigitalFundWithdrawal
         
         shop = get_object_or_404(Location, pk=shop_id, tenant=tenant, location_type='SHOP')
-        now = timezone.now()
         
-        # Confirm Sales
-        sales_updated = Sale.objects.filter(
-            tenant=tenant, 
-            shop=shop, 
-            status='COMPLETED', 
-            payment_method='MOMO',
-            is_accountant_confirmed=False
-        ).update(
-            is_accountant_confirmed=True,
-            accountant_confirmed_at=now,
-            accountant_confirmed_by=request.user
-        )
-        
-        # Confirm Customer Transactions
-        ct_updated = CustomerTransaction.objects.filter(
-            tenant=tenant,
-            performed_by__location=shop,
-            transaction_type='CREDIT',
-            description__icontains='MOMO',
-            is_accountant_confirmed=False
-        ).update(
-            is_accountant_confirmed=True,
-            accountant_confirmed_at=now,
-            accountant_confirmed_by=request.user
-        )
-        
-        if sales_updated > 0 or ct_updated > 0:
-            messages.success(request, f"Successfully withdrawn all Local Momo from {shop.name}.")
-        else:
-            messages.warning(request, f"No Local Momo to withdraw from {shop.name}.")
+        amount_str = request.POST.get('amount')
+        if not amount_str:
+            messages.error(request, "Amount is required.")
+            return redirect('accounting:shop_momo_list')
             
+        try:
+            from decimal import Decimal
+            amount = Decimal(amount_str)
+            if amount <= 0:
+                raise ValueError("Amount must be positive.")
+        except Exception:
+            messages.error(request, "Invalid amount.")
+            return redirect('accounting:shop_momo_list')
+            
+        DigitalFundWithdrawal.objects.create(
+            tenant=tenant,
+            shop=shop,
+            accountant=request.user,
+            amount=amount,
+            fund_source='MOMO',
+            notes=request.POST.get('notes', '')
+        )
+        
+        messages.success(request, f"Successfully withdrew {tenant.currency_symbol}{amount} Local Momo from {shop.name}.")
         return redirect('accounting:shop_momo_list')
+
+class ShopEcashListView(LoginRequiredMixin, TemplateView):
+    """
+    Accountant view: List all shops with their E-Cash balances.
+    """
+    template_name = 'accounting/shop_ecash_list.html'
+    
+    def dispatch(self, request, *args, **kwargs):
+        role_name = request.user.role.name if request.user.role else None
+        if role_name not in ['ACCOUNTANT', 'ADMIN']:
+            messages.error(request, "Only accountants can access shop E-Cash balances.")
+            return redirect('core:dashboard')
+        return super().dispatch(request, *args, **kwargs)
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        tenant = self.request.user.tenant
+        
+        from apps.core.models import Location
+        from apps.sales.models import Sale
+        from apps.customers.models import CustomerTransaction
+        from apps.accounting.models import DigitalFundWithdrawal
+        from django.db.models import Sum
+        
+        shops = Location.objects.filter(tenant=tenant, location_type='SHOP', is_active=True).order_by('name')
+        
+        shop_balances = []
+        total_ecash = Decimal('0')
+        
+        for shop in shops:
+            sales_ecash = Sale.objects.filter(
+                tenant=tenant, shop=shop, status='COMPLETED', payment_method='ECASH'
+            ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+            
+            ct_ecash = CustomerTransaction.objects.filter(
+                tenant=tenant, performed_by__location=shop, transaction_type='CREDIT', description__icontains='ECASH'
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+            
+            withdrawn_ecash = DigitalFundWithdrawal.objects.filter(
+                tenant=tenant, shop=shop, fund_source='ECASH'
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+            
+            balance = (sales_ecash + ct_ecash) - withdrawn_ecash
+            
+            shop_balances.append({
+                'shop': shop,
+                'balance': balance
+            })
+            total_ecash += balance
+        
+        context['shop_balances'] = shop_balances
+        context['total_ecash'] = total_ecash
+        return context
+
+class ShopEcashWithdrawView(LoginRequiredMixin, View):
+    """
+    Accountant action: Withdraw partial/full E-Cash from a shop via Ledger.
+    """
+    def dispatch(self, request, *args, **kwargs):
+        role_name = request.user.role.name if request.user.role else None
+        if role_name not in ['ACCOUNTANT', 'ADMIN']:
+            messages.error(request, "Only accountants can withdraw E-Cash funds.")
+            return redirect('core:dashboard')
+        return super().dispatch(request, *args, **kwargs)
+        
+    def post(self, request, shop_id):
+        tenant = request.user.tenant
+        
+        from apps.core.models import Location
+        from apps.accounting.models import DigitalFundWithdrawal
+        
+        shop = get_object_or_404(Location, pk=shop_id, tenant=tenant, location_type='SHOP')
+        
+        amount_str = request.POST.get('amount')
+        if not amount_str:
+            messages.error(request, "Amount is required.")
+            return redirect('accounting:shop_ecash_list')
+            
+        try:
+            from decimal import Decimal
+            amount = Decimal(amount_str)
+            if amount <= 0:
+                raise ValueError("Amount must be positive.")
+        except Exception:
+            messages.error(request, "Invalid amount.")
+            return redirect('accounting:shop_ecash_list')
+            
+        DigitalFundWithdrawal.objects.create(
+            tenant=tenant,
+            shop=shop,
+            accountant=request.user,
+            amount=amount,
+            fund_source='ECASH',
+            notes=request.POST.get('notes', '')
+        )
+        
+        messages.success(request, f"Successfully withdrew {tenant.currency_symbol}{amount} E-Cash from {shop.name}.")
+        return redirect('accounting:shop_ecash_list')
 
 class ShopMomoHistoryView(LoginRequiredMixin, TemplateView):
     """
@@ -1249,7 +1409,7 @@ class ShopMomoHistoryView(LoginRequiredMixin, TemplateView):
     template_name = 'accounting/shop_momo_history.html'
     
     def dispatch(self, request, *args, **kwargs):
-        allowed_roles = ['SHOP_MANAGER', 'ACCOUNTANT', 'AUDITOR', 'ADMIN']
+        allowed_roles = ['SHOP_MANAGER', 'ACCOUNTANT', 'AUDITOR', 'ADMIN', 'SHOP_CASHIER']
         role_name = request.user.role.name if request.user.role else None
         if role_name not in allowed_roles:
             messages.error(request, "You don't have permission to view momo history.")
@@ -1339,10 +1499,14 @@ class ShopMomoHistoryView(LoginRequiredMixin, TemplateView):
                 except (ValueError, TypeError):
                     pass
             
-            # Balance calc (before pagination/sorting, but using filtered data)
-            sales_unconfirmed = sum([s.amount_paid for s in sales if not s.is_accountant_confirmed])
-            ct_unconfirmed = sum([c.amount for c in cts if not c.is_accountant_confirmed])
-            context['shop_balance'] = sales_unconfirmed + ct_unconfirmed
+            # Balance calc (from all time ledger, not just filtered results)
+            from apps.accounting.models import DigitalFundWithdrawal
+            
+            total_sales = Sale.objects.filter(tenant=tenant, shop=shop, status='COMPLETED', payment_method='MOMO').aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+            total_cts = CustomerTransaction.objects.filter(tenant=tenant, performed_by__location=shop, transaction_type='CREDIT', description__icontains='MOMO').aggregate(total=Sum('amount'))['total'] or Decimal('0')
+            total_withdrawn = DigitalFundWithdrawal.objects.filter(tenant=tenant, shop=shop, fund_source='MOMO').aggregate(total=Sum('amount'))['total'] or Decimal('0')
+            
+            context['shop_balance'] = (total_sales + total_cts) - total_withdrawn
             context['shop'] = shop
             
             # Combine manually
@@ -1386,7 +1550,7 @@ class ShopMomoExportView(LoginRequiredMixin, View):
     
     def dispatch(self, request, *args, **kwargs):
         role_name = request.user.role.name if request.user.role else None
-        if role_name not in ['ACCOUNTANT', 'AUDITOR', 'ADMIN', 'SHOP_MANAGER']:
+        if role_name not in ['ACCOUNTANT', 'AUDITOR', 'ADMIN', 'SHOP_MANAGER', 'SHOP_CASHIER']:
             messages.error(request, 'You do not have permission to export this report.')
             return redirect('core:dashboard')
         return super().dispatch(request, *args, **kwargs)
@@ -1925,7 +2089,7 @@ class ExpenditureReportView(LoginRequiredMixin, View):
             'date_to': date_to,
             'location_id': location_id,
             'locations': locations,
-            'expenditures': qs.select_related('category', 'request__location', 'request__requested_by').order_by('-created_at'),
+            'expenditures': qs.select_related('category', 'request__location', 'request__requested_by').order_by('-request__created_at'),
         })
 
 class CashTransferPrintView(LoginRequiredMixin, View):

@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Waybill - {{ sale.sale_number }}</title>
+    <style>
+        /* Thermal receipt styles (80mm width = ~300px at 96dpi) */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        @page {
+            {% if shop_settings.receipt_printer_type == 'THERMAL_80MM' %}
+            size: 80mm min-content;
+            margin: 0 !important;
+            {% elif shop_settings.receipt_printer_type == 'THERMAL_58MM' %}
+            size: 58mm min-content;
+            margin: 0 !important;
+            {% elif shop_settings.receipt_printer_type == 'A4_STANDARD' %}
+            size: a4 portrait;
+            margin: 10mm;
+            {% elif shop_settings.receipt_printer_type == 'A5_STANDARD' %}
+            size: a5 portrait;
+            margin: 10mm;
+            {% else %}
+            size: auto;
+            {% endif %}
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            line-height: 1.4;
+            {% if shop_settings.receipt_printer_type == 'THERMAL_80MM' %}
+            font-size: 12px;
+            width: 78mm;
+            margin: 0 auto;
+            {% elif shop_settings.receipt_printer_type == 'THERMAL_58MM' %}
+            font-size: 10px;
+            width: 56mm;
+            margin: 0 auto;
+            {% elif shop_settings.receipt_printer_type == 'A4_STANDARD' %}
+            font-size: 14px;
+            max-width: 180mm;
+            margin: 0 auto;
+            {% elif shop_settings.receipt_printer_type == 'A5_STANDARD' %}
+            font-size: 12px;
+            max-width: 120mm;
+            margin: 0 auto;
+            {% else %}
+            font-size: 12px;
+            max-width: 400px;
+            margin: 0 auto;
+            {% endif %}
+        }
+
+        .receipt-header {
+            text-align: center;
+            margin-top: 10px;
+            margin-bottom: 8px;
+            border-bottom: 1px dashed #000;
+            padding-top: 0;
+            padding-bottom: 5px;
+        }
+
+        .receipt-header h1 {
+            font-size: 16px;
+            margin: 0 0 5px;
+        }
+
+        .receipt-header p {
+            margin: 2px 0;
+            font-size: 11px;
+        }
+
+        .waybill-title {
+            text-align: center;
+            font-weight: bold;
+            font-size: 14px;
+            margin: 10px 0;
+            text-decoration: underline;
+        }
+
+        .receipt-info {
+            margin-bottom: 10px;
+            font-size: 11px;
+        }
+
+        .receipt-info table {
+            width: 100%;
+        }
+
+        .receipt-info td {
+            padding: 1px 0;
+        }
+
+        .receipt-items {
+            border-top: 1px dashed #000;
+            border-bottom: 1px dashed #000;
+            padding: 10px 0;
+            margin-bottom: 20px;
+        }
+
+        .receipt-items table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .receipt-items th {
+            text-align: left;
+            border-bottom: 1px solid #000;
+            padding: 2px 3px;
+            font-size: 11px;
+        }
+
+        .receipt-items td {
+            padding: 4px 3px;
+            vertical-align: top;
+        }
+
+        .text-center { text-align: center; }
+        .text-right { text-align: right; }
+        .text-left { text-align: left; }
+
+        .signature-block {
+            margin-top: 30px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+        }
+        .signature-line {
+            width: 45%;
+            border-top: 1px solid #000;
+            text-align: center;
+            padding-top: 5px;
+        }
+
+        .receipt-footer {
+            text-align: center;
+            margin-top: 15px;
+            font-size: 11px;
+        }
+
+        .barcode {
+            text-align: center;
+            margin: 10px 0;
+            font-family: 'Libre Barcode 39', monospace;
+            font-size: 16px;
+        }
+
+        @media print {
+            body {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+
+            .no-print {
+                display: none !important;
+            }
+        }
+
+        .print-btn {
+            display: block;
+            margin: 20px auto;
+            padding: 10px 30px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="receipt-header">
+        {% if shop_settings.receipt_header %}
+        <p>{{ shop_settings.receipt_header|linebreaksbr }}</p>
+        {% else %}
+        <h1>{{ sale.shop.name }}</h1>
+        <p>{{ sale.tenant.name }}</p>
+        {% endif %}
+    </div>
+
+    <div class="waybill-title">WAYBILL / DELIVERY NOTE</div>
+
+    <div class="receipt-info">
+        <table>
+            <tr>
+                <td><strong>No:</strong> {{ sale.sale_number }}</td>
+                <td class="text-right"><strong>Date:</strong> {{ sale.dispatched_at|date:"d/m/Y H:i"|default:sale.created_at|date:"d/m/Y H:i" }}</td>
+            </tr>
+            <tr>
+                <td><strong>Customer:</strong> {{ sale.customer.name|default:sale.customer_name|default:"Walk-in Customer" }}</td>
+                <td class="text-right"><strong>Dispatched By:</strong> {{ sale.dispatched_by.first_name|default:sale.attendant.first_name|default:"Manager" }}</td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="receipt-items">
+        <table>
+            <thead>
+                <tr>
+                    <th>Item Description</th>
+                    <th class="text-right">Qty</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in sale.items.all %}
+                <tr>
+                    <td>{{ item.product.name }}</td>
+                    <td class="text-right"><strong>{{ item.quantity }}</strong></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="signature-block">
+        <div class="signature-line">
+            Dispatched By (Sign)
+        </div>
+        <div class="signature-line">
+            Received By (Sign)
+        </div>
+    </div>
+
+    <div class="receipt-footer">
+        <div class="barcode">*{{ sale.sale_number }}*</div>
+        <p>Please retain this document for your records.</p>
+    </div>
+
+    <button class="print-btn no-print" onclick="window.print()">
+        🖨️ Print Waybill
+    </button>
+
+    <script>
+        // Auto-print on page load
+        window.addEventListener('load', function () {
+            // Small delay to ensure page is fully rendered
+            setTimeout(function () {
+                window.print();
+
+                // Close window after print dialog is dismissed
+                window.addEventListener('afterprint', function () {
+                    window.close();
+                });
+
+                // Fallback: close after 2 seconds if afterprint doesn't fire
+                setTimeout(function () {
+                    window.close();
+                }, 2000);
+            }, 500);
+        });
+    </script>
+</body>
+</html>

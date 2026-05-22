@@ -91,6 +91,7 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 'apps.core.context_processors.tenant_context',
+                'apps.core.context_processors.platform_context',
             ],
         },
     },
@@ -314,6 +315,11 @@ DEFAULT_ONBOARDING_FEE = float(os.getenv('DEFAULT_ONBOARDING_FEE', '4500.00'))
 DEFAULT_STARTER_PRICE = float(os.getenv('DEFAULT_STARTER_PRICE', '250.00'))
 DEFAULT_STANDARD_PRICE = float(os.getenv('DEFAULT_STANDARD_PRICE', '350.00'))
 DEFAULT_ADDITIONAL_SHOP_PRICE = float(os.getenv('DEFAULT_ADDITIONAL_SHOP_PRICE', '100.00'))
+
+# Platform Branding
+PLATFORM_COMPANY_NAME = os.getenv('PLATFORM_COMPANY_NAME', 'HendAxis PoS')
+PLATFORM_EMAIL = os.getenv('PLATFORM_EMAIL', 'sales@hendaxis.com')
+PLATFORM_PHONE = os.getenv('PLATFORM_PHONE', '+233538127939')
 
 # CORS Settings
 CORS_ALLOW_ALL_ORIGINS = DEBUG  # Allow all in dev/electron

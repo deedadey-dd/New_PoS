@@ -38,6 +38,10 @@ class ShopSettings(TenantModel):
         choices=PRINTER_CHOICES,
         default='THERMAL_80MM'
     )
+    hide_zero_stock_in_pos = models.BooleanField(
+        default=False,
+        help_text="Hide products with zero stock from the POS interface."
+    )
     receipt_header = models.TextField(
         blank=True,
         help_text="Custom header text for receipts"
@@ -156,12 +160,15 @@ class Sale(TenantModel):
         ('ECASH', 'E-Cash (Paystack)'),
         ('MOMO', 'Mobile Money'),
         ('MIXED', 'Mixed Payment'),
+        ('PENDING_INVOICE', 'Pending Invoice'),
     ]
     
     STATUS_CHOICES = [
         ('PENDING', 'Pending'),
+        ('PENDING_DISPATCH', 'Pending Dispatch'),
         ('COMPLETED', 'Completed'),
         ('VOIDED', 'Voided'),
+        ('REFUNDED', 'Refunded'),
         ('HELD', 'Held'),
     ]
     
@@ -194,12 +201,12 @@ class Sale(TenantModel):
     )
     
     payment_method = models.CharField(
-        max_length=10,
+        max_length=20,
         choices=PAYMENT_CHOICES,
         default='CASH'
     )
     status = models.CharField(
-        max_length=10,
+        max_length=20,
         choices=STATUS_CHOICES,
         default='PENDING'
     )
@@ -288,6 +295,46 @@ class Sale(TenantModel):
     )
     
     notes = models.TextField(blank=True)
+
+    # Walk-in / manual customer info (used when no registered customer account)
+    customer_name = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Name entered manually (for walk-in or cashier workflow)"
+    )
+    customer_phone = models.CharField(
+        max_length=30,
+        blank=True,
+        help_text="Phone number entered manually"
+    )
+
+    # Dispatch tracking (Cashier / Strict Sales Workflow)
+    is_dispatched = models.BooleanField(
+        default=False,
+        help_text="Designates whether the goods for this sale have been dispatched by the shop manager."
+    )
+    dispatched_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="The date and time the sale was dispatched."
+    )
+    dispatched_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='dispatched_sales',
+        help_text="The user (typically shop manager) who dispatched the goods."
+    )
+    cashier = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='processed_sales',
+        help_text="The cashier who received/processed payment for this sale."
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
 
@@ -351,13 +398,14 @@ class Sale(TenantModel):
         self.total = self.subtotal - self.discount_amount + self.tax_amount
         self.save()
     
-    def complete(self, amount_paid, payment_method='CASH', paystack_ref=''):
-        """Complete the sale and deduct inventory."""
+    def complete(self, amount_paid, payment_method='CASH', paystack_ref='', cashier=None):
+        """Process payment and conditionally complete/dispatch the sale based on workflow."""
         if self.status != 'PENDING':
             raise ValidationError(f"Cannot complete sale in {self.status} status.")
         
         self.amount_paid = Decimal(str(amount_paid))
         self.payment_method = payment_method
+        self.cashier = cashier or self.attendant
         
         if payment_method == 'ECASH':
             self.paystack_reference = paystack_ref
@@ -376,8 +424,6 @@ class Sale(TenantModel):
             debt_amount = self.total - self.amount_paid
             if debt_amount > 0:
                 if not self.customer:
-                    # Allow mixed payment without customer? No, debt must be assigned.
-                    # But for now let's assume if debt > 0 requires customer
                      raise ValidationError("Customer account required for credit/partial payment.")
                 
                 # Check credit limit
@@ -404,11 +450,21 @@ class Sale(TenantModel):
                     performed_by=self.attendant
                 )
 
-        self.status = 'COMPLETED'
-        self.completed_at = timezone.now()
-        self.save()
-        
-        # Deduct inventory and capture cost for profit tracking
+        if self.tenant.use_strict_sales_workflow:
+            self.status = 'PENDING_DISPATCH'
+            self.completed_at = timezone.now()
+            self.save()
+        else:
+            self.status = 'COMPLETED'
+            self.completed_at = timezone.now()
+            self.is_dispatched = True
+            self.dispatched_at = self.completed_at
+            self.dispatched_by = self.attendant
+            self.save()
+            self.deduct_inventory()
+            
+    def deduct_inventory(self):
+        """Deduct inventory and capture cost for profit tracking."""
         for item in self.items.all():
             # Get the actual unit cost from batch for profit tracking
             actual_cost = Decimal('0')
@@ -474,6 +530,55 @@ class Sale(TenantModel):
         
         self.status = 'VOIDED'
         self.notes = f"VOIDED: {reason}" if reason else "VOIDED"
+        self.save()
+
+    def refund(self, reason='', user=None):
+        """Formally refund the sale. Returns inventory and adjusts balances."""
+        if self.status == 'REFUNDED':
+            raise ValidationError("Sale is already refunded.")
+            
+        # 1. Return Inventory (only if it was deducted)
+        # In strict workflow, inventory is only deducted if dispatched. In standard, if completed.
+        inventory_deducted = False
+        if self.tenant.use_strict_sales_workflow:
+            if self.is_dispatched:
+                inventory_deducted = True
+        else:
+            if self.status in ['COMPLETED', 'PENDING_DISPATCH']:
+                inventory_deducted = True
+                
+        if inventory_deducted:
+            for item in self.items.all():
+                InventoryLedger.objects.create(
+                    tenant=self.tenant,
+                    product=item.product,
+                    batch=item.batch,
+                    location=self.shop,
+                    transaction_type='SALE_RETURN',
+                    quantity=item.quantity,  # Add back
+                    unit_cost=item.unit_price,
+                    reference_type='Refund',
+                    reference_id=self.pk,
+                    notes=f"Refund: {reason}" if reason else "Sale refunded",
+                    created_by=user or self.attendant
+                )
+                
+        # 2. Reverse Customer Transactions (if credit sale)
+        if self.payment_method == 'PENDING_INVOICE' and self.customer:
+            from apps.customers.models import CustomerTransaction
+            # Create a compensating credit to remove the debt
+            CustomerTransaction.objects.create(
+                tenant=self.tenant,
+                customer=self.customer,
+                transaction_type='CREDIT',
+                amount=self.total,
+                reference_id=str(self.pk),
+                description=f"Refund for Sale {self.sale_number}: {reason}",
+                created_by=user or self.attendant
+            )
+            
+        self.status = 'REFUNDED'
+        self.notes = f"REFUNDED: {reason}" if reason else "REFUNDED"
         self.save()
 
 

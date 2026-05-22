@@ -55,8 +55,12 @@
                     <div class="form-check form-switch mb-3">
                         {{ form.allow_negative_stock }}
                         <label class="form-check-label ms-2">Allow Negative Stock</label>
-                        <small class="d-block text-muted mt-1">Allow sales to proceed even if stock quantity goes below
-                            zero</small>
+                        <small class="d-block text-muted mt-1">Allow sales to proceed even if stock quantity goes below zero</small>
+                    </div>
+                    <div class="form-check form-switch mb-3">
+                        {{ form.enable_refunds }}
+                        <label class="form-check-label ms-2">Enable Refunds</label>
+                        <small class="d-block text-muted mt-1">Allow processed sales to be formally refunded</small>
                     </div>
                     <div class="form-check form-switch mb-3">
                         {{ form.require_refund_approval }}
@@ -108,11 +112,21 @@
                         <label class="form-check-label ms-2">Can Delete Categories</label>
                         <small class="d-block text-muted mt-1">Allow shop managers to delete product categories</small>
                     </div>
-                    <div class="form-check form-switch mb-0">
+                    <div class="form-check form-switch mb-3">
                         {{ form.shops_can_see_other_stock }}
                         <label class="form-check-label ms-2">Can See Other Locations' Stock</label>
                         <small class="d-block text-muted mt-1">Allow shops to view stock levels at other locations,
                             batch details, and the full stock-by-location breakdown</small>
+                    </div>
+                    <div class="form-check form-switch mb-4">
+                        {{ form.accountants_can_approve_adjustments }}
+                        <label class="form-check-label ms-2">Accountants Can Approve Adjustments</label>
+                        <small class="d-block text-muted mt-1">Allow accountants to approve or reject stock adjustments in addition to auditors and admins.</small>
+                    </div>
+                    <div class="mb-0">
+                        <label class="form-label fw-bold">Pricing Control Mode</label>
+                        {{ form.pricing_control_mode }}
+                        <small class="d-block text-muted mt-1">Determine whether shop managers or accountants control product prices.</small>
                     </div>
                 </div>
             </div>
@@ -140,6 +154,100 @@
             </div>
         </div>
 
+        <!-- Sales Workflow Mode -->
+        <div class="col-12 mb-4">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header text-white d-flex align-items-center"
+                     style="background: linear-gradient(135deg, #7c3aed, #6d28d9);">
+                    <h5 class="mb-0">
+                        <i class="bi bi-diagram-3 me-2"></i>Sales Workflow Mode
+                    </h5>
+                    <span class="ms-auto badge bg-white text-purple" style="color:#7c3aed;">
+                        New Tenant Feature
+                    </span>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info py-2 mb-3 small">
+                        <i class="bi bi-info-circle me-1"></i>
+                        <strong>Cashier Workflow</strong> introduces a 3-step sales cycle:
+                        <em>Attendant → creates invoice</em> · <em>Cashier → receives payment</em> · <em>Manager → dispatches goods</em>.
+                        Enable both <strong>Strict Sales Workflow</strong> and <strong>Cashier Workflow</strong> for the full experience.
+                        Existing tenants are unaffected — all settings default to <em>Off</em>.
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="form-check form-switch p-3 rounded border h-100"
+                                 style="background:#f8f5ff; border-color:#c4b5fd !important;">
+                                {{ form.use_strict_sales_workflow }}
+                                <label class="form-check-label ms-2 fw-semibold">
+                                    <i class="bi bi-shield-lock me-1 text-purple" style="color:#7c3aed;"></i>
+                                    Strict Sales Workflow
+                                </label>
+                                <small class="d-block text-muted mt-1">
+                                    Enforce role-based steps: Attendants create invoices, Cashiers collect payment, Managers dispatch.
+                                    Required for the Cashier Workflow below.
+                                </small>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-check form-switch p-3 rounded border h-100"
+                                 style="background:#f8f5ff; border-color:#c4b5fd !important;">
+                                {{ form.use_cashier_workflow }}
+                                <label class="form-check-label ms-2 fw-semibold">
+                                    <i class="bi bi-receipt me-1" style="color:#7c3aed;"></i>
+                                    Cashier Workflow
+                                </label>
+                                <small class="d-block text-muted mt-1">
+                                    Show the <strong>Create Invoice</strong> button in the POS and enable the dedicated Cashier role dashboard.
+                                    Works alongside Strict Sales Workflow.
+                                </small>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-check form-switch p-3 rounded border h-100"
+                                 style="background:#fff8e6; border-color:#fcd34d !important;">
+                                {{ form.waive_shift_requirement }}
+                                <label class="form-check-label ms-2 fw-semibold">
+                                    <i class="bi bi-clock-history me-1 text-warning"></i>
+                                    Waive Shift Requirement
+                                </label>
+                                <small class="d-block text-muted mt-1">
+                                    Allow sales and invoices to be created without opening a shift first.
+                                    Useful when shifts are not used operationally.
+                                </small>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-check form-switch p-3 rounded border h-100"
+                                 style="background:#f0fdf4; border-color:#86efac !important;">
+                                {{ form.cashier_transfers_to_bank }}
+                                <label class="form-check-label ms-2 fw-semibold">
+                                    <i class="bi bi-bank me-1 text-success"></i>
+                                    Cashier Transfers to Bank
+                                </label>
+                                <small class="d-block text-muted mt-1">
+                                    When enabled, Cashiers transfer collected cash directly to the bank
+                                    instead of to an accountant. A printable bank deposit slip is generated.
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- Sales Workflow Mode card ends; now close outer form and add save button -->
+    </div>{# /row #}
+
+    <div class="d-flex justify-content-end gap-2 mb-4">
+        <a href="{% url 'core:dashboard' %}" class="btn btn-secondary">Cancel</a>
+        <button type="submit" class="btn btn-primary">
+            <i class="bi bi-check-lg me-1"></i>Save Settings
+        </button>
+    </div>
+</form>
+
+{# Expenditure Categories — own standalone forms, outside the main settings form #}
+<div class="row">
         <!-- Expenditure Categories -->
         <div class="col-12 mb-4">
             <div class="card border-0 shadow-sm">
@@ -206,12 +314,5 @@
                 </div>
             </div>
         </div>
-    </div>
-    <div class="d-flex justify-content-end gap-2">
-        <a href="{% url 'core:dashboard' %}" class="btn btn-secondary">Cancel</a>
-        <button type="submit" class="btn btn-primary">
-            <i class="bi bi-check-lg me-1"></i>Save Settings
-        </button>
-    </div>
-</form>
+    </div>{# /row #}
 {% endblock %}

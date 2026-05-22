@@ -16,6 +16,7 @@ urlpatterns = [
     path('cash-transfers/<int:pk>/cancel/', views.CashTransferCancelView.as_view(), name='cash_transfer_cancel'),
     path('cash-transfers/<int:pk>/receipt/', views.CashTransferReceiptView.as_view(), name='cash_transfer_receipt'),
     path('api/cash-transfers/<int:pk>/detail/', views.api_cash_transfer_detail, name='api_cash_transfer_detail'),
+    path('cash-history/', views.CashHistoryView.as_view(), name='cash_history'),
 
     # Excel Exports
     path('cash-transfers/export/', views.CashTransferExportView.as_view(), name='cash_transfer_export'),
@@ -32,6 +33,10 @@ urlpatterns = [
     path('shop-momo/<int:shop_id>/withdraw/', views.ShopMomoWithdrawView.as_view(), name='shop_momo_withdraw'),
     path('shop-momo/history/', views.ShopMomoHistoryView.as_view(), name='shop_momo_history'),
     path('shop-momo/history/export/', views.ShopMomoExportView.as_view(), name='shop_momo_export'),
+
+    # Shop E-Cash Withdrawals
+    path('shop-ecash/', views.ShopEcashListView.as_view(), name='shop_ecash_list'),
+    path('shop-ecash/<int:shop_id>/withdraw/', views.ShopEcashWithdrawView.as_view(), name='shop_ecash_withdraw'),
 
     # Expenditures
     path('expenditures/', views.ExpenditureListView.as_view(), name='expenditure_list'),

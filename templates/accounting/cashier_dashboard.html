@@ -1,0 +1,702 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Cashier Dashboard - {{ current_tenant.name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1 text-primary fw-bold"><i class="bi bi-wallet2 me-2"></i>Cashier Dashboard</h2>
+            <p class="text-muted mb-0">Manage pending invoices and cash operations for <strong>{{ shop.name }}</strong></p>
+        </div>
+        <div>
+            <span class="badge bg-light text-dark border p-2">
+                <i class="bi bi-calendar me-1"></i>Today: {% now "F j, Y" %}
+            </span>
+        </div>
+    </div>
+
+    <!-- Metrics Row -->
+    <div class="row g-4 mb-4">
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm rounded-4 bg-gradient-primary text-white p-2" style="background: linear-gradient(135deg, #4f46e5, #06b6d4);">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-subtitle mb-2 text-white-50 uppercase fw-bold tracking-wider" style="font-size: 0.75rem;">Today's Total Sales</h6>
+                            <h3 class="mb-0 fw-bold">{{ currency_symbol }}{{ today_sales_total|floatformat:"2g" }}</h3>
+                        </div>
+                        <div class="bg-white-10 rounded-3 p-3">
+                            <i class="bi bi-cash-coin fs-2"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm rounded-4 bg-white p-2 border-start border-4 border-warning">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-subtitle mb-2 text-muted text-uppercase fw-bold tracking-wider" style="font-size: 0.75rem;">Pending Invoices</h6>
+                            <h3 class="mb-0 fw-bold text-warning">{{ pending_invoices_count }}</h3>
+                        </div>
+                        <div class="bg-warning-light rounded-3 p-3 text-warning">
+                            <i class="bi bi-file-earmark-spreadsheet fs-2"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm rounded-4 bg-white p-2 border-start border-4 border-info">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-subtitle mb-2 text-muted text-uppercase fw-bold tracking-wider" style="font-size: 0.75rem;">Pending Deposits</h6>
+                            <h3 class="mb-0 fw-bold text-info">{{ pending_deposits_count }}</h3>
+                        </div>
+                        <div class="bg-info-light rounded-3 p-3 text-info">
+                            <i class="bi bi-send-dash fs-2"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content Tables -->
+    <div class="row g-4">
+        <!-- Pending Invoices Section -->
+        <div class="col-12">
+            <div class="card border-0 shadow-sm rounded-4">
+                <div class="card-header bg-white border-0 pt-4 pb-0 d-flex justify-content-between align-items-center">
+                    <h5 class="fw-bold mb-0 text-dark"><i class="bi bi-clock-history text-warning me-2"></i>Pending Invoices Awaiting Payment</h5>
+                    <a href="{% url 'sales:sale_list' %}?payment=PENDING_INVOICE&status=PENDING" class="btn btn-sm btn-outline-primary rounded-pill px-3">
+                        View All Pending
+                    </a>
+                </div>
+                <div class="card-body">
+                    {% if pending_invoices %}
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th scope="col">Invoice #</th>
+                                    <th scope="col">Created At</th>
+                                    <th scope="col">Attendant</th>
+                                    <th scope="col">Customer</th>
+                                    <th scope="col" class="text-end">Amount</th>
+                                    <th scope="col" class="text-center">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for invoice in pending_invoices %}
+                                <tr>
+                                    <td>
+                                        <a href="#" class="fw-bold text-decoration-none sale-detail-btn" data-sale-id="{{ invoice.id }}">
+                                            {{ invoice.sale_number }}
+                                        </a>
+                                    </td>
+                                    <td>{{ invoice.created_at|date:"M d, Y H:i" }}</td>
+                                    <td>{{ invoice.attendant.get_full_name|default:invoice.attendant.email }}</td>
+                                    <td>
+                                        {% if invoice.customer %}
+                                            <span class="badge bg-light text-dark border" data-bs-toggle="tooltip" title="Registered Customer">
+                                                <i class="bi bi-person-check-fill text-success me-1"></i>{{ invoice.customer.name }}
+                                            </span>
+                                        {% elif invoice.customer_name %}
+                                            <span class="badge bg-light text-dark border" data-bs-toggle="tooltip" title="Walk-in Customer">
+                                                <i class="bi bi-person-fill text-muted me-1"></i>{{ invoice.customer_name }}
+                                            </span>
+                                        {% else %}
+                                            <span class="badge bg-light text-dark border" data-bs-toggle="tooltip" title="Walk-in Customer">
+                                                <i class="bi bi-person-fill text-muted me-1"></i>Walk-in Customer
+                                            </span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-end fw-bold">{{ currency_symbol }}{{ invoice.total|floatformat:"2g" }}</td>
+                                    <td class="text-center">
+                                        <button class="btn btn-sm btn-success pay-invoice-btn rounded-pill px-3" 
+                                                data-sale-id="{{ invoice.id }}" 
+                                                data-sale-number="{{ invoice.sale_number }}"
+                                                data-sale-total="{{ invoice.total }}">
+                                            <i class="bi bi-credit-card me-1"></i>Pay
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-5">
+                        <i class="bi bi-check2-circle text-success fs-1"></i>
+                        <p class="text-muted mt-2 mb-0">No pending invoices awaiting payment.</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Sales History Section -->
+        <div class="col-12">
+            <div class="card border-0 shadow-sm rounded-4">
+                <div class="card-header bg-white border-0 pt-4 pb-0 d-flex justify-content-between align-items-center">
+                    <h5 class="fw-bold mb-0 text-dark">
+                        <i class="bi bi-clock-history text-secondary me-2"></i>Recent Sales
+                    </h5>
+                    <a href="{% url 'sales:sale_list' %}" class="btn btn-sm btn-outline-secondary rounded-pill px-3">
+                        View All Sales
+                    </a>
+                </div>
+                <div class="card-body">
+                    {% if recent_sales %}
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th scope="col">Receipt #</th>
+                                    <th scope="col">Completed At</th>
+                                    <th scope="col">Customer</th>
+                                    <th scope="col">Payment Method</th>
+                                    <th scope="col" class="text-end">Amount Paid</th>
+                                    <th scope="col" class="text-end">Sale Total</th>
+                                    <th scope="col" class="text-center">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for sale in recent_sales %}
+                                <tr>
+                                    <td>
+                                        <a href="#" class="fw-bold text-decoration-none sale-detail-btn" data-sale-id="{{ sale.id }}">
+                                            {{ sale.sale_number }}
+                                        </a>
+                                    </td>
+                                    <td>{{ sale.completed_at|date:"M d, Y H:i"|default:sale.created_at|date:"M d, Y H:i" }}</td>
+                                    <td>
+                                        {% if sale.customer %}
+                                            <span class="badge bg-light text-dark border" data-bs-toggle="tooltip" title="Registered Customer">
+                                                <i class="bi bi-person-check-fill text-success me-1"></i>{{ sale.customer.name }}
+                                            </span>
+                                        {% elif sale.customer_name %}
+                                            <span class="badge bg-light text-dark border" data-bs-toggle="tooltip" title="Walk-in Customer">
+                                                <i class="bi bi-person-fill text-muted me-1"></i>{{ sale.customer_name }}
+                                            </span>
+                                        {% else %}
+                                            <span class="badge bg-light text-dark border" data-bs-toggle="tooltip" title="Walk-in Customer">
+                                                <i class="bi bi-person-fill text-muted me-1"></i>Walk-in Customer
+                                            </span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <span class="badge {% if sale.payment_method == 'CASH' %}bg-success-light text-success{% elif sale.payment_method == 'ECASH' %}bg-primary-light text-primary{% else %}bg-secondary-light text-secondary{% endif %}">
+                                            {{ sale.get_payment_method_display }}
+                                        </span>
+                                    </td>
+                                    <!-- Amount Paid before Change -->
+                                    <td class="text-end fw-medium text-dark">{{ currency_symbol }}{{ sale.amount_paid|floatformat:"2g" }}</td>
+                                    <td class="text-end fw-bold text-success">{{ currency_symbol }}{{ sale.total|floatformat:"2g" }}</td>
+                                    <td class="text-center">
+                                        <a href="{% url 'sales:sale_receipt' sale.id %}" target="_blank" class="btn btn-sm btn-outline-info rounded-pill px-3">
+                                            <i class="bi bi-printer me-1"></i>Print
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-5">
+                        <i class="bi bi-inbox text-muted fs-1"></i>
+                        <p class="text-muted mt-2 mb-0">No sales history found for today.</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Pay Invoice Modal -->
+<div class="modal fade" id="payInvoiceModal" tabindex="-1" aria-labelledby="payInvoiceModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-4 border-0 shadow">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold text-success" id="payInvoiceModalLabel">
+                    <i class="bi bi-credit-card-fill me-2"></i>Receive Payment
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="bg-light rounded-3 p-3 mb-3 d-flex justify-content-between align-items-center">
+                    <div>
+                        <span class="text-muted small">Invoice #</span>
+                        <h5 class="fw-bold mb-0 text-dark" id="modalInvoiceNumber">-</h5>
+                    </div>
+                    <div class="text-end">
+                        <span class="text-muted small">Total Due</span>
+                        <h4 class="fw-bold mb-0 text-success" id="modalTotalDue">-</h4>
+                    </div>
+                </div>
+
+                <form id="payInvoiceForm">
+                    {% csrf_token %}
+                    <input type="hidden" id="modalInvoiceId">
+                    
+                    <div class="mb-3">
+                        <label for="paymentMethodSelect" class="form-label fw-bold">Payment Method</label>
+                        <select class="form-select rounded-3" id="paymentMethodSelect" required>
+                            <option value="CASH" selected>Cash</option>
+                            <option value="ECASH">E-Cash</option>
+                            <option value="MOMO">Local Momo</option>
+                            <option value="CREDIT">Credit</option>
+                            <option value="MIXED">Mixed</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="amountPaidInput" class="form-label fw-bold">Amount Paid</label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-light fw-bold">{{ currency_symbol }}</span>
+                            <input type="number" step="0.01" class="form-control rounded-3" id="amountPaidInput" placeholder="0.00" required>
+                        </div>
+                        <div class="form-text text-danger d-none" id="amountError">Amount paid must be at least total due unless it's a credit sale.</div>
+                    </div>
+
+                    <!-- Digital Ref (Momo / E-cash) -->
+                    <div class="mb-3 d-none" id="digitalRefContainer">
+                        <label for="paystackReferenceInput" class="form-label fw-bold">Paystack / Transaction Reference</label>
+                        <input type="text" class="form-control rounded-3" id="paystackReferenceInput" placeholder="Enter reference ID">
+                    </div>
+
+                    <!-- Change Calculation Display -->
+                    <div class="bg-success-light rounded-3 p-3 mb-3 d-flex justify-content-between align-items-center d-none" id="changeDisplayContainer">
+                        <span class="fw-bold text-success">Change to Return</span>
+                        <h4 class="fw-bold mb-0 text-success" id="modalChangeValue">{{ currency_symbol }}0.00</h4>
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-success btn-lg rounded-pill fw-bold py-2" id="submitPaymentBtn">
+                            <i class="bi bi-check-circle me-2"></i>Complete Payment
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Sale Detail Modal -->
+<div class="modal fade" id="saleDetailModal" tabindex="-1" aria-labelledby="saleDetailModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable modal-lg">
+        <div class="modal-content rounded-4 border-0 shadow">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold" id="saleDetailModalLabel">
+                    <i class="bi bi-receipt-cutoff me-2"></i>Invoice Details
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="saleDetailBody">
+                <div class="text-center py-5" id="saleDetailLoading">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="text-muted mt-2">Loading details...</p>
+                </div>
+                <div id="saleDetailContent" style="display:none;"></div>
+            </div>
+            <div class="modal-footer border-0">
+                <button type="button" class="btn btn-success rounded-pill px-4" id="saleDetailPayBtn" style="display: none;">
+                    <i class="bi bi-credit-card me-1"></i>Pay Invoice
+                </button>
+                <a href="#" class="btn btn-outline-info rounded-pill px-4" id="saleDetailPrintBtn" target="_blank">
+                    <i class="bi bi-printer me-1"></i>Print Receipt
+                </a>
+                <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .bg-gradient-primary {
+        box-shadow: 0 10px 20px rgba(79, 70, 229, 0.15);
+    }
+    .bg-warning-light {
+        background-color: #fffbeb;
+    }
+    .bg-info-light {
+        background-color: #ecfeff;
+    }
+    .bg-success-light {
+        background-color: #f0fdf4;
+    }
+    .bg-primary-light {
+        background-color: #e0e7ff;
+    }
+    .bg-secondary-light {
+        background-color: #f3f4f6;
+    }
+    .uppercase {
+        text-transform: uppercase;
+    }
+    .tracking-wider {
+        letter-spacing: 0.05em;
+    }
+    .bg-white-10 {
+        background-color: rgba(255, 255, 255, 0.15);
+    }
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const currencySymbol = "{{ currency_symbol }}";
+    
+    // Enable Bootstrap Tooltips
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+
+    // Payment Modal elements
+    const payModal = new bootstrap.Modal(document.getElementById('payInvoiceModal'));
+    const payForm = document.getElementById('payInvoiceForm');
+    const amountPaidInput = document.getElementById('amountPaidInput');
+    const paymentMethodSelect = document.getElementById('paymentMethodSelect');
+    const digitalRefContainer = document.getElementById('digitalRefContainer');
+    const paystackReferenceInput = document.getElementById('paystackReferenceInput');
+    const changeDisplayContainer = document.getElementById('changeDisplayContainer');
+    const modalChangeValue = document.getElementById('modalChangeValue');
+    const amountError = document.getElementById('amountError');
+
+    let currentTotalDue = 0;
+
+    // Open Payment Modal
+    document.querySelectorAll('.pay-invoice-btn').forEach(function(button) {
+        button.addEventListener('click', function(e) {
+            e.stopPropagation();
+            const saleId = this.dataset.saleId;
+            const saleNumber = this.dataset.saleNumber;
+            currentTotalDue = parseFloat(this.dataset.saleTotal);
+
+            document.getElementById('modalInvoiceId').value = saleId;
+            document.getElementById('modalInvoiceNumber').innerText = saleNumber;
+            document.getElementById('modalTotalDue').innerText = currencySymbol + currentTotalDue.toFixed(2);
+            
+            amountPaidInput.value = currentTotalDue.toFixed(2);
+            paymentMethodSelect.value = 'CASH';
+            digitalRefContainer.classList.add('d-none');
+            paystackReferenceInput.value = '';
+            changeDisplayContainer.classList.add('d-none');
+            amountError.classList.add('d-none');
+
+            payModal.show();
+        });
+    });
+
+    // Handle Payment Method Select Change
+    paymentMethodSelect.addEventListener('change', function() {
+        const method = this.value;
+        if (method === 'ECASH' || method === 'MOMO') {
+            digitalRefContainer.classList.remove('d-none');
+            paystackReferenceInput.required = true;
+        } else {
+            digitalRefContainer.classList.add('d-none');
+            paystackReferenceInput.required = false;
+            paystackReferenceInput.value = '';
+        }
+        calculateChange();
+    });
+
+    // Calculate Change on input
+    amountPaidInput.addEventListener('input', calculateChange);
+
+    function calculateChange() {
+        const paid = parseFloat(amountPaidInput.value) || 0;
+        const method = paymentMethodSelect.value;
+
+        if (method !== 'CREDIT') {
+            if (paid >= currentTotalDue) {
+                const change = paid - currentTotalDue;
+                changeDisplayContainer.classList.remove('d-none');
+                modalChangeValue.innerText = currencySymbol + change.toFixed(2);
+                amountError.classList.add('d-none');
+            } else {
+                changeDisplayContainer.classList.add('d-none');
+                if (method !== 'MIXED') {
+                    amountError.classList.remove('d-none');
+                } else {
+                    amountError.classList.add('d-none');
+                }
+            }
+        } else {
+            changeDisplayContainer.classList.add('d-none');
+            amountError.classList.add('d-none');
+        }
+    }
+
+    // Submit Payment
+    payForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const saleId = document.getElementById('modalInvoiceId').value;
+        const method = paymentMethodSelect.value;
+        const paid = parseFloat(amountPaidInput.value) || 0;
+        const ref = paystackReferenceInput.value.trim();
+
+        if (method !== 'CREDIT' && method !== 'MIXED' && paid < currentTotalDue) {
+            amountError.classList.remove('d-none');
+            return;
+        }
+
+        const data = {
+            payment_method: method,
+            amount_paid: paid,
+            paystack_reference: ref
+        };
+
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+        fetch(`/sales/api/invoices/${saleId}/pay/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken
+            },
+            body: JSON.stringify(data)
+        })
+        .then(response => {
+            if (!response.ok) {
+                return response.json().then(err => { throw new Error(err.error || 'Payment failed') });
+            }
+            return response.json();
+        })
+        .then(res => {
+            payModal.hide();
+            // Automatically launch printable receipt
+            const receiptWindow = window.open(`/sales/${res.sale_id}/receipt/`, '_blank');
+            if (receiptWindow) {
+                receiptWindow.focus();
+            }
+            location.reload();
+        })
+        .catch(err => {
+            alert(err.message);
+        });
+    });
+
+    // Detail Modal elements
+    const detailModal = new bootstrap.Modal(document.getElementById('saleDetailModal'));
+    const loadingEl = document.getElementById('saleDetailLoading');
+    const contentEl = document.getElementById('saleDetailContent');
+    const printBtn = document.getElementById('saleDetailPrintBtn');
+    const saleDetailPayBtn = document.getElementById('saleDetailPayBtn');
+
+    // Attach click events to detail link elements
+    document.querySelectorAll('.sale-detail-btn').forEach(function(link) {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const saleId = this.dataset.saleId;
+            
+            // Set print receipt link
+            printBtn.href = `/sales/${saleId}/receipt/`;
+            
+            loadingEl.style.display = 'block';
+            contentEl.style.display = 'none';
+            contentEl.innerHTML = '';
+            
+            if (saleDetailPayBtn) {
+                saleDetailPayBtn.style.display = 'none';
+            }
+            
+            detailModal.show();
+            
+            fetch('/sales/api/' + saleId + '/detail/')
+                .then(response => {
+                    if (!response.ok) throw new Error('Network response was not ok');
+                    return response.json();
+                })
+                .then(data => {
+                    loadingEl.style.display = 'none';
+                    contentEl.style.display = 'block';
+                    renderSaleDetail(data);
+                    
+                    if (saleDetailPayBtn) {
+                        saleDetailPayBtn.dataset.saleId = saleId;
+                        saleDetailPayBtn.dataset.saleNumber = data.sale_number;
+                        saleDetailPayBtn.dataset.saleTotal = data.total;
+                        
+                        if (data.status_code === 'PENDING') {
+                            saleDetailPayBtn.style.display = 'inline-block';
+                        } else {
+                            saleDetailPayBtn.style.display = 'none';
+                        }
+                    }
+                })
+                .catch(error => {
+                    loadingEl.style.display = 'none';
+                    contentEl.style.display = 'block';
+                    contentEl.innerHTML = '<div class="alert alert-danger">Failed to load invoice details.</div>';
+                });
+        });
+    });
+
+    function getStatusBadge(code, display) {
+        const colors = {
+            'PENDING': 'warning',
+            'COMPLETED': 'success',
+            'VOIDED': 'danger',
+        };
+        const color = colors[code] || 'secondary';
+        return '<span class="badge bg-' + color + '">' + display + '</span>';
+    }
+
+    function getPaymentBadge(code, display) {
+        const colors = {
+            'CASH': 'success',
+            'ECASH': 'primary',
+            'MOMO': 'warning',
+            'CREDIT': 'danger',
+            'MIXED': 'info',
+        };
+        const color = colors[code] || 'secondary';
+        return '<span class="badge bg-' + color + '">' + display + '</span>';
+    }
+
+    function renderSaleDetail(data) {
+        let html = '';
+
+        // Header info
+        html += '<div class="row mb-3">';
+        html += '<div class="col-sm-6">';
+        html += '<h6 class="text-muted mb-1">Invoice Number</h6>';
+        html += '<p class="fw-bold fs-5 mb-2">' + data.sale_number + '</p>';
+        html += '</div>';
+        html += '<div class="col-sm-6 text-sm-end">';
+        html += '<h6 class="text-muted mb-1">Status</h6>';
+        html += '<p class="mb-2">' + getStatusBadge(data.status_code, data.status) + '</p>';
+        html += '</div>';
+        html += '</div>';
+
+        // Details row
+        html += '<div class="row mb-3 py-2 bg-light rounded">';
+        html += '<div class="col-sm-4">';
+        html += '<small class="text-muted d-block">Date</small>';
+        html += '<span class="fw-medium">' + data.created_at + '</span>';
+        html += '</div>';
+        html += '<div class="col-sm-4">';
+        html += '<small class="text-muted d-block">Shop</small>';
+        html += '<span class="fw-medium">' + data.shop + '</span>';
+        html += '</div>';
+        html += '<div class="col-sm-4">';
+        html += '<small class="text-muted d-block">Attendant</small>';
+        html += '<span class="fw-medium">' + data.attendant + '</span>';
+        html += '</div>';
+        html += '</div>';
+
+        // Customer and payment
+        html += '<div class="row mb-3">';
+        html += '<div class="col-sm-6">';
+        html += '<small class="text-muted d-block">Payment Method</small>';
+        html += getPaymentBadge(data.payment_method_code, data.payment_method);
+        html += '</div>';
+        if (data.customer) {
+            html += '<div class="col-sm-6">';
+            html += '<small class="text-muted d-block">Customer</small>';
+            html += '<span class="fw-medium">' + data.customer + '</span>';
+            if (data.customer_phone) {
+                html += '<br><small class="text-muted"><i class="bi bi-telephone me-1"></i>' + data.customer_phone + '</small>';
+            }
+            html += '</div>';
+        }
+        html += '</div>';
+
+        // Items table
+        html += '<h6 class="border-bottom pb-2 mb-0">Items</h6>';
+        html += '<div class="table-responsive">';
+        html += '<table class="table table-sm mb-0">';
+        html += '<thead class="table-light"><tr>';
+        html += '<th>Product</th><th class="text-center">Qty</th>';
+        html += '<th class="text-end">Price</th><th class="text-end">Total</th>';
+        html += '</tr></thead><tbody>';
+
+        data.items.forEach(function(item) {
+            html += '<tr>';
+            html += '<td>' + item.product_name + '<br><small class="text-muted">' + item.sku + '</small></td>';
+            html += '<td class="text-center">' + parseFloat(item.quantity) + '</td>';
+            html += '<td class="text-end">' + currencySymbol + parseFloat(item.unit_price).toFixed(2) + '</td>';
+            html += '<td class="text-end">' + currencySymbol + parseFloat(item.total).toFixed(2) + '</td>';
+            html += '</tr>';
+        });
+
+        html += '</tbody></table></div>';
+
+        // Totals
+        html += '<div class="border-top pt-2 mt-2">';
+        html += '<div class="d-flex justify-content-between mb-1">';
+        html += '<span>Subtotal</span><span>' + currencySymbol + parseFloat(data.subtotal).toFixed(2) + '</span>';
+        html += '</div>';
+
+        if (data.discount_amount) {
+            html += '<div class="d-flex justify-content-between mb-1 text-danger">';
+            html += '<span>Discount</span><span>-' + currencySymbol + parseFloat(data.discount_amount).toFixed(2) + '</span>';
+            html += '</div>';
+        }
+        if (data.tax_amount) {
+            html += '<div class="d-flex justify-content-between mb-1">';
+            html += '<span>Tax</span><span>' + currencySymbol + parseFloat(data.tax_amount).toFixed(2) + '</span>';
+            html += '</div>';
+        }
+
+        html += '<div class="d-flex justify-content-between fw-bold fs-5 border-top pt-2">';
+        html += '<span>Total</span><span>' + currencySymbol + parseFloat(data.total).toFixed(2) + '</span>';
+        html += '</div>';
+
+        html += '<div class="d-flex justify-content-between mt-1 text-muted">';
+        html += '<span>Amount Paid</span><span>' + currencySymbol + parseFloat(data.amount_paid).toFixed(2) + '</span>';
+        html += '</div>';
+
+        if (data.change_given && parseFloat(data.change_given) > 0) {
+            html += '<div class="d-flex justify-content-between text-success">';
+            html += '<span>Change</span><span>' + currencySymbol + parseFloat(data.change_given).toFixed(2) + '</span>';
+            html += '</div>';
+        }
+
+        html += '</div>';
+
+        contentEl.innerHTML = html;
+    }
+
+    if (saleDetailPayBtn) {
+        saleDetailPayBtn.addEventListener('click', function() {
+            // Close detail modal
+            detailModal.hide();
+            
+            // Populate and open payment modal
+            const saleId = this.dataset.saleId;
+            const saleNumber = this.dataset.saleNumber;
+            currentTotalDue = parseFloat(this.dataset.saleTotal);
+
+            document.getElementById('modalInvoiceId').value = saleId;
+            document.getElementById('modalInvoiceNumber').innerText = saleNumber;
+            document.getElementById('modalTotalDue').innerText = currencySymbol + currentTotalDue.toFixed(2);
+            
+            amountPaidInput.value = currentTotalDue.toFixed(2);
+            paymentMethodSelect.value = 'CASH';
+            digitalRefContainer.classList.add('d-none');
+            paystackReferenceInput.value = '';
+            changeDisplayContainer.classList.add('d-none');
+            amountError.classList.add('d-none');
+
+            // Small timeout to allow detailModal hide animation to complete
+            setTimeout(function() {
+                payModal.show();
+            }, 150);
+        });
+    }
+});
+</script>
+{% endblock %}

@@ -805,6 +805,68 @@
                 visibility: visible;
             }
         }
+
+        /* POS Toast Notifications */
+        .pos-toast-container {
+            position: fixed;
+            top: 72px;
+            right: 1.25rem;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            pointer-events: none;
+        }
+
+        .pos-toast {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1.1rem;
+            border-radius: 12px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            box-shadow: 0 6px 24px rgba(0,0,0,0.45);
+            opacity: 0;
+            transform: translateX(60px);
+            transition: all 0.3s cubic-bezier(0.175,0.885,0.32,1.275);
+            pointer-events: auto;
+            min-width: 260px;
+            max-width: 340px;
+        }
+
+        .pos-toast.show {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        .pos-toast.hide {
+            opacity: 0;
+            transform: translateX(60px);
+        }
+
+        .pos-toast.toast-warning {
+            background: linear-gradient(135deg, #92400e, #b45309);
+            border-left: 4px solid #f59e0b;
+            color: #fef3c7;
+        }
+
+        .pos-toast.toast-error {
+            background: linear-gradient(135deg, #7f1d1d, #991b1b);
+            border-left: 4px solid #ef4444;
+            color: #fee2e2;
+        }
+
+        .pos-toast.toast-success {
+            background: linear-gradient(135deg, #064e3b, #065f46);
+            border-left: 4px solid #10b981;
+            color: #d1fae5;
+        }
+
+        .pos-toast .toast-icon {
+            font-size: 1.3rem;
+            flex-shrink: 0;
+        }
     </style>
 </head>
 
@@ -838,11 +900,13 @@
     </header>
     <!-- Sync Status Bar -->
     <div class="sync-status-bar" id="sync-status-bar">
+    <!-- POS Toast Container -->
+    <div class="pos-toast-container" id="pos-toast-container"></div>
         <i class="bi bi-arrow-repeat me-1"></i>
         <span id="sync-status-text">Syncing...</span>
     </div>
 
-    {% if not shift %}
+    {% if not shift and not request.user.tenant.waive_shift_requirement %}
     <div class="shift-banner">
         <i class="bi bi-exclamation-triangle me-2"></i>
         <strong>No open shift!</strong> Please open a shift before making sales.
@@ -927,13 +991,24 @@
             </div>
 
             <div class="cart-actions">
+                {% if not request.user.tenant.use_strict_sales_workflow %}
                 <button class="btn-pay btn-pay-cash" id="btn-pay-cash" disabled>
                     <i class="bi bi-cash"></i> Pay Cash
                 </button>
+                {% endif %}
+                {% if request.user.tenant.use_cashier_workflow or request.user.tenant.use_strict_sales_workflow %}
+                <button class="btn-pay" id="btn-create-invoice" disabled
+                    style="background: #7c3aed; color:#fff;">
+                    <i class="bi bi-receipt"></i> Create Invoice
+                </button>
+                {% endif %}
+                {% if not request.user.tenant.use_strict_sales_workflow %}
                 <button class="btn-pay btn-pay-credit" id="btn-pay-credit" disabled
                     style="background: #e11d48; display: none;">
                     <i class="bi bi-credit-card-2-front"></i> Sell on Credit
                 </button>
+                {% endif %}
+                {% if not request.user.tenant.use_strict_sales_workflow %}
                 <div class="d-flex gap-2 mb-2">
                     {% if shop_settings.enable_ecash_payment %}
                     <button class="btn-pay btn-pay-ecash flex-fill" id="btn-pay-ecash" disabled>
@@ -946,11 +1021,14 @@
                     </button>
                     {% endif %}
                 </div>
+                {% endif %}
                 <div class="d-flex gap-2">
+                    {% if not request.user.tenant.use_strict_sales_workflow %}
                     <button class="btn btn-outline-warning flex-fill" id="btn-discount">
                         <i class="bi bi-percent"></i> Discount
                     </button>
-                    <button class="btn btn-outline-danger flex-fill" id="btn-clear-cart">
+                    {% endif %}
+                    <button class="btn btn-outline-danger {% if not request.user.tenant.use_strict_sales_workflow %}flex-fill{% else %}w-100{% endif %}" id="btn-clear-cart">
                         <i class="bi bi-trash"></i> Clear
                     </button>
                 </div>
@@ -1018,11 +1096,65 @@
         </div>
     </div>
 
+    <!-- ── Create Invoice Modal ─────────────────────────────────── -->
+    <div class="checkout-modal" id="create-invoice-modal">
+        <div class="checkout-dialog" style="max-width:420px;">
+            <h4 class="mb-3 text-center" style="color:#a78bfa;">
+                <i class="bi bi-receipt me-2"></i>Create Invoice
+            </h4>
+            <p class="text-muted text-center small mb-3">
+                Enter customer details to generate a pending invoice. The customer takes the invoice code to the cashier for payment.
+            </p>
+            <div class="mb-3">
+                <label class="form-label">Customer Name <span class="text-danger">*</span></label>
+                <input type="text" class="checkout-input" id="invoice-customer-name"
+                    placeholder="Enter full name" style="font-size:1rem; padding:0.75rem;">
+            </div>
+            <div class="mb-4">
+                <label class="form-label">Phone Number <span class="text-danger">*</span></label>
+                <input type="tel" class="checkout-input" id="invoice-customer-phone"
+                    placeholder="e.g. 0244000000" style="font-size:1rem; padding:0.75rem;">
+            </div>
+            <div id="invoice-error" class="alert alert-danger py-2 small" style="display:none;"></div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-secondary flex-fill" onclick="closeCreateInvoiceModal()">Cancel</button>
+                <button class="btn flex-fill" id="btn-save-invoice"
+                    style="background:#7c3aed;color:#fff;"
+                    onclick="saveInvoice()">
+                    <i class="bi bi-save me-1"></i>Save Invoice
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Invoice Created Popup ─────────────────────────────────── -->
+    <div class="checkout-modal" id="invoice-created-modal">
+        <div class="checkout-dialog text-center" style="max-width:400px;">
+            <div class="mb-3" style="font-size:3rem; color:#a78bfa;">
+                <i class="bi bi-receipt-cutoff"></i>
+            </div>
+            <h4 class="mb-1" style="color:#a78bfa;">Invoice Created!</h4>
+            <p class="text-muted small mb-3">Give this code to the customer to present at the cashier for payment.</p>
+            <div class="p-3 mb-3 rounded" style="background:#1e1e2e; border:2px dashed #7c3aed;">
+                <div class="text-muted small mb-1">Invoice Code</div>
+                <div class="h2 fw-bold" id="invoice-code-display" style="color:#a78bfa; letter-spacing:2px;"></div>
+                <div class="text-muted small mt-2" id="invoice-customer-display"></div>
+                <div class="text-muted small" id="invoice-total-display"></div>
+            </div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-outline-light flex-fill" onclick="closeInvoiceCreatedModal()">
+                    <i class="bi bi-plus me-1"></i>New Sale
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Mobile Cart Toggle Button -->
     <button class="mobile-cart-toggle" id="mobile-cart-toggle" onclick="toggleMobileCart()">
         <i class="bi bi-cart3"></i>
         <span class="cart-badge" id="mobile-cart-badge">0</span>
     </button>
+
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="{% static 'js/offline-sync.js' %}"></script>
@@ -1044,7 +1176,31 @@
         const CSRF_TOKEN = '{{ csrf_token }}';
         const SYNC_URL = '{% url "sales:api_sync_offline_sales" %}';
         const CHECKOUT_URL = '/sales/api/checkout/';
-        const HAS_SHIFT = {% if shift %}true{% else %} false{% endif %};
+        const HAS_SHIFT = {% if shift %}true{% else %}false{% endif %};
+        const WAIVE_SHIFT = {% if request.user.tenant.waive_shift_requirement %}true{% else %}false{% endif %};
+        const ALLOW_NEGATIVE_STOCK = {% if allow_negative_stock %}true{% else %}false{% endif %};
+
+        // --- POS Toast Notification System ---
+        function showPosToast(message, type = 'warning', durationMs = 3500) {
+            const container = document.getElementById('pos-toast-container');
+            const iconMap = {
+                warning: 'bi-exclamation-triangle-fill',
+                error:   'bi-x-circle-fill',
+                success: 'bi-check-circle-fill'
+            };
+            const toast = document.createElement('div');
+            toast.className = `pos-toast toast-${type}`;
+            toast.innerHTML = `<i class="bi ${iconMap[type] || iconMap.warning} toast-icon"></i><span>${message}</span>`;
+            container.appendChild(toast);
+            // Trigger animation
+            requestAnimationFrame(() => { requestAnimationFrame(() => { toast.classList.add('show'); }); });
+            // Auto remove
+            setTimeout(() => {
+                toast.classList.remove('show');
+                toast.classList.add('hide');
+                setTimeout(() => toast.remove(), 350);
+            }, durationMs);
+        }
 
         let cart = [];
         let discountAmount = 0;
@@ -1127,9 +1283,12 @@
             });
 
             // Payment buttons - check for open shift first
-            document.getElementById('btn-pay-cash').addEventListener('click', () => {
-                if (checkShiftBeforePayment('CASH')) openCheckout('CASH');
-            });
+            const btnPayCash = document.getElementById('btn-pay-cash');
+            if (btnPayCash) {
+                btnPayCash.addEventListener('click', () => {
+                    if (checkShiftBeforePayment('CASH')) openCheckout('CASH');
+                });
+            }
             if (document.getElementById('btn-pay-credit')) {
                 document.getElementById('btn-pay-credit').addEventListener('click', () => {
                     if (checkShiftBeforePayment('CREDIT')) openCheckout('CREDIT');
@@ -1233,7 +1392,8 @@
                 searchInput.value = '';
                 document.getElementById('selected-customer-info').style.display = 'none';
                 this.style.display = 'none';
-                document.getElementById('btn-pay-credit').style.display = 'none';
+                const payCreditBtn = document.getElementById('btn-pay-credit');
+                if (payCreditBtn) payCreditBtn.style.display = 'none';
             });
         }
 
@@ -1263,11 +1423,14 @@
 
             // Enable Credit Button and Payment on Account
             const payCredit = document.getElementById('btn-pay-credit');
-            payCredit.style.display = 'flex';
-            payCredit.disabled = false;
+            if (payCredit) {
+                payCredit.style.display = 'flex';
+                payCredit.disabled = false;
+            }
 
             // Also enable Pay Cash for payment on account (even if cart is empty)
-            document.getElementById('btn-pay-cash').disabled = false;
+            const cashBtn = document.getElementById('btn-pay-cash');
+            if (cashBtn) cashBtn.disabled = false;
 
             // Enable E-Cash button too
             const ecashBtn = document.getElementById('btn-pay-ecash');
@@ -1551,6 +1714,13 @@
             if (!product) return;
 
             const existing = cart.find(item => item.id === productId);
+            const currentQty = existing ? existing.quantity : 0;
+
+            if (!ALLOW_NEGATIVE_STOCK && currentQty + 1 > (product.quantity || 0)) {
+                showPosToast(`⚠ Only ${Math.floor(product.quantity || 0)} in stock. Cannot add more.`, 'warning');
+                return;
+            }
+
             if (existing) {
                 existing.quantity += 1;
             } else {
@@ -1569,6 +1739,14 @@
         function updateItemQty(productId, delta) {
             const item = cart.find(i => i.id === productId);
             if (!item) return;
+
+            if (delta > 0 && !ALLOW_NEGATIVE_STOCK) {
+                const product = PRODUCTS.find(p => p.id === productId);
+                if (product && item.quantity + delta > (product.quantity || 0)) {
+                    showPosToast(`⚠ Only ${Math.floor(product.quantity || 0)} in stock. Cannot add more.`, 'warning');
+                    return;
+                }
+            }
 
             item.quantity += delta;
             if (item.quantity <= 0) {
@@ -1630,11 +1808,14 @@
             document.getElementById('cart-total').textContent = CURRENCY + total.toFixed(2);
 
             const hasItems = cart.length > 0;
-            document.getElementById('btn-pay-cash').disabled = !hasItems;
+            const cashBtn = document.getElementById('btn-pay-cash');
+            if (cashBtn) cashBtn.disabled = !hasItems;
             const ecashBtn = document.getElementById('btn-pay-ecash');
             if (ecashBtn) ecashBtn.disabled = !hasItems;
             const momoBtn = document.getElementById('btn-pay-momo');
             if (momoBtn) momoBtn.disabled = !hasItems;
+            const invoiceBtn = document.getElementById('btn-create-invoice');
+            if (invoiceBtn) invoiceBtn.disabled = !hasItems;
 
             // Update mobile cart badge
             updateMobileCartBadge();
@@ -1714,6 +1895,8 @@
 
         // Check shift before allowing payment - called by payment buttons
         function checkShiftBeforePayment(mode) {
+            // Bypass shift check if tenant has waived the requirement
+            if (WAIVE_SHIFT) return true;
             if (!HAS_SHIFT) {
                 openShiftPromptModal(mode);
                 return false;
@@ -2034,7 +2217,110 @@
                 }
             } catch (e) { }
         }
+
+        // ── Create Invoice Functions ────────────────────────────────
+        const createInvoiceBtn = document.getElementById('btn-create-invoice');
+        if (createInvoiceBtn) {
+            createInvoiceBtn.addEventListener('click', openCreateInvoiceModal);
+        }
+
+        function openCreateInvoiceModal() {
+            if (cart.length === 0) return;
+            
+            if (selectedCustomer) {
+                document.getElementById('invoice-customer-name').value = selectedCustomer.name || '';
+                document.getElementById('invoice-customer-phone').value = selectedCustomer.phone || '';
+            } else {
+                document.getElementById('invoice-customer-name').value = '';
+                document.getElementById('invoice-customer-phone').value = '';
+            }
+            
+            document.getElementById('invoice-error').style.display = 'none';
+            document.getElementById('create-invoice-modal').classList.add('active');
+            setTimeout(() => document.getElementById('invoice-customer-name').focus(), 100);
+        }
+
+        function closeCreateInvoiceModal() {
+            document.getElementById('create-invoice-modal').classList.remove('active');
+        }
+
+        function closeInvoiceCreatedModal() {
+            document.getElementById('invoice-created-modal').classList.remove('active');
+            // Clear cart silently without the confirm() prompt
+            cart = [];
+            discountAmount = 0;
+            selectedCustomer = null;
+            document.getElementById('customer-search').value = '';
+            document.getElementById('btn-clear-customer').style.display = 'none';
+            document.getElementById('selected-customer-info').style.display = 'none';
+            updateCart();
+            saveCartToStorage();
+        }
+
+        async function saveInvoice() {
+            const name = document.getElementById('invoice-customer-name').value.trim();
+            const phone = document.getElementById('invoice-customer-phone').value.trim();
+            const errBox = document.getElementById('invoice-error');
+
+            if (!name) {
+                errBox.textContent = 'Customer name is required.';
+                errBox.style.display = 'block';
+                return;
+            }
+            if (!phone) {
+                errBox.textContent = 'Phone number is required.';
+                errBox.style.display = 'block';
+                return;
+            }
+
+            errBox.style.display = 'none';
+            const btn = document.getElementById('btn-save-invoice');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Saving...';
+
+            const total = cart.reduce((sum, i) => sum + i.price * i.quantity, 0) - discountAmount;
+
+            const payload = {
+                cart: cart.map(i => ({ product_id: i.id, quantity: i.quantity, unit_price: i.price })),
+                total: total.toFixed(2),
+                discount: discountAmount.toFixed(2),
+                payment_method: 'PENDING_INVOICE',
+                customer_name: name,
+                customer_phone: phone,
+                customer_id: selectedCustomer ? selectedCustomer.id : null,
+            };
+
+            try {
+                const res = await fetch(CHECKOUT_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': CSRF_TOKEN,
+                    },
+                    body: JSON.stringify(payload),
+                });
+                const result = await res.json();
+                if (result.success || result.sale_number) {
+                    closeCreateInvoiceModal();
+                    // Show confirmation popup
+                    document.getElementById('invoice-code-display').textContent = result.sale_number || result.id;
+                    document.getElementById('invoice-customer-display').textContent = `${name} · ${phone}`;
+                    document.getElementById('invoice-total-display').textContent = `Total: ${CURRENCY}${parseFloat(total).toFixed(2)}`;
+                    document.getElementById('invoice-created-modal').classList.add('active');
+                } else {
+                    errBox.textContent = result.error || 'Failed to create invoice. Please try again.';
+                    errBox.style.display = 'block';
+                }
+            } catch (err) {
+                errBox.textContent = 'Network error. Please try again.';
+                errBox.style.display = 'block';
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-save me-1"></i>Save Invoice';
+            }
+        }
     </script>
+
 
     <script>
         // Register Service Worker for PWA install & offline caching
