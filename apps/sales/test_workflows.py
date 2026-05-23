@@ -982,3 +982,55 @@ class WorkflowIntegrationTests(TestCase):
         # Verify accountant cash on hand is 0 (it did NOT enter accountant's pocket)
         ctx_accountant = self.get_navbar_context(self.accountant_user)
         self.assertEqual(ctx_accountant['cash_on_hand'], Decimal("0.00"))
+
+    def test_13_shift_payments_on_account(self):
+        """
+        Verify that payments on account are correctly calculated as part of 
+        expected cash for an open shift, and locked in when closed.
+        """
+        from apps.sales.models import Shift
+        from apps.customers.models import Customer, CustomerTransaction
+        
+        # Create a customer with a balance
+        customer = Customer.objects.create(
+            tenant=self.tenant,
+            name="Jane Doe",
+            credit_limit=Decimal("500.00"),
+            current_balance=Decimal("200.00"),
+            shop=self.shop_location
+        )
+        
+        # Open shift
+        shift = Shift.objects.create(
+            tenant=self.tenant,
+            attendant=self.attendant_user,
+            shop=self.shop_location,
+            opening_cash=Decimal("50.00"),
+            status="OPEN"
+        )
+        
+        # Verify initial expected cash (50)
+        self.assertEqual(shift.expected_cash, Decimal("50.00"))
+        
+        # Record a payment on account
+        CustomerTransaction.objects.create(
+            tenant=self.tenant,
+            customer=customer,
+            transaction_type="CREDIT",
+            amount=Decimal("100.00"),
+            balance_before=Decimal("200.00"),
+            balance_after=Decimal("100.00"),
+            reference_id="PAYMENT-123",
+            description="Payment on account (CASH)",
+            performed_by=self.attendant_user
+        )
+        
+        # Verify expected cash includes the payment on account
+        self.assertEqual(shift.expected_cash, Decimal("150.00"))
+        
+        # Close shift
+        shift.close(closing_cash=Decimal("150.00"))
+        
+        # Verify expected cash is still 150 after closing
+        shift.refresh_from_db()
+        self.assertEqual(shift.expected_cash, Decimal("150.00"))

@@ -14,6 +14,8 @@ def platform_context(request):
         'PLATFORM_COMPANY_NAME': getattr(settings, 'PLATFORM_COMPANY_NAME', 'HendAxis PoS'),
         'PLATFORM_EMAIL': getattr(settings, 'PLATFORM_EMAIL', 'sales@hendaxis.com'),
         'PLATFORM_PHONE': getattr(settings, 'PLATFORM_PHONE', '+233538127939'),
+        'FRONTEND_URL': getattr(settings, 'FRONTEND_URL', 'https://pos.hendaxis.com'),
+        'TINYMCE_API_KEY': getattr(settings, 'TINYMCE_API_KEY', 'no-api-key'),
     }
 
 
@@ -353,6 +355,7 @@ def tenant_context(request):
         # Price Change Alerts for Shop Manager
         if role_name == 'SHOP_MANAGER':
             from datetime import timedelta
+            from django.utils import timezone
             fourteen_days_ago = timezone.now() - timedelta(days=14)
             price_notifications = Notification.objects.filter(
                 user=user, 

@@ -201,11 +201,6 @@ TransferItemFormSet = inlineformset_factory(
 class TransferReceiveForm(forms.Form):
     """Form for receiving transfer items with discrepancy tracking."""
     
-    DISCREPANCY_ACTIONS = [
-        ('RETURN', 'Return to Source'),
-        ('ACCEPT', 'Accept Difference'),
-    ]
-    
     def __init__(self, *args, transfer=None, **kwargs):
         super().__init__(*args, **kwargs)
         
@@ -231,15 +226,6 @@ class TransferReceiveForm(forms.Form):
                     required=False,
                     widget=forms.Select(attrs={
                         'class': 'form-select discrepancy-reason',
-                        'data-item-id': str(item.pk),
-                    })
-                )
-                self.fields[f'action_{item.pk}'] = forms.ChoiceField(
-                    choices=self.DISCREPANCY_ACTIONS,
-                    initial='RETURN',
-                    required=False,
-                    widget=forms.Select(attrs={
-                        'class': 'form-select discrepancy-action',
                         'data-item-id': str(item.pk),
                     })
                 )

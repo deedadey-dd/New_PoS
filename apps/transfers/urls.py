@@ -24,10 +24,12 @@ urlpatterns = [
     # Transfer API
     path('api/batches/', views.get_batches_for_transfer, name='api_batches'),
     path('api/batch-details/', views.get_batch_details, name='api_batch_details'),
+    path('api/requests/summary/', views.api_request_summary, name='api_request_summary'),
     
     # Stock Requests
     path('requests/', views.StockRequestListView.as_view(), name='stock_request_list'),
     path('requests/create/', views.StockRequestCreateView.as_view(), name='stock_request_create'),
+    path('requests/combine/', views.StockRequestCombineView.as_view(), name='stock_request_combine'),
     path('requests/<int:pk>/', views.StockRequestDetailView.as_view(), name='stock_request_detail'),
     path('requests/<int:pk>/approve/', views.StockRequestApproveView.as_view(), name='stock_request_approve'),
     path('requests/<int:pk>/reject/', views.StockRequestRejectView.as_view(), name='stock_request_reject'),

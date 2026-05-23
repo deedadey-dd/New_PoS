@@ -771,18 +771,17 @@ class EmailComposeView(SuperuserRequiredMixin, View):
         messages.success(request, f"Email scheduled to send on {scheduled_dt.strftime('%B %d, %Y at %I:%M %p')}.")
         return redirect('superadmin:email_list')
 
-# ============== FEATURE MESSAGES VIEWS ==============
+# ============== FEATURE MESSAGES VIEWS ==============
 
 class FeatureMessageListView(SuperuserRequiredMixin, ListView):
     """View all feature messages available for monthly distribution."""
     template_name = 'superadmin/feature_message_list.html'
-    context_object_name = 'messages'
+    context_object_name = 'feature_messages'
     paginate_by = 20
     
     def get_queryset(self):
         from apps.core.models import FeatureMessage
         return FeatureMessage.objects.all().order_by('-created_at')
-
 
 class FeatureMessageCreateView(SuperuserRequiredMixin, View):
     """Create a new feature introduction message."""
@@ -828,6 +827,144 @@ class FeatureMessageDetailView(SuperuserRequiredMixin, DetailView):
         from apps.core.models import FeatureMessage
         return FeatureMessage.objects.all()
         
+class AllPaymentsView(SuperuserRequiredMixin, ListView):
+    """View all subscription payments across all tenants."""
+    model = SubscriptionPayment
+    template_name = 'superadmin/all_payments.html'
+    context_object_name = 'payments'
+    paginate_by = 30
+    
+    def get_queryset(self):
+        queryset = SubscriptionPayment.objects.select_related('tenant', 'created_by').order_by('-created_at')
+        
+        # Filter by payment type
+        payment_type = self.request.GET.get('type')
+        if payment_type:
+            queryset = queryset.filter(payment_type=payment_type)
+        
+        # Filter by status
+        status = self.request.GET.get('status')
+        if status:
+            queryset = queryset.filter(status=status)
+        
+        # Filter by tenant
+        tenant_id = self.request.GET.get('tenant')
+        if tenant_id:
+            queryset = queryset.filter(tenant_id=tenant_id)
+        
+        # Filter by recorded by (created_by)
+        recorded_by = self.request.GET.get('recorded_by')
+        if recorded_by:
+            queryset = queryset.filter(created_by_id=recorded_by)
+        
+        # Filter by date range
+        date_from = self.request.GET.get('date_from')
+        if date_from:
+            queryset = queryset.filter(created_at__date__gte=date_from)
+        
+        date_to = self.request.GET.get('date_to')
+        if date_to:
+            queryset = queryset.filter(created_at__date__lte=date_to)
+        
+        # Search by receipt number or reference
+        search = self.request.GET.get('search')
+        if search:
+            queryset = queryset.filter(
+                Q(receipt_number__icontains=search) |
+                Q(transaction_reference__icontains=search)
+            )
+        
+        return queryset
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['payment_types'] = SubscriptionPayment.PAYMENT_TYPE_CHOICES
+        context['status_choices'] = SubscriptionPayment.STATUS_CHOICES
+        
+        # Tenant list for filter dropdown
+        context['tenants'] = Tenant.objects.all().order_by('name')
+        
+        # Users who have recorded payments (tenant managers + superusers)
+        context['managers'] = User.objects.filter(
+            Q(is_superuser=True) | Q(role__name='TENANT_MANAGER')
+        ).distinct().order_by('email')
+        
+        # Summary totals
+        context['total_revenue'] = SubscriptionPayment.objects.filter(
+            status='COMPLETED'
+        ).aggregate(total=Sum('amount'))['total'] or 0
+        
+        context['onboarding_revenue'] = SubscriptionPayment.objects.filter(
+            status='COMPLETED', payment_type='ONBOARDING'
+        ).aggregate(total=Sum('amount'))['total'] or 0
+        
+        context['subscription_revenue'] = SubscriptionPayment.objects.filter(
+            status='COMPLETED', payment_type__in=['SUBSCRIPTION', 'RENEWAL']
+        ).aggregate(total=Sum('amount'))['total'] or 0
+        
+        return context
+
+# ============== EMAILS MANAGEMENT VIEWS ==============
+
+class EmailListView(SuperuserRequiredMixin, ListView):
+    """View all scheduled and sent custom emails."""
+    template_name = 'superadmin/email_list.html'
+    context_object_name = 'emails'
+    paginate_by = 20
+    
+    def get_queryset(self):
+        from apps.core.models import ScheduledEmail
+        return ScheduledEmail.objects.all().order_by('-created_at')
+
+class EmailComposeView(SuperuserRequiredMixin, View):
+    """Compose and schedule a new custom email."""
+    template_name = 'superadmin/email_compose.html'
+    
+    def get(self, request):
+        return render(request, self.template_name, {
+            'tenants': Tenant.objects.filter(is_active=True).order_by('name'),
+        })
+        
+    def post(self, request):
+        from apps.core.models import ScheduledEmail
+        
+        subject = request.POST.get('subject')
+        body = request.POST.get('body')
+        target_audience = request.POST.get('target_audience', 'ADMINS')
+        target_tenant_ids = request.POST.getlist('target_tenants')
+        scheduled_date = request.POST.get('scheduled_date')
+        scheduled_time = request.POST.get('scheduled_time')
+        
+        if not subject or not body or not scheduled_date or not scheduled_time:
+            messages.error(request, "Subject, body, and schedule time are required.")
+            return redirect('superadmin:email_compose')
+            
+        from datetime import datetime
+        try:
+            naive_dt = datetime.strptime(f"{scheduled_date} {scheduled_time}", "%Y-%m-%d %H:%M")
+            scheduled_dt = timezone.make_aware(naive_dt)
+        except ValueError:
+            messages.error(request, "Invalid date or time format.")
+            return redirect('superadmin:email_compose')
+            
+        email = ScheduledEmail.objects.create(
+            subject=subject,
+            body=body,
+            created_by=request.user,
+            target_audience=target_audience,
+            scheduled_time=scheduled_dt,
+            status='PENDING'
+        )
+        
+        if target_tenant_ids:
+            tenants = Tenant.objects.filter(id__in=target_tenant_ids)
+            email.target_tenants.set(tenants)
+            
+        messages.success(request, f"Email scheduled to send on {scheduled_dt.strftime('%B %d, %Y at %I:%M %p')}.")
+        return redirect('superadmin:email_list')
+
+
+        
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         # Add history stats
@@ -838,3 +975,99 @@ class FeatureMessageDetailView(SuperuserRequiredMixin, DetailView):
         context['not_helpful_count'] = history.filter(feedback_helpful=False).count()
         context['recent_history'] = history.select_related('tenant').order_by('-sent_at')[:20]
         return context
+
+class FeatureMessageToggleView(SuperuserRequiredMixin, View):
+    def post(self, request, pk):
+        from apps.core.models import FeatureMessage
+        msg = get_object_or_404(FeatureMessage, pk=pk)
+        msg.is_active = not msg.is_active
+        msg.save()
+        messages.success(request, f"Feature message '{msg.title}' is now {'Active' if msg.is_active else 'Inactive'}.")
+        return redirect('superadmin:feature_message_list')
+
+class FeatureMessageDeleteView(SuperuserRequiredMixin, View):
+    def post(self, request, pk):
+        from apps.core.models import FeatureMessage
+        msg = get_object_or_404(FeatureMessage, pk=pk)
+        title = msg.title
+        msg.delete()
+        messages.success(request, f"Feature message '{title}' deleted.")
+        return redirect('superadmin:feature_message_list')
+
+class FeatureMessageUpdateView(SuperuserRequiredMixin, View):
+    template_name = 'superadmin/feature_message_form.html'
+    
+    def get(self, request, pk):
+        from apps.core.models import FeatureMessage
+        msg = get_object_or_404(FeatureMessage, pk=pk)
+        return render(request, self.template_name, {'feature_message': msg, 'is_edit': True})
+        
+    def post(self, request, pk):
+        from apps.core.models import FeatureMessage
+        msg = get_object_or_404(FeatureMessage, pk=pk)
+        
+        feature_key = request.POST.get('feature_key')
+        title = request.POST.get('title')
+        content = request.POST.get('content')
+        is_active = request.POST.get('is_active') == 'on'
+        
+        if not feature_key or not title or not content:
+            messages.error(request, "Feature key, title, and content are required.")
+            return redirect('superadmin:feature_message_edit', pk=pk)
+            
+        if FeatureMessage.objects.exclude(pk=pk).filter(feature_key=feature_key).exists():
+            messages.error(request, "A feature message with this key already exists.")
+            return redirect('superadmin:feature_message_edit', pk=pk)
+            
+        msg.feature_key = feature_key
+        msg.title = title
+        msg.content = content
+        msg.is_active = is_active
+        msg.save()
+        
+        messages.success(request, "Feature message updated successfully.")
+        return redirect('superadmin:feature_message_detail', pk=pk)
+
+class FeatureImageUploadView(SuperuserRequiredMixin, View):
+    def post(self, request):
+        import os
+        import time
+        from django.conf import settings
+        from PIL import Image
+        from django.http import JsonResponse
+        
+        if 'file' not in request.FILES:
+            return JsonResponse({'error': 'No file uploaded'}, status=400)
+            
+        uploaded_file = request.FILES['file']
+        
+        # Create directory if it doesn't exist
+        upload_dir = os.path.join(settings.MEDIA_ROOT, 'feature_images')
+        os.makedirs(upload_dir, exist_ok=True)
+        
+        # Generate unique filename
+        filename = f"{int(time.time())}_{uploaded_file.name.split('.')[0]}.webp"
+        filepath = os.path.join(upload_dir, filename)
+        
+        try:
+            # Open, resize, and convert to WebP
+            with Image.open(uploaded_file) as img:
+                # Convert to RGB if RGBA
+                if img.mode in ('RGBA', 'P'):
+                    img = img.convert('RGB')
+                
+                # Resize if width > 1000px
+                max_width = 1000
+                if img.width > max_width:
+                    ratio = max_width / float(img.width)
+                    new_height = int((float(img.height) * float(ratio)))
+                    img = img.resize((max_width, new_height), Image.Resampling.LANCZOS)
+                
+                # Save as WebP
+                img.save(filepath, 'WEBP', quality=85)
+                
+            # Return URL
+            url = os.path.join(settings.MEDIA_URL, 'feature_images', filename).replace('\\', '/')
+            return JsonResponse({'location': url})
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)

@@ -182,3 +182,79 @@ class TransferDiscrepancyTests(TestCase):
         self.assertIsNotNone(adjustment, "A pending StockAdjustment should be created for DAMAGED reasons.")
         self.assertEqual(adjustment.quantity, Decimal('-3'))  # Negative to remove
         self.assertIn('Damaged in Transit', adjustment.reason)
+
+
+from apps.transfers.models import StockRequest, StockRequestItem
+
+class StockRequestCombineTests(TestCase):
+    def setUp(self):
+        # Setup similar basic data
+        self.tenant = Tenant.objects.create(name="Combine Test Tenant")
+        self.stores_role, _ = Role.objects.get_or_create(name='STORES_MANAGER')
+        self.shop_role, _ = Role.objects.get_or_create(name='SHOP_MANAGER')
+        
+        self.stores = Location.objects.create(tenant=self.tenant, name="Main Store", location_type='STORES')
+        self.shop = Location.objects.create(tenant=self.tenant, name="Branch 1", location_type='SHOP')
+        
+        self.store_manager = User.objects.create(email="stores2@test.com", tenant=self.tenant, role=self.stores_role, location=self.stores)
+        self.shop_manager = User.objects.create(email="shop2@test.com", tenant=self.tenant, role=self.shop_role, location=self.shop)
+        
+        self.category = Category.objects.create(tenant=self.tenant, name="Electronics")
+        self.product1 = Product.objects.create(tenant=self.tenant, name="Laptop", sku="LPT", category=self.category, default_selling_price=Decimal('1000.00'))
+        self.product2 = Product.objects.create(tenant=self.tenant, name="Mouse", sku="MOU", category=self.category, default_selling_price=Decimal('50.00'))
+
+    def test_combine_stock_requests(self):
+        # Create requests
+        req1 = StockRequest.objects.create(
+            tenant=self.tenant, requesting_location=self.shop, supplying_location=self.stores, 
+            status='PENDING', requested_by=self.shop_manager
+        )
+        StockRequestItem.objects.create(tenant=self.tenant, request=req1, product=self.product1, quantity_requested=Decimal('5'), notes='Urgent')
+        
+        req2 = StockRequest.objects.create(
+            tenant=self.tenant, requesting_location=self.shop, supplying_location=self.stores, 
+            status='PENDING', requested_by=self.shop_manager
+        )
+        StockRequestItem.objects.create(tenant=self.tenant, request=req2, product=self.product1, quantity_requested=Decimal('3'), notes='For new staff')
+        StockRequestItem.objects.create(tenant=self.tenant, request=req2, product=self.product2, quantity_requested=Decimal('10'))
+
+        self.client.force_login(self.store_manager)
+        
+        # Combine requests via API
+        response = self.client.post(
+            '/transfers/requests/combine/', 
+            {'request_ids': [req1.id, req2.id]},
+            content_type='application/json'
+        )
+        
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data.get('success'))
+        
+        # Check resulting transfer
+        req1.refresh_from_db()
+        req2.refresh_from_db()
+        
+        self.assertEqual(req1.status, 'CONVERTED')
+        self.assertEqual(req2.status, 'CONVERTED')
+        self.assertIsNotNone(req1.resulting_transfer)
+        self.assertEqual(req1.resulting_transfer, req2.resulting_transfer)
+        
+        transfer = req1.resulting_transfer
+        self.assertEqual(transfer.status, 'DRAFT')
+        self.assertEqual(transfer.source_location, self.stores)
+        self.assertEqual(transfer.destination_location, self.shop)
+        
+        # Check items aggregated
+        items = transfer.items.all().order_by('product__name')
+        self.assertEqual(items.count(), 2)
+        
+        # Laptop should have 5 + 3 = 8
+        laptop_item = items.get(product=self.product1)
+        self.assertEqual(laptop_item.quantity_requested, Decimal('8'))
+        self.assertIn('Urgent', laptop_item.notes)
+        self.assertIn('For new staff', laptop_item.notes)
+        
+        # Mouse should have 10
+        mouse_item = items.get(product=self.product2)
+        self.assertEqual(mouse_item.quantity_requested, Decimal('10'))

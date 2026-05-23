@@ -1715,25 +1715,27 @@ class ShopPriceSetView(LoginRequiredMixin, View):
                 is_active=True
             )
             
-            # Notify shop manager if changed by accountant/admin
-            if request.user.location != shop:
-                from apps.notifications.models import Notification
-                from apps.core.models import User
-                shop_managers = User.objects.filter(
+            # Notify shop managers of the change
+            from apps.notifications.models import Notification
+            from apps.core.models import User
+            shop_managers = User.objects.filter(
+                tenant=request.user.tenant,
+                location=shop,
+                role__name='SHOP_MANAGER'
+            )
+            
+            changer_name = "you" if request.user.location == shop else (request.user.get_full_name() or request.user.email)
+            
+            for mgr in shop_managers:
+                Notification.objects.create(
                     tenant=request.user.tenant,
-                    location=shop,
-                    role__name='SHOP_MANAGER'
+                    user=mgr,
+                    title=f'Shop Price Change ({shop.name})',
+                    message=f'The price for {product.name} at {shop.name} has been updated to {request.user.tenant.currency_symbol}{selling_price} by {changer_name}.',
+                    notification_type='PRICE_CHANGE',
+                    reference_type='Product',
+                    reference_id=product.id
                 )
-                for mgr in shop_managers:
-                    Notification.objects.create(
-                        tenant=request.user.tenant,
-                        user=mgr,
-                        title='Price Change Alert',
-                        message=f'The price for {product.name} at your shop has been updated to {request.user.tenant.currency_symbol}{selling_price}.',
-                        notification_type='PRICE_CHANGE',
-                        reference_type='Product',
-                        reference_id=product.id
-                    )
             
             messages.success(request, f'Price for "{product.name}" at {shop.name} set to {request.user.tenant.currency_symbol}{selling_price}')
             
@@ -1883,15 +1885,27 @@ class PriceChangeCenterView(LoginRequiredMixin, SortableMixin, ListView):
     def get_queryset(self):
         from apps.notifications.models import Notification
         from datetime import timedelta
+        from django.utils import timezone
         
         user = self.request.user
-        queryset = Notification.objects.filter(
-            user=user,
-            notification_type='PRICE_CHANGE'
-        )
+        view_scope = self.request.GET.get('scope', 'mine')
+        
+        if view_scope == 'all':
+            queryset = Notification.objects.filter(
+                tenant=user.tenant,
+                notification_type='PRICE_CHANGE'
+            ).distinct('title', 'message', 'created_at') if hasattr(Notification.objects, 'distinct') and False else Notification.objects.filter(
+                tenant=user.tenant,
+                notification_type='PRICE_CHANGE'
+            ) # SQLite doesn't support distinct on fields, so we just return all
+        else:
+            queryset = Notification.objects.filter(
+                user=user,
+                notification_type='PRICE_CHANGE'
+            )
         
         # Mark all unread price notifications as read when this page is loaded
-        unread = queryset.filter(is_read=False)
+        unread = queryset.filter(user=user, is_read=False)
         if unread.exists():
             unread.update(is_read=True)
             
@@ -1919,4 +1933,32 @@ class PriceChangeCenterView(LoginRequiredMixin, SortableMixin, ListView):
         context = super().get_context_data(**kwargs)
         context['current_range'] = self.request.GET.get('range', '14days')
         context['current_search'] = self.request.GET.get('q', '')
+        context['current_scope'] = self.request.GET.get('scope', 'mine')
+        
+        # Attach product information and parse new price
+        import re
+        from apps.inventory.models import Product
+        
+        notifications = context.get('notifications', [])
+        
+        # Pre-fetch products
+        product_ids = [n.reference_id for n in notifications if n.reference_type == 'Product' and n.reference_id]
+        products_dict = {p.id: p for p in Product.objects.filter(id__in=product_ids)}
+        
+        for n in notifications:
+            n.parsed_product = products_dict.get(n.reference_id)
+            n.parsed_sku = n.parsed_product.sku if n.parsed_product else 'N/A'
+            n.parsed_product_name = n.parsed_product.name if n.parsed_product else 'Unknown Product'
+            
+            # Extract new price from message (e.g. updated to ¢200)
+            # Find currency symbol followed by numbers (and optional decimal)
+            # The message is usually: "The price for {product.name} at your shop has been updated to {currency}{selling_price}"
+            price_match = re.search(r'updated to ([^ ]+)', n.message)
+            if price_match:
+                n.parsed_new_price = price_match.group(1).rstrip('.')
+            else:
+                n.parsed_new_price = 'N/A'
+                
+            n.parsed_reference = 'Other'
+            
         return context

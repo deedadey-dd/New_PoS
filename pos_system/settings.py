@@ -320,6 +320,10 @@ DEFAULT_ADDITIONAL_SHOP_PRICE = float(os.getenv('DEFAULT_ADDITIONAL_SHOP_PRICE',
 PLATFORM_COMPANY_NAME = os.getenv('PLATFORM_COMPANY_NAME', 'HendAxis PoS')
 PLATFORM_EMAIL = os.getenv('PLATFORM_EMAIL', 'sales@hendaxis.com')
 PLATFORM_PHONE = os.getenv('PLATFORM_PHONE', '+233538127939')
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://pos.hendaxis.com')
+
+# Third-party Services
+TINYMCE_API_KEY = os.getenv('TINYMCE_API_KEY', 'no-api-key')
 
 # CORS Settings
 CORS_ALLOW_ALL_ORIGINS = DEBUG  # Allow all in dev/electron

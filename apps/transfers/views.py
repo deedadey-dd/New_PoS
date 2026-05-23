@@ -399,7 +399,6 @@ class TransferReceiveView(LoginRequiredMixin, View):
                 'item': item,
                 'field': form[f'received_{item.pk}'],
                 'reason_field': form[f'reason_{item.pk}'],
-                'action_field': form[f'action_{item.pk}'],
                 'notes_field': form[f'notes_{item.pk}'],
             })
         
@@ -428,12 +427,10 @@ class TransferReceiveView(LoginRequiredMixin, View):
                 items_received[str(item.pk)] = form.cleaned_data.get(f'received_{item.pk}', 0)
                 reason = form.cleaned_data.get(f'reason_{item.pk}', '')
                 notes = form.cleaned_data.get(f'notes_{item.pk}', '')
-                action = form.cleaned_data.get(f'action_{item.pk}', 'RETURN')
                 if reason:
                     discrepancy_data[str(item.pk)] = {
                         'reason': reason,
                         'notes': notes,
-                        'action': action,
                     }
             
             try:
@@ -454,7 +451,6 @@ class TransferReceiveView(LoginRequiredMixin, View):
                     'item': item,
                     'field': form[f'received_{item.pk}'],
                     'reason_field': form[f'reason_{item.pk}'],
-                    'action_field': form[f'action_{item.pk}'],
                     'notes_field': form[f'notes_{item.pk}'],
                 })
             return render(request, self.template_name, {
@@ -579,6 +575,57 @@ def get_batch_details(request):
         })
     except Batch.DoesNotExist:
         return JsonResponse({'error': 'Batch not found'}, status=404)
+
+
+@login_required
+def api_request_summary(request):
+    """API endpoint to get aggregated summary of multiple stock requests."""
+    ids_str = request.GET.get('ids', '')
+    if not ids_str:
+        return JsonResponse({'error': 'No request IDs provided'}, status=400)
+    
+    try:
+        request_ids = [int(i) for i in ids_str.split(',') if i.strip()]
+    except ValueError:
+        return JsonResponse({'error': 'Invalid request IDs'}, status=400)
+    
+    # Query all request items belonging to these requests
+    from decimal import Decimal
+    items = StockRequestItem.objects.filter(
+        request_id__in=request_ids,
+        request__tenant=request.user.tenant
+    ).select_related('product')
+    
+    # Aggregate quantities by product
+    summary = {}
+    for item in items:
+        prod_id = item.product.id
+        if prod_id not in summary:
+            summary[prod_id] = {
+                'product_name': item.product.name,
+                'sku': item.product.sku,
+                'total_quantity': Decimal('0'),
+                'notes': set()
+            }
+        
+        summary[prod_id]['total_quantity'] += item.quantity_requested
+        if item.notes:
+            summary[prod_id]['notes'].add(item.notes)
+            
+    # Format response
+    result = []
+    for prod_id, data in summary.items():
+        result.append({
+            'product_name': data['product_name'],
+            'sku': data['sku'],
+            'total_quantity': str(data['total_quantity']),
+            'notes': ' | '.join(data['notes']) if data['notes'] else ''
+        })
+        
+    # Sort alphabetically by product name
+    result.sort(key=lambda x: x['product_name'])
+    
+    return JsonResponse({'summary': result})
 
 
 class TransferItemHistoryView(LoginRequiredMixin, ListView):
@@ -1016,6 +1063,105 @@ class StockRequestConvertView(LoginRequiredMixin, View):
         except Exception as e:
             messages.error(request, str(e))
             return redirect('transfers:stock_request_detail', pk=pk)
+
+
+class StockRequestCombineView(LoginRequiredMixin, View):
+    """Combine multiple pending/approved stock requests into a single draft transfer."""
+    
+    def post(self, request):
+        import json
+        from django.urls import reverse
+        from django.utils import timezone
+        
+        try:
+            # Check permission
+            role_name = request.user.role.name if request.user.role else ''
+            if role_name not in ['ADMIN', 'STORES_MANAGER']:
+                return JsonResponse({'error': 'Permission denied.'}, status=403)
+                
+            data = json.loads(request.body)
+            request_ids = data.get('request_ids', [])
+            
+            if not request_ids or len(request_ids) < 2:
+                return JsonResponse({'error': 'Please select at least two requests to combine.'}, status=400)
+                
+            # Fetch requests
+            stock_requests = StockRequest.objects.filter(
+                id__in=request_ids, 
+                tenant=request.user.tenant
+            ).select_related('requesting_location', 'supplying_location')
+            
+            if stock_requests.count() != len(request_ids):
+                return JsonResponse({'error': 'One or more requests could not be found.'}, status=400)
+                
+            # Verify they all have the same supplying and requesting location
+            first_req = stock_requests.first()
+            supplying_loc = first_req.supplying_location
+            requesting_loc = first_req.requesting_location
+            
+            for req in stock_requests:
+                if req.supplying_location != supplying_loc or req.requesting_location != requesting_loc:
+                    return JsonResponse({'error': 'All requests must be between the same source and destination locations.'}, status=400)
+                if req.status not in ['PENDING', 'APPROVED']:
+                    return JsonResponse({'error': f'Request {req.request_number} is in {req.status} status and cannot be combined.'}, status=400)
+            
+            with transaction.atomic():
+                # 1. Create the new Transfer
+                transfer = Transfer(
+                    tenant=request.user.tenant,
+                    source_location=supplying_loc,
+                    destination_location=requesting_loc,
+                    status='DRAFT',
+                    created_by=request.user,
+                    notes=f"Combined from {stock_requests.count()} requests: " + ", ".join([r.request_number for r in stock_requests])
+                )
+                transfer.save()
+                
+                # 2. Aggregate items
+                from decimal import Decimal
+                aggregated_items = {}
+                
+                for req in stock_requests:
+                    for item in req.items.all():
+                        prod_id = item.product.id
+                        if prod_id not in aggregated_items:
+                            aggregated_items[prod_id] = {
+                                'product': item.product,
+                                'quantity': Decimal('0'),
+                                'notes': set()
+                            }
+                        aggregated_items[prod_id]['quantity'] += item.quantity_requested
+                        if item.notes:
+                            aggregated_items[prod_id]['notes'].add(item.notes)
+                
+                # 3. Create TransferItems
+                for prod_id, data in aggregated_items.items():
+                    notes_str = " | ".join(data['notes'])
+                    TransferItem.objects.create(
+                        tenant=request.user.tenant,
+                        transfer=transfer,
+                        product=data['product'],
+                        quantity_requested=data['quantity'],
+                        notes=notes_str
+                    )
+                
+                # 4. Update the requests
+                now = timezone.now()
+                for req in stock_requests:
+                    req.status = 'CONVERTED'
+                    req.approved_by = request.user
+                    req.approved_at = now
+                    req.resulting_transfer = transfer
+                    req.save()
+            
+            return JsonResponse({
+                'success': True, 
+                'message': f'Successfully combined into Transfer {transfer.transfer_number}.',
+                'redirect_url': reverse('transfers:transfer_edit', args=[transfer.pk])
+            })
+            
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
 
 
 class StockRequestCancelView(LoginRequiredMixin, View):

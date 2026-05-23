@@ -35,13 +35,16 @@
         .sa-sidebar::-webkit-scrollbar {
             width: 6px;
         }
+
         .sa-sidebar::-webkit-scrollbar-track {
             background: transparent;
         }
+
         .sa-sidebar::-webkit-scrollbar-thumb {
             background: rgba(255, 255, 255, 0.15);
             border-radius: 3px;
         }
+
         .sa-sidebar::-webkit-scrollbar-thumb:hover {
             background: rgba(255, 255, 255, 0.25);
         }
@@ -154,7 +157,7 @@
 <body>
     <div class="d-flex">
         <!-- Sidebar -->
-        <div class="sa-sidebar p-3" style="width: 250px;">
+        <div class="sa-sidebar p-3 flex-shrink-0" style="width: 250px;">
             <div class="d-flex align-items-center mb-4 px-2">
                 <i class="bi bi-shield-lock fs-3 text-purple me-2" style="color: var(--sa-primary);"></i>
                 <span class="fs-5 fw-bold">Superadmin</span>

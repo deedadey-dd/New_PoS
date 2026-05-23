@@ -121,15 +121,39 @@ class Shift(TenantModel):
     @property
     def total_sales(self):
         """Total cash sales during this shift."""
-        return self.sales.filter(
-            status='COMPLETED',
-            payment_method__in=['CASH', 'MIXED']
-        ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+        cash_total = self.sales.filter(
+            status='COMPLETED', payment_method='CASH'
+        ).aggregate(t=Sum('total'))['t'] or Decimal('0')
+        mixed_total = self.sales.filter(
+            status='COMPLETED', payment_method='MIXED'
+        ).aggregate(t=Sum('amount_paid'))['t'] or Decimal('0')
+        return cash_total + mixed_total
+        
+    @property
+    def payments_on_account(self):
+        """Total cash payments received on account during this shift."""
+        from apps.customers.models import CustomerTransaction
+        from django.db.models import Q
+        qs = CustomerTransaction.objects.filter(
+            tenant=self.tenant,
+            performed_by=self.attendant,
+            transaction_type='CREDIT',
+            created_at__gte=self.start_time
+        ).filter(
+            Q(description__icontains='(CASH)') | 
+            Q(description__icontains='Overpayment') |
+            Q(description__icontains='Change from Sale') |
+            Q(description='Payment on account')
+        )
+        if self.end_time:
+            qs = qs.filter(created_at__lte=self.end_time)
+            
+        return qs.aggregate(total=Sum('amount'))['total'] or Decimal('0')
     
     @property
     def expected_cash(self):
-        """Expected cash = opening + cash sales."""
-        return self.opening_cash + self.total_sales
+        """Expected cash = opening + cash sales + payments on account."""
+        return self.opening_cash + self.total_sales + self.payments_on_account
     
     @property
     def cash_variance(self):
@@ -413,6 +437,25 @@ class Sale(TenantModel):
         
         if self.amount_paid >= self.total:
             self.change_given = self.amount_paid - self.total
+            
+            # If customer is selected and change is > 0, credit change to account
+            if self.customer and self.change_given > 0:
+                from apps.customers.models import CustomerTransaction
+                balance_before = self.customer.current_balance
+                self.customer.current_balance -= self.change_given
+                self.customer.save()
+                
+                CustomerTransaction.objects.create(
+                    tenant=self.tenant,
+                    customer=self.customer,
+                    transaction_type='CREDIT',
+                    amount=self.change_given,
+                    description=f"Change from Sale {self.sale_number} (CASH)",
+                    reference_id=self.sale_number,
+                    balance_before=balance_before,
+                    balance_after=self.customer.current_balance,
+                    performed_by=self.attendant
+                )
         else:
             # Partial payment - credit sale
             if payment_method == 'CASH':

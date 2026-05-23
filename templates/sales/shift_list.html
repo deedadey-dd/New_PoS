@@ -204,6 +204,10 @@
                                 <div class="col-6 text-muted">Cash Sales:</div>
                                 <div class="col-6 text-end font-monospace text-success" id="shiftTotalSales"></div>
                             </div>
+                            <div class="row mb-1">
+                                <div class="col-6 text-muted">Payments on Account (Cash):</div>
+                                <div class="col-6 text-end font-monospace text-success" id="shiftPaymentsOnAccount"></div>
+                            </div>
                             <hr class="my-1">
                             <div class="row mb-1 fw-bold">
                                 <div class="col-6">Expected Cash:</div>
@@ -216,6 +220,24 @@
                             <div class="row mt-2" id="shiftVarianceRow">
                                 <div class="col-6 fw-bold">Variance:</div>
                                 <div class="col-6 text-end fw-bold font-monospace" id="shiftVariance"></div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="card bg-light border-0 mb-3">
+                        <div class="card-body py-2">
+                            <h6 class="text-muted mb-2">Other Transactions</h6>
+                            <div class="row mb-1">
+                                <div class="col-6 text-muted">E-Cash Sales:</div>
+                                <div class="col-6 text-end font-monospace" id="shiftECashSales"></div>
+                            </div>
+                            <div class="row mb-1">
+                                <div class="col-6 text-muted">Local Momo Sales:</div>
+                                <div class="col-6 text-end font-monospace" id="shiftMomoSales"></div>
+                            </div>
+                            <div class="row mb-1">
+                                <div class="col-6 text-muted">Credit Sales:</div>
+                                <div class="col-6 text-end font-monospace" id="shiftCreditSales"></div>
                             </div>
                         </div>
                     </div>
@@ -279,9 +301,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 document.getElementById('shiftEndTime').textContent = data.end_time;
                 
                 document.getElementById('shiftOpeningCash').textContent = data.opening_cash;
-                document.getElementById('shiftTotalSales').textContent = '+' + data.total_sales;
+                document.getElementById('shiftTotalSales').textContent = '+' + data.cash_sales;
+                document.getElementById('shiftPaymentsOnAccount').textContent = '+' + data.payments_on_account;
                 document.getElementById('shiftExpectedCash').textContent = data.expected_cash;
                 document.getElementById('shiftClosingCash').textContent = data.closing_cash;
+                
+                document.getElementById('shiftECashSales').textContent = data.ecash_sales;
+                document.getElementById('shiftMomoSales').textContent = data.momo_sales;
+                document.getElementById('shiftCreditSales').textContent = data.credit_sales;
                 
                 const varianceRow = document.getElementById('shiftVarianceRow');
                 const varianceEl = document.getElementById('shiftVariance');

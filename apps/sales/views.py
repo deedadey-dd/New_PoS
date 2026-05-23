@@ -225,21 +225,26 @@ class ShiftCloseView(LoginRequiredMixin, View):
             total=Sum('total'))['total'] or Decimal('0')
         ecash_sales = sales_qs.filter(payment_method='ECASH').aggregate(
             total=Sum('total'))['total'] or Decimal('0')
+        momo_sales = sales_qs.filter(payment_method='MOMO').aggregate(
+            total=Sum('total'))['total'] or Decimal('0')
         credit_sales = sales_qs.filter(payment_method='CREDIT').aggregate(
             total=Sum('total'))['total'] or Decimal('0')
         mixed_sales = sales_qs.filter(payment_method='MIXED').aggregate(
             total=Sum('amount_paid'))['total'] or Decimal('0')  # Only cash portion
         
         all_sales = sales_qs.aggregate(total=Sum('total'))['total'] or Decimal('0')
-        total_cash = shift.opening_cash + cash_sales + mixed_sales
+        payments_on_account = shift.payments_on_account
+        total_cash = shift.opening_cash + cash_sales + mixed_sales + payments_on_account
         
         return render(request, self.template_name, {
             'shift': shift,
-            'expected_cash': total_cash,  # Opening + Cash Sales portion
+            'expected_cash': total_cash,  # Opening + Cash Sales portion + Payments
             'total_sales': all_sales,  # All sales
             'cash_sales': cash_sales + mixed_sales,  # Cash portion only
             'ecash_sales': ecash_sales,
+            'momo_sales': momo_sales,
             'credit_sales': credit_sales,
+            'payments_on_account': payments_on_account,
             'shop_manager': shop_manager,
         })
     
@@ -422,6 +427,24 @@ def api_shift_detail(request, pk):
         elif role_name == 'SHOP_MANAGER' and shift.shop != request.user.location:
             return JsonResponse({'error': 'Permission denied'}, status=403)
             
+        # Calculate sales breakdown
+        from django.db.models import Sum
+        from decimal import Decimal
+        sales_qs = shift.sales.filter(status='COMPLETED')
+        ecash_sales = sales_qs.filter(payment_method='ECASH').aggregate(total=Sum('total'))['total'] or Decimal('0')
+        momo_sales = sales_qs.filter(payment_method='MOMO').aggregate(total=Sum('total'))['total'] or Decimal('0')
+        credit_sales = sales_qs.filter(payment_method='CREDIT').aggregate(total=Sum('total'))['total'] or Decimal('0')
+        mixed_cash = sales_qs.filter(payment_method='MIXED').aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+        mixed_credit_total = sales_qs.filter(payment_method='MIXED').aggregate(total=Sum('total'))['total'] or Decimal('0')
+        mixed_credit = mixed_credit_total - mixed_cash
+        
+        total_credit_sales = credit_sales + mixed_credit
+        cash_sales = shift.total_sales
+        payments_on_account = shift.payments_on_account
+        
+        def fmt(val):
+            return f"{float(val):.2f}"
+            
         data = {
             'id': shift.pk,
             'shop': shift.shop.name,
@@ -429,11 +452,15 @@ def api_shift_detail(request, pk):
             'status': shift.get_status_display(),
             'start_time': shift.start_time.strftime('%b %d, %Y %H:%M'),
             'end_time': shift.end_time.strftime('%b %d, %Y %H:%M') if shift.end_time else 'Active',
-            'opening_cash': str(shift.opening_cash),
-            'closing_cash': str(shift.closing_cash) if shift.closing_cash is not None else 'N/A',
-            'total_sales': str(shift.total_sales),
-            'expected_cash': str(shift.expected_cash),
-            'variance': str(shift.cash_variance) if shift.cash_variance is not None else 'N/A',
+            'opening_cash': fmt(shift.opening_cash),
+            'closing_cash': fmt(shift.closing_cash) if shift.closing_cash is not None else 'N/A',
+            'cash_sales': fmt(cash_sales),
+            'ecash_sales': fmt(ecash_sales),
+            'momo_sales': fmt(momo_sales),
+            'credit_sales': fmt(total_credit_sales),
+            'payments_on_account': fmt(payments_on_account),
+            'expected_cash': fmt(shift.expected_cash),
+            'variance': fmt(shift.cash_variance) if shift.cash_variance is not None else 'N/A',
             'notes': shift.notes
         }
         return JsonResponse(data)

@@ -1525,7 +1525,7 @@
                     document.getElementById('credit-current-balance').textContent = CURRENCY + parseFloat(selectedCustomer.current_balance).toFixed(2);
                     document.getElementById('credit-new-balance').textContent = '(Updates with payment)';
                     document.getElementById('credit-limit-warning').innerHTML =
-                        '<span class="text-muted small"><i class="bi bi-info-circle"></i> Pay less: remaining credited. Pay more: reduces balance or stores credit.</span>';
+                        '<span class="text-danger fw-bold small"><i class="bi bi-exclamation-triangle-fill"></i> Warning: Since a customer is selected, any excess cash (change) will be credited to their account. If you just want to give them their change, close this and remove the customer from the sale.</span>';
                 } else {
                     creditInfo.style.display = 'none';
                 }

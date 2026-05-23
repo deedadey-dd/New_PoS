@@ -41,4 +41,8 @@ urlpatterns = [
     path('features/', superadmin_views.FeatureMessageListView.as_view(), name='feature_message_list'),
     path('features/create/', superadmin_views.FeatureMessageCreateView.as_view(), name='feature_message_create'),
     path('features/<int:pk>/', superadmin_views.FeatureMessageDetailView.as_view(), name='feature_message_detail'),
+    path('features/<int:pk>/edit/', superadmin_views.FeatureMessageUpdateView.as_view(), name='feature_message_edit'),
+    path('features/<int:pk>/toggle/', superadmin_views.FeatureMessageToggleView.as_view(), name='feature_message_toggle'),
+    path('features/<int:pk>/delete/', superadmin_views.FeatureMessageDeleteView.as_view(), name='feature_message_delete'),
+    path('features/upload-image/', superadmin_views.FeatureImageUploadView.as_view(), name='feature_image_upload'),
 ]

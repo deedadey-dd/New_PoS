@@ -36,8 +36,8 @@
         </li>
     </ul>
 
-    <!-- Status Filter -->
-    <div class="mb-3">
+    <!-- Status Filter and Summary Button -->
+    <div class="mb-3 d-flex justify-content-between align-items-center">
         <form method="get" class="d-inline-flex align-items-center">
             <input type="hidden" name="tab" value="{{ current_tab }}">
             <label class="me-2">Status:</label>
@@ -48,6 +48,16 @@
                 {% endfor %}
             </select>
         </form>
+        <div class="d-flex gap-2">
+            <button type="button" id="btn-view-summary" class="btn btn-sm btn-info text-white" disabled>
+                <i class="bi bi-list-check me-1"></i>View Summary
+            </button>
+            {% if request.user.role.name in 'ADMIN,STORES_MANAGER' and current_tab == 'incoming' %}
+            <button type="button" id="btn-combine-transfer" class="btn btn-sm btn-primary" disabled>
+                <i class="bi bi-intersect me-1"></i>Combine to Transfer
+            </button>
+            {% endif %}
+        </div>
     </div>
 
     <!-- Requests Table -->
@@ -58,6 +68,7 @@
                 <table class="table table-hover mb-0">
                     <thead class="table-light">
                         <tr>
+                            <th style="width: 40px;"><input type="checkbox" class="form-check-input" id="check-all-requests"></th>
                             <th>{% sort_link "Request #" "request_number" %}</th>
                             <th>{% if current_tab == 'incoming' %}{% sort_link "From" "requesting_location__name" %}{% else %}{% sort_link "To" "supplying_location__name" %}{% endif %}</th>
                             <th>Items</th>
@@ -70,6 +81,7 @@
                     <tbody>
                         {% for req in requests %}
                         <tr>
+                            <td><input type="checkbox" class="form-check-input request-checkbox" value="{{ req.pk }}" data-status="{{ req.status }}" data-source="{{ req.supplying_location.pk }}" data-dest="{{ req.requesting_location.pk }}"></td>
                             <td>
                                 <a href="{% url 'transfers:stock_request_detail' pk=req.pk %}"
                                     class="fw-semibold text-decoration-none">
@@ -141,4 +153,210 @@
         </div>
     </div>
 </div>
+
+<!-- Summary Modal -->
+<div class="modal fade" id="summaryModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-list-check me-2"></i>Requests Summary</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="summary-printable-area">
+                <div class="d-flex justify-content-between align-items-center mb-3 d-print-none">
+                    <p class="mb-0 text-muted">Aggregated totals for selected requests.</p>
+                </div>
+                <!-- Print Header (Only visible when printing) -->
+                <div class="d-none d-print-block mb-4 text-center">
+                    <h3>Stock Requests Summary</h3>
+                    <p class="text-muted">Generated: {% now "Y-m-d H:i" %}</p>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-bordered table-striped" id="summary-table">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Product Name</th>
+                                <th>SKU</th>
+                                <th class="text-end">Total Requested</th>
+                                <th>Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody id="summary-table-body">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer d-print-none">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" onclick="printSummary()">
+                    <i class="bi bi-printer me-1"></i>Print / Save PDF
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const checkAll = document.getElementById('check-all-requests');
+        const checkboxes = document.querySelectorAll('.request-checkbox');
+        const btnSummary = document.getElementById('btn-view-summary');
+        const btnCombine = document.getElementById('btn-combine-transfer');
+        
+        function updateSummaryButton() {
+            const checkedBoxes = Array.from(document.querySelectorAll('.request-checkbox:checked'));
+            const checkedCount = checkedBoxes.length;
+            
+            btnSummary.disabled = checkedCount === 0;
+            if(checkedCount > 0) {
+                btnSummary.textContent = `View Summary (${checkedCount})`;
+            } else {
+                btnSummary.innerHTML = `<i class="bi bi-list-check me-1"></i>View Summary`;
+            }
+            
+            if (btnCombine) {
+                // To combine, need at least 2 requests, all must be PENDING or APPROVED, and all must have same source/dest
+                let canCombine = checkedCount >= 2;
+                if (canCombine) {
+                    const firstSource = checkedBoxes[0].dataset.source;
+                    const firstDest = checkedBoxes[0].dataset.dest;
+                    
+                    for (let cb of checkedBoxes) {
+                        if (cb.dataset.status !== 'PENDING' && cb.dataset.status !== 'APPROVED') {
+                            canCombine = false;
+                            break;
+                        }
+                        if (cb.dataset.source !== firstSource || cb.dataset.dest !== firstDest) {
+                            canCombine = false;
+                            break;
+                        }
+                    }
+                }
+                btnCombine.disabled = !canCombine;
+                if(checkedCount > 1 && canCombine) {
+                    btnCombine.textContent = `Combine ${checkedCount} Requests`;
+                } else {
+                    btnCombine.innerHTML = `<i class="bi bi-intersect me-1"></i>Combine to Transfer`;
+                }
+            }
+        }
+        
+        if (checkAll) {
+            checkAll.addEventListener('change', function() {
+                checkboxes.forEach(cb => cb.checked = this.checked);
+                updateSummaryButton();
+            });
+        }
+        
+        checkboxes.forEach(cb => {
+            cb.addEventListener('change', updateSummaryButton);
+        });
+        
+        if (btnSummary) {
+            btnSummary.addEventListener('click', function() {
+                const checkedIds = Array.from(document.querySelectorAll('.request-checkbox:checked')).map(cb => cb.value);
+                if (checkedIds.length === 0) return;
+                
+                // Show loading state
+                btnSummary.disabled = true;
+                const originalText = btnSummary.innerHTML;
+                btnSummary.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>Loading...`;
+                
+                fetch(`/transfers/api/requests/summary/?ids=${checkedIds.join(',')}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        const tbody = document.getElementById('summary-table-body');
+                        tbody.innerHTML = '';
+                        
+                        if (data.error) {
+                            alert(data.error);
+                            return;
+                        }
+                        
+                        if (data.summary.length === 0) {
+                            tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4">No items found in selected requests.</td></tr>';
+                        } else {
+                            data.summary.forEach(item => {
+                                tbody.innerHTML += `
+                                    <tr>
+                                        <td class="fw-bold">${item.product_name}</td>
+                                        <td><code>${item.sku}</code></td>
+                                        <td class="text-end fw-bold">${parseFloat(item.total_quantity).toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:2})}</td>
+                                        <td class="small text-muted">${item.notes}</td>
+                                    </tr>
+                                `;
+                            });
+                        }
+                        
+                        const modal = new bootstrap.Modal(document.getElementById('summaryModal'));
+                        modal.show();
+                    })
+                    .catch(error => {
+                        console.error('Error fetching summary:', error);
+                        alert('Failed to load summary. Please try again.');
+                    })
+                    .finally(() => {
+                        btnSummary.disabled = false;
+                        btnSummary.innerHTML = originalText;
+                        updateSummaryButton(); // Restore correct text based on count
+                    });
+            });
+        }
+        
+        if (btnCombine) {
+            btnCombine.addEventListener('click', function() {
+                const checkedIds = Array.from(document.querySelectorAll('.request-checkbox:checked')).map(cb => cb.value);
+                if (checkedIds.length < 2) return;
+                
+                if (!confirm(`Are you sure you want to combine these ${checkedIds.length} requests into a single transfer?`)) {
+                    return;
+                }
+                
+                btnCombine.disabled = true;
+                const originalText = btnCombine.innerHTML;
+                btnCombine.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>Processing...`;
+                
+                fetch(`/transfers/requests/combine/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': '{{ csrf_token }}'
+                    },
+                    body: JSON.stringify({ request_ids: checkedIds })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        alert(data.error);
+                        btnCombine.disabled = false;
+                        btnCombine.innerHTML = originalText;
+                    } else if (data.success) {
+                        window.location.href = data.redirect_url;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error combining requests:', error);
+                    alert('An error occurred while combining requests.');
+                    btnCombine.disabled = false;
+                    btnCombine.innerHTML = originalText;
+                });
+            });
+        }
+    });
+
+    function printSummary() {
+        const printContents = document.getElementById('summary-printable-area').innerHTML;
+        const originalContents = document.body.innerHTML;
+
+        document.body.innerHTML = printContents;
+        window.print();
+        document.body.innerHTML = originalContents;
+        // Re-initialize bootstrap components after replacing body HTML
+        window.location.reload(); 
+    }
+</script>
 {% endblock %}

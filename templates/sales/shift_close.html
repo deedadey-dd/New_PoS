@@ -26,8 +26,18 @@
                 </div>
 
                 <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+                    <span class="text-muted">Payments on Account (Cash)</span>
+                    <span class="text-success fw-semibold">{{ currency_symbol }}{{ payments_on_account|floatformat:"2g" }}</span>
+                </div>
+
+                <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
                     <span class="text-muted">E-Cash Sales</span>
                     <span class="text-info fw-semibold">{{ currency_symbol }}{{ ecash_sales|floatformat:"2g" }}</span>
+                </div>
+
+                <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+                    <span class="text-muted">Local Momo Sales</span>
+                    <span class="text-info fw-semibold">{{ currency_symbol }}{{ momo_sales|floatformat:"2g" }}</span>
                 </div>
 
                 <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
@@ -47,7 +57,7 @@
                     <span class="fw-bold">Expected Cash</span>
                     <span class="fw-bold fs-4">{{ currency_symbol }}{{ expected_cash|floatformat:"2g" }}</span>
                 </div>
-                <small class="text-muted d-block text-center mt-1">(Opening Cash + Cash Sales)</small>
+                <small class="text-muted d-block text-center mt-1">(Opening Cash + Cash Sales + Payments on Account)</small>
 
                 <hr class="my-4">
 

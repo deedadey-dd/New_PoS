@@ -55,7 +55,6 @@
                                 <th class="text-center">Sent</th>
                                 <th class="text-center" style="width: 130px;">Received</th>
                                 <th class="discrepancy-header" style="width: 160px; display: none;">Reason</th>
-                                <th class="discrepancy-header" style="width: 160px; display: none;">Action</th>
                                 <th class="discrepancy-header" style="width: 180px; display: none;">Notes</th>
                             </tr>
                         </thead>
@@ -84,9 +83,6 @@
                                     {% endfor %}
                                 </td>
                                 <td class="align-middle discrepancy-col" style="display: none;">
-                                    {{ entry.action_field }}
-                                </td>
-                                <td class="align-middle discrepancy-col" style="display: none;">
                                     {{ entry.notes_field }}
                                 </td>
                             </tr>
@@ -99,8 +95,7 @@
 
         <div class="mt-3 small text-white-50">
             <i class="fas fa-info-circle me-1"></i>
-            <strong>Return to Source</strong> = discrepancy quantity goes back to the sender's inventory.
-            <strong>Accept Difference</strong> = quantity is absorbed as a loss (can be written off later).
+            Discrepancies marked as "Short" are automatically returned to the sender. Other reasons will generate a pending stock adjustment.
         </div>
 
         <div class="mt-3 d-flex justify-content-end gap-2">
