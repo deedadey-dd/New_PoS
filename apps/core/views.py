@@ -75,6 +75,16 @@ class DemoAutoLoginView(View):
             'attendant1': 'attendant1@demo.com',
             'manager2': 'manager2@demo.com',
             'attendant2': 'attendant2@demo.com',
+            
+            # Strict Workflow Roles
+            'admin_strict': 'strict_admin@demo.com',
+            'auditor_strict': 'strict_auditor@demo.com',
+            'accountant_strict': 'strict_accountant@demo.com',
+            'production_strict': 'strict_production@demo.com',
+            'stores_strict': 'strict_stores@demo.com',
+            'manager1_strict': 'strict_manager1@demo.com',
+            'cashier_strict': 'cashier_strict@demo.com',
+            'attendant1_strict': 'strict_attendant1@demo.com',
         }
         
         email = email_map.get(role)
@@ -83,7 +93,7 @@ class DemoAutoLoginView(View):
             return redirect('core:demo_hub')
             
         try:
-            user = User.objects.get(email=email, tenant__name="Demo Company")
+            user = User.objects.get(email=email)
             # Log the user in bypassing backend authentication requirements
             # We specify the backend explicitly
             # The standard ModelBackend requires a password cheek, so we mock authenticate via login
