@@ -27,14 +27,27 @@ class Command(BaseCommand):
             self.stdout.write("Wiping old demo data...")
             tenants = Tenant.objects.filter(name__in=["Demo Company", "Strict Demo Company"])
             for tenant in tenants:
-                CustomerTransaction.objects.filter(tenant=tenant).delete()
-                Customer.objects.filter(tenant=tenant).delete()
+                from apps.transfers.models import StockRequest, StockRequestItem, Transfer, TransferItem
+                TransferItem.objects.filter(tenant=tenant).delete()
+                Transfer.objects.filter(tenant=tenant).delete()
+                StockRequestItem.objects.filter(tenant=tenant).delete()
+                StockRequest.objects.filter(tenant=tenant).delete()
+                
+                ShopPrice.objects.filter(tenant=tenant).delete()
+                InventoryLedger.objects.filter(tenant=tenant).delete()
+                Inventory.objects.filter(tenant=tenant).delete()
+                Batch.objects.filter(tenant=tenant).delete()
+                
                 SaleItem.objects.filter(tenant=tenant).delete()
                 Sale.objects.filter(tenant=tenant).delete()
                 CashTransfer.objects.filter(tenant=tenant).delete()
                 Shift.objects.filter(tenant=tenant).delete()
-                InventoryLedger.objects.filter(tenant=tenant).delete()
-                Inventory.objects.filter(tenant=tenant).delete()
+                CustomerTransaction.objects.filter(tenant=tenant).delete()
+                Customer.objects.filter(tenant=tenant).delete()
+                
+                Product.objects.filter(tenant=tenant).delete()
+                Category.objects.filter(tenant=tenant).delete()
+                Location.objects.filter(tenant=tenant).delete()
                 User.objects.filter(tenant=tenant).delete()
                 tenant.delete()
             User.objects.filter(email__endswith='@demo.com').delete()
