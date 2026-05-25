@@ -55,6 +55,11 @@ class Tenant(models.Model):
         default=False,
         help_text="Allow shops to receive Mobile Money payments"
     )
+    allow_inter_shop_transfers = models.BooleanField(
+        default=False,
+        help_text="Allow shops to request and transfer stock between each other"
+    )
+    
     
     # Shop Manager permissions
     shop_manager_can_add_products = models.BooleanField(

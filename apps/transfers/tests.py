@@ -258,3 +258,59 @@ class StockRequestCombineTests(TestCase):
         # Mouse should have 10
         mouse_item = items.get(product=self.product2)
         self.assertEqual(mouse_item.quantity_requested, Decimal('10'))
+
+class InterShopTransferTests(TestCase):
+    def setUp(self):
+        self.tenant = Tenant.objects.create(name="InterShop Tenant", allow_inter_shop_transfers=True)
+        self.shop_role, _ = Role.objects.get_or_create(name='SHOP_MANAGER')
+        
+        self.shop1 = Location.objects.create(tenant=self.tenant, name="Shop A", location_type='SHOP')
+        self.shop2 = Location.objects.create(tenant=self.tenant, name="Shop B", location_type='SHOP')
+        
+        self.manager1 = User.objects.create(email="m1@test.com", tenant=self.tenant, role=self.shop_role, location=self.shop1)
+        self.manager2 = User.objects.create(email="m2@test.com", tenant=self.tenant, role=self.shop_role, location=self.shop2)
+        
+    def test_inter_shop_transfer_allowed(self):
+        from apps.transfers.forms import TransferForm
+        form = TransferForm(tenant=self.tenant, user=self.manager1, data={
+            'source_location': self.shop1.id,
+            'destination_location': self.shop2.id,
+            'notes': 'Test'
+        })
+        # It should be valid
+        self.assertTrue(form.is_valid(), form.errors)
+            
+    def test_inter_shop_transfer_disallowed(self):
+        self.tenant.allow_inter_shop_transfers = False
+        self.tenant.save()
+        
+        from apps.transfers.forms import TransferForm
+        form = TransferForm(tenant=self.tenant, user=self.manager1, data={
+            'source_location': self.shop1.id,
+            'destination_location': self.shop2.id,
+            'notes': 'Test'
+        })
+        self.assertFalse(form.is_valid())
+        self.assertIn('destination_location', form.errors)
+            
+    def test_inter_shop_request_allowed(self):
+        from apps.transfers.forms import StockRequestForm
+        form = StockRequestForm(tenant=self.tenant, user=self.manager1, data={
+            'requesting_location': self.shop1.id,
+            'supplying_location': self.shop2.id,
+            'notes': 'Test'
+        })
+        self.assertTrue(form.is_valid(), form.errors)
+            
+    def test_inter_shop_request_disallowed(self):
+        self.tenant.allow_inter_shop_transfers = False
+        self.tenant.save()
+        
+        from apps.transfers.forms import StockRequestForm
+        form = StockRequestForm(tenant=self.tenant, user=self.manager1, data={
+            'requesting_location': self.shop1.id,
+            'supplying_location': self.shop2.id,
+            'notes': 'Test'
+        })
+        self.assertFalse(form.is_valid())
+        self.assertIn('supplying_location', form.errors)

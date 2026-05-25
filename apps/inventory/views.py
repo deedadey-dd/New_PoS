@@ -1679,23 +1679,33 @@ class ShopPriceSetView(LoginRequiredMixin, View):
                 )
                 
             # Create notifications for all shop managers
-            from apps.notifications.models import Notification
+            from apps.notifications.models import Notification, BulletinPost
             from apps.core.models import User
             shop_managers = User.objects.filter(
                 tenant=request.user.tenant,
                 location__in=shops,
                 role__name='SHOP_MANAGER'
             )
+            message_body = f'The price for {product.name} has been globally updated to {request.user.tenant.currency_symbol}{selling_price} by the Accountant.'
             for mgr in shop_managers:
                 Notification.objects.create(
                     tenant=request.user.tenant,
                     user=mgr,
                     title='Global Price Change',
-                    message=f'The price for {product.name} has been globally updated to {request.user.tenant.currency_symbol}{selling_price} by the Accountant.',
+                    message=message_body,
                     notification_type='PRICE_CHANGE',
                     reference_type='Product',
                     reference_id=product.id
                 )
+                
+            # Post to Bulletin Board
+            BulletinPost.objects.create(
+                tenant=request.user.tenant,
+                created_by=request.user,
+                title=f'Global Price Change: {product.name}',
+                body=message_body,
+                post_type='PRICE_ALERT'
+            )
                 
             messages.success(request, f'Global uniform price for "{product.name}" set to {request.user.tenant.currency_symbol}{selling_price} for all shops.')
             
@@ -1723,19 +1733,30 @@ class ShopPriceSetView(LoginRequiredMixin, View):
                 location=shop,
                 role__name='SHOP_MANAGER'
             )
-            
             changer_name = "you" if request.user.location == shop else (request.user.get_full_name() or request.user.email)
+            message_body = f'The price for {product.name} at {shop.name} has been updated to {request.user.tenant.currency_symbol}{selling_price} by {changer_name}.'
             
             for mgr in shop_managers:
                 Notification.objects.create(
                     tenant=request.user.tenant,
                     user=mgr,
                     title=f'Shop Price Change ({shop.name})',
-                    message=f'The price for {product.name} at {shop.name} has been updated to {request.user.tenant.currency_symbol}{selling_price} by {changer_name}.',
+                    message=message_body,
                     notification_type='PRICE_CHANGE',
                     reference_type='Product',
                     reference_id=product.id
                 )
+                
+            # Post to Bulletin Board targeted to this shop
+            from apps.notifications.models import BulletinPost
+            post = BulletinPost.objects.create(
+                tenant=request.user.tenant,
+                created_by=request.user,
+                title=f'Price Change: {product.name}',
+                body=message_body,
+                post_type='PRICE_ALERT'
+            )
+            post.target_locations.add(shop)
             
             messages.success(request, f'Price for "{product.name}" at {shop.name} set to {request.user.tenant.currency_symbol}{selling_price}')
             

@@ -79,7 +79,12 @@ class TransferForm(forms.ModelForm):
             
             # Get allowed destination types based on source location type
             source_type = source_location.location_type
-            allowed_dest_types = self.TRANSFER_RULES.get(source_type, [])
+            allowed_dest_types = self.TRANSFER_RULES.get(source_type, []).copy()
+            
+            # Check tenant settings for inter-shop transfers
+            if tenant and tenant.allow_inter_shop_transfers:
+                if source_type == 'SHOP' and 'SHOP' not in allowed_dest_types:
+                    allowed_dest_types.append('SHOP')
             
             # Filter destinations to valid types only
             if tenant and allowed_dest_types:
@@ -96,6 +101,8 @@ class TransferForm(forms.ModelForm):
                     self.initial['destination_location'] = valid_destinations.first().pk
     
     def clean(self):
+        if not getattr(self.instance, 'tenant_id', None) and getattr(self, 'tenant', None):
+            self.instance.tenant = self.tenant
         cleaned_data = super().clean()
         source = cleaned_data.get('source_location')
         destination = cleaned_data.get('destination_location')
@@ -105,7 +112,11 @@ class TransferForm(forms.ModelForm):
                 raise forms.ValidationError("Source and destination locations must be different.")
             
             # Validate transfer direction
-            allowed_dest_types = self.TRANSFER_RULES.get(source.location_type, [])
+            allowed_dest_types = self.TRANSFER_RULES.get(source.location_type, []).copy()
+            if hasattr(self, 'tenant') and self.tenant and self.tenant.allow_inter_shop_transfers:
+                if source.location_type == 'SHOP' and 'SHOP' not in allowed_dest_types:
+                    allowed_dest_types.append('SHOP')
+
             if destination.location_type not in allowed_dest_types:
                 allowed_names = ', '.join(allowed_dest_types) or 'none'
                 raise forms.ValidationError(
@@ -401,7 +412,12 @@ class StockRequestForm(forms.ModelForm):
             
             # Get allowed supplier types based on requesting location type
             req_type = requesting_location.location_type
-            allowed_supplier_types = self.REQUEST_RULES.get(req_type, [])
+            allowed_supplier_types = self.REQUEST_RULES.get(req_type, []).copy()
+            
+            # Check tenant settings for inter-shop transfers
+            if tenant and tenant.allow_inter_shop_transfers:
+                if req_type == 'SHOP' and 'SHOP' not in allowed_supplier_types:
+                    allowed_supplier_types.append('SHOP')
             
             # Filter suppliers to valid types only
             if tenant and allowed_supplier_types:
@@ -418,6 +434,8 @@ class StockRequestForm(forms.ModelForm):
                     self.initial['supplying_location'] = valid_suppliers.first().pk
     
     def clean(self):
+        if not getattr(self.instance, 'tenant_id', None) and getattr(self, 'tenant', None):
+            self.instance.tenant = self.tenant
         cleaned_data = super().clean()
         requesting = cleaned_data.get('requesting_location')
         supplying = cleaned_data.get('supplying_location')
@@ -427,7 +445,11 @@ class StockRequestForm(forms.ModelForm):
                 raise forms.ValidationError("Requesting and supplying locations must be different.")
             
             # Validate request direction
-            allowed_supplier_types = self.REQUEST_RULES.get(requesting.location_type, [])
+            allowed_supplier_types = self.REQUEST_RULES.get(requesting.location_type, []).copy()
+            if hasattr(self, 'tenant') and self.tenant and self.tenant.allow_inter_shop_transfers:
+                if requesting.location_type == 'SHOP' and 'SHOP' not in allowed_supplier_types:
+                    allowed_supplier_types.append('SHOP')
+                    
             if supplying.location_type not in allowed_supplier_types:
                 allowed_names = ', '.join(allowed_supplier_types) or 'none'
                 raise forms.ValidationError(

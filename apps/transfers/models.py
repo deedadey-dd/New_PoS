@@ -685,7 +685,13 @@ class StockRequest(TenantModel):
                 if req_loc == sup_loc:
                     raise ValidationError("Requesting and supplying locations must be different.")
                 
-                allowed_suppliers = self.REQUEST_RULES.get(req_loc.location_type, [])
+                allowed_suppliers = self.REQUEST_RULES.get(req_loc.location_type, []).copy()
+                
+                # Check tenant settings for inter-shop transfers
+                if hasattr(self, 'tenant') and self.tenant and self.tenant.allow_inter_shop_transfers:
+                    if req_loc.location_type == 'SHOP' and 'SHOP' not in allowed_suppliers:
+                        allowed_suppliers.append('SHOP')
+
                 if sup_loc.location_type not in allowed_suppliers:
                     raise ValidationError(
                         f"{req_loc.location_type} can only request from: {', '.join(allowed_suppliers)}. "

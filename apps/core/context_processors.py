@@ -47,9 +47,30 @@ def tenant_context(request):
         context['shops_can_see_other_stock'] = tenant.shops_can_see_other_stock
         
         # Add notification data
-        from apps.notifications.models import Notification
+        from apps.notifications.models import Notification, BulletinPost, BulletinRead
         context['unread_notification_count'] = Notification.get_unread_count(user)
         context['recent_notifications'] = Notification.get_recent_for_user(user, limit=5)
+        
+        # Calculate bulletin unread count
+        # This is a slightly simplified count for performance (we can just call the view's query)
+        from django.db.models import Q
+        qs = BulletinPost.objects.filter(tenant=tenant, is_active=True)
+        role_filter = Q(target_roles__isnull=True)
+        if user.role:
+            role_filter |= Q(target_roles=user.role)
+            
+        loc_filter = Q(target_locations__isnull=True)
+        if user.location:
+            loc_filter |= Q(target_locations=user.location)
+            
+        if role_name != 'ADMIN':
+            qs = qs.filter(role_filter, loc_filter).distinct()
+            
+        read_post_ids = BulletinRead.objects.filter(user=user).values_list('bulletin_post_id', flat=True)
+        unread_qs = qs.exclude(id__in=read_post_ids).order_by('-created_at')
+        context['bulletin_unread_count'] = unread_qs.count()
+        context['latest_unread_bulletin'] = unread_qs.first()
+
         
         # Calculate cash on hand based on role
         from apps.accounting.models import CashTransfer

@@ -70,3 +70,126 @@ def mark_notification_read_api(request, pk):
         'status': 'success', 
         'unread_count': Notification.get_unread_count(request.user)
     })
+
+from django.urls import reverse_lazy
+from django.views.generic.edit import CreateView, DeleteView
+from django.db.models import Q
+from django.http import JsonResponse
+from .models import BulletinPost, BulletinRead
+
+class BulletinBoardView(LoginRequiredMixin, ListView):
+    model = BulletinPost
+    template_name = 'notifications/bulletin_board.html'
+    context_object_name = 'posts'
+    paginate_by = 15
+    
+    def get_queryset(self):
+        user = self.request.user
+        tenant = user.tenant
+        
+        # Base query for active posts in this tenant
+        qs = BulletinPost.objects.filter(tenant=tenant, is_active=True)
+        
+        # Role-based filtering
+        role_filter = Q(target_roles__isnull=True)
+        if user.role:
+            role_filter |= Q(target_roles=user.role)
+            
+        # Location-based filtering
+        loc_filter = Q(target_locations__isnull=True)
+        if user.location:
+            loc_filter |= Q(target_locations=user.location)
+            
+        role_name = user.role.name if user.role else None
+        
+        if role_name == 'ADMIN':
+            # Admins see everything
+            pass
+        else:
+            qs = qs.filter(role_filter, loc_filter).distinct()
+            
+        return qs.order_by('-created_at')
+        
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        user = self.request.user
+        
+        # Get list of post IDs the user has read
+        read_post_ids = BulletinRead.objects.filter(user=user).values_list('bulletin_post_id', flat=True)
+        context['read_post_ids'] = list(read_post_ids)
+        
+        # Add permissions context
+        can_post = False
+        if user.role:
+            if user.role.name in ['ADMIN', 'ACCOUNTANT', 'STORES_MANAGER']:
+                can_post = True
+            elif user.role.name == 'SHOP_MANAGER':
+                can_post = True
+        context['can_post'] = can_post
+        
+        # Add post form if user can post
+        if can_post:
+            from .forms import BulletinPostForm
+            context['form'] = BulletinPostForm(user=user)
+            
+        return context
+
+class BulletinPostCreateView(LoginRequiredMixin, CreateView):
+    model = BulletinPost
+    template_name = 'notifications/bulletin_post_form.html'
+    success_url = reverse_lazy('notifications:bulletin_board')
+    
+    def get_form_class(self):
+        from .forms import BulletinPostForm
+        return BulletinPostForm
+        
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['user'] = self.request.user
+        return kwargs
+        
+    def form_valid(self, form):
+        form.instance.tenant = self.request.user.tenant
+        form.instance.created_by = self.request.user
+        messages.success(self.request, 'Bulletin post created successfully.')
+        return super().form_valid(form)
+
+class BulletinPostDeleteView(LoginRequiredMixin, DeleteView):
+    model = BulletinPost
+    success_url = reverse_lazy('notifications:bulletin_board')
+    
+    def get_queryset(self):
+        # Users can only delete their own posts, Admins can delete any
+        user = self.request.user
+        qs = BulletinPost.objects.filter(tenant=user.tenant)
+        if user.role and user.role.name != 'ADMIN':
+            qs = qs.filter(created_by=user)
+        return qs
+        
+    def delete(self, request, *args, **kwargs):
+        messages.success(request, 'Bulletin post deleted.')
+        return super().delete(request, *args, **kwargs)
+
+@login_required
+def bulletin_mark_read(request, pk):
+    post = get_object_or_404(BulletinPost, pk=pk, tenant=request.user.tenant)
+    BulletinRead.objects.get_or_create(bulletin_post=post, user=request.user)
+    return JsonResponse({'status': 'success'})
+
+@login_required
+def bulletin_mark_all_read(request):
+    user = request.user
+    # Get all unread posts that the user can see
+    # This is a bit complex due to visibility rules, so we'll just instantiate the view's get_queryset
+    view = BulletinBoardView()
+    view.request = request
+    qs = view.get_queryset()
+    
+    read_ids = BulletinRead.objects.filter(user=user).values_list('bulletin_post_id', flat=True)
+    unread_posts = qs.exclude(id__in=read_ids)
+    
+    reads_to_create = [BulletinRead(bulletin_post=post, user=user) for post in unread_posts]
+    BulletinRead.objects.bulk_create(reads_to_create, ignore_conflicts=True)
+    
+    messages.success(request, 'All bulletin messages marked as read.')
+    return redirect('notifications:bulletin_board')

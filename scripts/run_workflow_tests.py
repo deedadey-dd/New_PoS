@@ -12,6 +12,9 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'pos_system.settings')
 django.setup()
 
 import unittest
+from django.test.utils import setup_test_environment, teardown_test_environment
+setup_test_environment()
+
 from apps.sales.test_workflows import WorkflowIntegrationTests
 from apps.inventory.tests.test_pricing_modes import PricingControlModeTests
 from apps.core.tests.test_recent_fixes import (
@@ -19,7 +22,8 @@ from apps.core.tests.test_recent_fixes import (
     LogoutRedirectTests,
     CashTransferFormRecipientTests,
 )
-from apps.transfers.tests import TransferDiscrepancyTests, StockRequestCombineTests
+from apps.transfers.tests import TransferDiscrepancyTests, StockRequestCombineTests, InterShopTransferTests
+from apps.notifications.tests import BulletinBoardTests
 
 
 class RollbackTestResult(unittest.TextTestResult):
@@ -64,11 +68,16 @@ def main():
     suite4b = unittest.TestLoader().loadTestsFromTestCase(CashTransferFormRecipientTests)
 
     # --- Suite 5: Transfer Discrepancy Tests ---
-    print("[5/5] Transfer Discrepancy & Requests Tests")
+    print("[5/6] Transfer Discrepancy & Requests Tests")
     suite5a = unittest.TestLoader().loadTestsFromTestCase(TransferDiscrepancyTests)
     suite5b = unittest.TestLoader().loadTestsFromTestCase(StockRequestCombineTests)
+    suite5c = unittest.TestLoader().loadTestsFromTestCase(InterShopTransferTests)
 
-    suite = unittest.TestSuite([suite1, suite2, suite3, suite4a, suite4b, suite5a, suite5b])
+    # --- Suite 6: Notifications Tests ---
+    print("[6/6] Notifications Tests")
+    suite6 = unittest.TestLoader().loadTestsFromTestCase(BulletinBoardTests)
+
+    suite = unittest.TestSuite([suite1, suite2, suite3, suite4a, suite4b, suite5a, suite5b, suite5c, suite6])
 
     runner = RollbackTestRunner(verbosity=2)
     result = runner.run(suite)

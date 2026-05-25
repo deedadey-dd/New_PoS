@@ -1,0 +1,92 @@
+{% extends 'base.html' %}
+
+{% block title %}New Bulletin Post - {{ current_tenant.name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col-md-8 mx-auto">
+            <h2 class="mb-0">
+                <i class="bi bi-pencil-square me-2 text-primary"></i>New Bulletin Post
+            </h2>
+            <p class="text-muted">Broadcast a message, announcement or alert to your organization.</p>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8 mx-auto">
+            <div class="card shadow-sm border-0">
+                <div class="card-body p-4">
+                    <form method="POST">
+                        {% csrf_token %}
+                        
+                        {% if form.non_field_errors %}
+                        <div class="alert alert-danger">
+                            {% for error in form.non_field_errors %}
+                                {{ error }}
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                        
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Title</label>
+                            {{ form.title }}
+                            {% if form.title.errors %}
+                            <div class="text-danger small mt-1">{{ form.title.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="mb-4">
+                            <label class="form-label fw-bold">Message Content</label>
+                            {{ form.body }}
+                            {% if form.body.errors %}
+                            <div class="text-danger small mt-1">{{ form.body.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                        
+                        <h5 class="border-bottom pb-2 mb-3">Settings</h5>
+                        
+                        <div class="row mb-4">
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold">Post Type</label>
+                                {{ form.post_type }}
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold">Target Roles</label>
+                                {{ form.target_roles }}
+                                <div class="form-text small">Leave blank to target all roles.</div>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold">Target Locations</label>
+                                {{ form.target_locations }}
+                                <div class="form-text small">Leave blank to target all allowed locations.</div>
+                            </div>
+                        </div>
+                        
+                        <div class="d-flex justify-content-end">
+                            <a href="{% url 'notifications:bulletin_board' %}" class="btn btn-light me-2">Cancel</a>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-send me-1"></i>Post Message
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var tomSelectElements = document.querySelectorAll('.tom-select');
+    tomSelectElements.forEach(function(el) {
+        new TomSelect(el, {
+            plugins: ['remove_button'],
+            maxItems: null,
+        });
+    });
+});
+</script>
+{% endblock %}

@@ -1071,3 +1071,67 @@ class FeatureImageUploadView(SuperuserRequiredMixin, View):
             return JsonResponse({'location': url})
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=500)
+
+class FeatureMessageSendView(SuperuserRequiredMixin, View):
+    """Schedule a FeatureMessage to be sent."""
+    template_name = 'superadmin/feature_message_send.html'
+    
+    def get(self, request, pk):
+        from apps.core.models import FeatureMessage
+        msg = get_object_or_404(FeatureMessage, pk=pk)
+        return render(request, self.template_name, {
+            'feature_message': msg,
+            'tenants': Tenant.objects.filter(is_active=True).order_by('name'),
+        })
+        
+    def post(self, request, pk):
+        from apps.core.models import FeatureMessage, ScheduledEmail
+        from django.utils import timezone
+        from datetime import datetime
+        
+        msg = get_object_or_404(FeatureMessage, pk=pk)
+        
+        target_audience = request.POST.get('target_audience', 'ADMINS')
+        target_tenant_ids = request.POST.getlist('target_tenants')
+        scheduled_date = request.POST.get('scheduled_date')
+        scheduled_time = request.POST.get('scheduled_time')
+        action = request.POST.get('action')
+        
+        if action == 'send_now':
+            scheduled_dt = timezone.now()
+        else:
+            if not scheduled_date or not scheduled_time:
+                messages.error(request, "Schedule date and time are required.")
+                return redirect('superadmin:feature_message_send', pk=pk)
+                
+            try:
+                naive_dt = datetime.strptime(f"{scheduled_date} {scheduled_time}", "%Y-%m-%d %H:%M")
+                scheduled_dt = timezone.make_aware(naive_dt)
+            except ValueError:
+                messages.error(request, "Invalid date or time format.")
+                return redirect('superadmin:feature_message_send', pk=pk)
+            
+        email = ScheduledEmail.objects.create(
+            subject=msg.title,
+            body=msg.content,
+            created_by=request.user,
+            target_audience=target_audience,
+            scheduled_time=scheduled_dt,
+            status='PENDING'
+        )
+        
+        if target_tenant_ids:
+            tenants = Tenant.objects.filter(id__in=target_tenant_ids)
+            email.target_tenants.set(tenants)
+            
+        if action == 'send_now':
+            from django.core.management import call_command
+            try:
+                call_command('process_scheduled_emails')
+                messages.success(request, f"Feature Message '{msg.title}' has been successfully sent to the queue and processed.")
+            except Exception as e:
+                messages.warning(request, f"Message saved, but immediate sending encountered an error: {e}. It will be retried by the background worker.")
+        else:
+            messages.success(request, f"Feature Message '{msg.title}' scheduled to send on {scheduled_dt.strftime('%B %d, %Y at %I:%M %p')}.")
+            
+        return redirect('superadmin:feature_message_detail', pk=pk)
