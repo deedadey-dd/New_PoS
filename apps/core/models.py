@@ -80,6 +80,16 @@ class Tenant(models.Model):
         help_text="Allow accountants to send cash (float/change) to shops"
     )
 
+    # Refund settings
+    refund_always_cash = models.BooleanField(
+        default=True,
+        help_text=(
+            "When enabled, all refunds are paid back in physical cash from the shop's "
+            "cash-on-hand, regardless of the original payment method (e-cash, momo, etc.). "
+            "When disabled, refunds are processed by the same medium as the original payment."
+        )
+    )
+
     # Pricing Control Settings
     PRICING_CONTROL_CHOICES = [
         ('SHOP_MANAGER', 'Shop Managers Set Prices (Per Shop)'),

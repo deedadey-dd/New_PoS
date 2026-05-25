@@ -659,37 +659,264 @@ def api_sale_detail(request, pk):
 @login_required
 @require_POST
 def api_refund_sale(request, pk):
-    """Refund a completed sale."""
+    """
+    Refund a completed sale.
+
+    - Shop Manager: creates a RefundRequest (PENDING) and notifies accountants/admin.
+    - Accountant / Admin: executes the refund immediately (no approval needed).
+    """
     import json
-    
+
+    tenant = request.user.tenant
+
     # Check if refunds are enabled for the tenant
-    if not request.user.tenant.enable_refunds:
+    if not tenant.enable_refunds:
         return JsonResponse({'success': False, 'error': 'Refunds are disabled for this tenant.'}, status=403)
-        
-    # Only Admin (or user with specific permission) can refund?
-    # Actually, the requirement just says "Formal refund functionality (triggered by toggle in tenant admin)"
-    # We'll allow it if tenant has it enabled.
-    
-    sale = get_object_or_404(Sale, pk=pk, tenant=request.user.tenant)
-    
+
+    role_name = request.user.role.name if request.user.role else None
+    if role_name not in ['SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN']:
+        return JsonResponse({'success': False, 'error': 'You do not have permission to request or process refunds.'}, status=403)
+
+    sale = get_object_or_404(Sale, pk=pk, tenant=tenant)
+
+    # Shop managers can only refund their own shop
+    if role_name == 'SHOP_MANAGER' and sale.shop != request.user.location:
+        return JsonResponse({'success': False, 'error': 'You can only request refunds for your own shop.'}, status=403)
+
     if sale.status == 'REFUNDED':
         return JsonResponse({'success': False, 'error': 'Sale is already refunded.'}, status=400)
-        
+
+    # Check for an already-pending refund request
+    from .models import RefundRequest
+    if RefundRequest.objects.filter(sale=sale, status='PENDING').exists():
+        return JsonResponse({'success': False, 'error': 'A refund request for this sale is already pending approval.'}, status=400)
+
     if sale.status not in ['COMPLETED', 'PENDING_DISPATCH']:
         return JsonResponse({'success': False, 'error': 'Only completed or pending dispatch sales can be refunded.'}, status=400)
-        
+
     try:
         data = json.loads(request.body)
         reason = data.get('reason', 'Customer requested refund')
-    except:
+    except Exception:
         reason = 'Customer requested refund'
-        
+
+    # Accountants and Admins refund immediately
+    if role_name in ['ACCOUNTANT', 'ADMIN']:
+        try:
+            with transaction.atomic():
+                sale.refund(reason=reason, user=request.user)
+            return JsonResponse({'success': True, 'message': f'Sale {sale.sale_number} successfully refunded.'})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+    # Shop Managers — create a pending RefundRequest
     try:
         with transaction.atomic():
-            sale.refund(reason=reason, user=request.user)
-            return JsonResponse({'success': True, 'message': f'Sale {sale.sale_number} successfully refunded.'})
+            refund_req = RefundRequest.objects.create(
+                tenant=tenant,
+                sale=sale,
+                requested_by=request.user,
+                reason=reason,
+                status='PENDING',
+            )
+
+            # Notify all accountants + admins in this tenant
+            from apps.notifications.models import Notification
+            from apps.core.models import User as TenantUser
+
+            approvers = TenantUser.objects.filter(
+                tenant=tenant,
+                role__name__in=['ACCOUNTANT', 'ADMIN'],
+                is_active=True
+            )
+            for approver in approvers:
+                Notification.objects.create(
+                    tenant=tenant,
+                    user=approver,
+                    title="Refund Request Awaiting Approval",
+                    message=(
+                        f"{request.user.get_full_name() or request.user.email} has requested a refund "
+                        f"for Sale {sale.sale_number} ({tenant.currency_symbol}{sale.total}) "
+                        f"at {sale.shop.name}. "
+                        f"Reason: {reason[:150]}"
+                    ),
+                    notification_type='SYSTEM',
+                    reference_type='RefundRequest',
+                    reference_id=refund_req.pk,
+                )
+
+        return JsonResponse({
+            'success': True,
+            'pending_approval': True,
+            'refund_number': refund_req.refund_number,
+            'message': (
+                f'Refund request {refund_req.refund_number} submitted. '
+                f'Awaiting accountant approval.'
+            ),
+        })
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@login_required
+@require_POST
+def api_approve_refund(request, pk):
+    """
+    Approve a pending RefundRequest.
+    Only Accountants and Admins can call this endpoint.
+    """
+    from .models import RefundRequest
+
+    tenant = request.user.tenant
+    role_name = request.user.role.name if request.user.role else None
+
+    if role_name not in ['ACCOUNTANT', 'ADMIN']:
+        return JsonResponse({'success': False, 'error': 'Only accountants and admins can approve refunds.'}, status=403)
+
+    refund_req = get_object_or_404(RefundRequest, pk=pk, tenant=tenant)
+
+    try:
+        refund_req.approve(request.user)
+        return JsonResponse({
+            'success': True,
+            'message': (
+                f'Refund {refund_req.refund_number} approved. '
+                f'Sale {refund_req.sale.sale_number} has been refunded.'
+            ),
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@login_required
+@require_POST
+def api_reject_refund(request, pk):
+    """
+    Reject a pending RefundRequest.
+    Only Accountants and Admins can call this endpoint.
+    """
+    import json
+    from .models import RefundRequest
+
+    tenant = request.user.tenant
+    role_name = request.user.role.name if request.user.role else None
+
+    if role_name not in ['ACCOUNTANT', 'ADMIN']:
+        return JsonResponse({'success': False, 'error': 'Only accountants and admins can reject refunds.'}, status=403)
+
+    refund_req = get_object_or_404(RefundRequest, pk=pk, tenant=tenant)
+
+    try:
+        data = json.loads(request.body)
+        rejection_reason = data.get('reason', '')
+    except Exception:
+        rejection_reason = request.POST.get('reason', '')
+
+    try:
+        refund_req.reject(request.user, rejection_reason)
+        return JsonResponse({
+            'success': True,
+            'message': f'Refund request {refund_req.refund_number} rejected.',
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+class RefundRequestListView(LoginRequiredMixin, ListView):
+    """
+    List refund requests.
+    - Shop Managers: see requests for their shop only.
+    - Accountants / Admins: see all tenant requests (pending first).
+    """
+    from .models import RefundRequest as _RefundRequest
+    model = _RefundRequest
+    template_name = 'sales/refund_request_list.html'
+    context_object_name = 'refund_requests'
+    paginate_by = 20
+
+    def dispatch(self, request, *args, **kwargs):
+        role_name = request.user.role.name if request.user.role else None
+        if role_name not in ['SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN', 'AUDITOR']:
+            messages.error(request, 'You do not have permission to view refund requests.')
+            return redirect('core:dashboard')
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_queryset(self):
+        from .models import RefundRequest
+        user = self.request.user
+        role_name = user.role.name if user.role else None
+        tenant = user.tenant
+
+        qs = RefundRequest.objects.filter(tenant=tenant).select_related(
+            'sale', 'sale__shop', 'requested_by', 'reviewed_by'
+        )
+
+        if role_name == 'SHOP_MANAGER':
+            qs = qs.filter(sale__shop=user.location)
+
+        # Filter by status
+        status_filter = self.request.GET.get('status', '')
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+
+        # Filter by shop
+        shop_id = self.request.GET.get('shop')
+        if shop_id and role_name != 'SHOP_MANAGER':
+            qs = qs.filter(sale__shop_id=shop_id)
+
+        # Filter by attendant
+        attendant_id = self.request.GET.get('attendant')
+        if attendant_id:
+            qs = qs.filter(sale__attendant_id=attendant_id)
+
+        # Filter by date
+        start_date = self.request.GET.get('start_date')
+        end_date = self.request.GET.get('end_date')
+        if start_date:
+            qs = qs.filter(created_at__date__gte=start_date)
+        if end_date:
+            qs = qs.filter(created_at__date__lte=end_date)
+
+        # Pending first, then newest
+        from django.db.models import Case, When, IntegerField
+        qs = qs.annotate(
+            status_order=Case(
+                When(status='PENDING', then=0),
+                When(status='APPROVED', then=1),
+                When(status='REJECTED', then=2),
+                default=3,
+                output_field=IntegerField(),
+            )
+        ).order_by('status_order', '-created_at')
+
+        return qs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        from .models import RefundRequest
+        from apps.core.models import Location, User
+        tenant = self.request.user.tenant
+        role_name = self.request.user.role.name if self.request.user.role else None
+
+        context['role_name'] = role_name
+        context['pending_count'] = RefundRequest.objects.filter(tenant=tenant, status='PENDING').count()
+        context['selected_status'] = self.request.GET.get('status', '')
+        context['refund_always_cash'] = tenant.refund_always_cash
+        
+        context['shops'] = Location.objects.filter(tenant=tenant, location_type='SHOP')
+        if role_name == 'SHOP_MANAGER':
+            context['attendants'] = User.objects.filter(tenant=tenant, location=self.request.user.location, is_active=True).order_by('first_name', 'last_name')
+        else:
+            context['attendants'] = User.objects.filter(tenant=tenant, is_active=True).order_by('first_name', 'last_name')
+
+        context['selected_shop'] = self.request.GET.get('shop', '')
+        context['selected_attendant'] = self.request.GET.get('attendant', '')
+        context['start_date'] = self.request.GET.get('start_date', '')
+        context['end_date'] = self.request.GET.get('end_date', '')
+        
+        return context
+
+
 
 # ============ API Views for POS ============
 

@@ -684,3 +684,226 @@ class SaleItem(TenantModel):
         # Calculate line total
         self.total = (self.quantity * self.unit_price) - self.discount_amount
         super().save(*args, **kwargs)
+
+
+class RefundRequest(TenantModel):
+    """
+    A refund request submitted by a Shop Manager for a completed sale.
+    Requires approval from an Accountant or Admin before the refund is executed.
+
+    Financial impact on approval (controlled by tenant.refund_always_cash):
+      - refund_always_cash=True  → CashTransfer(EXPENDITURE) deducted from shop cash-on-hand
+      - refund_always_cash=False → mirrors original payment:
+          CASH/MIXED → CashTransfer(EXPENDITURE)
+          ECASH      → DigitalFundWithdrawal reversal (negative ECASH entry)
+          MOMO       → DigitalFundWithdrawal reversal (negative MOMO entry)
+          CREDIT     → CustomerTransaction reversal (handled by Sale.refund())
+    """
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending Approval'),
+        ('APPROVED', 'Approved'),
+        ('REJECTED', 'Rejected'),
+    ]
+
+    refund_number = models.CharField(max_length=30, blank=True)
+    sale = models.ForeignKey(
+        Sale,
+        on_delete=models.PROTECT,
+        related_name='refund_requests'
+    )
+    requested_by = models.ForeignKey(
+        User,
+        on_delete=models.PROTECT,
+        related_name='refund_requests_made'
+    )
+    reason = models.TextField(help_text="Reason for the refund")
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='PENDING')
+
+    reviewed_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='refund_requests_reviewed'
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    rejection_reason = models.TextField(blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = "Refund Request"
+        verbose_name_plural = "Refund Requests"
+
+    def __str__(self):
+        return f"Refund {self.refund_number or self.pk} — Sale {self.sale.sale_number} ({self.get_status_display()})"
+
+    def save(self, *args, **kwargs):
+        if not self.refund_number:
+            today = timezone.now().strftime('%Y%m%d')
+            last = RefundRequest.objects.filter(
+                tenant=self.tenant,
+                refund_number__startswith=f"RFD{today}"
+            ).order_by('-refund_number').first()
+            if last and last.refund_number:
+                try:
+                    num = int(last.refund_number[-4:]) + 1
+                except ValueError:
+                    num = 1
+            else:
+                num = 1
+            self.refund_number = f"RFD{today}{num:04d}"
+        super().save(*args, **kwargs)
+
+    def approve(self, approver):
+        """
+        Approve the refund request.
+        Executes Sale.refund(), applies the correct financial adjustment,
+        and notifies the shop manager who requested it.
+        """
+        from django.db import transaction as db_transaction
+        from django.utils import timezone as tz
+
+        if self.status != 'PENDING':
+            raise ValidationError("Only pending refund requests can be approved.")
+
+        with db_transaction.atomic():
+            sale = self.sale
+            tenant = self.tenant
+
+            # 1. Execute the formal sale refund (inventory return, customer balance reversal)
+            sale.refund(reason=self.reason, user=approver)
+
+            # 2. Apply financial adjustment
+            self._apply_financial_adjustment(approver)
+
+            # 3. Mark request approved
+            self.status = 'APPROVED'
+            self.reviewed_by = approver
+            self.reviewed_at = tz.now()
+            self.save()
+
+        # 4. Notify the shop manager who submitted the request
+        from apps.notifications.models import Notification
+        Notification.objects.create(
+            tenant=tenant,
+            user=self.requested_by,
+            title="Refund Approved",
+            message=(
+                f"Your refund request {self.refund_number} for Sale "
+                f"{sale.sale_number} ({tenant.currency_symbol}{sale.total}) "
+                f"has been approved by {approver.get_full_name() or approver.email}. "
+                f"Reason: {self.reason}"
+            ),
+            notification_type='SYSTEM',
+            reference_type='RefundRequest',
+            reference_id=self.pk,
+        )
+
+    def _apply_financial_adjustment(self, approver):
+        """
+        Deduct the refunded amount from the appropriate financial bucket.
+        Called inside an atomic block by approve().
+        """
+        from apps.accounting.models import CashTransfer, DigitalFundWithdrawal
+        sale = self.sale
+        tenant = self.tenant
+        shop = sale.shop
+        shop_manager = self.requested_by
+
+        # Find the accountant user for the to_user field on CashTransfer
+        accountant_user = (
+            User.objects.filter(
+                tenant=tenant,
+                role__name='ACCOUNTANT',
+                is_active=True
+            ).first()
+            or User.objects.filter(
+                tenant=tenant,
+                role__name='ADMIN',
+                is_active=True
+            ).first()
+            or approver
+        )
+
+        # Determine effective payment method
+        pay_method = sale.payment_method
+        always_cash = tenant.refund_always_cash
+
+        if always_cash or pay_method in ('CASH', 'MIXED', 'CREDIT', 'PENDING_INVOICE'):
+            # Deduct from shop cash-on-hand via an auto-confirmed EXPENDITURE transfer
+            if shop_manager:
+                CashTransfer.objects.create(
+                    tenant=tenant,
+                    amount=sale.total,
+                    transfer_type='EXPENDITURE',
+                    status='CONFIRMED',
+                    from_user=shop_manager,
+                    from_location=shop,
+                    to_user=accountant_user,
+                    to_location=shop,
+                    notes=(
+                        f"Refund payout: Sale {sale.sale_number} "
+                        f"[{self.refund_number}] — {self.reason[:100]}"
+                    ),
+                    confirmed_at=timezone.now(),
+                    confirmed_by=approver,
+                )
+        elif pay_method == 'ECASH':
+            # Reverse the shop's e-cash balance with a negative DigitalFundWithdrawal
+            DigitalFundWithdrawal.objects.create(
+                tenant=tenant,
+                shop=shop,
+                accountant=approver,
+                amount=-abs(sale.total),   # Negative = reversal / money back out of accountant's pool
+                fund_source='ECASH',
+                notes=(
+                    f"Refund reversal: Sale {sale.sale_number} "
+                    f"[{self.refund_number}]"
+                ),
+            )
+        elif pay_method == 'MOMO':
+            # Reverse the shop's momo balance
+            DigitalFundWithdrawal.objects.create(
+                tenant=tenant,
+                shop=shop,
+                accountant=approver,
+                amount=-abs(sale.total),
+                fund_source='MOMO',
+                notes=(
+                    f"Refund reversal: Sale {sale.sale_number} "
+                    f"[{self.refund_number}]"
+                ),
+            )
+
+    def reject(self, approver, rejection_reason=''):
+        """Reject the refund request and notify the shop manager."""
+        from django.utils import timezone as tz
+
+        if self.status != 'PENDING':
+            raise ValidationError("Only pending refund requests can be rejected.")
+
+        self.status = 'REJECTED'
+        self.reviewed_by = approver
+        self.reviewed_at = tz.now()
+        self.rejection_reason = rejection_reason
+        self.save()
+
+        # Notify shop manager
+        from apps.notifications.models import Notification
+        Notification.objects.create(
+            tenant=self.tenant,
+            user=self.requested_by,
+            title="Refund Request Rejected",
+            message=(
+                f"Your refund request {self.refund_number} for Sale "
+                f"{self.sale.sale_number} ({self.tenant.currency_symbol}{self.sale.total}) "
+                f"was rejected by {approver.get_full_name() or approver.email}. "
+                f"Reason: {rejection_reason or 'No reason given'}"
+            ),
+            notification_type='SYSTEM',
+            reference_type='RefundRequest',
+            reference_id=self.pk,
+        )
+

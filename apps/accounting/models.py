@@ -180,7 +180,7 @@ class DigitalFundWithdrawal(TenantModel):
     amount = models.DecimalField(
         max_digits=12,
         decimal_places=2,
-        validators=[MinValueValidator(Decimal('0.01'))]
+        help_text="Positive = withdrawal (deducts from shop balance). Negative = refund reversal (restores shop balance)."
     )
     fund_source = models.CharField(max_length=10, choices=FUND_CHOICES)
     notes = models.TextField(blank=True, help_text="Optional reference notes")

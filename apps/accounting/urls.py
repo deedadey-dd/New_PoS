@@ -37,6 +37,8 @@ urlpatterns = [
     # Shop E-Cash Withdrawals
     path('shop-ecash/', views.ShopEcashListView.as_view(), name='shop_ecash_list'),
     path('shop-ecash/<int:shop_id>/withdraw/', views.ShopEcashWithdrawView.as_view(), name='shop_ecash_withdraw'),
+    path('shop-ecash/history/', views.ShopEcashHistoryView.as_view(), name='shop_ecash_history'),
+    path('shop-ecash/history/export/', views.ShopEcashExportView.as_view(), name='shop_ecash_export'),
 
     # Expenditures
     path('expenditures/', views.ExpenditureListView.as_view(), name='expenditure_list'),

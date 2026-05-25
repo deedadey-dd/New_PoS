@@ -1,0 +1,570 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Refund Requests{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="fw-bold mb-0">
+                <i class="bi bi-arrow-counterclockwise me-2 text-danger"></i>Refund Requests
+            </h2>
+            <p class="text-muted mb-0">
+                {% if role_name == 'SHOP_MANAGER' %}
+                    Refund requests for your shop
+                {% else %}
+                    All refund requests across all shops
+                {% endif %}
+                {% if pending_count > 0 %}
+                    &mdash; <span class="badge bg-danger">{{ pending_count }} pending</span>
+                {% endif %}
+            </p>
+        </div>
+        {% if refund_always_cash %}
+        <div class="alert alert-info py-2 px-3 mb-0 d-flex align-items-center gap-2">
+            <i class="bi bi-info-circle-fill"></i>
+            <small>Refund mode: <strong>Always Cash</strong> — refunds are paid back from shop cash-on-hand</small>
+        </div>
+        {% else %}
+        <div class="alert alert-warning py-2 px-3 mb-0 d-flex align-items-center gap-2">
+            <i class="bi bi-info-circle-fill"></i>
+            <small>Refund mode: <strong>Same Payment Method</strong> — refunds mirror original payment</small>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Filters -->
+    <div class="card mb-4 border-0 shadow-sm">
+        <div class="card-body">
+            <form method="get" class="row g-3 align-items-end">
+                <div class="col-md-2">
+                    <label class="form-label fw-medium">Status</label>
+                    <select name="status" class="form-select" onchange="this.form.submit()">
+                        <option value="" {% if not selected_status %}selected{% endif %}>All</option>
+                        <option value="PENDING" {% if selected_status == 'PENDING' %}selected{% endif %}>Pending</option>
+                        <option value="APPROVED" {% if selected_status == 'APPROVED' %}selected{% endif %}>Approved</option>
+                        <option value="REJECTED" {% if selected_status == 'REJECTED' %}selected{% endif %}>Rejected</option>
+                    </select>
+                </div>
+                {% if role_name != 'SHOP_MANAGER' %}
+                <div class="col-md-2">
+                    <label class="form-label fw-medium">Shop</label>
+                    <select name="shop" class="form-select" onchange="this.form.submit()">
+                        <option value="">All Shops</option>
+                        {% for shop in shops %}
+                        <option value="{{ shop.id }}" {% if selected_shop == shop.id|stringformat:"s" %}selected{% endif %}>{{ shop.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% endif %}
+                <div class="col-md-2">
+                    <label class="form-label fw-medium">Attendant</label>
+                    <select name="attendant" class="form-select" onchange="this.form.submit()">
+                        <option value="">All Attendants</option>
+                        {% for attendant in attendants %}
+                        <option value="{{ attendant.id }}" {% if selected_attendant == attendant.id|stringformat:"s" %}selected{% endif %}>{{ attendant.get_full_name|default:attendant.email }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label fw-medium">From Date</label>
+                    <input type="date" name="start_date" class="form-control" value="{{ start_date }}" onchange="this.form.submit()">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label fw-medium">To Date</label>
+                    <input type="date" name="end_date" class="form-control" value="{{ end_date }}" onchange="this.form.submit()">
+                </div>
+                <div class="col-md-2">
+                    <a href="?" class="btn btn-outline-secondary w-100">
+                        <i class="bi bi-x-lg me-1"></i>Clear Filters
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Table -->
+    <div class="card shadow-sm border-0">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="ps-4">Refund #</th>
+                            <th>Sale</th>
+                            <th>Shop</th>
+                            <th>Amount</th>
+                            <th>Payment Method</th>
+                            <th>Requested By</th>
+                            <th>Date</th>
+                            <th>Status</th>
+                            {% if role_name in 'ACCOUNTANT ADMIN' %}
+                            <th class="text-center pe-4">Actions</th>
+                            {% endif %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for rr in refund_requests %}
+                        <tr id="refund-row-{{ rr.pk }}" class="{% if rr.status == 'PENDING' %}table-warning{% elif rr.status == 'APPROVED' %}table-success{% elif rr.status == 'REJECTED' %}table-danger{% endif %} bg-opacity-10">
+                            <td class="ps-4">
+                                <span class="fw-bold font-monospace">{{ rr.refund_number }}</span>
+                            </td>
+                            <td>
+                                <a href="#" class="text-decoration-none fw-medium sale-detail-link" 
+                                   data-sale-id="{{ rr.sale.pk }}"
+                                   data-refund-id="{{ rr.pk }}"
+                                   data-refund-number="{{ rr.refund_number }}"
+                                   data-sale-number="{{ rr.sale.sale_number }}"
+                                   data-amount="{{ rr.sale.total }}"
+                                   data-shop="{{ rr.sale.shop.name }}"
+                                   data-status="{{ rr.status }}">
+                                    {{ rr.sale.sale_number }}
+                                </a>
+                            </td>
+                            <td>{{ rr.sale.shop.name }}</td>
+                            <td class="fw-bold">{{ currency_symbol }}{{ rr.sale.total|floatformat:"2g" }}</td>
+                            <td>
+                                <span class="badge 
+                                    {% if rr.sale.payment_method == 'CASH' %}bg-secondary
+                                    {% elif rr.sale.payment_method == 'ECASH' %}bg-success
+                                    {% elif rr.sale.payment_method == 'MOMO' %}bg-warning text-dark
+                                    {% elif rr.sale.payment_method == 'CREDIT' %}bg-info text-dark
+                                    {% else %}bg-secondary{% endif %}">
+                                    {{ rr.sale.get_payment_method_display }}
+                                </span>
+                            </td>
+                            <td>
+                                <div class="d-flex flex-column">
+                                    <span class="fw-medium">{{ rr.requested_by.get_full_name|default:rr.requested_by.email }}</span>
+                                    <small class="text-muted">{{ rr.reason|truncatechars:60 }}</small>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="d-flex flex-column">
+                                    <span>{{ rr.created_at|date:"M d, Y" }}</span>
+                                    <small class="text-muted">{{ rr.created_at|date:"h:i A" }}</small>
+                                </div>
+                            </td>
+                            <td>
+                                {% if rr.status == 'PENDING' %}
+                                    <span class="badge bg-warning text-dark">
+                                        <i class="bi bi-hourglass-split me-1"></i>Pending
+                                    </span>
+                                {% elif rr.status == 'APPROVED' %}
+                                    <span class="badge bg-success">
+                                        <i class="bi bi-check-circle me-1"></i>Approved
+                                    </span>
+                                    <div class="text-muted small mt-1">
+                                        by {{ rr.reviewed_by.get_full_name|default:rr.reviewed_by.email }}<br>
+                                        {{ rr.reviewed_at|date:"M d, Y h:i A" }}
+                                    </div>
+                                {% elif rr.status == 'REJECTED' %}
+                                    <span class="badge bg-danger">
+                                        <i class="bi bi-x-circle me-1"></i>Rejected
+                                    </span>
+                                    {% if rr.rejection_reason %}
+                                    <div class="text-muted small mt-1">{{ rr.rejection_reason|truncatechars:50 }}</div>
+                                    {% endif %}
+                                {% endif %}
+                            </td>
+                            {% if role_name == 'ACCOUNTANT' or role_name == 'ADMIN' %}
+                            <td class="text-center pe-4">
+                                {% if rr.status == 'PENDING' %}
+                                <div class="d-flex justify-content-center gap-2">
+                                    <button class="btn btn-sm btn-success btn-approve-refund"
+                                        data-refund-id="{{ rr.pk }}"
+                                        data-refund-number="{{ rr.refund_number }}"
+                                        data-sale-number="{{ rr.sale.sale_number }}"
+                                        data-amount="{{ rr.sale.total }}"
+                                        data-shop="{{ rr.sale.shop.name }}">
+                                        <i class="bi bi-check-lg me-1"></i>Approve
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger btn-reject-refund"
+                                        data-refund-id="{{ rr.pk }}"
+                                        data-refund-number="{{ rr.refund_number }}">
+                                        <i class="bi bi-x-lg me-1"></i>Reject
+                                    </button>
+                                </div>
+                                {% else %}
+                                <span class="text-muted small">—</span>
+                                {% endif %}
+                            </td>
+                            {% endif %}
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="9" class="text-center py-5">
+                                <div class="text-muted">
+                                    <i class="bi bi-check2-circle fs-1 d-block mb-3 text-success"></i>
+                                    <h5>No Refund Requests</h5>
+                                    <p class="mb-0">
+                                        {% if selected_status == 'PENDING' %}
+                                            No pending refund requests at this time.
+                                        {% else %}
+                                            No refund requests found.
+                                        {% endif %}
+                                    </p>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pagination -->
+    {% if is_paginated %}
+    <nav class="mt-4">
+        <ul class="pagination justify-content-center">
+            {% if page_obj.has_previous %}
+            <li class="page-item">
+                <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if selected_shop %}&shop={{ selected_shop }}{% endif %}{% if selected_attendant %}&attendant={{ selected_attendant }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}">Previous</a>
+            </li>
+            {% endif %}
+            <li class="page-item disabled">
+                <span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+            </li>
+            {% if page_obj.has_next %}
+            <li class="page-item">
+                <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if selected_shop %}&shop={{ selected_shop }}{% endif %}{% if selected_attendant %}&attendant={{ selected_attendant }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}">Next</a>
+            </li>
+            {% endif %}
+        </ul>
+    </nav>
+    {% endif %}
+</div>
+
+<!-- Approve Confirmation Modal -->
+<div class="modal fade" id="approveModal" tabindex="-1" aria-labelledby="approveModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header border-0 bg-success bg-opacity-10">
+                <h5 class="modal-title fw-bold text-success" id="approveModalLabel">
+                    <i class="bi bi-check-circle me-2"></i>Approve Refund
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>You are about to approve refund <strong id="approve-refund-number"></strong> for Sale <strong id="approve-sale-number"></strong>.</p>
+                <p>Amount: <strong class="text-danger" id="approve-amount"></strong> from <strong id="approve-shop"></strong></p>
+                <div class="alert alert-warning mb-0">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    This will immediately refund the sale and apply the appropriate financial adjustment. This cannot be undone.
+                </div>
+            </div>
+            <div class="modal-footer border-0">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success fw-bold" id="confirm-approve-btn">
+                    <i class="bi bi-check-lg me-1"></i>Confirm Approval
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Reject Modal -->
+<div class="modal fade" id="rejectModal" tabindex="-1" aria-labelledby="rejectModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header border-0 bg-danger bg-opacity-10">
+                <h5 class="modal-title fw-bold text-danger" id="rejectModalLabel">
+                    <i class="bi bi-x-circle me-2"></i>Reject Refund Request
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Rejecting refund <strong id="reject-refund-number"></strong>. Please provide a reason:</p>
+                <div class="mb-3">
+                    <label for="rejection-reason" class="form-label fw-medium">Rejection Reason</label>
+                    <textarea id="rejection-reason" class="form-control" rows="3"
+                        placeholder="Explain why this refund is being rejected..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer border-0">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger fw-bold" id="confirm-reject-btn">
+                    <i class="bi bi-x-lg me-1"></i>Reject Request
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Sale Detail Modal -->
+<div class="modal fade" id="saleDetailModal" tabindex="-1" aria-labelledby="saleDetailModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="saleDetailModalLabel">
+                    <i class="bi bi-receipt-cutoff me-2"></i>Sale Details
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="saleDetailBody">
+                <div class="text-center py-5" id="saleDetailLoading">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="text-muted mt-2">Loading sale details...</p>
+                </div>
+                <div id="saleDetailContent" style="display:none;"></div>
+            </div>
+            <div class="modal-footer">
+                {% if role_name == 'ACCOUNTANT' or role_name == 'ADMIN' %}
+                <button type="button" class="btn btn-success" id="saleDetailApproveBtn" style="display: none;">
+                    <i class="bi bi-check-lg me-1"></i>Approve
+                </button>
+                <button type="button" class="btn btn-outline-danger" id="saleDetailRejectBtn" style="display: none;">
+                    <i class="bi bi-x-lg me-1"></i>Reject
+                </button>
+                {% endif %}
+                <a href="#" class="btn btn-outline-info" id="saleDetailPrintBtn" target="_blank">
+                    <i class="bi bi-printer me-1"></i>Print Receipt
+                </a>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const csrfToken = '{{ csrf_token }}';
+    const currencySymbol = '{{ current_tenant.currency_symbol|default:"$" }}';
+    let pendingApproveId = null;
+    let pendingRejectId = null;
+
+    // Sale Detail logic
+    document.addEventListener('DOMContentLoaded', function() {
+        const saleDetailModalEl = document.getElementById('saleDetailModal');
+        if (!saleDetailModalEl) return;
+        
+        const modal = new bootstrap.Modal(saleDetailModalEl);
+        const loadingEl = document.getElementById('saleDetailLoading');
+        const contentEl = document.getElementById('saleDetailContent');
+        const printBtn = document.getElementById('saleDetailPrintBtn');
+
+        document.querySelectorAll('.sale-detail-link').forEach(function(link) {
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                const saleId = this.dataset.saleId;
+
+                const refundStatus = this.dataset.status;
+
+                loadingEl.style.display = 'block';
+                contentEl.style.display = 'none';
+                printBtn.href = '/sales/' + saleId + '/receipt/';
+                
+                const approveBtn = document.getElementById('saleDetailApproveBtn');
+                const rejectBtn = document.getElementById('saleDetailRejectBtn');
+                
+                if (approveBtn && rejectBtn) {
+                    if (refundStatus === 'PENDING') {
+                        approveBtn.style.display = 'inline-block';
+                        rejectBtn.style.display = 'inline-block';
+                        
+                        approveBtn.dataset.refundId = this.dataset.refundId;
+                        approveBtn.dataset.refundNumber = this.dataset.refundNumber;
+                        approveBtn.dataset.saleNumber = this.dataset.saleNumber;
+                        approveBtn.dataset.amount = this.dataset.amount;
+                        approveBtn.dataset.shop = this.dataset.shop;
+                        
+                        rejectBtn.dataset.refundId = this.dataset.refundId;
+                        rejectBtn.dataset.refundNumber = this.dataset.refundNumber;
+                    } else {
+                        approveBtn.style.display = 'none';
+                        rejectBtn.style.display = 'none';
+                    }
+                }
+
+                modal.show();
+
+                fetch('/sales/api/' + saleId + '/detail/')
+                    .then(function(response) { return response.json(); })
+                    .then(function(data) {
+                        renderSaleDetail(data);
+                        loadingEl.style.display = 'none';
+                        contentEl.style.display = 'block';
+                    })
+                    .catch(function(err) {
+                        contentEl.innerHTML = '<div class="alert alert-danger">Failed to load sale details.</div>';
+                        loadingEl.style.display = 'none';
+                        contentEl.style.display = 'block';
+                    });
+            });
+        });
+
+        function getStatusBadge(statusCode, statusDisplay) {
+            const colors = {
+                'COMPLETED': 'success',
+                'VOIDED': 'danger',
+                'PENDING': 'warning',
+            };
+            const color = colors[statusCode] || 'secondary';
+            return '<span class="badge bg-' + color + '">' + statusDisplay + '</span>';
+        }
+
+        function getPaymentBadge(code, display) {
+            const colors = {
+                'CASH': 'success',
+                'ECASH': 'primary',
+                'CREDIT': 'warning',
+            };
+            const color = colors[code] || 'secondary';
+            return '<span class="badge bg-' + color + '">' + display + '</span>';
+        }
+
+        function renderSaleDetail(data) {
+            let html = '<div class="row mb-3"><div class="col-sm-6">';
+            html += '<h6 class="text-muted mb-1">Sale Number</h6>';
+            html += '<p class="fw-bold fs-5 mb-2">' + data.sale_number + '</p></div>';
+            html += '<div class="col-sm-6 text-sm-end"><h6 class="text-muted mb-1">Status</h6>';
+            html += '<p class="mb-2">' + getStatusBadge(data.status_code, data.status) + '</p></div></div>';
+
+            html += '<div class="row mb-3 py-2 bg-light rounded"><div class="col-sm-4">';
+            html += '<small class="text-muted d-block">Date</small><span class="fw-medium">' + data.created_at + '</span></div>';
+            html += '<div class="col-sm-4"><small class="text-muted d-block">Shop</small><span class="fw-medium">' + data.shop + '</span></div>';
+            html += '<div class="col-sm-4"><small class="text-muted d-block">Attendant</small><span class="fw-medium">' + data.attendant + '</span></div></div>';
+
+            html += '<div class="row mb-3"><div class="col-sm-6">';
+            html += '<small class="text-muted d-block">Payment Method</small>' + getPaymentBadge(data.payment_method_code, data.payment_method) + '</div>';
+            if (data.customer) {
+                html += '<div class="col-sm-6"><small class="text-muted d-block">Customer</small><span class="fw-medium">' + data.customer + '</span>';
+                if (data.customer_phone) html += '<br><small class="text-muted"><i class="bi bi-telephone me-1"></i>' + data.customer_phone + '</small>';
+                html += '</div>';
+            }
+            html += '</div>';
+
+            html += '<h6 class="border-bottom pb-2 mb-0">Items</h6><div class="table-responsive"><table class="table table-sm mb-0">';
+            html += '<thead class="table-light"><tr><th>Product</th><th class="text-center">Qty</th><th class="text-end">Price</th><th class="text-end">Total</th></tr></thead><tbody>';
+
+            data.items.forEach(function(item) {
+                html += '<tr><td>' + item.product_name + '<br><small class="text-muted">' + item.sku + '</small></td>';
+                html += '<td class="text-center">' + parseFloat(item.quantity) + '</td>';
+                html += '<td class="text-end">' + currencySymbol + parseFloat(item.unit_price).toFixed(2) + '</td>';
+                html += '<td class="text-end">' + currencySymbol + parseFloat(item.total).toFixed(2) + '</td></tr>';
+            });
+
+            html += '</tbody></table></div><div class="border-top pt-2 mt-2">';
+            html += '<div class="d-flex justify-content-between mb-1"><span>Subtotal</span><span>' + currencySymbol + parseFloat(data.subtotal).toFixed(2) + '</span></div>';
+            if (data.discount_amount) html += '<div class="d-flex justify-content-between mb-1 text-danger"><span>Discount</span><span>-' + currencySymbol + parseFloat(data.discount_amount).toFixed(2) + '</span></div>';
+            if (data.tax_amount) html += '<div class="d-flex justify-content-between mb-1"><span>Tax</span><span>' + currencySymbol + parseFloat(data.tax_amount).toFixed(2) + '</span></div>';
+            html += '<div class="d-flex justify-content-between fw-bold fs-5 border-top pt-2"><span>Total</span><span>' + currencySymbol + parseFloat(data.total).toFixed(2) + '</span></div>';
+            html += '<div class="d-flex justify-content-between mt-1 text-muted"><span>Amount Paid</span><span>' + currencySymbol + parseFloat(data.amount_paid).toFixed(2) + '</span></div>';
+            if (data.change_given && parseFloat(data.change_given) > 0) html += '<div class="d-flex justify-content-between text-success"><span>Change</span><span>' + currencySymbol + parseFloat(data.change_given).toFixed(2) + '</span></div>';
+            html += '</div>';
+
+            contentEl.innerHTML = html;
+        }
+    });
+
+    // ── Sale Detail Modal Buttons ────────────────────────────────
+    const saleDetailApproveBtn = document.getElementById('saleDetailApproveBtn');
+    if (saleDetailApproveBtn) {
+        saleDetailApproveBtn.addEventListener('click', function() {
+            const saleDetailModal = bootstrap.Modal.getInstance(document.getElementById('saleDetailModal'));
+            if (saleDetailModal) saleDetailModal.hide();
+            
+            pendingApproveId = this.dataset.refundId;
+            document.getElementById('approve-refund-number').textContent = this.dataset.refundNumber;
+            document.getElementById('approve-sale-number').textContent = this.dataset.saleNumber;
+            document.getElementById('approve-amount').textContent = currencySymbol + parseFloat(this.dataset.amount).toFixed(2);
+            document.getElementById('approve-shop').textContent = this.dataset.shop;
+            
+            setTimeout(() => {
+                new bootstrap.Modal(document.getElementById('approveModal')).show();
+            }, 300);
+        });
+    }
+
+    const saleDetailRejectBtn = document.getElementById('saleDetailRejectBtn');
+    if (saleDetailRejectBtn) {
+        saleDetailRejectBtn.addEventListener('click', function() {
+            const saleDetailModal = bootstrap.Modal.getInstance(document.getElementById('saleDetailModal'));
+            if (saleDetailModal) saleDetailModal.hide();
+            
+            pendingRejectId = this.dataset.refundId;
+            document.getElementById('reject-refund-number').textContent = this.dataset.refundNumber;
+            document.getElementById('rejection-reason').value = '';
+            
+            setTimeout(() => {
+                new bootstrap.Modal(document.getElementById('rejectModal')).show();
+            }, 300);
+        });
+    }
+
+    // ── Approve ──────────────────────────────────────────────────
+
+    document.querySelectorAll('.btn-approve-refund').forEach(btn => {
+        btn.addEventListener('click', () => {
+            pendingApproveId = btn.dataset.refundId;
+            document.getElementById('approve-refund-number').textContent = btn.dataset.refundNumber;
+            document.getElementById('approve-sale-number').textContent = btn.dataset.saleNumber;
+            document.getElementById('approve-amount').textContent = '{{ currency_symbol }}' + parseFloat(btn.dataset.amount).toFixed(2);
+            document.getElementById('approve-shop').textContent = btn.dataset.shop;
+            new bootstrap.Modal(document.getElementById('approveModal')).show();
+        });
+    });
+
+    document.getElementById('confirm-approve-btn').addEventListener('click', () => {
+        if (!pendingApproveId) return;
+        const btn = document.getElementById('confirm-approve-btn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing...';
+
+        fetch(`/sales/api/refund-requests/${pendingApproveId}/approve/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken, 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error: ' + (data.error || 'Unknown error'));
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Confirm Approval';
+            }
+        });
+    });
+
+    // ── Reject ───────────────────────────────────────────────────
+    document.querySelectorAll('.btn-reject-refund').forEach(btn => {
+        btn.addEventListener('click', () => {
+            pendingRejectId = btn.dataset.refundId;
+            document.getElementById('reject-refund-number').textContent = btn.dataset.refundNumber;
+            document.getElementById('rejection-reason').value = '';
+            new bootstrap.Modal(document.getElementById('rejectModal')).show();
+        });
+    });
+
+    document.getElementById('confirm-reject-btn').addEventListener('click', () => {
+        if (!pendingRejectId) return;
+        const reason = document.getElementById('rejection-reason').value.trim();
+        const btn = document.getElementById('confirm-reject-btn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Rejecting...';
+
+        fetch(`/sales/api/refund-requests/${pendingRejectId}/reject/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reason })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error: ' + (data.error || 'Unknown error'));
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-x-lg me-1"></i>Reject Request';
+            }
+        });
+    });
+</script>
+{% endblock %}

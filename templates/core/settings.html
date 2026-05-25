@@ -68,6 +68,11 @@
                         <small class="d-block text-muted mt-1">Require manager approval for refunds</small>
                     </div>
                     <div class="form-check form-switch mb-3">
+                        {{ form.refund_always_cash }}
+                        <label class="form-check-label ms-2">Refunds Are Always Cash</label>
+                        <small class="d-block text-muted mt-1">When enabled, all refunds return cash to the customer and deduct from the shop's cash-on-hand, regardless of original payment method</small>
+                    </div>
+                    <div class="form-check form-switch mb-3">
                         {{ form.require_return_approval }}
                         <label class="form-check-label ms-2">Require Return Approval</label>
                         <small class="d-block text-muted mt-1">Require manager approval for product returns</small>

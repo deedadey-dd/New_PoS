@@ -1034,3 +1034,90 @@ class WorkflowIntegrationTests(TestCase):
         # Verify expected cash is still 150 after closing
         shift.refresh_from_db()
         self.assertEqual(shift.expected_cash, Decimal("150.00"))
+
+    def test_14_refund_requests_workflow(self):
+        """
+        Verify the refund request approval workflow and financial adjustments.
+        1. Manager requests refund -> PENDING.
+        2. Accountant approves -> refund_always_cash=True -> CashTransfer EXPENDITURE created.
+        3. Manager requests refund for MOMO sale.
+        4. Admin approves -> refund_always_cash=False -> Negative DigitalFundWithdrawal created.
+        """
+        from apps.sales.models import RefundRequest
+        from apps.accounting.models import CashTransfer, DigitalFundWithdrawal
+
+        # 1. Sale with CASH (refund_always_cash=True by default)
+        sale_cash = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.manager_user,
+            total=Decimal("150.00"),
+            amount_paid=Decimal("150.00"),
+            status="COMPLETED",
+            payment_method="CASH"
+        )
+
+        # Manager requests refund
+        rr_cash = RefundRequest.objects.create(
+            tenant=self.tenant,
+            sale=sale_cash,
+            requested_by=self.manager_user,
+            reason="Customer returning defective item"
+        )
+        self.assertEqual(rr_cash.status, "PENDING")
+
+        # Accountant approves
+        rr_cash.approve(self.accountant_user)
+
+        self.assertEqual(rr_cash.status, "APPROVED")
+        sale_cash.refresh_from_db()
+        self.assertEqual(sale_cash.status, "REFUNDED")
+
+        # Check financial adjustment: CashTransfer(EXPENDITURE)
+        exp_ct = CashTransfer.objects.filter(
+            tenant=self.tenant,
+            transfer_type="EXPENDITURE",
+            amount=Decimal("150.00"),
+            notes__icontains=rr_cash.refund_number
+        ).first()
+        self.assertIsNotNone(exp_ct)
+        self.assertEqual(exp_ct.status, "CONFIRMED")
+        self.assertEqual(exp_ct.from_user, self.manager_user)  # shop manager deducted
+
+        # 2. Sale with MOMO and refund_always_cash=False
+        self.tenant.refund_always_cash = False
+        self.tenant.save()
+
+        sale_momo = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.manager_user,
+            total=Decimal("80.00"),
+            amount_paid=Decimal("80.00"),
+            status="COMPLETED",
+            payment_method="MOMO"
+        )
+
+        rr_momo = RefundRequest.objects.create(
+            tenant=self.tenant,
+            sale=sale_momo,
+            requested_by=self.manager_user,
+            reason="Changed mind"
+        )
+
+        # Admin approves
+        rr_momo.approve(self.admin_user)
+
+        self.assertEqual(rr_momo.status, "APPROVED")
+        sale_momo.refresh_from_db()
+        self.assertEqual(sale_momo.status, "REFUNDED")
+
+        # Check financial adjustment: Negative DigitalFundWithdrawal
+        reversal = DigitalFundWithdrawal.objects.filter(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            amount=Decimal("-80.00"),
+            fund_source="MOMO",
+            notes__icontains=rr_momo.refund_number
+        ).first()
+        self.assertIsNotNone(reversal)

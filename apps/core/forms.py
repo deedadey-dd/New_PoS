@@ -212,7 +212,7 @@ class TenantSettingsForm(forms.ModelForm):
         model = Tenant
         fields = [
             'name', 'email', 'phone', 'address', 'currency',
-            'allow_negative_stock', 'enable_refunds', 'require_refund_approval', 'require_return_approval',
+            'allow_negative_stock', 'enable_refunds', 'require_refund_approval', 'require_return_approval', 'refund_always_cash',
             'credit_limit_warning_percent', 'backdating_allowed_days',
             'shop_manager_can_add_products', 'shop_manager_can_receive_stock',
             'shop_manager_can_delete_categories',
@@ -239,6 +239,7 @@ class TenantSettingsForm(forms.ModelForm):
             'enable_refunds': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'require_refund_approval': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'require_return_approval': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'refund_always_cash': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'shop_manager_can_add_products': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'shop_manager_can_receive_stock': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'shop_manager_can_delete_categories': forms.CheckboxInput(attrs={'class': 'form-check-input'}),

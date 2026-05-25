@@ -16,7 +16,11 @@
             <span class="badge fs-6 bg-success text-white">
                 <i class="bi bi-wallet2 me-1"></i>Total Unconfirmed: {{ currency_symbol }}{{ total_ecash|floatformat:"2g" }}
             </span>
+            <a href="{% url 'accounting:shop_ecash_history' %}" class="btn btn-outline-success btn-sm">
+                <i class="bi bi-clock-history me-1"></i>View History
+            </a>
         </div>
+
     </div>
 
     <div class="row g-4">

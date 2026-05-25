@@ -1402,12 +1402,256 @@ class ShopEcashWithdrawView(LoginRequiredMixin, View):
         messages.success(request, f"Successfully withdrew {tenant.currency_symbol}{amount} E-Cash from {shop.name}.")
         return redirect('accounting:shop_ecash_list')
 
+
+class ShopEcashHistoryView(LoginRequiredMixin, TemplateView):
+    """
+    Shop Manager / Accountant view: View e-cash transaction history for a shop.
+    Mirrors ShopMomoHistoryView but for ECASH payment method.
+    """
+    template_name = 'accounting/shop_ecash_history.html'
+
+    def dispatch(self, request, *args, **kwargs):
+        allowed_roles = ['SHOP_MANAGER', 'ACCOUNTANT', 'AUDITOR', 'ADMIN', 'SHOP_CASHIER']
+        role_name = request.user.role.name if request.user.role else None
+        if role_name not in allowed_roles:
+            messages.error(request, "You don't have permission to view e-cash history.")
+            return redirect('core:dashboard')
+        return super().dispatch(request, *args, **kwargs)
+
+    def _get_shop(self):
+        user = self.request.user
+        tenant = user.tenant
+        shop_id = self.request.GET.get('shop')
+
+        from apps.core.models import Location
+
+        role_name = user.role.name if user.role else None
+        if role_name in ['ACCOUNTANT', 'AUDITOR', 'ADMIN']:
+            if shop_id:
+                return Location.objects.filter(pk=shop_id, tenant=tenant, location_type='SHOP').first()
+            return Location.objects.filter(tenant=tenant, location_type='SHOP', is_active=True).first()
+
+        if user.location and user.location.location_type == 'SHOP':
+            return user.location
+
+        return None
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        user = self.request.user
+        tenant = user.tenant
+        shop = self._get_shop()
+
+        from apps.sales.models import Sale
+        from apps.customers.models import CustomerTransaction
+        from django.db.models import Sum
+        from datetime import datetime
+
+        if shop:
+            sales = Sale.objects.filter(
+                tenant=tenant,
+                shop=shop,
+                status='COMPLETED',
+                payment_method='ECASH'
+            )
+
+            cts = CustomerTransaction.objects.filter(
+                tenant=tenant,
+                performed_by__location=shop,
+                transaction_type='CREDIT',
+                description__icontains='ECASH'
+            )
+
+            # Apply filters
+            date_from = self.request.GET.get('date_from')
+            date_to = self.request.GET.get('date_to')
+            min_amount = self.request.GET.get('min_amount')
+            max_amount = self.request.GET.get('max_amount')
+
+            if date_from:
+                try:
+                    date_from_parsed = datetime.strptime(date_from, '%Y-%m-%d').date()
+                    sales = sales.filter(created_at__date__gte=date_from_parsed)
+                    cts = cts.filter(created_at__date__gte=date_from_parsed)
+                except ValueError:
+                    pass
+
+            if date_to:
+                try:
+                    date_to_parsed = datetime.strptime(date_to, '%Y-%m-%d').date()
+                    sales = sales.filter(created_at__date__lte=date_to_parsed)
+                    cts = cts.filter(created_at__date__lte=date_to_parsed)
+                except ValueError:
+                    pass
+
+            if min_amount:
+                try:
+                    min_val = Decimal(min_amount)
+                    sales = sales.filter(amount_paid__gte=min_val)
+                    cts = cts.filter(amount__gte=min_val)
+                except (ValueError, TypeError):
+                    pass
+
+            if max_amount:
+                try:
+                    max_val = Decimal(max_amount)
+                    sales = sales.filter(amount_paid__lte=max_val)
+                    cts = cts.filter(amount__lte=max_val)
+                except (ValueError, TypeError):
+                    pass
+
+            # Balance calc from all-time ledger (not filtered)
+            total_sales = Sale.objects.filter(
+                tenant=tenant, shop=shop, status='COMPLETED', payment_method='ECASH'
+            ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+
+            total_cts = CustomerTransaction.objects.filter(
+                tenant=tenant, performed_by__location=shop,
+                transaction_type='CREDIT', description__icontains='ECASH'
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
+            total_withdrawn = DigitalFundWithdrawal.objects.filter(
+                tenant=tenant, shop=shop, fund_source='ECASH'
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
+            context['shop_balance'] = (total_sales + total_cts) - total_withdrawn
+            context['shop'] = shop
+
+            # Combine sales + customer transactions
+            transactions = list(sales) + list(cts)
+
+            # Sorting
+            sort_by = self.request.GET.get('sort', 'created_at')
+            direction = self.request.GET.get('dir', 'desc')
+            is_reverse = direction == 'desc'
+
+            if sort_by == 'amount':
+                transactions.sort(
+                    key=lambda x: getattr(x, 'amount_paid', getattr(x, 'amount', 0)),
+                    reverse=is_reverse
+                )
+            elif sort_by == 'type':
+                transactions.sort(
+                    key=lambda x: 'Sale' if hasattr(x, 'sale_number') else 'Debt Payment',
+                    reverse=is_reverse
+                )
+            elif sort_by == 'status':
+                transactions.sort(key=lambda x: x.is_accountant_confirmed, reverse=is_reverse)
+            else:
+                transactions.sort(key=lambda x: x.created_at, reverse=is_reverse)
+
+            context['transactions'] = transactions
+            context['date_from'] = date_from
+            context['date_to'] = date_to
+            context['min_amount'] = min_amount
+            context['max_amount'] = max_amount
+            context['current_sort'] = sort_by
+            context['current_dir'] = direction
+
+        role_name = user.role.name if user.role else None
+        if role_name in ['ACCOUNTANT', 'AUDITOR', 'ADMIN']:
+            from apps.core.models import Location
+            context['all_shops'] = Location.objects.filter(
+                tenant=tenant, location_type='SHOP', is_active=True
+            ).order_by('name')
+
+        return context
+
+
+class ShopEcashExportView(LoginRequiredMixin, View):
+    """Export e-cash history to Excel or PDF."""
+
+    def dispatch(self, request, *args, **kwargs):
+        role_name = request.user.role.name if request.user.role else None
+        if role_name not in ['ACCOUNTANT', 'AUDITOR', 'ADMIN', 'SHOP_MANAGER', 'SHOP_CASHIER']:
+            messages.error(request, 'You do not have permission to export this report.')
+            return redirect('core:dashboard')
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request):
+        from apps.sales.models import Sale
+        from apps.customers.models import CustomerTransaction
+        from apps.core.models import Location
+        from datetime import datetime
+        from apps.core.excel_utils import create_export_workbook, build_excel_response
+
+        user = request.user
+        tenant = user.tenant
+
+        shop_id = request.GET.get('shop')
+        role_name = user.role.name if user.role else None
+        if role_name in ['ACCOUNTANT', 'AUDITOR', 'ADMIN']:
+            if shop_id:
+                shop = Location.objects.filter(pk=shop_id, tenant=tenant, location_type='SHOP').first()
+            else:
+                shop = Location.objects.filter(tenant=tenant, location_type='SHOP', is_active=True).first()
+        else:
+            shop = user.location if (user.location and user.location.location_type == 'SHOP') else None
+
+        if not shop:
+            messages.error(request, 'Shop not found.')
+            return redirect('accounting:shop_ecash_history')
+
+        sales = Sale.objects.filter(tenant=tenant, shop=shop, status='COMPLETED', payment_method='ECASH')
+        cts = CustomerTransaction.objects.filter(
+            tenant=tenant, performed_by__location=shop,
+            transaction_type='CREDIT', description__icontains='ECASH'
+        )
+
+        date_from = request.GET.get('date_from')
+        date_to = request.GET.get('date_to')
+
+        date_range_str = "All Time"
+        if date_from and date_to:
+            date_range_str = f"{date_from} to {date_to}"
+        elif date_from:
+            date_range_str = f"From {date_from}"
+        elif date_to:
+            date_range_str = f"Until {date_to}"
+
+        if date_from:
+            try:
+                sales = sales.filter(created_at__date__gte=datetime.strptime(date_from, '%Y-%m-%d').date())
+                cts = cts.filter(created_at__date__gte=datetime.strptime(date_from, '%Y-%m-%d').date())
+            except ValueError:
+                pass
+        if date_to:
+            try:
+                sales = sales.filter(created_at__date__lte=datetime.strptime(date_to, '%Y-%m-%d').date())
+                cts = cts.filter(created_at__date__lte=datetime.strptime(date_to, '%Y-%m-%d').date())
+            except ValueError:
+                pass
+
+        headers = ['Date', 'Type', 'Reference', 'Amount', 'Confirmed']
+        rows = []
+        for s in sales.order_by('-created_at'):
+            rows.append([
+                s.created_at.strftime('%Y-%m-%d %H:%M') if s.created_at else '',
+                'E-Cash Sale',
+                s.sale_number,
+                float(s.amount_paid),
+                'Yes' if s.is_accountant_confirmed else 'No',
+            ])
+        for ct in cts.order_by('-created_at'):
+            rows.append([
+                ct.created_at.strftime('%Y-%m-%d %H:%M') if ct.created_at else '',
+                'Debt Payment (E-Cash)',
+                str(ct.customer) if ct.customer else '',
+                float(ct.amount),
+                'Yes' if ct.is_accountant_confirmed else 'No',
+            ])
+
+        wb = create_export_workbook('E-Cash History', headers, rows)
+        return build_excel_response(wb, f'ecash_history_{shop.name}_{date_from or "all"}.xlsx')
+
+
 class ShopMomoHistoryView(LoginRequiredMixin, TemplateView):
     """
     Shop Manager view: View momo transaction history for their shop.
     """
     template_name = 'accounting/shop_momo_history.html'
-    
+
+
     def dispatch(self, request, *args, **kwargs):
         allowed_roles = ['SHOP_MANAGER', 'ACCOUNTANT', 'AUDITOR', 'ADMIN', 'SHOP_CASHIER']
         role_name = request.user.role.name if request.user.role else None
