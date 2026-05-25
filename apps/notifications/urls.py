@@ -17,5 +17,6 @@ urlpatterns = [
     path('bulletin/new/', views.BulletinPostCreateView.as_view(), name='bulletin_post_create'),
     path('bulletin/<int:pk>/delete/', views.BulletinPostDeleteView.as_view(), name='bulletin_post_delete'),
     path('bulletin/<int:pk>/read/', views.bulletin_mark_read, name='bulletin_mark_read'),
+    path('bulletin/<int:pk>/pin/', views.bulletin_toggle_pin, name='bulletin_toggle_pin'),
     path('bulletin/mark-all-read/', views.bulletin_mark_all_read, name='bulletin_mark_all_read'),
 ]

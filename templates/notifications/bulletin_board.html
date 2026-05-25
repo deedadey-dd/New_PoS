@@ -29,7 +29,7 @@
     </div>
 
     <div class="row">
-        <div class="col-lg-8 mx-auto">
+        <div class="{% if can_post %}col-lg-8{% else %}col-lg-8 mx-auto{% endif %}">
             {% if posts %}
                 {% for post in posts %}
                 <div class="card shadow-sm mb-4 border-0 {% if post.id not in read_post_ids %}border-start border-primary border-4{% endif %}">
@@ -105,6 +105,60 @@
                 </div>
             {% endif %}
         </div>
+        
+        {% if can_post %}
+        <div class="col-lg-4">
+            <div class="card shadow-sm border-0 sticky-top" style="top: 20px;">
+                <div class="card-header bg-white py-3">
+                    <h5 class="mb-0 fw-bold"><i class="bi bi-clock-history me-2 text-primary"></i>Your History</h5>
+                    <form style="display:none;" id="history-csrf-form">{% csrf_token %}</form>
+                </div>
+                <div class="card-body p-0" style="max-height: 70vh; overflow-y: auto;">
+                    {% if not history_pinned_posts and not history_recent_posts %}
+                    <div class="p-4 text-center text-muted">
+                        <small>No previous posts found.</small>
+                    </div>
+                    {% else %}
+                        <div class="list-group list-group-flush">
+                            {% for h_post in history_pinned_posts %}
+                            <div class="list-group-item list-group-item-action bg-light p-3">
+                                <div class="d-flex w-100 justify-content-between align-items-center mb-1">
+                                    <h6 class="mb-0 text-truncate" style="max-width: 70%;">{{ h_post.title }}</h6>
+                                    <div>
+                                        <button class="btn btn-sm btn-link text-warning p-0 me-2 toggle-pin-btn" data-post-id="{{ h_post.id }}" title="Unpin post">
+                                            <i class="bi bi-pin-fill"></i>
+                                        </button>
+                                        <a href="{% url 'notifications:bulletin_post_create' %}?repost={{ h_post.id }}" class="btn btn-sm btn-link text-primary p-0" title="Repost">
+                                            <i class="bi bi-arrow-repeat fs-5"></i>
+                                        </a>
+                                    </div>
+                                </div>
+                                <small class="text-muted d-block text-truncate">{{ h_post.body }}</small>
+                            </div>
+                            {% endfor %}
+                            
+                            {% for h_post in history_recent_posts %}
+                            <div class="list-group-item list-group-item-action p-3">
+                                <div class="d-flex w-100 justify-content-between align-items-center mb-1">
+                                    <h6 class="mb-0 text-truncate" style="max-width: 70%;">{{ h_post.title }}</h6>
+                                    <div>
+                                        <button class="btn btn-sm btn-link text-muted p-0 me-2 toggle-pin-btn" data-post-id="{{ h_post.id }}" title="Pin post">
+                                            <i class="bi bi-pin"></i>
+                                        </button>
+                                        <a href="{% url 'notifications:bulletin_post_create' %}?repost={{ h_post.id }}" class="btn btn-sm btn-link text-primary p-0" title="Repost">
+                                            <i class="bi bi-arrow-repeat fs-5"></i>
+                                        </a>
+                                    </div>
+                                </div>
+                                <small class="text-muted d-block text-truncate">{{ h_post.body }}</small>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}
@@ -137,6 +191,50 @@ document.addEventListener('DOMContentLoaded', function() {
                     const card = this.closest('.card');
                     card.classList.remove('border-start', 'border-primary', 'border-4');
                 }
+            });
+        });
+    });
+
+    const togglePinBtns = document.querySelectorAll('.toggle-pin-btn');
+    togglePinBtns.forEach(btn => {
+        btn.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            const postId = this.getAttribute('data-post-id');
+            const url = `/notifications/bulletin/${postId}/pin/`;
+            
+            // Look for CSRF token in any form
+            let csrfToken = '';
+            const csrfInputs = document.querySelectorAll('input[name=csrfmiddlewaretoken]');
+            if (csrfInputs.length > 0) {
+                csrfToken = csrfInputs[0].value;
+            }
+            
+            fetch(url, {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRFToken': csrfToken
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    alert('Server error: ' + response.status);
+                    return null;
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data && data.status === 'success') {
+                    window.location.reload();
+                } else if (data) {
+                    alert('Error: Could not pin the post.');
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                alert('Network error while pinning.');
             });
         });
     });

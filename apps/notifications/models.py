@@ -104,6 +104,10 @@ class BulletinPost(TenantModel):
     )
     
     is_active = models.BooleanField(default=True)
+    is_pinned = models.BooleanField(
+        default=False, 
+        help_text="If true, this post is pinned to the top of the user's history."
+    )
     expires_at = models.DateTimeField(null=True, blank=True)
     
     created_at = models.DateTimeField(auto_now_add=True)

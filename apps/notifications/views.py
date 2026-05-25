@@ -132,6 +132,11 @@ class BulletinBoardView(LoginRequiredMixin, ListView):
             from .forms import BulletinPostForm
             context['form'] = BulletinPostForm(user=user)
             
+            # Add user's post history
+            user_posts = BulletinPost.objects.filter(created_by=user).order_by('-created_at')
+            context['history_pinned_posts'] = user_posts.filter(is_pinned=True)[:5]
+            context['history_recent_posts'] = user_posts.filter(is_pinned=False)[:10]
+            
         return context
 
 class BulletinPostCreateView(LoginRequiredMixin, CreateView):
@@ -147,6 +152,21 @@ class BulletinPostCreateView(LoginRequiredMixin, CreateView):
         kwargs = super().get_form_kwargs()
         kwargs['user'] = self.request.user
         return kwargs
+        
+    def get_initial(self):
+        initial = super().get_initial()
+        repost_id = self.request.GET.get('repost')
+        if repost_id:
+            try:
+                post = BulletinPost.objects.get(id=repost_id, created_by=self.request.user)
+                initial['title'] = post.title
+                initial['body'] = post.body
+                initial['post_type'] = post.post_type
+                initial['target_roles'] = post.target_roles.all()
+                initial['target_locations'] = post.target_locations.all()
+            except BulletinPost.DoesNotExist:
+                pass
+        return initial
         
     def form_valid(self, form):
         form.instance.tenant = self.request.user.tenant
@@ -175,6 +195,15 @@ def bulletin_mark_read(request, pk):
     post = get_object_or_404(BulletinPost, pk=pk, tenant=request.user.tenant)
     BulletinRead.objects.get_or_create(bulletin_post=post, user=request.user)
     return JsonResponse({'status': 'success'})
+
+@login_required
+def bulletin_toggle_pin(request, pk):
+    if request.method == 'POST':
+        post = get_object_or_404(BulletinPost, pk=pk, created_by=request.user)
+        post.is_pinned = not post.is_pinned
+        post.save(update_fields=['is_pinned'])
+        return JsonResponse({'status': 'success', 'is_pinned': post.is_pinned})
+    return JsonResponse({'status': 'error'}, status=400)
 
 @login_required
 def bulletin_mark_all_read(request):
