@@ -2068,7 +2068,7 @@
                     alert('E-Cash payment successful!');
 
                     // Open appropriate receipt
-                    {% if shop_settings.receipt_printer_type != 'NO_PRINT' %}
+                    {% if shop_settings.auto_print_receipts and shop_settings.receipt_printer_type != 'NO_PRINT' %}
                     if (data.is_payment_on_account && data.transaction_id) {
                         // Payment on account receipt
                         window.open(`/customers/payment/${data.transaction_id}/receipt/`, '_blank');
@@ -2180,7 +2180,7 @@
                     } else {
                         // Sale completed online
                         // Open receipt for printing
-                        {% if shop_settings.receipt_printer_type != 'NO_PRINT' %}
+                        {% if shop_settings.auto_print_receipts and shop_settings.receipt_printer_type != 'NO_PRINT' %}
                         if (isPaymentOnAccount && result.transaction_id) {
                             window.open(`/customers/payment/${result.transaction_id}/receipt/`, '_blank');
                         } else if (result.sale_id) {

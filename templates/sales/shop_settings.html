@@ -27,6 +27,14 @@
                     </div>
                     
                     <div class="mb-4 form-check form-switch">
+                        {{ form.auto_print_receipts }}
+                        <label class="form-check-label ms-2 fw-bold" for="{{ form.auto_print_receipts.id_for_label }}">
+                            Auto-Print Receipts
+                        </label>
+                        <div class="form-text">Automatically open the receipt for printing after completing a sale.</div>
+                    </div>
+
+                    <div class="mb-4 form-check form-switch">
                         {{ form.show_logo_on_receipt }}
                         <label class="form-check-label ms-2 fw-bold" for="{{ form.show_logo_on_receipt.id_for_label }}">
                             Show Logo on Receipt

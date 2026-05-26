@@ -42,6 +42,10 @@ class ShopSettings(TenantModel):
         default=False,
         help_text="Hide products with zero stock from the POS interface."
     )
+    auto_print_receipts = models.BooleanField(
+        default=True,
+        help_text="Automatically open receipt for printing after completing a sale."
+    )
     receipt_header = models.TextField(
         blank=True,
         help_text="Custom header text for receipts"

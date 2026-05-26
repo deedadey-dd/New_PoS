@@ -74,10 +74,15 @@ def main():
     suite5c = unittest.TestLoader().loadTestsFromTestCase(InterShopTransferTests)
 
     # --- Suite 6: Notifications Tests ---
-    print("[6/6] Notifications Tests")
+    print("[6/7] Notifications Tests")
     suite6 = unittest.TestLoader().loadTestsFromTestCase(BulletinBoardTests)
 
-    suite = unittest.TestSuite([suite1, suite2, suite3, suite4a, suite4b, suite5a, suite5b, suite5c, suite6])
+    # --- Suite 7: Sales Settings Tests ---
+    print("[7/7] Sales Settings Tests")
+    from apps.sales.tests import ShopManagerSettingsFormTest
+    suite7 = unittest.TestLoader().loadTestsFromTestCase(ShopManagerSettingsFormTest)
+
+    suite = unittest.TestSuite([suite1, suite2, suite3, suite4a, suite4b, suite5a, suite5b, suite5c, suite6, suite7])
 
     runner = RollbackTestRunner(verbosity=2)
     result = runner.run(suite)

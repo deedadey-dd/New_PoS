@@ -95,7 +95,51 @@ class BulletinBoardTests(TestCase):
         
         # Mark read
         self.client.get(reverse('notifications:bulletin_mark_read', args=[post.id]), HTTP_X_REQUESTED_WITH='XMLHttpRequest')
-        
         # Check read
         response = self.client.get(reverse('notifications:bulletin_board'))
         self.assertIn(post.id, response.context['read_post_ids'])
+
+    def test_bulletin_pin_toggle(self):
+        post = BulletinPost.objects.create(
+            tenant=self.tenant,
+            created_by=self.admin_user,
+            title="Pin me",
+            body="I need to be pinned"
+        )
+        self.client.force_login(self.admin_user)
+        
+        # Pin it
+        url = reverse('notifications:bulletin_toggle_pin', args=[post.id])
+        response = self.client.post(url, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['status'], 'success')
+        
+        post.refresh_from_db()
+        self.assertTrue(post.is_pinned)
+        
+        # Unpin it
+        response = self.client.post(url, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(response.status_code, 200)
+        
+        post.refresh_from_db()
+        self.assertFalse(post.is_pinned)
+
+    def test_bulletin_repost_initial_data(self):
+        post = BulletinPost.objects.create(
+            tenant=self.tenant,
+            created_by=self.admin_user,
+            title="Repost me",
+            body="I need to be reposted"
+        )
+        post.target_locations.add(self.location1)
+        
+        self.client.force_login(self.admin_user)
+        url = reverse('notifications:bulletin_post_create') + f'?repost={post.id}'
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        
+        # Check if the initial data is properly populated in the form context
+        form = response.context['form']
+        self.assertEqual(form.initial.get('title'), post.title)
+        self.assertEqual(form.initial.get('body'), post.body)
+        self.assertIn(self.location1, form.initial.get('target_locations', []))
