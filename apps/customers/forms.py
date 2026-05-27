@@ -29,5 +29,25 @@ class CustomerPaymentForm(forms.Form):
     )
     payment_method = forms.ChoiceField(
         choices=[('CASH', 'Cash'), ('MOMO', 'Local Momo'), ('ECASH', 'E-Cash'), ('BANK', 'Bank Transfer')],
-        widget=forms.Select(attrs={'class': 'form-control'})
+        widget=forms.Select(attrs={'class': 'form-control', 'id': 'id_payment_method'})
     )
+    provider_config = forms.ChoiceField(
+        required=False,
+        widget=forms.Select(attrs={'class': 'form-control', 'id': 'id_provider_config'})
+    )
+    customer_phone = forms.CharField(
+        max_length=20,
+        required=False,
+        widget=forms.TextInput(attrs={'class': 'form-control', 'id': 'id_customer_phone', 'placeholder': 'For E-Cash (e.g. 024...)'})
+    )
+
+    def __init__(self, *args, **kwargs):
+        tenant = kwargs.pop('tenant', None)
+        super().__init__(*args, **kwargs)
+        
+        choices = [('', '--- Select Platform ---')]
+        if tenant:
+            from apps.payments.models import PaymentProviderConfig
+            providers = PaymentProviderConfig.objects.filter(tenant=tenant, is_active=True)
+            choices += [(p.id, p.nickname) for p in providers]
+        self.fields['provider_config'].choices = choices

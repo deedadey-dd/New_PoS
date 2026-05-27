@@ -703,15 +703,22 @@
             setTimeout(function () {
                 window.print();
 
-                // Close window after print dialog is dismissed
-                // Some browsers fire this event, others don't
+                // Return to previous page after print dialog is dismissed
                 window.addEventListener('afterprint', function () {
-                    window.close();
+                    if (document.referrer) {
+                        window.location.href = document.referrer;
+                    } else {
+                        window.history.back();
+                    }
                 });
 
-                // Fallback: close after 2 seconds if afterprint doesn't fire
+                // Fallback: return after 2 seconds if afterprint doesn't fire
                 setTimeout(function () {
-                    window.close();
+                    if (document.referrer) {
+                        window.location.href = document.referrer;
+                    } else {
+                        window.history.back();
+                    }
                 }, 2000);
             }, 500);
         });

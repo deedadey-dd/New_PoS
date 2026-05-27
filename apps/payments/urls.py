@@ -7,9 +7,16 @@ from . import views
 app_name = 'payments'
 
 urlpatterns = [
-    # Payment Provider Settings
-    path('settings/', views.PaymentProviderSettingsView.as_view(), name='provider_settings'),
+    # Payment Provider Configs
+    path('settings/', views.PaymentProviderConfigListView.as_view(), name='provider_settings'),
+    path('settings/create/', views.PaymentProviderConfigCreateView.as_view(), name='config_create'),
+    path('settings/<int:pk>/update/', views.PaymentProviderConfigUpdateView.as_view(), name='config_update'),
     path('settings/test-connection/', views.test_connection, name='test_connection'),
+    
+    # Shop Payment Assignments
+    path('settings/assignments/', views.ShopPaymentAssignmentListView.as_view(), name='shop_assignments'),
+    path('settings/assignments/create/', views.ShopPaymentAssignmentCreateView.as_view(), name='assignment_create'),
+    path('settings/assignments/<int:pk>/update/', views.ShopPaymentAssignmentUpdateView.as_view(), name='assignment_update'),
     
     # E-Cash Withdrawals
     path('withdrawals/', views.ECashWithdrawalListView.as_view(), name='withdrawal_list'),

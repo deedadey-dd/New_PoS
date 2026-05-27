@@ -1,0 +1,186 @@
+{% extends 'base.html' %}
+{% load sort_tags %}
+{% load core_filters %}
+
+{% block title %}Bank Transfers History{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1">Bank Transfers History</h2>
+        <p class="text-muted mb-0">View all bank deposits made by accountants</p>
+    </div>
+    <div class="d-flex gap-2">
+        <div class="dropdown">
+            <button class="btn btn-outline-success dropdown-toggle" type="button" id="exportDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                <i class="bi bi-download me-1"></i>Export
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="exportDropdown">
+                <li>
+                    <a class="dropdown-item text-success" href="{% url 'accounting:bank_history_export' %}?{{ request.GET.urlencode }}&format=excel">
+                        <i class="bi bi-file-earmark-excel me-2"></i>Export as Excel
+                    </a>
+                </li>
+                <li>
+                    <a class="dropdown-item text-danger" href="{% url 'accounting:bank_history_export' %}?{{ request.GET.urlencode }}&format=pdf">
+                        <i class="bi bi-file-earmark-pdf me-2"></i>Export as PDF
+                    </a>
+                </li>
+            </ul>
+        </div>
+        <a href="{% url 'accounting:bank_transfer_create' %}" class="btn btn-primary">
+            <i class="bi bi-plus-lg me-2"></i>New Transfer
+        </a>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card bg-primary text-white h-100 border-0 rounded-4 shadow-sm">
+            <div class="card-body">
+                <h6 class="card-title text-white-50 text-uppercase fw-bold mb-3">Total Deposited</h6>
+                <h3 class="mb-0 fw-bold">{{ current_tenant.currency_symbol|default:'$' }}{{ total_deposited|floatformat:"2g" }}</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card border-0 shadow-sm rounded-4 mb-4">
+    <div class="card-body p-4">
+        <form method="get" class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label text-muted fw-semibold small text-uppercase">From Date</label>
+                <input type="date" name="date_from" class="form-control form-control-lg bg-light border-0" value="{{ date_from }}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label text-muted fw-semibold small text-uppercase">To Date</label>
+                <input type="date" name="date_to" class="form-control form-control-lg bg-light border-0" value="{{ date_to }}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label text-muted fw-semibold small text-uppercase">Fund Source</label>
+                <select name="fund_source" id="fundSourceSelect" class="form-select form-select-lg bg-light border-0">
+                    <option value="">All Sources</option>
+                    {% for key, value in fund_choices %}
+                    <option value="{{ key }}" {% if selected_fund_source == key %}selected{% endif %}>{{ value }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3" id="providerFilterContainer" style="display: none;">
+                <label class="form-label text-muted fw-semibold small text-uppercase">E-Cash Platform</label>
+                <select name="provider_config" id="providerConfigSelect" class="form-select form-select-lg bg-light border-0">
+                    <option value="">All Platforms</option>
+                    {% for provider in providers %}
+                    <option value="{{ provider.id }}" {% if selected_provider_config == provider.id|stringformat:"s" %}selected{% endif %}>
+                        {{ provider.nickname }} ({{ provider.get_provider_display }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2 d-flex align-items-end gap-2">
+                <button type="submit" class="btn btn-primary btn-lg flex-grow-1">
+                    <i class="bi bi-filter"></i> Filter
+                </button>
+                <a href="?" class="btn btn-light btn-lg border" data-bs-toggle="tooltip" title="Clear Filters">
+                    <i class="bi bi-x-lg"></i>
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm rounded-4">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-4">{% sort_link "Date" "created_at" %}</th>
+                        <th>Accountant</th>
+                        <th>Fund Source</th>
+                        <th>Platform</th>
+                        <th>Teller Name</th>
+                        <th>Notes</th>
+                        <th class="text-end pe-4">{% sort_link "Amount" "amount" %}</th>
+                        <th class="text-end pe-4">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for transfer in bank_transfers %}
+                    <tr>
+                        <td class="ps-4">
+                            <div class="fw-medium">{{ transfer.created_at|date:"M d, Y" }}</div>
+                            <div class="text-muted small">{{ transfer.created_at|date:"H:i" }}</div>
+                        </td>
+                        <td>{{ transfer.accountant.get_full_name|default:transfer.accountant.email }}</td>
+                        <td>
+                            {% if transfer.fund_source == 'CASH' %}
+                                <span class="badge bg-success"><i class="bi bi-cash me-1"></i>Cash</span>
+                            {% elif transfer.fund_source == 'ECASH' %}
+                                <span class="badge bg-primary"><i class="bi bi-phone me-1"></i>E-Cash</span>
+                            {% elif transfer.fund_source == 'MOMO' %}
+                                <span class="badge bg-info"><i class="bi bi-phone-vibrate me-1"></i>Momo</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if transfer.provider_config %}
+                                <div>{{ transfer.provider_config.nickname }}</div>
+                                <div class="text-muted small">{{ transfer.provider_config.get_provider_display }}</div>
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        <td>{{ transfer.teller_name }}</td>
+                        <td class="text-muted small text-truncate" style="max-width: 200px;" title="{{ transfer.notes }}">
+                            {{ transfer.notes|default:"-" }}
+                        </td>
+                        <td class="text-end pe-4 fw-bold text-success">
+                            +{{ current_tenant.currency_symbol|default:'$' }}{{ transfer.amount|floatformat:"2g" }}
+                        </td>
+                        <td class="text-end pe-4">
+                            <a href="{% url 'accounting:bank_transfer_receipt' transfer.pk %}" class="btn btn-sm btn-outline-info" data-bs-toggle="tooltip" title="Print Receipt">
+                                <i class="bi bi-printer"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="8" class="text-center py-5 text-muted">
+                            <i class="bi bi-bank display-4 d-block mb-3 text-secondary opacity-50"></i>
+                            <h5>No Bank Transfers Found</h5>
+                            <p class="mb-0">You have not made any bank transfers matching the selected filters.</p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% if is_paginated %}
+    <div class="card-footer bg-white border-top-0 py-3">
+        {% include 'includes/audit_pagination.html' %}
+    </div>
+    {% endif %}
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const fundSourceSelect = document.getElementById('fundSourceSelect');
+    const providerFilterContainer = document.getElementById('providerFilterContainer');
+    const providerConfigSelect = document.getElementById('providerConfigSelect');
+
+    function toggleProviderFilter() {
+        if (fundSourceSelect.value === 'ECASH') {
+            providerFilterContainer.style.display = 'block';
+        } else {
+            providerFilterContainer.style.display = 'none';
+            providerConfigSelect.value = ''; // Reset when hidden
+        }
+    }
+
+    fundSourceSelect.addEventListener('change', toggleProviderFilter);
+    // Initial check on page load
+    toggleProviderFilter();
+});
+</script>
+{% endblock %}

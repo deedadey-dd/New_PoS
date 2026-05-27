@@ -72,42 +72,81 @@
 
 <!-- Sales Summary Row -->
 <div class="row g-4 mb-4">
-    <div class="col-md-6 col-lg-3">
-        <div class="card bg-success text-white h-100">
-            <div class="card-body text-center">
-                <h6 class="card-subtitle mb-2 opacity-75">Total Revenue</h6>
-                <h3 class="mb-0">{{ currency_symbol }}{{ sales_summary.total_revenue|default:0|floatformat:"2g" }}</h3>
-                <small class="opacity-75">{{ sales_summary.total_count|default:0 }} sales</small>
+    <div class="col-md-6 col-lg-2">
+        <div class="card bg-success text-white h-100 shadow-sm border-0">
+            <div class="card-body text-center p-3">
+                <h6 class="card-subtitle mb-2 opacity-75 small">Total Revenue</h6>
+                <h4 class="mb-0 fw-bold">{{ currency_symbol }}{{ sales_summary.total_revenue|default:0|floatformat:"2g" }}</h4>
+                <small class="opacity-75" style="font-size: 0.75rem;">{{ sales_summary.total_count|default:0 }} sales</small>
             </div>
         </div>
     </div>
-    <div class="col-md-6 col-lg-3">
-        <div class="card bg-warning text-dark h-100">
-            <div class="card-body text-center">
-                <h6 class="card-subtitle mb-2 opacity-75">Cash Sales</h6>
-                <h3 class="mb-0">{{ currency_symbol }}{{ sales_summary.cash_total|default:0|floatformat:"2g" }}</h3>
+    <div class="col-md-6 col-lg-2">
+        <a href="{% url 'accounting:cash_history' %}" class="text-decoration-none">
+            <div class="card bg-warning text-dark h-100 shadow-sm border-0 hover-lift">
+                <div class="card-body text-center p-3">
+                    <h6 class="card-subtitle mb-2 opacity-75 small"><i class="bi bi-cash me-1"></i>Cash Sales</h6>
+                    <h4 class="mb-0 fw-bold">{{ currency_symbol }}{{ sales_summary.cash_total|default:0|floatformat:"2g" }}</h4>
+                    <small class="opacity-75" style="font-size: 0.75rem;">View Ledger &rarr;</small>
+                </div>
             </div>
-        </div>
+        </a>
     </div>
-    <div class="col-md-6 col-lg-3">
-        <div class="card bg-info text-white h-100">
-            <div class="card-body text-center">
-                <h6 class="card-subtitle mb-2 opacity-75">E-Cash Sales</h6>
-                <h3 class="mb-0">{{ currency_symbol }}{{ sales_summary.ecash_total|default:0|floatformat:"2g" }}</h3>
+    <div class="col-md-6 col-lg-2">
+        <a href="{% url 'accounting:shop_momo_history' %}" class="text-decoration-none">
+            <div class="card text-white h-100 shadow-sm border-0 hover-lift" style="background-color: #f59e0b;">
+                <div class="card-body text-center p-3">
+                    <h6 class="card-subtitle mb-2 opacity-75 small"><i class="bi bi-phone me-1"></i>Momo Sales</h6>
+                    <h4 class="mb-0 fw-bold">{{ currency_symbol }}{{ sales_summary.momo_total|default:0|floatformat:"2g" }}</h4>
+                    <small class="opacity-75" style="font-size: 0.75rem;">View Ledger &rarr;</small>
+                </div>
             </div>
-        </div>
+        </a>
     </div>
-    <div class="col-md-6 col-lg-3">
-        <div class="card bg-primary text-white h-100">
-            <div class="card-body text-center">
-                <h6 class="card-subtitle mb-2 opacity-75">Cash Deposited</h6>
-                <h3 class="mb-0">{{ currency_symbol }}{{ deposits_summary.confirmed_amount|default:0|floatformat:"2g" }}
-                </h3>
-                <small class="opacity-75">{{ deposits_summary.confirmed_count|default:0 }} deposits</small>
+    <div class="col-md-6 col-lg-2">
+        <a href="{% url 'payments:ecash_ledger' %}" class="text-decoration-none">
+            <div class="card bg-info text-white h-100 shadow-sm border-0 hover-lift">
+                <div class="card-body text-center p-3">
+                    <h6 class="card-subtitle mb-2 opacity-75 small"><i class="bi bi-credit-card me-1"></i>E-Cash Sales</h6>
+                    <h4 class="mb-0 fw-bold">{{ currency_symbol }}{{ sales_summary.ecash_total|default:0|floatformat:"2g" }}</h4>
+                    <small class="opacity-75" style="font-size: 0.75rem;">View Ledger &rarr;</small>
+                </div>
             </div>
-        </div>
+        </a>
+    </div>
+    <div class="col-md-6 col-lg-2">
+        <a href="{% url 'customers:credit_ledger' %}" class="text-decoration-none">
+            <div class="card bg-danger text-white h-100 shadow-sm border-0 hover-lift">
+                <div class="card-body text-center p-3">
+                    <h6 class="card-subtitle mb-2 opacity-75 small"><i class="bi bi-person-lines-fill me-1"></i>Credit Sales</h6>
+                    <h4 class="mb-0 fw-bold">{{ currency_symbol }}{{ sales_summary.credit_total|default:0|floatformat:"2g" }}</h4>
+                    <small class="opacity-75" style="font-size: 0.75rem;">View Ledger &rarr;</small>
+                </div>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-6 col-lg-2">
+        <a href="{% url 'accounting:cash_transfer_list' %}" class="text-decoration-none">
+            <div class="card bg-primary text-white h-100 shadow-sm border-0 hover-lift">
+                <div class="card-body text-center p-3">
+                    <h6 class="card-subtitle mb-2 opacity-75 small"><i class="bi bi-bank me-1"></i>Deposited</h6>
+                    <h4 class="mb-0 fw-bold">{{ currency_symbol }}{{ deposits_summary.confirmed_amount|default:0|floatformat:"2g" }}</h4>
+                    <small class="opacity-75" style="font-size: 0.75rem;">{{ deposits_summary.confirmed_count|default:0 }} deposits &rarr;</small>
+                </div>
+            </div>
+        </a>
     </div>
 </div>
+
+<style>
+    .hover-lift {
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .hover-lift:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 .5rem 1rem rgba(0,0,0,.15)!important;
+    }
+</style>
 
 <div class="row g-4">
     <!-- Sales by Shop -->

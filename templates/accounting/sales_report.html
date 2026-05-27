@@ -70,8 +70,9 @@
                 <label class="form-label">Payment</label>
                 <select name="payment" class="form-select">
                     <option value="">All</option>
-                    <option value="CASH" {% if request.GET.payment == 'CASH' %}selected{% endif %}>Cash</option>
-                    <option value="ECASH" {% if request.GET.payment == 'ECASH' %}selected{% endif %}>E-Cash</option>
+                    {% for val, label in payment_methods %}
+                    <option value="{{ val }}" {% if request.GET.payment == val %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
                 </select>
             </div>
             <div class="col-md-2 d-flex align-items-end">

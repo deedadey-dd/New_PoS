@@ -1,12 +1,19 @@
 from django.contrib import admin
-from .models import PaymentProviderSettings, ECashLedger, ECashWithdrawal
+from .models import PaymentProviderConfig, ShopPaymentAssignment, ECashLedger, ECashWithdrawal
 
 
-@admin.register(PaymentProviderSettings)
-class PaymentProviderSettingsAdmin(admin.ModelAdmin):
-    list_display = ['tenant', 'provider', 'is_active', 'created_at']
+@admin.register(PaymentProviderConfig)
+class PaymentProviderConfigAdmin(admin.ModelAdmin):
+    list_display = ['tenant', 'nickname', 'provider', 'is_active', 'created_at']
     list_filter = ['provider', 'is_active']
-    search_fields = ['tenant__name']
+    search_fields = ['tenant__name', 'nickname']
+
+
+@admin.register(ShopPaymentAssignment)
+class ShopPaymentAssignmentAdmin(admin.ModelAdmin):
+    list_display = ['tenant', 'shop', 'provider_config', 'is_default', 'priority']
+    list_filter = ['is_default']
+    search_fields = ['shop__name', 'provider_config__nickname']
 
 
 @admin.register(ECashLedger)

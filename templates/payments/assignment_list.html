@@ -1,0 +1,109 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load sort_tags %}
+
+{% block title %}Shop Payment Assignments{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <a href="{% url 'payments:provider_settings' %}" class="text-decoration-none text-muted mb-2 d-inline-block">
+                <i class="bi bi-arrow-left me-1"></i>Back to Configurations
+            </a>
+            <h2 class="fw-bold mb-0">
+                <i class="bi bi-shop me-2 text-primary"></i>Shop Payment Assignments
+            </h2>
+            <p class="text-muted mb-0">Manage which shops use which payment platforms</p>
+        </div>
+        <div>
+            <a href="{% url 'payments:assignment_create' %}" class="btn btn-primary">
+                <i class="bi bi-plus-lg me-1"></i>New Assignment
+            </a>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3 align-items-end">
+                <div class="col-md-5">
+                    <label class="form-label text-muted small mb-1">Shop</label>
+                    <select name="shop" class="form-select">
+                        <option value="">All Shops</option>
+                        {% for s in shops %}
+                            <option value="{{ s.id }}" {% if request.GET.shop == s.id|stringformat:"s" %}selected{% endif %}>{{ s.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label text-muted small mb-1">Provider Config</label>
+                    <select name="provider" class="form-select">
+                        <option value="">All Providers</option>
+                        {% for p in providers %}
+                            <option value="{{ p.id }}" {% if request.GET.provider == p.id|stringformat:"s" %}selected{% endif %}>{{ p.nickname }} ({{ p.get_provider_display }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary w-100">Filter</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card shadow-sm border-0">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="bg-light">
+                        <tr>
+                            <th class="ps-4">{% sort_link 'Shop' 'shop__name' %}</th>
+                            <th>{% sort_link 'Provider Config' 'provider_config__provider' %}</th>
+                            <th>{% sort_link 'Priority' 'priority' %}</th>
+                            <th>{% sort_link 'Status' 'is_default' %}</th>
+                            <th class="text-end pe-4">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for assignment in assignments %}
+                        <tr>
+                            <td class="ps-4 fw-medium">{{ assignment.shop.name }}</td>
+                            <td>
+                                {{ assignment.provider_config.nickname }}
+                                <span class="badge bg-secondary ms-1">{{ assignment.provider_config.get_provider_display }}</span>
+                            </td>
+                            <td>{{ assignment.priority }}</td>
+                            <td>
+                                {% if assignment.is_default %}
+                                    <span class="badge bg-primary">Default</span>
+                                {% else %}
+                                    <span class="badge bg-light text-dark border">Fallback</span>
+                                {% endif %}
+                                
+                                {% if not assignment.provider_config.is_active %}
+                                    <span class="badge bg-danger ms-1" title="Provider config is disabled"><i class="bi bi-exclamation-triangle"></i> Disabled</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end pe-4">
+                                <a href="{% url 'payments:assignment_update' assignment.pk %}" class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-pencil me-1"></i>Edit
+                                </a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="5" class="text-center py-4 text-muted">
+                                <i class="bi bi-shop d-block mb-2 fs-2 text-secondary opacity-50"></i>
+                                No shop assignments found.<br>
+                                <a href="{% url 'payments:assignment_create' %}" class="btn btn-sm btn-primary mt-2">Create Assignment</a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

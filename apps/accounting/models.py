@@ -172,6 +172,14 @@ class DigitalFundWithdrawal(TenantModel):
         on_delete=models.PROTECT,
         related_name='digital_withdrawals'
     )
+    provider_config = models.ForeignKey(
+        'payments.PaymentProviderConfig',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='digital_withdrawals',
+        help_text="The E-Cash platform this withdrawal was pulled from."
+    )
     accountant = models.ForeignKey(
         User,
         on_delete=models.PROTECT,
@@ -210,6 +218,14 @@ class BankTransfer(TenantModel):
         validators=[MinValueValidator(Decimal('0.01'))]
     )
     fund_source = models.CharField(max_length=10, choices=FUND_CHOICES)
+    provider_config = models.ForeignKey(
+        'payments.PaymentProviderConfig',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='bank_transfers',
+        help_text="The E-Cash platform this bank transfer is drawn from."
+    )
     teller_name = models.CharField(max_length=255)
     notes = models.TextField(blank=True, help_text="Additional information about the deposit")
     

@@ -19,6 +19,7 @@ urlpatterns = [
     path('cash-history/', views.CashHistoryView.as_view(), name='cash_history'),
 
     # Excel Exports
+    path('cash-history/export/', views.CashHistoryExportView.as_view(), name='cash_history_export'),
     path('cash-transfers/export/', views.CashTransferExportView.as_view(), name='cash_transfer_export'),
     path('sales-report/export/', views.SalesReportExportView.as_view(), name='sales_report_export'),
     path('price-history/export/', views.PriceHistoryExportView.as_view(), name='price_history_export'),
@@ -27,6 +28,8 @@ urlpatterns = [
     path('digital-confirmations/', views.DigitalPaymentConfirmationView.as_view(), name='digital_confirmations'),
     path('bank-transfers/new/', views.BankTransferCreateView.as_view(), name='bank_transfer_create'),
     path('bank-transfers/<int:pk>/receipt/', views.BankTransferReceiptView.as_view(), name='bank_transfer_receipt'),
+    path('bank-history/', views.BankHistoryListView.as_view(), name='bank_history'),
+    path('bank-history/export/', views.BankHistoryExportView.as_view(), name='bank_history_export'),
     
     # Shop Local Momo Withdrawals
     path('shop-momo/', views.ShopMomoListView.as_view(), name='shop_momo_list'),

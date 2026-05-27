@@ -59,11 +59,17 @@ class DigitalFundWithdrawalTests(TestCase):
     # ---- E-Cash -----------------------------------------------------------
 
     def test_ecash_shop_manager_shows_unwithddrawn_balance(self):
-        """Shop Manager sees total E-Cash sales minus any DigitalFundWithdrawals."""
-        Sale.objects.create(
+        """Shop Manager sees total E-Cash sales minus any ECashWithdrawals."""
+        from apps.payments.models import ECashLedger, ECashWithdrawal
+        
+        sale = Sale.objects.create(
             tenant=self.tenant, shop=self.shop, attendant=self.manager,
             total=Decimal('200.00'), amount_paid=Decimal('200.00'),
             status='COMPLETED', payment_method='ECASH',
+        )
+        ECashLedger.record_payment(
+            tenant=self.tenant, amount=Decimal('200.00'), sale=sale,
+            shop=self.shop, user=self.manager
         )
 
         # Before withdrawal: manager should see full 200
@@ -71,21 +77,30 @@ class DigitalFundWithdrawalTests(TestCase):
         self.assertEqual(ctx['ecash_balance'], Decimal('200.00'))
 
         # Accountant withdraws 120
-        DigitalFundWithdrawal.objects.create(
-            tenant=self.tenant, shop=self.shop, accountant=self.accountant,
-            amount=Decimal('120.00'), fund_source='ECASH', notes='Partial withdrawal',
+        withdrawal = ECashWithdrawal.objects.create(
+            tenant=self.tenant, shop=self.shop,
+            amount=Decimal('120.00'),
+            withdrawn_by=self.accountant,
+            notes='Partial withdrawal'
         )
+        withdrawal.complete(self.accountant)
 
         # Manager now sees 80 (200 - 120)
         ctx = get_context(self.manager)
         self.assertEqual(ctx['ecash_balance'], Decimal('80.00'))
 
     def test_ecash_accountant_balance_equals_withdrawals_minus_bank(self):
-        """Accountant sees total DigitalFundWithdrawals minus BankTransfers."""
-        Sale.objects.create(
+        """Accountant sees total ECashWithdrawals minus BankTransfers."""
+        from apps.payments.models import ECashLedger, ECashWithdrawal
+        
+        sale = Sale.objects.create(
             tenant=self.tenant, shop=self.shop, attendant=self.manager,
             total=Decimal('300.00'), amount_paid=Decimal('300.00'),
             status='COMPLETED', payment_method='ECASH',
+        )
+        ECashLedger.record_payment(
+            tenant=self.tenant, amount=Decimal('300.00'), sale=sale,
+            shop=self.shop, user=self.manager
         )
 
         # No withdrawal yet — accountant sees 0
@@ -93,10 +108,13 @@ class DigitalFundWithdrawalTests(TestCase):
         self.assertEqual(ctx['ecash_balance'], Decimal('0.00'))
 
         # Withdraw 300
-        DigitalFundWithdrawal.objects.create(
-            tenant=self.tenant, shop=self.shop, accountant=self.accountant,
-            amount=Decimal('300.00'), fund_source='ECASH', notes='Full withdrawal',
+        withdrawal = ECashWithdrawal.objects.create(
+            tenant=self.tenant, shop=self.shop,
+            amount=Decimal('300.00'),
+            withdrawn_by=self.accountant,
+            notes='Full withdrawal'
         )
+        withdrawal.complete(self.accountant)
 
         # Accountant sees 300
         ctx = get_context(self.accountant)

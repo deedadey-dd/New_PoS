@@ -14,10 +14,12 @@
             <p class="text-muted mb-0">All e-cash transactions</p>
         </div>
         <div class="d-flex align-items-center gap-3">
-            <span class="badge bg-info fs-6">
-                <i class="bi bi-phone me-1"></i>Current Balance: {{ currency_symbol }}{{ ecash_balance|floatformat:"2g" }}
-            </span>
-            
+            <div class="text-end">
+                <span class="d-block text-muted small">Total Unwithdrawn E-Cash in Shops</span>
+                <span class="fs-4 fw-bold" style="color: #3b82f6;">
+                    {{ currency_symbol }}{{ shop_ecash_balance|floatformat:"2g" }}
+                </span>
+            </div>
             <div class="dropdown">
                 <button class="btn btn-outline-primary dropdown-toggle" type="button" id="exportDropdown" data-bs-toggle="dropdown" aria-expanded="false">
                     <i class="bi bi-download me-1"></i>Export
@@ -71,6 +73,19 @@
                     </select>
                 </div>
                 {% endif %}
+                {% if providers %}
+                <div class="col-md-2">
+                    <label class="form-label">Platform</label>
+                    <select name="provider_config" class="form-select">
+                        <option value="">All Platforms</option>
+                        {% for p in providers %}
+                        <option value="{{ p.id }}" {% if selected_provider == p.id|stringformat:"i" %}selected{% endif %}>
+                            {{ p.nickname }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% endif %}
                 <div class="col-md-2 d-flex align-items-end gap-2">
                     <button type="submit" class="btn btn-primary flex-grow-1">
                         <i class="bi bi-filter me-1"></i>Filter
@@ -93,6 +108,8 @@
                             <th>{% sort_link "Date" "created_at" %}</th>
                             <th>{% sort_link "Type" "transaction_type" %}</th>
                             <th>{% sort_link "Reference" "reference" %}</th>
+                            <th>{% sort_link "Shop" "shop__name" %}</th>
+                            <th>Platform</th>
                             <th class="text-end">{% sort_link "Amount" "amount" %}</th>
                             <th class="text-end">Balance After</th>
                             <th>Notes</th>
@@ -120,6 +137,14 @@
                                 <code>{{ tx.paystack_reference|truncatechars:20 }}</code>
                                 {% else %}
                                 {{ tx.reference_type }} #{{ tx.reference_id|default:"-" }}
+                                {% endif %}
+                            </td>
+                            <td>{% if tx.shop %}{{ tx.shop.name }}{% else %}<span class="text-muted">Tenant Wide</span>{% endif %}</td>
+                            <td>
+                                {% if tx.provider_config %}
+                                    <span class="badge bg-secondary">{{ tx.provider_config.nickname }}</span>
+                                {% else %}
+                                    <span class="badge bg-light text-dark border">{{ tx.get_provider_display|default:tx.provider }}</span>
                                 {% endif %}
                             </td>
                             <td class="text-end {% if tx.amount >= 0 %}text-success{% else %}text-danger{% endif %}">

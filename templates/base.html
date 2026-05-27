@@ -158,6 +158,16 @@
 
                     <!-- Accountant/Auditor/Admin Financial Menu -->
                     {% if role_name == 'ACCOUNTANT' or role_name == 'AUDITOR' or role_name == 'ADMIN' or role_name == 'SHOP_CASHIER' %}
+                    <!-- Customers link for Accountant -->
+                    {% if role_name == 'ACCOUNTANT' or role_name == 'ADMIN' %}
+                    <li class="nav-item">
+                        <a href="{% url 'customers:customer_list' %}"
+                            class="nav-link text-white {% if '/customers/' in request.path %}active{% endif %}">
+                            <i class="bi bi-people me-2"></i>
+                            <span>Customers</span>
+                        </a>
+                    </li>
+                    {% endif %}
                     <li class="nav-item">
                         <a class="nav-link text-white d-flex justify-content-between align-items-center {% if 'accounting' in request.path and 'price-history' not in request.path %}active{% endif %}"
                             data-bs-toggle="collapse" href="#accountingMenu" role="button">
@@ -206,11 +216,29 @@
                                 </li>
                                 {% endif %}
                                 {% if role_name == 'ACCOUNTANT' or role_name == 'ADMIN' %}
-                                <li class="nav-item">
-                                    <a class="nav-link text-white-50 py-1 {% if 'bank-transfers/new' in request.path %}active text-white{% endif %}"
-                                        href="{% url 'accounting:bank_transfer_create' %}">
-                                        <i class="bi bi-bank me-1"></i>Bank Transfers
+                                <li class="nav-item mt-1 pt-1 border-top border-secondary">
+                                    <a class="nav-link text-white-50 py-1 d-flex justify-content-between align-items-center {% if 'bank' in request.path %}text-white{% endif %}"
+                                        data-bs-toggle="collapse" href="#bankTransferSubMenu" role="button"
+                                        aria-expanded="{% if 'bank' in request.path %}true{% else %}false{% endif %}">
+                                        <span><i class="bi bi-bank me-1"></i>Bank Transfers</span>
+                                        <i class="bi bi-chevron-down small"></i>
                                     </a>
+                                    <div class="collapse {% if 'bank' in request.path %}show{% endif %}" id="bankTransferSubMenu">
+                                        <ul class="nav flex-column ms-2 border-start border-secondary ps-2">
+                                            <li class="nav-item">
+                                                <a class="nav-link text-white-50 py-1 {% if 'bank-history' in request.path %}active text-white{% endif %}"
+                                                    href="{% url 'accounting:bank_history' %}">
+                                                    <i class="bi bi-clock-history me-1"></i>Bank History
+                                                </a>
+                                            </li>
+                                            <li class="nav-item">
+                                                <a class="nav-link text-white-50 py-1 {% if 'bank-transfers/new' in request.path %}active text-white{% endif %}"
+                                                    href="{% url 'accounting:bank_transfer_create' %}">
+                                                    <i class="bi bi-plus-lg me-1"></i>New Transfer
+                                                </a>
+                                            </li>
+                                        </ul>
+                                    </div>
                                 </li>
                                 {% endif %}
 

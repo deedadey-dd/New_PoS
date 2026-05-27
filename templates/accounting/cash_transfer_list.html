@@ -60,13 +60,35 @@
                 <input type="date" name="date_to" class="form-control" value="{{ date_to }}">
             </div>
             {% if is_full_view %}
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <label class="form-label">Shop</label>
                 <select name="shop" class="form-select">
                     <option value="">All Shops</option>
                     {% for s in shops %}
                     <option value="{{ s.pk }}" {% if selected_shop == s.pk|stringformat:"i" %}selected{% endif %}>
                         {{ s.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">From (Sender)</label>
+                <select name="sender" class="form-select">
+                    <option value="">All Users</option>
+                    {% for u in users %}
+                    <option value="{{ u.pk }}" {% if selected_sender == u.pk|stringformat:"i" %}selected{% endif %}>
+                        {{ u.get_full_name|default:u.email }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">To (Receiver)</label>
+                <select name="receiver" class="form-select">
+                    <option value="">All Users</option>
+                    {% for u in users %}
+                    <option value="{{ u.pk }}" {% if selected_receiver == u.pk|stringformat:"i" %}selected{% endif %}>
+                        {{ u.get_full_name|default:u.email }}
                     </option>
                     {% endfor %}
                 </select>
@@ -313,7 +335,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <a href="#" class="btn btn-outline-info" id="transferDetailPrintBtn" target="_blank">
+                <a href="#" class="btn btn-outline-info" id="transferDetailPrintBtn">
                     <i class="bi bi-printer me-1"></i>Print Receipt
                 </a>
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>

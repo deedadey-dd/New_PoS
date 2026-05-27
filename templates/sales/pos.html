@@ -1011,9 +1011,16 @@
                 {% if not request.user.tenant.use_strict_sales_workflow %}
                 <div class="d-flex gap-2 mb-2">
                     {% if shop_settings.enable_ecash_payment %}
-                    <button class="btn-pay btn-pay-ecash flex-fill" id="btn-pay-ecash" disabled>
-                        <i class="bi bi-credit-card"></i> Pay E-Cash
-                    </button>
+                    <div class="btn-group flex-fill">
+                        <button class="btn-pay btn-pay-ecash w-100" id="btn-pay-ecash" disabled>
+                            <i class="bi bi-credit-card"></i> Pay E-Cash
+                        </button>
+                        {% if available_providers|length > 1 %}
+                        <button class="btn-pay btn-pay-ecash" style="border-left: 1px solid rgba(255,255,255,0.2); padding: 0 12px; flex-grow: 0;" id="btn-change-ecash-provider" onclick="showProviderSelectModal(false)" title="Change E-Cash Platform">
+                            <i class="bi bi-gear"></i>
+                        </button>
+                        {% endif %}
+                    </div>
                     {% endif %}
                     {% if shop_settings.enable_momo_payment and request.user.tenant.allow_momo_payments %}
                     <button class="btn-pay btn-pay-momo flex-fill" id="btn-pay-momo" disabled>
@@ -1149,6 +1156,24 @@
         </div>
     </div>
 
+    <!-- ── E-Cash Provider Selection Modal ────────────────────── -->
+    <div class="checkout-modal" id="provider-select-modal">
+        <div class="checkout-dialog" style="max-width:420px;">
+            <h4 class="mb-3 text-center" style="color:#a78bfa;">
+                <i class="bi bi-phone me-2"></i>Select E-Cash Provider
+            </h4>
+            <p class="text-muted text-center small mb-3">
+                Choose the payment platform you want to use for this transaction.
+            </p>
+            <div id="provider-list-container" class="d-flex flex-column gap-2 mb-4">
+                <!-- Populated dynamically -->
+            </div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-secondary flex-fill" onclick="closeProviderSelectModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Mobile Cart Toggle Button -->
     <button class="mobile-cart-toggle" id="mobile-cart-toggle" onclick="toggleMobileCart()">
         <i class="bi bi-cart3"></i>
@@ -1173,6 +1198,7 @@
         const CURRENCY = '{{ currency_symbol }}';
         const PRODUCTS = {{ products| safe }};
         const CUSTOMERS = {{ customers| safe }};
+        const AVAILABLE_PROVIDERS = {{ available_providers|default:"[]"|safe }};
         const CSRF_TOKEN = '{{ csrf_token }}';
         const SYNC_URL = '{% url "sales:api_sync_offline_sales" %}';
         const CHECKOUT_URL = '/sales/api/checkout/';
@@ -1931,8 +1957,70 @@
                 }
             }
         });
-        // E-Cash Payment via Paystack
+        function closeProviderSelectModal() {
+            document.getElementById('provider-select-modal').classList.remove('active');
+        }
+
+        function showProviderSelectModal(proceedToCheckout = false) {
+            const container = document.getElementById('provider-list-container');
+            container.innerHTML = '';
+            
+            const preferredId = localStorage.getItem('preferred_ecash_provider');
+            
+            AVAILABLE_PROVIDERS.forEach(provider => {
+                const btn = document.createElement('button');
+                btn.className = 'btn btn-outline-light text-start py-3';
+                btn.innerHTML = `
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="fw-bold fs-5">${provider.name}</div>
+                            <div class="small text-muted">${provider.provider}</div>
+                        </div>
+                        ${preferredId == provider.id ? '<i class="bi bi-check-circle-fill text-success fs-4"></i>' : '<i class="bi bi-chevron-right"></i>'}
+                    </div>
+                `;
+                btn.onclick = () => {
+                    localStorage.setItem('preferred_ecash_provider', provider.id);
+                    closeProviderSelectModal();
+                    if (proceedToCheckout) {
+                        proceedWithECashCheckout(provider);
+                    } else {
+                        showPosToast(`Default E-Cash provider set to ${provider.name}`, 'success');
+                    }
+                };
+                container.appendChild(btn);
+            });
+
+            document.getElementById('provider-select-modal').classList.add('active');
+        }
+
         async function openECashCheckout() {
+            if (AVAILABLE_PROVIDERS.length === 0) {
+                alert('No e-cash payment providers are configured for this shop.');
+                return;
+            }
+
+            if (AVAILABLE_PROVIDERS.length === 1) {
+                // Only one provider, proceed directly
+                proceedWithECashCheckout(AVAILABLE_PROVIDERS[0]);
+                return;
+            }
+
+            // Check if preferred provider is saved in localStorage
+            const preferredId = localStorage.getItem('preferred_ecash_provider');
+            if (preferredId) {
+                const provider = AVAILABLE_PROVIDERS.find(p => p.id == preferredId);
+                if (provider) {
+                    proceedWithECashCheckout(provider);
+                    return;
+                }
+            }
+
+            // Multiple providers and no preference, show selection modal
+            showProviderSelectModal(true);
+        }
+
+        async function proceedWithECashCheckout(provider) {
             // Check for payment on account (customer selected with empty cart)
             const isPaymentOnAccount = cart.length === 0 && selectedCustomer;
 
@@ -1967,8 +2055,23 @@
                 return;
             }
 
+            let phone = '';
+            if (selectedCustomer && selectedCustomer.phone) {
+                phone = selectedCustomer.phone;
+            }
+            if (!phone && ['appsnmobile', 'expresspay', 'nalopay'].includes(provider.provider.toLowerCase())) {
+                phone = prompt(`Please enter customer's Mobile Money phone number for ${provider.name}:`);
+                if (!phone) {
+                    alert('Phone number is required for this payment method.');
+                    return;
+                }
+            }
+
             // First, create a pending sale to get reference
             try {
+                // Show loading indicator
+                showPosToast('Initializing payment...', 'warning', 10000);
+
                 const response = await fetch('{% url "sales:initialize_ecash_payment" %}', {
                     method: 'POST',
                     headers: {
@@ -1984,55 +2087,124 @@
                         discount_amount: discountAmount,
                         customer_id: selectedCustomer ? selectedCustomer.id : null,
                         total: total,
-                        is_payment_on_account: isPaymentOnAccount
+                        is_payment_on_account: isPaymentOnAccount,
+                        provider_config_id: provider.id,
+                        phone: phone
                     })
                 });
 
                 const data = await response.json();
+
+                // Clear initialization toast
+                document.querySelectorAll('.pos-toast').forEach(t => t.remove());
 
                 if (!data.success) {
                     alert(data.error || 'Failed to initialize payment.');
                     return;
                 }
 
-                // Open Paystack popup
-                const handler = PaystackPop.setup({
-                    key: data.paystack_public_key,
-                    email: data.customer_email || 'customer@example.com',
-                    amount: Math.round(total * 100), // Convert to pesewas
-                    currency: 'GHS',
-                    ref: data.reference,
-                    metadata: {
-                        tenant_id: data.tenant_id,
-                        sale_id: data.sale_id,
-                        custom_fields: [
-                            {
-                                display_name: "Sale Number",
-                                variable_name: "sale_number",
-                                value: data.sale_number
-                            }
-                        ]
-                    },
-                    callback: function (response) {
-                        // Payment successful - verify and complete
-                        verifyECashPayment(response.reference, data.sale_id, data.is_payment_on_account, data.customer_id, total);
-                    },
-                    onClose: function () {
-                        // User closed popup without completing
-                        console.log('Payment popup closed');
-                    }
-                });
+                // Handle different checkout flows based on provider type
+                if (data.checkout_type === 'inline' && data.public_key) {
+                    // Open Paystack inline popup
+                    const handler = PaystackPop.setup({
+                        key: data.public_key,
+                        email: data.customer_email || 'customer@example.com',
+                        amount: Math.round(total * 100), // Convert to pesewas
+                        currency: 'GHS',
+                        ref: data.reference,
+                        metadata: {
+                            tenant_id: data.tenant_id,
+                            sale_id: data.sale_id,
+                            custom_fields: [
+                                {
+                                    display_name: "Sale Number",
+                                    variable_name: "sale_number",
+                                    value: data.sale_number
+                                }
+                            ]
+                        },
+                        callback: function (response) {
+                            // Payment successful - verify and complete
+                            verifyECashPayment(response.reference, data.sale_id, data.is_payment_on_account, data.customer_id, total, provider.id, '');
+                        },
+                        onClose: function () {
+                            // User closed popup without completing
+                            console.log('Payment popup closed');
+                        }
+                    });
 
-                handler.openIframe();
+                    handler.openIframe();
+                } 
+                else if (data.checkout_type === 'redirect' && data.authorization_url) {
+                    // Redirect to payment URL
+                    // Open in new tab or popup
+                    const paymentWindow = window.open(data.authorization_url, 'PaymentCheckout', 'width=600,height=700');
+                    
+                    // Show verify button to check status
+                    showVerifyModal(data.reference, data.sale_id, data.is_payment_on_account, data.customer_id, total, provider.id, '');
+                }
+                else if (data.checkout_type === 'ussd') {
+                    // Prompt was sent to phone
+                    alert(`A payment prompt has been sent to the customer's phone. Please wait for them to confirm.`);
+                    // Show verify button to check status
+                    showVerifyModal(data.reference, data.sale_id, data.is_payment_on_account, data.customer_id, total, provider.id, '');
+                }
+                else {
+                    alert('Unknown checkout type or missing checkout URL.');
+                }
 
             } catch (error) {
+                document.querySelectorAll('.pos-toast').forEach(t => t.remove());
                 console.error('E-Cash error:', error);
                 alert('Failed to initialize e-cash payment. Please try again.');
             }
         }
 
+        // Add a modal to verify payment manually if it's redirect or ussd
+        function showVerifyModal(reference, saleId, isPaymentOnAccount, customerId, total, providerId, token) {
+            // We can reuse the checkout-modal with a loading spinner and verify button
+            const modal = document.createElement('div');
+            modal.className = 'checkout-modal active';
+            modal.id = 'manual-verify-modal';
+            modal.innerHTML = `
+                <div class="checkout-dialog text-center" style="max-width:400px;">
+                    <div class="mb-3" style="font-size:3rem; color:#a78bfa;">
+                        <i class="bi bi-arrow-repeat spin"></i>
+                    </div>
+                    <h4 class="mb-1" style="color:#a78bfa;">Awaiting Payment</h4>
+                    <p class="text-muted small mb-3">Please wait for the customer to complete the payment on their device.</p>
+                    <div class="d-flex gap-2 mt-4">
+                        <button class="btn btn-secondary flex-fill" onclick="closeVerifyModal()">Cancel</button>
+                        <button class="btn btn-primary flex-fill" onclick="manualVerify('${reference}', '${saleId}', ${isPaymentOnAccount}, ${customerId || 'null'}, ${total}, ${providerId}, '${token}')">
+                            Verify Payment
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        function closeVerifyModal() {
+            const m = document.getElementById('manual-verify-modal');
+            if (m) m.remove();
+        }
+
+        window.manualVerify = function(reference, saleId, isPaymentOnAccount, customerId, total, providerId, token) {
+            const btn = event.currentTarget;
+            btn.innerHTML = '<i class="bi bi-arrow-repeat spin me-1"></i>Verifying...';
+            btn.disabled = true;
+            
+            verifyECashPayment(reference, saleId, isPaymentOnAccount, customerId, total, providerId, token)
+                .finally(() => {
+                    if(document.getElementById('manual-verify-modal')) {
+                        btn.innerHTML = 'Verify Payment';
+                        btn.disabled = false;
+                    }
+                });
+        };
+
         // Verify and complete e-cash payment
-        async function verifyECashPayment(reference, saleId, isPaymentOnAccount = false, customerId = null, amount = 0) {
+        async function verifyECashPayment(reference, saleId, isPaymentOnAccount = false, customerId = null, amount = 0, providerId = null, token = '') {
             try {
                 const response = await fetch('{% url "sales:verify_ecash_payment" %}', {
                     method: 'POST',
@@ -2045,13 +2217,16 @@
                         sale_id: saleId,
                         is_payment_on_account: isPaymentOnAccount,
                         customer_id: customerId,
-                        amount: amount
+                        amount: amount,
+                        provider_config_id: providerId,
+                        token: token
                     })
                 });
 
                 const data = await response.json();
 
                 if (data.success) {
+                    closeVerifyModal();
                     // Reset cart
                     cart = [];
                     discountAmount = 0;

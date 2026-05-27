@@ -17,72 +17,170 @@ from django.http import JsonResponse, HttpResponse
 from django.db import transaction
 from django.utils import timezone
 
-from .models import PaymentProviderSettings, ECashLedger, ECashWithdrawal
-from .services.paystack import get_payment_provider, PaystackProvider
-from apps.core.decorators import role_required
+from django.urls import reverse_lazy
+from .models import PaymentProviderConfig, ShopPaymentAssignment, ECashLedger, ECashWithdrawal
+from .forms import PaymentProviderConfigForm, ShopPaymentAssignmentForm
 from apps.core.mixins import SortableMixin
 
-logger = logging.getLogger(__name__)
-
-
-class PaymentProviderSettingsView(LoginRequiredMixin, TemplateView):
-    """View and update payment provider settings."""
-    template_name = 'payments/provider_settings.html'
+class PaymentProviderConfigListView(LoginRequiredMixin, SortableMixin, ListView):
+    """List payment provider configurations."""
+    model = PaymentProviderConfig
+    template_name = 'payments/config_list.html'
+    context_object_name = 'configs'
+    paginate_by = 25
     
+    sortable_fields = ['provider', 'nickname', 'is_active', 'test_mode', 'created_at']
+    default_sort = '-created_at'
+
     def dispatch(self, request, *args, **kwargs):
-        # Only Admin can access
         if request.user.role and request.user.role.name != 'ADMIN':
             messages.error(request, "Only administrators can access payment settings.")
             return redirect('core:dashboard')
         return super().dispatch(request, *args, **kwargs)
-    
+
+    def get_queryset(self):
+        queryset = PaymentProviderConfig.objects.filter(tenant=self.request.user.tenant)
+        
+        q = self.request.GET.get('q', '').strip()
+        if q:
+            queryset = queryset.filter(nickname__icontains=q)
+            
+        provider = self.request.GET.get('provider')
+        if provider:
+            queryset = queryset.filter(provider=provider)
+            
+        status = self.request.GET.get('status')
+        if status == 'active':
+            queryset = queryset.filter(is_active=True)
+        elif status == 'inactive':
+            queryset = queryset.filter(is_active=False)
+            
+        return self.apply_sorting(queryset)
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        tenant = self.request.user.tenant
-        
-        # Get or create Paystack settings
-        settings, created = PaymentProviderSettings.objects.get_or_create(
-            tenant=tenant,
-            provider='PAYSTACK',
-            defaults={'is_active': False}
-        )
-        
-        context['provider_settings'] = settings
-        context['masked_secret_key'] = settings.get_masked_secret_key()
-        context['ecash_balance'] = ECashLedger.get_current_balance(tenant)
+        context['ecash_balance'] = ECashLedger.get_current_balance(self.request.user.tenant)
+        context['provider_choices'] = PaymentProviderConfig.PROVIDER_CHOICES
         return context
+
+class PaymentProviderConfigCreateView(LoginRequiredMixin, CreateView):
+    """Create a new payment provider configuration."""
+    model = PaymentProviderConfig
+    form_class = PaymentProviderConfigForm
+    template_name = 'payments/config_form.html'
+    success_url = reverse_lazy('payments:provider_settings')
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.role and request.user.role.name != 'ADMIN':
+            return redirect('core:dashboard')
+        return super().dispatch(request, *args, **kwargs)
+
+    def form_valid(self, form):
+        form.instance.tenant = self.request.user.tenant
+        messages.success(self.request, "Payment provider config created successfully!")
+        return super().form_valid(form)
+
+class PaymentProviderConfigUpdateView(LoginRequiredMixin, UpdateView):
+    """Update an existing payment provider configuration."""
+    model = PaymentProviderConfig
+    form_class = PaymentProviderConfigForm
+    template_name = 'payments/config_form.html'
+    success_url = reverse_lazy('payments:provider_settings')
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.role and request.user.role.name != 'ADMIN':
+            return redirect('core:dashboard')
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_queryset(self):
+        return PaymentProviderConfig.objects.filter(tenant=self.request.user.tenant)
+
+    def form_valid(self, form):
+        messages.success(self.request, "Payment provider config updated successfully!")
+        return super().form_valid(form)
+
+class ShopPaymentAssignmentListView(LoginRequiredMixin, SortableMixin, ListView):
+    """List shop payment assignments."""
+    model = ShopPaymentAssignment
+    template_name = 'payments/assignment_list.html'
+    context_object_name = 'assignments'
+    paginate_by = 25
     
-    def post(self, request):
-        tenant = request.user.tenant
+    sortable_fields = ['shop__name', 'provider_config__provider', 'is_default', 'priority']
+    default_sort = 'shop__name'
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.role and request.user.role.name != 'ADMIN':
+            return redirect('core:dashboard')
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_queryset(self):
+        queryset = ShopPaymentAssignment.objects.filter(
+            tenant=self.request.user.tenant
+        ).select_related('shop', 'provider_config')
         
-        settings, created = PaymentProviderSettings.objects.get_or_create(
-            tenant=tenant,
-            provider='PAYSTACK',
-            defaults={'is_active': False}
-        )
+        shop_id = self.request.GET.get('shop')
+        if shop_id:
+            queryset = queryset.filter(shop_id=shop_id)
+            
+        provider_id = self.request.GET.get('provider')
+        if provider_id:
+            queryset = queryset.filter(provider_config_id=provider_id)
+            
+        return self.apply_sorting(queryset)
         
-        # Update settings
-        settings.is_active = request.POST.get('is_active') == 'on'
-        settings.test_mode = request.POST.get('test_mode') == 'on'
-        settings.public_key = request.POST.get('public_key', '').strip()
-        
-        # Only update secret key if a new one is provided
-        new_secret_key = request.POST.get('secret_key', '').strip()
-        if new_secret_key and not new_secret_key.startswith('sk_'):
-            # Provided but doesn't look like a valid key - might be masked
-            pass
-        elif new_secret_key:
-            settings.secret_key = new_secret_key
-        
-        # Webhook secret (optional)
-        new_webhook_secret = request.POST.get('webhook_secret', '').strip()
-        if new_webhook_secret:
-            settings.webhook_secret = new_webhook_secret
-        
-        settings.save()
-        
-        messages.success(request, "Payment provider settings updated successfully!")
-        return redirect('payments:provider_settings')
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        from apps.core.models import Location
+        context['shops'] = Location.objects.filter(tenant=self.request.user.tenant, location_type='SHOP', is_active=True)
+        context['providers'] = PaymentProviderConfig.objects.filter(tenant=self.request.user.tenant)
+        return context
+
+class ShopPaymentAssignmentCreateView(LoginRequiredMixin, CreateView):
+    """Assign a payment provider to a shop."""
+    model = ShopPaymentAssignment
+    form_class = ShopPaymentAssignmentForm
+    template_name = 'payments/assignment_form.html'
+    success_url = reverse_lazy('payments:shop_assignments')
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.role and request.user.role.name != 'ADMIN':
+            return redirect('core:dashboard')
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['tenant'] = self.request.user.tenant
+        return kwargs
+
+    def form_valid(self, form):
+        form.instance.tenant = self.request.user.tenant
+        messages.success(self.request, "Shop assignment created successfully!")
+        return super().form_valid(form)
+
+class ShopPaymentAssignmentUpdateView(LoginRequiredMixin, UpdateView):
+    """Update a shop payment assignment."""
+    model = ShopPaymentAssignment
+    form_class = ShopPaymentAssignmentForm
+    template_name = 'payments/assignment_form.html'
+    success_url = reverse_lazy('payments:shop_assignments')
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.role and request.user.role.name != 'ADMIN':
+            return redirect('core:dashboard')
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_queryset(self):
+        return ShopPaymentAssignment.objects.filter(tenant=self.request.user.tenant)
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['tenant'] = self.request.user.tenant
+        return kwargs
+
+    def form_valid(self, form):
+        messages.success(self.request, "Shop assignment updated successfully!")
+        return super().form_valid(form)
 
 
 @login_required
@@ -92,7 +190,12 @@ def test_connection(request):
     tenant = request.user.tenant
     
     try:
-        provider = get_payment_provider(tenant)
+        provider_config_id = request.POST.get('config_id')
+        if provider_config_id:
+            provider = get_payment_provider(tenant, config_id=provider_config_id)
+        else:
+            provider = get_payment_provider(tenant)
+            
         if not provider:
             return JsonResponse({
                 'success': False,
@@ -236,6 +339,7 @@ class ECashLedgerView(LoginRequiredMixin, SortableMixin, ListView):
         min_amount = self.request.GET.get('min_amount')
         max_amount = self.request.GET.get('max_amount')
         shop_id = self.request.GET.get('shop')
+        provider_config_id = self.request.GET.get('provider_config')
         
         if date_from:
             try:
@@ -266,20 +370,26 @@ class ECashLedgerView(LoginRequiredMixin, SortableMixin, ListView):
         if shop_id:
             queryset = queryset.filter(shop_id=shop_id)
             
+        if provider_config_id:
+            queryset = queryset.filter(provider_config_id=provider_config_id)
+            
         return self.apply_sorting(queryset)
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['ecash_balance'] = ECashLedger.get_current_balance(self.request.user.tenant)
+        context['shop_ecash_balance'] = ECashLedger.get_current_balance(self.request.user.tenant)
         
         from apps.core.models import Location
+        from apps.payments.models import PaymentProviderConfig
         context['shops'] = Location.objects.filter(tenant=self.request.user.tenant, location_type='SHOP')
+        context['providers'] = PaymentProviderConfig.objects.filter(tenant=self.request.user.tenant, is_active=True)
         
         context['date_from'] = self.request.GET.get('date_from', '')
         context['date_to'] = self.request.GET.get('date_to', '')
         context['min_amount'] = self.request.GET.get('min_amount', '')
         context['max_amount'] = self.request.GET.get('max_amount', '')
         context['selected_shop'] = self.request.GET.get('shop', '')
+        context['selected_provider'] = self.request.GET.get('provider_config', '')
         return context
 
 
@@ -312,11 +422,28 @@ class ShopECashListView(LoginRequiredMixin, TemplateView):
         # Calculate e-cash balance for each shop
         shop_balances = []
         total_ecash = Decimal('0')
+        from django.db.models import Sum
+        
         for shop in shops:
             balance = ECashLedger.get_shop_balance(tenant, shop)
+            
+            # Fetch breakdown by platform
+            provider_balances = []
+            qs = ECashLedger.objects.filter(tenant=tenant, shop=shop)
+            platform_sums = qs.values('provider_config', 'provider_config__nickname', 'provider').annotate(total=Sum('amount')).filter(total__gt=0)
+            
+            for p_sum in platform_sums:
+                name = p_sum.get('provider_config__nickname') or p_sum.get('provider') or 'E-Cash'
+                provider_balances.append({
+                    'id': p_sum['provider_config'],
+                    'name': name,
+                    'balance': p_sum['total']
+                })
+                
             shop_balances.append({
                 'shop': shop,
-                'balance': balance
+                'balance': balance,
+                'provider_balances': provider_balances
             })
             total_ecash += balance
         
@@ -348,7 +475,17 @@ class ShopECashWithdrawView(LoginRequiredMixin, TemplateView):
         shop = get_object_or_404(Location, pk=shop_id, tenant=tenant, location_type='SHOP')
         
         context['shop'] = shop
-        context['balance'] = ECashLedger.get_shop_balance(tenant, shop)
+        
+        provider_config_id = self.request.GET.get('provider_config')
+        if provider_config_id:
+            from apps.payments.models import PaymentProviderConfig
+            provider = get_object_or_404(PaymentProviderConfig, pk=provider_config_id)
+            context['balance'] = ECashLedger.get_provider_balance(tenant, provider, shop)
+            context['provider'] = provider
+        else:
+            context['balance'] = ECashLedger.get_shop_balance(tenant, shop)
+            context['provider'] = None
+            
         return context
     
     def post(self, request, shop_id):
@@ -357,7 +494,16 @@ class ShopECashWithdrawView(LoginRequiredMixin, TemplateView):
         from apps.core.models import Location
         shop = get_object_or_404(Location, pk=shop_id, tenant=tenant, location_type='SHOP')
         
-        balance = ECashLedger.get_shop_balance(tenant, shop)
+        provider_config_id = request.GET.get('provider_config')
+        provider = None
+        if provider_config_id:
+            from apps.payments.models import PaymentProviderConfig
+            provider = get_object_or_404(PaymentProviderConfig, pk=provider_config_id)
+            balance = ECashLedger.get_provider_balance(tenant, provider, shop)
+            notes_suffix = f" via {provider.nickname}"
+        else:
+            balance = ECashLedger.get_shop_balance(tenant, shop)
+            notes_suffix = ""
         
         if balance <= 0:
             messages.warning(request, f"No e-cash to withdraw from {shop.name}.")
@@ -370,7 +516,8 @@ class ShopECashWithdrawView(LoginRequiredMixin, TemplateView):
                 amount=balance,
                 withdrawn_by=request.user,
                 shop=shop,
-                notes=f"E-Cash withdrawal from {shop.name}"
+                provider_config=provider,
+                notes=f"E-Cash withdrawal from {shop.name}{notes_suffix}"
             )
             withdrawal.complete(request.user)
             
@@ -760,7 +907,7 @@ def paystack_webhook(request):
             return HttpResponse(status=200)
         
         # Get payment provider settings
-        settings = PaymentProviderSettings.objects.filter(
+        settings = PaymentProviderConfig.objects.filter(
             tenant=tenant,
             provider='PAYSTACK',
             is_active=True

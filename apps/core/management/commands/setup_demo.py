@@ -11,8 +11,9 @@ from django.contrib.auth import get_user_model
 from apps.core.models import Tenant, Location, Role
 from apps.inventory.models import Category, Product, Batch, Inventory, InventoryLedger, ShopPrice
 from apps.sales.models import Sale, SaleItem, Shift
-from apps.accounting.models import CashTransfer
+from apps.accounting.models import CashTransfer, BankTransfer
 from apps.customers.models import Customer, CustomerTransaction
+from apps.payments.models import PaymentProviderConfig, ECashLedger
 
 User = get_user_model()
 
@@ -40,10 +41,14 @@ class Command(BaseCommand):
                 
                 SaleItem.objects.filter(tenant=tenant).delete()
                 Sale.objects.filter(tenant=tenant).delete()
+                BankTransfer.objects.filter(tenant=tenant).delete()
                 CashTransfer.objects.filter(tenant=tenant).delete()
                 Shift.objects.filter(tenant=tenant).delete()
                 CustomerTransaction.objects.filter(tenant=tenant).delete()
                 Customer.objects.filter(tenant=tenant).delete()
+                
+                ECashLedger.objects.filter(tenant=tenant).delete()
+                PaymentProviderConfig.objects.filter(tenant=tenant).delete()
                 
                 Product.objects.filter(tenant=tenant).delete()
                 Category.objects.filter(tenant=tenant).delete()
@@ -120,6 +125,21 @@ class Command(BaseCommand):
                 is_active=True
             )
             created_users[email] = u
+                
+        # Setup Payment Provider Configs
+        paystack_config, _ = PaymentProviderConfig.objects.get_or_create(
+            tenant=tenant, provider='PAYSTACK',
+            defaults={'nickname': 'Main Paystack', 'is_active': True, 'public_key': 'demo_key'}
+        )
+        nalopay_config, _ = PaymentProviderConfig.objects.get_or_create(
+            tenant=tenant, provider='NALOPAY',
+            defaults={'nickname': 'Nalo Mobile', 'is_active': True, 'public_key': 'demo_key'}
+        )
+        appsnmobile_config, _ = PaymentProviderConfig.objects.get_or_create(
+            tenant=tenant, provider='APPSNMOBILE',
+            defaults={'nickname': 'AppsNMobile POS', 'is_active': True, 'public_key': 'demo_key'}
+        )
+        demo_providers = [paystack_config, nalopay_config, appsnmobile_config]
 
         # 6. Create Products with varying reorder_levels
         cat_stationery = Category.objects.create(tenant=tenant, name="Stationery")
@@ -279,6 +299,24 @@ class Command(BaseCommand):
             if status == 'COMPLETED':
                 sale.amount_paid = sale_total if payment_method in ['CASH', 'ECASH'] else Decimal('0')
             sale.save()
+            
+            # Seed E-Cash Ledger if ECASH payment
+            if payment_method == 'ECASH' and status == 'COMPLETED':
+                provider_config = random.choice(demo_providers)
+                ECashLedger.objects.create(
+                    tenant=tenant,
+                    shop=shop,
+                    transaction_type='PAYMENT',
+                    amount=sale_total,
+                    reference_type='Sale',
+                    reference_id=sale.pk,
+                    provider_config=provider_config,
+                    provider=provider_config.provider,
+                    created_by=attendant,
+                    notes=f"Demo E-Cash Sale"
+                )
+                # Ensure date is consistent
+                ECashLedger.objects.filter(reference_type='Sale', reference_id=sale.pk).update(created_at=sale_time)
 
         # 10. Create mock cash transfers
         for _ in range(5):
@@ -292,6 +330,37 @@ class Command(BaseCommand):
                 confirmed_at=transfer_time
             )
             CashTransfer.objects.filter(pk=ct.pk).update(created_at=transfer_time)
+
+            # Randomly create some Bank Transfers
+            if random.choice([True, False]):
+                fund_source = random.choice(['CASH', 'ECASH', 'MOMO'])
+                provider_config = random.choice(demo_providers) if fund_source == 'ECASH' else None
+                
+                bt = BankTransfer.objects.create(
+                    tenant=tenant, 
+                    accountant=created_users[f'{prefix}accountant@demo.com'],
+                    amount=Decimal(str(random.randint(100, 500))),
+                    fund_source=fund_source,
+                    provider_config=provider_config,
+                    teller_name=f"Teller {random.randint(1,5)}",
+                    notes="Daily deposit" if random.choice([True, False]) else ""
+                )
+                BankTransfer.objects.filter(pk=bt.pk).update(created_at=transfer_time)
+                
+                # If ECASH, deduct from ledger
+                if fund_source == 'ECASH':
+                    ECashLedger.objects.create(
+                        tenant=tenant,
+                        transaction_type='WITHDRAWAL',
+                        amount=-bt.amount,
+                        reference_type='BankTransfer',
+                        reference_id=bt.pk,
+                        provider_config=provider_config,
+                        provider=provider_config.provider,
+                        created_by=bt.accountant,
+                        notes=f"Demo Bank Transfer via {provider_config.nickname}"
+                    )
+                    ECashLedger.objects.filter(reference_type='BankTransfer', reference_id=bt.pk).update(created_at=transfer_time)
 
         # 11. Explicitly seed PENDING sales for Cashier Queue in strict workflow
         if is_strict:

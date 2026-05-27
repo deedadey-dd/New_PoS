@@ -41,25 +41,59 @@
                     </div>
 
                     <div class="mb-3">
-                        <small class="text-muted">Available E-Cash Balance</small>
-                        <h3 class="mb-0 {% if item.balance > 0 %}text-success{% else %}text-muted{% endif %}">
+                        <small class="text-muted">Total E-Cash Balance</small>
+                        <h3 class="mb-2 {% if item.balance > 0 %}text-success{% else %}text-muted{% endif %}">
                             {{ currency_symbol }}{{ item.balance|floatformat:"2g" }}
                         </h3>
+                        {% if item.provider_balances|length > 0 %}
+                        <div class="small">
+                            {% for pb in item.provider_balances %}
+                            <div class="d-flex justify-content-between mb-1">
+                                <span class="text-muted">{{ pb.nickname }}</span>
+                                <span class="fw-bold">{{ currency_symbol }}{{ pb.balance|floatformat:"2g" }}</span>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
                     </div>
 
                     {% if item.balance > 0 %}
                     <form action="{% url 'accounting:shop_ecash_withdraw' item.shop.pk %}" method="post"
-                        onsubmit="return confirm('Confirm withdrawal of ' + document.getElementById('amount_{{ item.shop.pk }}').value + ' E-Cash from {{ item.shop.name }}?');">
+                        onsubmit="return confirm('Confirm withdrawal?');">
                         {% csrf_token %}
+                        <div class="mb-2">
+                            <select name="provider_config" id="provider_{{ item.shop.pk }}" class="form-select form-select-sm" onchange="updateMaxAmount_{{ item.shop.pk }}(this)">
+                                {% for pb in item.provider_balances %}
+                                    {% if pb.balance > 0 %}
+                                    <option value="{{ pb.id }}" data-balance="{{ pb.balance|stringformat:'f' }}">{{ pb.nickname }}</option>
+                                    {% endif %}
+                                {% endfor %}
+                            </select>
+                        </div>
                         <div class="input-group mb-2">
                             <span class="input-group-text">{{ currency_symbol }}</span>
-                            <input type="number" id="amount_{{ item.shop.pk }}" name="amount" class="form-control fw-bold text-end text-success" step="0.01" min="0.01" max="{{ item.balance|stringformat:'f' }}" value="{{ item.balance|stringformat:'f' }}" required>
+                            <input type="number" id="amount_{{ item.shop.pk }}" name="amount" class="form-control fw-bold text-end text-success" step="0.01" min="0.01" required>
                         </div>
                         <input type="text" name="notes" class="form-control form-control-sm mb-3" placeholder="Optional notes or reference...">
                         <button type="submit" class="btn btn-success w-100 fw-bold">
                             <i class="bi bi-cash-coin me-1"></i>Withdraw E-Cash
                         </button>
                     </form>
+                    <script>
+                        function updateMaxAmount_{{ item.shop.pk }}(selectEl) {
+                            const maxAmt = selectEl.options[selectEl.selectedIndex].dataset.balance;
+                            const amtInput = document.getElementById('amount_{{ item.shop.pk }}');
+                            amtInput.max = maxAmt;
+                            amtInput.value = maxAmt;
+                        }
+                        // Initialize on load
+                        document.addEventListener('DOMContentLoaded', function() {
+                            const selectEl = document.getElementById('provider_{{ item.shop.pk }}');
+                            if (selectEl && selectEl.options.length > 0) {
+                                updateMaxAmount_{{ item.shop.pk }}(selectEl);
+                            }
+                        });
+                    </script>
                     {% else %}
                     <button class="btn btn-secondary w-100" disabled>
                         <i class="bi bi-x-circle me-1"></i>No E-Cash to Withdraw

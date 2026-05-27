@@ -1,0 +1,60 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{% if object %}Edit{% else %}New{% endif %} Shop Assignment{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-6">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <a href="{% url 'payments:shop_assignments' %}" class="text-decoration-none text-muted mb-2 d-inline-block">
+                        <i class="bi bi-arrow-left me-1"></i>Back to Assignments
+                    </a>
+                    <h2 class="fw-bold mb-0">
+                        <i class="bi bi-{% if object %}pencil-square{% else %}plus-circle{% endif %} me-2 text-primary"></i>
+                        {% if object %}Edit Assignment{% else %}New Shop Assignment{% endif %}
+                    </h2>
+                </div>
+            </div>
+
+            <div class="card shadow-sm border-0">
+                <div class="card-body p-4">
+                    <form method="post">
+                        {% csrf_token %}
+                        {% for field in form %}
+                            <div class="mb-3">
+                                {{ field.label_tag }}
+                                {% if field.field.widget.input_type == 'checkbox' %}
+                                    <div class="form-check form-switch">
+                                        {{ field }}
+                                        <label class="form-check-label" for="{{ field.id_for_label }}">Enable</label>
+                                    </div>
+                                {% else %}
+                                    {{ field }}
+                                {% endif %}
+                                {% if field.help_text %}
+                                    <div class="form-text text-muted">{{ field.help_text }}</div>
+                                {% endif %}
+                                {% if field.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ field.errors|join:", " }}
+                                    </div>
+                                {% endif %}
+                            </div>
+                        {% endfor %}
+                        
+                        <div class="d-flex justify-content-end mt-4 pt-3 border-top">
+                            <a href="{% url 'payments:shop_assignments' %}" class="btn btn-light me-2">Cancel</a>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-check-lg me-1"></i>Save Assignment
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

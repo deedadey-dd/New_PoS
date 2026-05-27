@@ -1,0 +1,91 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{% if object %}Edit{% else %}New{% endif %} Payment Provider Config{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <a href="{% url 'payments:provider_settings' %}" class="text-decoration-none text-muted mb-2 d-inline-block">
+                        <i class="bi bi-arrow-left me-1"></i>Back to Configurations
+                    </a>
+                    <h2 class="fw-bold mb-0">
+                        <i class="bi bi-{% if object %}pencil-square{% else %}plus-circle{% endif %} me-2 text-primary"></i>
+                        {% if object %}Edit Config: {{ object.nickname }}{% else %}New Payment Provider Config{% endif %}
+                    </h2>
+                </div>
+            </div>
+
+            <div class="card shadow-sm border-0">
+                <div class="card-body p-4">
+                    <form method="post">
+                        {% csrf_token %}
+                        {% for field in form %}
+                            <div class="mb-3">
+                                {{ field.label_tag }}
+                                {% if field.field.widget.input_type == 'checkbox' %}
+                                    <div class="form-check form-switch">
+                                        {{ field }}
+                                        <label class="form-check-label" for="{{ field.id_for_label }}">Enable</label>
+                                    </div>
+                                {% else %}
+                                    {{ field }}
+                                {% endif %}
+                                {% if field.help_text %}
+                                    <div class="form-text text-muted">{{ field.help_text }}</div>
+                                {% endif %}
+                                {% if field.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ field.errors|join:", " }}
+                                    </div>
+                                {% endif %}
+                            </div>
+                        {% endfor %}
+                        
+                        <div class="d-flex justify-content-end mt-4 pt-3 border-top">
+                            <a href="{% url 'payments:provider_settings' %}" class="btn btn-light me-2">Cancel</a>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-check-lg me-1"></i>Save Configuration
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            
+            {% if object and object.provider == 'PAYSTACK' %}
+            <div class="card mt-4 shadow-sm border-0">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0"><i class="bi bi-link-45deg me-2"></i>Webhook Configuration</h5>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small">Add this URL in your Paystack Dashboard under Webhooks:</p>
+                    <div class="input-group">
+                        <input type="text" class="form-control bg-white" readonly
+                            value="{{ request.scheme }}://{{ request.get_host }}{% url 'payments:paystack_webhook' %}"
+                            id="webhookUrl">
+                        <button class="btn btn-outline-secondary" type="button" onclick="copyWebhookUrl()">
+                            <i class="bi bi-clipboard"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function copyWebhookUrl() {
+        const url = document.getElementById('webhookUrl');
+        url.select();
+        navigator.clipboard.writeText(url.value);
+        alert('Webhook URL copied to clipboard!');
+    }
+</script>
+{% endblock %}

@@ -62,6 +62,23 @@ class BasePaymentProvider(ABC):
     def provider_name(self) -> str:
         """Return the provider name."""
         pass
+        
+    @property
+    def get_checkout_type(self) -> str:
+        """
+        Return the type of checkout flow:
+        - 'inline': Provider handles UI on page (e.g. Paystack)
+        - 'redirect': User redirects to provider URL
+        - 'ussd': Server-to-server USSD prompt (e.g. AppsnMobile)
+        """
+        return 'redirect'
+        
+    def test_connection(self) -> PaymentResult:
+        """
+        Test if the API credentials are valid.
+        Default implementation returns not-implemented.
+        """
+        return PaymentResult(success=False, message="Connection test not implemented for this provider.")
     
     @abstractmethod
     def initialize_payment(

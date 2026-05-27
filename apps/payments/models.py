@@ -55,16 +55,16 @@ def decrypt_value(value):
         return value
 
 
-class PaymentProviderSettings(TenantModel):
+class PaymentProviderConfig(TenantModel):
     """
-    Tenant-level payment provider configuration.
-    Supports multiple providers (currently Paystack, extensible for future).
+    A single named configuration for a payment provider.
+    Multiple configs per provider per tenant are allowed.
     """
     PROVIDER_CHOICES = [
         ('PAYSTACK', 'Paystack'),
-        ('FLUTTERWAVE', 'Flutterwave'),  # Future
-        ('MTN_MOMO', 'MTN Mobile Money'),  # Future
-        ('VODAFONE_CASH', 'Vodafone Cash'),  # Future
+        ('NALOPAY', 'Nalopay'),
+        ('APPSNMOBILE', 'AppsnMobile (Orchard)'),
+        ('EXPRESSPAY', 'ExpressPay'),
     ]
     
     provider = models.CharField(
@@ -72,9 +72,14 @@ class PaymentProviderSettings(TenantModel):
         choices=PROVIDER_CHOICES,
         default='PAYSTACK'
     )
+    nickname = models.CharField(
+        max_length=100, 
+        help_text="Friendly name, e.g. 'Main Paystack' or 'Backup ExpressPay'",
+        default="Default"
+    )
     is_active = models.BooleanField(
         default=False,
-        help_text="Enable this payment provider"
+        help_text="Enable this payment provider config"
     )
     
     # API Credentials (encrypted at rest)
@@ -95,11 +100,16 @@ class PaymentProviderSettings(TenantModel):
         db_column='webhook_secret',
         help_text="Webhook secret for verifying callbacks (encrypted)"
     )
+    merchant_id = models.CharField(
+        max_length=256,
+        blank=True,
+        help_text="For ExpressPay/AppsnMobile"
+    )
     
     # Callback configuration
     callback_url = models.URLField(
         blank=True,
-        help_text="Auto-generated webhook URL for this tenant"
+        help_text="Webhook URL for this provider config"
     )
     
     # Test mode
@@ -113,9 +123,9 @@ class PaymentProviderSettings(TenantModel):
     updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:
-        verbose_name = "Payment Provider Settings"
-        verbose_name_plural = "Payment Provider Settings"
-        unique_together = ['tenant', 'provider']
+        verbose_name = "Payment Provider Config"
+        verbose_name_plural = "Payment Provider Configs"
+        unique_together = ['tenant', 'nickname']
     
     def __str__(self):
         status = "Active" if self.is_active else "Inactive"
@@ -150,6 +160,24 @@ class PaymentProviderSettings(TenantModel):
         if len(key) <= 8:
             return '*' * len(key)
         return f"{key[:4]}{'*' * (len(key) - 8)}{key[-4:]}"
+
+
+class ShopPaymentAssignment(TenantModel):
+    """
+    Links a shop to one or more payment provider configs.
+    A shop can have multiple assignments (fallback providers).
+    """
+    shop = models.ForeignKey(Location, on_delete=models.CASCADE, related_name='payment_assignments')
+    provider_config = models.ForeignKey(PaymentProviderConfig, on_delete=models.CASCADE, related_name='shop_assignments')
+    is_default = models.BooleanField(default=False, help_text="The default provider for this shop")
+    priority = models.PositiveIntegerField(default=0, help_text="Lower = higher priority for fallback")
+    
+    class Meta:
+        unique_together = ['shop', 'provider_config']
+        ordering = ['priority']
+        
+    def __str__(self):
+        return f"{self.shop.name} - {self.provider_config.nickname}"
 
 
 class ECashLedger(TenantModel):
@@ -198,6 +226,13 @@ class ECashLedger(TenantModel):
         max_length=100,
         blank=True,
         help_text="Paystack transaction reference"
+    )
+    provider_config = models.ForeignKey(
+        PaymentProviderConfig,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        help_text="Which provider config was used for this transaction"
     )
     provider = models.CharField(
         max_length=20,
@@ -260,9 +295,18 @@ class ECashLedger(TenantModel):
             shop=shop
         ).aggregate(total=Sum('amount'))
         return result['total'] or Decimal('0')
+
+    @classmethod
+    def get_provider_balance(cls, tenant, provider_config, shop=None):
+        """Get the current e-cash balance for a specific provider config."""
+        qs = cls.objects.filter(tenant=tenant, provider_config=provider_config)
+        if shop:
+            qs = qs.filter(shop=shop)
+        result = qs.aggregate(total=Sum('amount'))
+        return result['total'] or Decimal('0')
     
     @classmethod
-    def record_payment(cls, tenant, amount, sale=None, paystack_ref='', user=None, notes='', shop=None):
+    def record_payment(cls, tenant, amount, sale=None, paystack_ref='', user=None, notes='', shop=None, provider_config=None):
         """Record an e-cash payment from a sale or payment on account."""
         # Determine reference info based on sale presence
         if sale:
@@ -276,6 +320,8 @@ class ECashLedger(TenantModel):
             reference_type = 'Payment'
             reference_id = None
             auto_notes = "E-Cash payment on account"
+            
+        provider = provider_config.provider if provider_config else 'PAYSTACK'
         
         return cls.objects.create(
             tenant=tenant,
@@ -284,20 +330,25 @@ class ECashLedger(TenantModel):
             reference_type=reference_type,
             reference_id=reference_id,
             paystack_reference=paystack_ref,
+            provider_config=provider_config,
+            provider=provider,
             created_by=user,
             notes=notes if notes else auto_notes,
             shop=shop
         )
     
     @classmethod
-    def record_withdrawal(cls, tenant, amount, withdrawal, user, shop=None):
+    def record_withdrawal(cls, tenant, amount, withdrawal, user, shop=None, provider_config=None):
         """Record an e-cash withdrawal to cash."""
+        provider = provider_config.provider if provider_config else 'PAYSTACK'
         return cls.objects.create(
             tenant=tenant,
             transaction_type='WITHDRAWAL',
             amount=-abs(amount),  # Negative = outgoing
             reference_type='ECashWithdrawal',
             reference_id=withdrawal.pk,
+            provider_config=provider_config,
+            provider=provider,
             created_by=user,
             notes=f"Withdrawal from {shop.name if shop else 'all shops'} by {user.get_full_name() or user.email}",
             shop=shop
@@ -351,6 +402,16 @@ class ECashWithdrawal(TenantModel):
         help_text="Shop to withdraw e-cash from (leave blank for tenant-wide)"
     )
     
+    # Provider platform this withdrawal is from (null = all platforms in shop)
+    provider_config = models.ForeignKey(
+        PaymentProviderConfig,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ecash_withdrawals',
+        help_text="Specific platform to withdraw from (leave blank for all platforms)"
+    )
+    
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     
@@ -389,7 +450,9 @@ class ECashWithdrawal(TenantModel):
             raise ValidationError("Only pending withdrawals can be completed.")
         
         # Check if sufficient e-cash balance (shop-specific or tenant-wide)
-        if self.shop:
+        if self.provider_config:
+            current_balance = ECashLedger.get_provider_balance(self.tenant, self.provider_config, self.shop)
+        elif self.shop:
             current_balance = ECashLedger.get_shop_balance(self.tenant, self.shop)
         else:
             current_balance = ECashLedger.get_current_balance(self.tenant)
@@ -400,13 +463,44 @@ class ECashWithdrawal(TenantModel):
             )
         
         # Record in ledger
-        ECashLedger.record_withdrawal(
-            tenant=self.tenant,
-            amount=self.amount,
-            withdrawal=self,
-            user=user or self.withdrawn_by,
-            shop=self.shop
-        )
+        if self.provider_config:
+            ECashLedger.record_withdrawal(
+                tenant=self.tenant,
+                amount=self.amount,
+                withdrawal=self,
+                user=user or self.withdrawn_by,
+                shop=self.shop,
+                provider_config=self.provider_config
+            )
+        else:
+            # Withdraw all at once: Loop over all providers with positive balance and record a withdrawal for each
+            # Calculate breakdown of balances
+            qs = ECashLedger.objects.filter(tenant=self.tenant)
+            if self.shop:
+                qs = qs.filter(shop=self.shop)
+                
+            from django.db.models import Sum
+            provider_balances = qs.values('provider_config').annotate(balance=Sum('amount')).filter(balance__gt=0)
+            
+            remaining_to_withdraw = self.amount
+            for pb in provider_balances:
+                if remaining_to_withdraw <= Decimal('0'):
+                    break
+                    
+                pc_id = pb['provider_config']
+                bal = pb['balance']
+                withdraw_from_provider = min(remaining_to_withdraw, bal)
+                
+                pc = PaymentProviderConfig.objects.filter(pk=pc_id).first() if pc_id else None
+                ECashLedger.record_withdrawal(
+                    tenant=self.tenant,
+                    amount=withdraw_from_provider,
+                    withdrawal=self,
+                    user=user or self.withdrawn_by,
+                    shop=self.shop,
+                    provider_config=pc
+                )
+                remaining_to_withdraw -= withdraw_from_provider
         
         # Update status
         self.status = 'COMPLETED'

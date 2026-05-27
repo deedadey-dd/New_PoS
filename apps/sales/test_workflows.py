@@ -330,6 +330,13 @@ class WorkflowIntegrationTests(TestCase):
             unit_price=Decimal("100.00")
         )
         sale.complete(amount_paid=Decimal("300.00"), payment_method="ECASH", paystack_ref="ref123")
+        
+        # In the real view, record_payment is called. We need to simulate that.
+        from apps.payments.models import ECashLedger
+        ECashLedger.record_payment(
+            tenant=self.tenant, amount=Decimal('300.00'), sale=sale,
+            shop=self.shop_location, user=self.manager_user, paystack_ref="ref123"
+        )
 
         # Shop Manager sees unconfirmed
         ctx_manager = self.get_navbar_context(self.manager_user)
@@ -340,15 +347,15 @@ class WorkflowIntegrationTests(TestCase):
         self.assertEqual(ctx_accountant['ecash_balance'], Decimal("0.00"))
 
         # Accountant withdraws E-Cash payment
-        from apps.accounting.models import DigitalFundWithdrawal
-        DigitalFundWithdrawal.objects.create(
+        from apps.payments.models import ECashWithdrawal
+        withdrawal = ECashWithdrawal.objects.create(
             tenant=self.tenant,
             shop=self.shop_location,
-            accountant=self.accountant_user,
             amount=Decimal("300.00"),
-            fund_source="ECASH",
+            withdrawn_by=self.accountant_user,
             notes="Withdrawal"
         )
+        withdrawal.complete(self.accountant_user)
 
         # Manager sees 0, Accountant sees 300
         ctx_manager = self.get_navbar_context(self.manager_user)

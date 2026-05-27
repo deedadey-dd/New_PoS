@@ -250,7 +250,18 @@ def tenant_context(request):
             from apps.accounting.models import BankTransfer
             banked_cash = BankTransfer.objects.filter(tenant=tenant, fund_source='CASH').aggregate(total=Sum('amount'))['total'] or Decimal('0')
             
-            context['cash_on_hand'] = max(Decimal('0'), received - sent - banked_cash)
+            # Add direct customer cash payments received by accountant
+            from apps.customers.models import CustomerTransaction
+            customer_cash_payments = CustomerTransaction.objects.filter(
+                tenant=tenant,
+                performed_by=user,
+                transaction_type='CREDIT',
+                description__icontains='(CASH)'
+            ).exclude(
+                description__icontains='ECASH'
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+            
+            context['cash_on_hand'] = max(Decimal('0'), received - sent - banked_cash + customer_cash_payments)
         
         # Add total credit debt for managers/admin
         if role_name in ['SHOP_MANAGER', 'ADMIN', 'ACCOUNTANT', 'SHOP_CASHIER']:
@@ -289,22 +300,31 @@ def tenant_context(request):
                 ecash_ct_q = Q(tenant=tenant, transaction_type='CREDIT', description__icontains='ECASH')
                 
                 if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER'] and user.location and user.location.location_type == 'SHOP':
-                    # Shop Manager sees ALL e-cash MINUS DigitalFundWithdrawal
-                    shop_sales = Sale.objects.filter(ecash_sales_q, shop=user.location).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
-                    shop_ct = CustomerTransaction.objects.filter(ecash_ct_q, performed_by__location=user.location).aggregate(total=Sum('amount'))['total'] or Decimal('0')
-                    from apps.accounting.models import DigitalFundWithdrawal
-                    withdrawn = DigitalFundWithdrawal.objects.filter(tenant=tenant, shop=user.location, fund_source='ECASH').aggregate(total=Sum('amount'))['total'] or Decimal('0')
-                    context['ecash_balance'] = shop_sales + shop_ct - withdrawn
+                    # Shop Manager sees current e-cash balance of their shop based on the Ledger
+                    from apps.payments.models import ECashLedger
+                    context['ecash_balance'] = ECashLedger.get_shop_balance(tenant, user.location)
                 else:
                     # Accountant sees Total Withdrawn ECash minus BANK TRANSFERS
+                    from apps.payments.models import ECashWithdrawal
+                    total_withdrawn = ECashWithdrawal.objects.filter(tenant=tenant, status='COMPLETED').aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                    
+                    # Add legacy DigitalFundWithdrawals just in case
                     from apps.accounting.models import DigitalFundWithdrawal
-                    total_withdrawn = DigitalFundWithdrawal.objects.filter(tenant=tenant, fund_source='ECASH').aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                    legacy_withdrawn = DigitalFundWithdrawal.objects.filter(tenant=tenant, fund_source='ECASH').aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                    
+                    # Add direct customer E-Cash payments received by accountant
+                    customer_ecash_payments = CustomerTransaction.objects.filter(
+                        tenant=tenant,
+                        performed_by=user,
+                        transaction_type='CREDIT',
+                        description__icontains='ECASH'
+                    ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
                     
                     # Subtract Bank Transfers
                     from apps.accounting.models import BankTransfer
                     banked_ecash = BankTransfer.objects.filter(tenant=tenant, fund_source='ECASH').aggregate(total=Sum('amount'))['total'] or Decimal('0')
                     
-                    context['ecash_balance'] = total_withdrawn - banked_ecash
+                    context['ecash_balance'] = (total_withdrawn + legacy_withdrawn + customer_ecash_payments) - banked_ecash
             except Exception as e:
                 context['ecash_balance'] = Decimal('0')
                 
@@ -326,11 +346,19 @@ def tenant_context(request):
                         from apps.accounting.models import DigitalFundWithdrawal
                         total_withdrawn = DigitalFundWithdrawal.objects.filter(tenant=tenant, fund_source='MOMO').aggregate(total=Sum('amount'))['total'] or Decimal('0')
                         
+                        # Add direct customer Momo payments received by accountant
+                        customer_momo_payments = CustomerTransaction.objects.filter(
+                            tenant=tenant,
+                            performed_by=user,
+                            transaction_type='CREDIT',
+                            description__icontains='MOMO'
+                        ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                        
                         # Subtract Bank Transfers
                         from apps.accounting.models import BankTransfer
                         banked_momo = BankTransfer.objects.filter(tenant=tenant, fund_source='MOMO').aggregate(total=Sum('amount'))['total'] or Decimal('0')
                         
-                        context['momo_balance'] = total_withdrawn - banked_momo
+                        context['momo_balance'] = (total_withdrawn + customer_momo_payments) - banked_momo
             except Exception:
                 context['momo_balance'] = Decimal('0')
         

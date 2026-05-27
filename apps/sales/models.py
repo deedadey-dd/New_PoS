@@ -38,6 +38,7 @@ class ShopSettings(TenantModel):
         choices=PRINTER_CHOICES,
         default='THERMAL_80MM'
     )
+
     hide_zero_stock_in_pos = models.BooleanField(
         default=False,
         help_text="Hide products with zero stock from the POS interface."

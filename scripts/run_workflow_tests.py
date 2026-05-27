@@ -22,8 +22,8 @@ from apps.core.tests.test_recent_fixes import (
     LogoutRedirectTests,
     CashTransferFormRecipientTests,
 )
-from apps.transfers.tests import TransferDiscrepancyTests, StockRequestCombineTests, InterShopTransferTests
-from apps.notifications.tests import BulletinBoardTests
+from apps.sales.test_shifts import ShiftProcessTests
+from apps.payments.test_ecash_ledger import AccountantECashPaymentTests
 
 
 class RollbackTestResult(unittest.TextTestResult):
@@ -67,22 +67,15 @@ def main():
     suite4a = unittest.TestLoader().loadTestsFromTestCase(LogoutRedirectTests)
     suite4b = unittest.TestLoader().loadTestsFromTestCase(CashTransferFormRecipientTests)
 
-    # --- Suite 5: Transfer Discrepancy Tests ---
-    print("[5/6] Transfer Discrepancy & Requests Tests")
-    suite5a = unittest.TestLoader().loadTestsFromTestCase(TransferDiscrepancyTests)
-    suite5b = unittest.TestLoader().loadTestsFromTestCase(StockRequestCombineTests)
-    suite5c = unittest.TestLoader().loadTestsFromTestCase(InterShopTransferTests)
+    # --- Suite 5: Shift Process Tests ---
+    print("[5/6] Shift Process Tests")
+    suite5 = unittest.TestLoader().loadTestsFromTestCase(ShiftProcessTests)
 
-    # --- Suite 6: Notifications Tests ---
-    print("[6/7] Notifications Tests")
-    suite6 = unittest.TestLoader().loadTestsFromTestCase(BulletinBoardTests)
+    # --- Suite 6: E-Cash Ledger Tests ---
+    print("[6/6] E-Cash Ledger Tests")
+    suite6 = unittest.TestLoader().loadTestsFromTestCase(AccountantECashPaymentTests)
 
-    # --- Suite 7: Sales Settings Tests ---
-    print("[7/7] Sales Settings Tests")
-    from apps.sales.tests import ShopManagerSettingsFormTest
-    suite7 = unittest.TestLoader().loadTestsFromTestCase(ShopManagerSettingsFormTest)
-
-    suite = unittest.TestSuite([suite1, suite2, suite3, suite4a, suite4b, suite5a, suite5b, suite5c, suite6, suite7])
+    suite = unittest.TestSuite([suite1, suite2, suite3, suite4a, suite4b, suite5, suite6])
 
     runner = RollbackTestRunner(verbosity=2)
     result = runner.run(suite)

@@ -1,0 +1,154 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load sort_tags %}
+
+{% block title %}Payment Provider Configurations{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="fw-bold mb-0">
+                <i class="bi bi-credit-card me-2 text-primary"></i>Payment Provider Configurations
+            </h2>
+            <p class="text-muted mb-0">Manage multiple payment gateways for your organization</p>
+        </div>
+        <div>
+            <a href="{% url 'payments:shop_assignments' %}" class="btn btn-outline-secondary me-2">
+                <i class="bi bi-shop me-1"></i>Shop Assignments
+            </a>
+            <a href="{% url 'payments:config_create' %}" class="btn btn-primary">
+                <i class="bi bi-plus-lg me-1"></i>Add Config
+            </a>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label text-muted small mb-1">Search Nickname</label>
+                    <input type="text" name="q" class="form-control" placeholder="Search..." value="{{ request.GET.q }}">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label text-muted small mb-1">Provider</label>
+                    <select name="provider" class="form-select">
+                        <option value="">All Providers</option>
+                        {% for code, label in provider_choices %}
+                            <option value="{{ code }}" {% if request.GET.provider == code %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label text-muted small mb-1">Status</label>
+                    <select name="status" class="form-select">
+                        <option value="">All Statuses</option>
+                        <option value="active" {% if request.GET.status == 'active' %}selected{% endif %}>Active</option>
+                        <option value="inactive" {% if request.GET.status == 'inactive' %}selected{% endif %}>Inactive</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary w-100">Filter</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card shadow-sm border-0">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="bg-light">
+                        <tr>
+                            <th class="ps-4">{% sort_link 'Nickname' 'nickname' %}</th>
+                            <th>{% sort_link 'Provider' 'provider' %}</th>
+                            <th>{% sort_link 'Status' 'is_active' %}</th>
+                            <th>{% sort_link 'Mode' 'test_mode' %}</th>
+                            <th>{% sort_link 'Last Updated' 'created_at' %}</th>
+                            <th class="text-end pe-4">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for config in configs %}
+                        <tr>
+                            <td class="ps-4 fw-medium">{{ config.nickname }}</td>
+                            <td>
+                                <span class="badge bg-secondary">{{ config.get_provider_display }}</span>
+                            </td>
+                            <td>
+                                {% if config.is_active %}
+                                    <span class="badge bg-success">Active</span>
+                                {% else %}
+                                    <span class="badge bg-danger">Inactive</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if config.test_mode %}
+                                    <span class="badge bg-warning text-dark"><i class="bi bi-bug me-1"></i>Test</span>
+                                {% else %}
+                                    <span class="badge bg-info"><i class="bi bi-lightning-charge me-1"></i>Live</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-muted small">{{ config.updated_at|date:"M d, Y H:i" }}</td>
+                            <td class="text-end pe-4">
+                                <a href="{% url 'payments:config_update' config.pk %}" class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-pencil me-1"></i>Edit
+                                </a>
+                                <button type="button" class="btn btn-sm btn-outline-secondary ms-1" onclick="testConnection({{ config.pk }}, this)">
+                                    <i class="bi bi-wifi me-1"></i>Test
+                                </button>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="6" class="text-center py-4 text-muted">
+                                <i class="bi bi-credit-card d-block mb-2 fs-2 text-secondary opacity-50"></i>
+                                No payment configurations found.<br>
+                                <a href="{% url 'payments:config_create' %}" class="btn btn-sm btn-primary mt-2">Create your first config</a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function testConnection(configId, btn) {
+        const originalHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+        
+        const formData = new FormData();
+        formData.append('config_id', configId);
+        
+        fetch('{% url "payments:test_connection" %}', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+            },
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('Connection test successful!');
+            } else {
+                alert('Connection test failed: ' + data.message);
+            }
+        })
+        .catch(error => {
+            alert('Error during connection test.');
+        })
+        .finally(() => {
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+        });
+    }
+</script>
+{% endblock %}

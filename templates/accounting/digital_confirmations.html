@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% load static %}
+{% load core_filters %}
 
 {% block title %}Confirm Digital Payments - {{ request.user.tenant.name }}{% endblock %}
 
@@ -34,10 +35,19 @@
                         </div>
                         <div class="col-md-3">
                             <label class="form-label small">Payment Method</label>
-                            <select name="payment_method" class="form-select form-select-sm">
+                            <select name="payment_method" class="form-select form-select-sm" id="digital-payment-method">
                                 <option value="">All Methods</option>
                                 <option value="ECASH" {% if payment_method == 'ECASH' %}selected{% endif %}>E-Cash</option>
                                 <option value="MOMO" {% if payment_method == 'MOMO' %}selected{% endif %}>Momo</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3" id="provider-filter-col" style="{% if payment_method != 'ECASH' and payment_method %}display:none;{% endif %}">
+                            <label class="form-label small">E-Cash Platform</label>
+                            <select name="provider_config" class="form-select form-select-sm">
+                                <option value="">All Platforms</option>
+                                {% for p in providers %}
+                                <option value="{{ p.id }}" {% if selected_provider == p.id|stringformat:"i" %}selected{% endif %}>{{ p.nickname }}</option>
+                                {% endfor %}
                             </select>
                         </div>
                         <div class="col-md-3">
@@ -89,10 +99,10 @@
                                         </th>
                                         <th>Date</th>
                                         <th>Type</th>
-                                        <th>Payment Method</th>
+                                        <th>Platform</th>
                                         <th>Shop / Performed By</th>
                                         <th>Reference</th>
-                                        <th class="text-end pe-4">Amount (GH₵)</th>
+                                        <th class="text-end pe-4">Amount ({{ currency_symbol|default:"GH₵" }})</th>
                                         <th class="text-end pe-4">Actions</th>
                                     </tr>
                                 </thead>
@@ -106,7 +116,13 @@
                                         </td>
                                         <td>{{ sale.created_at|date:"M d, Y H:i" }}</td>
                                         <td><span class="badge bg-success">Sale</span></td>
-                                        <td><span class="badge bg-info text-dark">E-Cash</span></td>
+                                        <td>
+                                            {% if sale.id in sale_provider_map %}
+                                                <span class="badge bg-info text-dark">{{ sale_provider_map|get_item:sale.id }}</span>
+                                            {% else %}
+                                                <span class="badge bg-info text-dark">E-Cash</span>
+                                            {% endif %}
+                                        </td>
                                         <td>{{ sale.shop.name|default:"-" }}</td>
                                         <td>{{ sale.sale_number }}</td>
                                         <td class="text-end pe-4 fw-bold">{{ sale.amount_paid|floatformat:2 }}</td>

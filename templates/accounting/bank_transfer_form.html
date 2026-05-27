@@ -11,9 +11,14 @@
                 <div class="card-header bg-white border-bottom py-3">
                     <div class="d-flex justify-content-between align-items-center">
                         <h4 class="mb-0 fw-bold">Record Bank Transfer</h4>
-                        <a href="{% url 'accounting:accountant_dashboard' %}" class="btn btn-sm btn-outline-secondary">
-                            <i class="bi bi-arrow-left"></i> Back
-                        </a>
+                        <div class="d-flex gap-2">
+                            <a href="{% url 'accounting:bank_history' %}" class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-clock-history"></i> Bank History
+                            </a>
+                            <a href="{% url 'accounting:accountant_dashboard' %}" class="btn btn-sm btn-outline-secondary">
+                                <i class="bi bi-arrow-left"></i> Back
+                            </a>
+                        </div>
                     </div>
                 </div>
                 <div class="card-body p-4">
@@ -47,6 +52,13 @@
                                 <label class="form-label fw-bold">Fund Source *</label>
                                 {{ form.fund_source }}
                             </div>
+                            <div class="col-md-6" id="provider-config-wrapper" style="display:none;">
+                                <label class="form-label fw-bold">E-Cash Platform</label>
+                                {{ form.provider_config }}
+                                <small class="text-muted">Select the specific platform funds are coming from</small>
+                            </div>
+                        </div>
+                        <div class="row mb-3">
                             <div class="col-md-6">
                                 <label class="form-label fw-bold">Amount *</label>
                                 {{ form.amount }}
@@ -85,6 +97,21 @@
 document.addEventListener('DOMContentLoaded', function() {
     const form = document.getElementById('bankTransferForm');
     const submitBtn = document.getElementById('submitBtn');
+    const fundSourceSelect = document.getElementById('id_fund_source');
+    const providerWrapper = document.getElementById('provider-config-wrapper');
+    
+    function toggleProviderConfig() {
+        if (fundSourceSelect && fundSourceSelect.value === 'ECASH') {
+            providerWrapper.style.display = 'block';
+        } else if (providerWrapper) {
+            providerWrapper.style.display = 'none';
+        }
+    }
+    
+    if (fundSourceSelect) {
+        fundSourceSelect.addEventListener('change', toggleProviderConfig);
+        toggleProviderConfig(); // Run on load in case of form re-render with ECASH selected
+    }
     
     form.addEventListener('submit', function() {
         submitBtn.disabled = true;

@@ -115,11 +115,82 @@ class POSView(LoginRequiredMixin, View):
             is_active=True
         ).values('id', 'name', 'phone', 'current_balance', 'credit_limit')
         
+        # Get active payment providers for this shop
+        from apps.payments.models import ShopPaymentAssignment, PaymentProviderConfig
+        
+        # First get shop-specific assignments
+        assignments = ShopPaymentAssignment.objects.filter(
+            shop=user_shop,
+            provider_config__is_active=True
+        ).select_related('provider_config').order_by('priority')
+        
+        available_providers = []
+        if assignments.exists():
+            for assignment in assignments:
+                config = assignment.provider_config
+                provider_cls = None
+                
+                # Instantiating the provider to get the checkout type
+                if config.provider == 'PAYSTACK':
+                    from apps.payments.services.paystack import PaystackProvider
+                    provider_cls = PaystackProvider(config)
+                elif config.provider == 'EXPRESSPAY':
+                    from apps.payments.services.expresspay import ExpressPayProvider
+                    provider_cls = ExpressPayProvider(config)
+                elif config.provider == 'APPSNMOBILE':
+                    from apps.payments.services.appsnmobile import AppsnMobileProvider
+                    provider_cls = AppsnMobileProvider(config)
+                elif config.provider == 'NALOPAY':
+                    from apps.payments.services.nalopay import NalopayProvider
+                    provider_cls = NalopayProvider(config)
+                
+                if provider_cls:
+                    available_providers.append({
+                        'id': config.id,
+                        'name': config.nickname,
+                        'provider': config.provider,
+                        'checkout_type': provider_cls.get_checkout_type,
+                        'is_default': assignment.is_default
+                    })
+        else:
+            # Fallback to any active tenant config if no assignments exist
+            configs = PaymentProviderConfig.objects.filter(
+                tenant=request.user.tenant,
+                is_active=True
+            )
+            for config in configs:
+                provider_cls = None
+                if config.provider == 'PAYSTACK':
+                    from apps.payments.services.paystack import PaystackProvider
+                    provider_cls = PaystackProvider(config)
+                elif config.provider == 'EXPRESSPAY':
+                    from apps.payments.services.expresspay import ExpressPayProvider
+                    provider_cls = ExpressPayProvider(config)
+                elif config.provider == 'APPSNMOBILE':
+                    from apps.payments.services.appsnmobile import AppsnMobileProvider
+                    provider_cls = AppsnMobileProvider(config)
+                elif config.provider == 'NALOPAY':
+                    from apps.payments.services.nalopay import NalopayProvider
+                    provider_cls = NalopayProvider(config)
+                    
+                if provider_cls:
+                    available_providers.append({
+                        'id': config.id,
+                        'name': config.nickname,
+                        'provider': config.provider,
+                        'checkout_type': provider_cls.get_checkout_type,
+                        'is_default': False
+                    })
+        
+        # Sort so default is first
+        available_providers.sort(key=lambda x: x['is_default'], reverse=True)
+        
         context = {
             'shop': user_shop,
             'products': json.dumps(products_with_prices),
             'categories': categories,
             'customers': json.dumps(list(customers), default=str),
+            'available_providers': json.dumps(available_providers),
             'shop_settings': shop_settings,
             'shift': open_shift,
             'allow_negative_stock': request.user.tenant.allow_negative_stock,
@@ -583,6 +654,25 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
         context['selected_status'] = self.request.GET.get('status', '')
         context['selected_payment'] = self.request.GET.get('payment', '')
         context['selected_dispatch_status'] = self.request.GET.get('dispatch_status', '')
+        
+        # Build sale_provider_map for the sales on this page
+        sales = context.get('sales', [])
+        if sales:
+            from apps.payments.models import ECashLedger
+            ecash_sale_ids = [sale.id for sale in sales if sale.payment_method == 'ECASH']
+            if ecash_sale_ids:
+                ledger_entries = ECashLedger.objects.filter(
+                    tenant=user.tenant,
+                    reference_type='Sale',
+                    reference_id__in=ecash_sale_ids
+                ).select_related('provider_config')
+                
+                context['sale_provider_map'] = {
+                    entry.reference_id: entry.provider_config.nickname if entry.provider_config else 'E-Cash'
+                    for entry in ledger_entries
+                }
+            else:
+                context['sale_provider_map'] = {}
         
         return context
 
@@ -1502,14 +1592,16 @@ def initialize_ecash_payment(request):
                 'error': 'No shop location configured.'
             }, status=400)
         
-        # Get active payment provider (handles shop-level overrides)
-        from apps.payments.services.paystack import get_payment_provider
-        provider = get_payment_provider(tenant, shop=shop)
+        provider_config_id = data.get('provider_config_id')
         
-        if not provider or not provider.public_key:
+        # Get active payment provider
+        from apps.payments.services.paystack import get_payment_provider
+        provider = get_payment_provider(tenant, shop=shop, config_id=provider_config_id)
+        
+        if not provider:
             return JsonResponse({
                 'success': False,
-                'error': 'E-Cash payment is not configured for this shop. Please contact admin.'
+                'error': 'Selected e-cash payment provider is not configured for this shop. Please contact admin.'
             }, status=400)
         
         items = data.get('items', [])
@@ -1608,18 +1700,40 @@ def initialize_ecash_payment(request):
                         unit_price=Decimal(str(item_data['unit_price']))
                     )
             
-            # Calculate totals
             sale.calculate_totals()
+            
+        # Get checkout type and metadata
+        checkout_type = provider.get_checkout_type
+        authorization_url = ''
+        
+        # If it requires server-side initialization
+        metadata = {'customer_number': data.get('phone', '')}
+        if checkout_type != 'inline':
+            init_result = provider.initialize_payment(
+                amount=total if is_payment_on_account else sale.total,
+                email=customer_email,
+                reference=reference,
+                metadata=metadata
+            )
+            if not init_result.success:
+                return JsonResponse({
+                    'success': False,
+                    'error': f'Failed to initialize payment: {init_result.message}'
+                }, status=400)
+            authorization_url = init_result.authorization_url
         
         return JsonResponse({
             'success': True,
-            'sale_id': sale.pk,
-            'sale_number': sale.sale_number,
+            'sale_id': None if is_payment_on_account else sale.pk,
+            'sale_number': None if is_payment_on_account else sale.sale_number,
             'reference': reference,
-            'paystack_public_key': provider.public_key,
+            'public_key': getattr(provider, 'public_key', ''),
+            'checkout_type': checkout_type,
+            'authorization_url': authorization_url,
             'customer_email': customer_email,
             'tenant_id': tenant.pk,
-            'total': str(sale.total)
+            'total': str(total if is_payment_on_account else sale.total),
+            'provider': provider.provider_name
         })
         
     except Exception as e:
@@ -1635,6 +1749,7 @@ def verify_ecash_payment(request):
     """
     Verify an e-cash payment and complete the sale or payment on account.
     """
+    from apps.payments.models import ECashLedger
     try:
         data = json.loads(request.body)
         user = request.user
@@ -1652,6 +1767,9 @@ def verify_ecash_payment(request):
                 'error': 'Missing payment reference.'
             }, status=400)
         
+        provider_config_id = data.get('provider_config_id')
+        token = data.get('token', '')
+        
         # Get shop and provider
         shop = user.location
         if not shop or shop.location_type != 'SHOP':
@@ -1659,7 +1777,7 @@ def verify_ecash_payment(request):
             shop = Location.objects.filter(tenant=tenant, location_type='SHOP', is_active=True).first()
             
         from apps.payments.services.paystack import get_payment_provider
-        provider = get_payment_provider(tenant, shop=shop)
+        provider = get_payment_provider(tenant, shop=shop, config_id=provider_config_id)
         
         if not provider:
             return JsonResponse({
@@ -1667,7 +1785,11 @@ def verify_ecash_payment(request):
                 'error': 'Payment provider not configured.'
             }, status=400)
         
-        result = provider.verify_payment(reference)
+        # Provider might need token (ExpressPay) or reference (Paystack, AppsnMobile, Nalopay)
+        if provider.provider_name == 'ExpressPay':
+            result = provider.verify_payment(reference, token=token)
+        else:
+            result = provider.verify_payment(reference)
         
         if not result.success:
             return JsonResponse({
@@ -1712,14 +1834,14 @@ def verify_ecash_payment(request):
                 )
                 
                 # Record in e-cash ledger
-                from apps.payments.models import ECashLedger
                 ECashLedger.record_payment(
                     tenant=tenant,
                     amount=amount,
                     sale=None,
                     paystack_ref=reference,
                     user=user,
-                    notes=f"Payment on account for {customer.name}"
+                    notes=f"Payment on account for {customer.name} via {provider.provider_name}",
+                    provider_config=provider.settings if hasattr(provider, 'settings') else None
                 )
             
             return JsonResponse({
@@ -1759,13 +1881,14 @@ def verify_ecash_payment(request):
             )
             
             # Record in e-cash ledger
-            from apps.payments.models import ECashLedger
             ECashLedger.record_payment(
                 tenant=tenant,
                 amount=sale.total,
                 sale=sale,
                 paystack_ref=reference,
-                user=user
+                user=user,
+                notes=f"Sale payment via {provider.provider_name}",
+                provider_config=provider.settings if hasattr(provider, 'settings') else None
             )
         
         return JsonResponse({

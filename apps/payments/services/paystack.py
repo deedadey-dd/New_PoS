@@ -23,6 +23,10 @@ class PaystackProvider(BasePaymentProvider):
     @property
     def provider_name(self) -> str:
         return "Paystack"
+        
+    @property
+    def get_checkout_type(self) -> str:
+        return 'inline'
     
     def _get_headers(self) -> Dict:
         """Get headers for Paystack API requests."""
@@ -199,58 +203,57 @@ class PaystackProvider(BasePaymentProvider):
             )
 
 
-def get_payment_provider(tenant, shop=None):
+def get_payment_provider(tenant, shop=None, config_id=None):
     """
     Factory function to get the active payment provider for a tenant.
     
     Args:
         tenant: Tenant model instance
         shop: Optional Location model instance for shop-specific overrides
+        config_id: Optional ID of a specific PaymentProviderConfig to use
         
     Returns:
         Payment provider instance or None
     """
-    from apps.payments.models import PaymentProviderSettings
+    from apps.payments.models import PaymentProviderConfig, ShopPaymentAssignment
     
-    settings = PaymentProviderSettings.objects.filter(
-        tenant=tenant,
-        is_active=True
-    ).first()
+    settings = None
     
+    # 1. If a specific config was requested (e.g. from POS selector)
+    if config_id:
+        settings = PaymentProviderConfig.objects.filter(
+            id=config_id, tenant=tenant, is_active=True
+        ).first()
+        
+    # 2. If no config requested but shop provided, get shop's default
+    if not settings and shop:
+        assignment = ShopPaymentAssignment.objects.filter(
+            shop=shop, is_default=True, provider_config__is_active=True
+        ).select_related('provider_config').first()
+        if assignment:
+            settings = assignment.provider_config
+            
+    # 3. Fallback to any active config for this tenant
+    if not settings:
+        settings = PaymentProviderConfig.objects.filter(
+            tenant=tenant, is_active=True
+        ).first()
+        
     if not settings:
         return None
         
-    # Check for shop-specific override
-    if shop:
-        try:
-            from apps.sales.models import ShopSettings
-            shop_settings = ShopSettings.objects.get(tenant=tenant, shop=shop)
-            # Only use override if e-cash is enabled for shop and secret key provided
-            if shop_settings.enable_ecash_payment and shop_settings.paystack_secret_key:
-                class OverrideSettings:
-                    def __init__(self, base, public, secret):
-                        self.base = base
-                        self.public_key = public
-                        self.secret_key = secret
-                        self.test_mode = getattr(base, 'test_mode', False)
-                        self.webhook_secret = getattr(base, 'webhook_secret', '')
-                
-                settings = OverrideSettings(
-                    settings, 
-                    shop_settings.paystack_public_key, 
-                    shop_settings.paystack_secret_key
-                )
-        except Exception:
-            pass
-            
-    provider = getattr(settings, 'provider', None)
-    if not provider and hasattr(settings, 'base'):
-        provider = settings.base.provider
+    provider_name = settings.provider
     
-    if provider == 'PAYSTACK':
+    if provider_name == 'PAYSTACK':
         return PaystackProvider(settings)
-    # Add more providers here as they're implemented
-    # elif provider == 'FLUTTERWAVE':
-    #     return FlutterwaveProvider(settings)
+    elif provider_name == 'EXPRESSPAY':
+        from .expresspay import ExpressPayProvider
+        return ExpressPayProvider(settings)
+    elif provider_name == 'APPSNMOBILE':
+        from .appsnmobile import AppsnMobileProvider
+        return AppsnMobileProvider(settings)
+    elif provider_name == 'NALOPAY':
+        from .nalopay import NalopayProvider
+        return NalopayProvider(settings)
     
     return None

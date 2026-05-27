@@ -13,4 +13,8 @@ urlpatterns = [
 
     # Excel Export
     path('export/', views.CustomerListExportView.as_view(), name='customer_list_export'),
+    
+    # Credit Ledger
+    path('credit-ledger/', views.CustomerCreditLedgerView.as_view(), name='credit_ledger'),
+    path('credit-ledger/export/', views.CustomerCreditLedgerExportView.as_view(), name='credit_ledger_export'),
 ]

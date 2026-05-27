@@ -276,9 +276,43 @@ class BankTransferForm(forms.ModelForm):
             'notes': forms.Textarea(attrs={'class': 'form-control', 'rows': 3, 'placeholder': 'Optional reference details'}),
         }
     
+    provider_config = forms.ChoiceField(
+        required=False,
+        label="E-Cash Platform",
+        widget=forms.Select(attrs={'class': 'form-select', 'id': 'id_bank_provider_config'})
+    )
+
     def __init__(self, *args, **kwargs):
         self.user = kwargs.pop('user', None)
         super().__init__(*args, **kwargs)
+        
+        # Populate provider choices
+        choices = [('', '--- All E-Cash Platforms ---')]
+        if self.user and self.user.tenant:
+            from apps.payments.models import PaymentProviderConfig, ECashWithdrawal
+            from django.db.models import Sum
+            
+            providers = PaymentProviderConfig.objects.filter(tenant=self.user.tenant, is_active=True)
+            for p in providers:
+                # Calculate available balance for this platform
+                withdrawn = ECashWithdrawal.objects.filter(
+                    tenant=self.user.tenant, 
+                    provider_config=p, 
+                    status='COMPLETED'
+                ).aggregate(Sum('amount'))['amount__sum'] or Decimal('0')
+                
+                # Subtract bank transfers for this platform
+                banked = self.Meta.model.objects.filter(
+                    tenant=self.user.tenant, 
+                    fund_source='ECASH', 
+                    provider_config=p
+                ).aggregate(Sum('amount'))['amount__sum'] or Decimal('0')
+                
+                available = max(Decimal('0'), withdrawn - banked)
+                
+                choices.append((p.id, f"{p.nickname} (Bal: {self.user.tenant.currency_symbol}{available:,.2f})"))
+                
+        self.fields['provider_config'].choices = choices
         
     def clean_amount(self):
         amount = self.cleaned_data.get('amount')
@@ -301,12 +335,20 @@ class BankTransferForm(forms.ModelForm):
                     raise forms.ValidationError(f"Insufficient cash. You only have {available:.2f} available.")
                     
             elif fund_source == 'ECASH':
-                withdrawn = DigitalFundWithdrawal.objects.filter(tenant=tenant, fund_source='ECASH').aggregate(total=Sum('amount'))['total'] or Decimal('0')
-                banked = BankTransfer.objects.filter(tenant=tenant, fund_source='ECASH').aggregate(total=Sum('amount'))['total'] or Decimal('0')
-                available = withdrawn - banked
-                
-                if amount > available:
-                    raise forms.ValidationError(f"Insufficient E-Cash. You only have {available:.2f} available.")
+                provider_config_id = self.cleaned_data.get('provider_config')
+                if provider_config_id:
+                    from apps.payments.models import ECashLedger, PaymentProviderConfig
+                    try:
+                        provider = PaymentProviderConfig.objects.get(id=provider_config_id, tenant=tenant)
+                        available = ECashLedger.get_provider_balance(tenant, provider)
+                        
+                        if amount > available:
+                            raise forms.ValidationError(f"Insufficient E-Cash. {provider.nickname} only has {available:.2f} available.")
+                    except PaymentProviderConfig.DoesNotExist:
+                        pass
+                else:
+                    # If no specific platform selected, we could either error or use total balance
+                    raise forms.ValidationError("Please select an E-Cash platform to transfer from.")
                     
             elif fund_source == 'MOMO':
                 withdrawn = DigitalFundWithdrawal.objects.filter(tenant=tenant, fund_source='MOMO').aggregate(total=Sum('amount'))['total'] or Decimal('0')

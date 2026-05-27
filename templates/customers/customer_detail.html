@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load core_filters %}
 
 {% block title %}{{ customer.name }} - {{ current_tenant.name }}{% endblock %}
 
@@ -74,6 +75,14 @@
                                 <label class="form-label small">Method</label>
                                 {{ payment_form.payment_method }}
                             </div>
+                            <div class="mb-2" id="provider-config-container" style="display: none;">
+                                <label class="form-label small">E-Cash Platform</label>
+                                {{ payment_form.provider_config }}
+                            </div>
+                            <div class="mb-2" id="customer-phone-container" style="display: none;">
+                                <label class="form-label small">Phone (for Mobile Money)</label>
+                                {{ payment_form.customer_phone }}
+                            </div>
                             <div class="mb-3">
                                 <label class="form-label small">Description</label>
                                 {{ payment_form.description }}
@@ -116,6 +125,11 @@
                                 {% else %}
                                 <span class="badge bg-success-subtle text-success me-1">PAYMENT</span>
                                 {% endif %}
+                                
+                                {% if transaction.id in ct_provider_map %}
+                                <span class="badge bg-info text-dark me-1">{{ ct_provider_map|get_item:transaction.id }}</span>
+                                {% endif %}
+                                
                                 {{ transaction.description }}
                             </td>
                             <td>{{ transaction.reference_id }}</td>
@@ -170,14 +184,39 @@
         document.addEventListener('DOMContentLoaded', function () {
             const form = document.getElementById('payment-form');
             const paymentMethodSelect = document.getElementById('id_payment_method');
+            const providerConfigContainer = document.getElementById('provider-config-container');
+            const customerPhoneContainer = document.getElementById('customer-phone-container');
+            const providerConfigSelect = document.getElementById('id_provider_config');
+            const customerPhoneInput = document.getElementById('id_customer_phone');
             const submitBtn = document.getElementById('submit-payment-btn');
+
+            // Pre-fill phone if available and input is empty
+            if (customerPhoneInput && !customerPhoneInput.value && CUSTOMER_EMAIL) {
+                // Not ideal but we don't have CUSTOMER_PHONE as a js var. Let's rely on Django form initial or user input.
+                // Wait, we can set the input value using Django template tag.
+            }
+
+            function toggleECashFields() {
+                if (paymentMethodSelect && paymentMethodSelect.value === 'ECASH') {
+                    providerConfigContainer.style.display = 'block';
+                    customerPhoneContainer.style.display = 'block';
+                } else {
+                    if (providerConfigContainer) providerConfigContainer.style.display = 'none';
+                    if (customerPhoneContainer) customerPhoneContainer.style.display = 'none';
+                }
+            }
+
+            if (paymentMethodSelect) {
+                paymentMethodSelect.addEventListener('change', toggleECashFields);
+                toggleECashFields(); // Initialize on load
+            }
 
             form.addEventListener('submit', async function (e) {
                 const paymentMethod = paymentMethodSelect.value;
 
-                // Only intercept ECASH payments if Paystack is enabled
-                if (paymentMethod !== 'ECASH' || !PAYSTACK_ENABLED) {
-                    return true;  // Let form submit normally for CASH/BANK or if Paystack not configured
+                // Intercept ECASH payments
+                if (paymentMethod !== 'ECASH') {
+                    return true;  // Let form submit normally for CASH/BANK/MOMO
                 }
 
                 e.preventDefault();  // Stop form submission for ECASH
@@ -195,7 +234,7 @@
                 submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Processing...';
 
                 try {
-                    // Initialize Paystack payment
+                    // Initialize E-Cash payment
                     const response = await fetch('{% url "sales:initialize_ecash_payment" %}', {
                         method: 'POST',
                         headers: {
@@ -207,7 +246,9 @@
                             discount_amount: 0,
                             customer_id: parseInt(CUSTOMER_ID),
                             total: amount,
-                            is_payment_on_account: true
+                            phone: customerPhoneInput ? customerPhoneInput.value : '',
+                            is_payment_on_account: true,
+                            provider_config_id: providerConfigSelect ? providerConfigSelect.value : null
                         })
                     });
 
@@ -229,9 +270,18 @@
                         return;
                     }
 
-                    // Open Paystack popup
-                    const handler = PaystackPop.setup({
-                        key: data.paystack_public_key,
+                    if (data.checkout_type === 'ussd') {
+                        // For USSD providers (like AppsnMobile, ExpressPay), the backend handles the prompt
+                        alert(data.message || 'Payment prompt sent to customer phone. Waiting for verification.');
+                        // Now we verify it
+                        setTimeout(() => verifyPayment(data.reference, amount), 5000); // verify after some time or wait for callback
+                    } else if (data.checkout_type === 'redirect') {
+                        // For Hosted checkouts (NaloPay), redirect the user
+                        window.location.href = data.redirect_url;
+                    } else {
+                        // Open Paystack popup (inline JS)
+                        const handler = PaystackPop.setup({
+                            key: data.paystack_public_key,
                         email: CUSTOMER_EMAIL || 'customer@example.com',
                         amount: Math.round(amount * 100),  // Convert to pesewas
                         currency: 'GHS',
@@ -260,6 +310,7 @@
                     });
 
                     handler.openIframe();
+                    }
 
                 } catch (error) {
                     console.error('E-Cash error:', error);

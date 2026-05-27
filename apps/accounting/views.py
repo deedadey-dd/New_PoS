@@ -86,6 +86,15 @@ class CashTransferListView(LoginRequiredMixin, SortableMixin, ListView):
             queryset = queryset.filter(
                 Q(from_location_id=shop) | Q(to_location_id=shop)
             )
+            
+        # User filters
+        sender = self.request.GET.get('sender')
+        if sender:
+            queryset = queryset.filter(from_user_id=sender)
+            
+        receiver = self.request.GET.get('receiver')
+        if receiver:
+            queryset = queryset.filter(to_user_id=receiver)
         
         return self.apply_sorting(queryset)
     
@@ -135,6 +144,11 @@ class CashTransferListView(LoginRequiredMixin, SortableMixin, ListView):
             context['date_to'] = self.request.GET.get('date_to', '')
             context['selected_shop'] = self.request.GET.get('shop', '')
             context['selected_status'] = self.request.GET.get('status', '')
+            context['selected_sender'] = self.request.GET.get('sender', '')
+            context['selected_receiver'] = self.request.GET.get('receiver', '')
+            
+            from apps.core.models import User
+            context['users'] = User.objects.filter(tenant=user.tenant, is_active=True).order_by('first_name', 'last_name', 'email')
         
         return context
 
@@ -414,6 +428,8 @@ class AccountantDashboardView(LoginRequiredMixin, View):
             total_count=Count('id'),
             cash_total=Sum('total', filter=Q(payment_method='CASH')),
             ecash_total=Sum('total', filter=Q(payment_method='ECASH')),
+            momo_total=Sum('total', filter=Q(payment_method='MOMO')),
+            credit_total=Sum('total', filter=Q(payment_method='CREDIT')),
         )
         
         # Sales by shop will be built from location_summary below
@@ -705,6 +721,13 @@ class SalesReportView(LoginRequiredMixin, View):
                 role__name__in=['SHOP_ATTENDANT', 'SHOP_MANAGER'], 
                 is_active=True
             ),
+            'payment_methods': [
+                ('CASH', 'Cash'),
+                ('ECASH', 'E-Cash'),
+                ('MOMO', 'Local Momo'),
+                ('CREDIT', 'Credit'),
+            ],
+            'selected_payment': payment,
         }
         
         return render(request, self.template_name, context)
@@ -1064,6 +1087,7 @@ class DigitalPaymentConfirmationView(LoginRequiredMixin, View):
         date_to = request.GET.get('date_to', '')
         payment_method = request.GET.get('payment_method', '')
         tx_type = request.GET.get('tx_type', '')
+        provider_config_id = request.GET.get('provider_config', '')
         
         if date_from:
             ecash_sales = ecash_sales.filter(created_at__date__gte=date_from)
@@ -1091,6 +1115,32 @@ class DigitalPaymentConfirmationView(LoginRequiredMixin, View):
             ecash_sales = ecash_sales.none()
             momo_sales = momo_sales.none()
 
+        # Filter E-Cash by provider when ECASH is selected and a provider_config is specified
+        if provider_config_id and (payment_method == 'ECASH' or not payment_method):
+            from apps.payments.models import ECashLedger
+            # Get sale IDs linked to this provider via ECashLedger
+            linked_sale_ids = ECashLedger.objects.filter(
+                tenant=tenant,
+                provider_config_id=provider_config_id,
+                reference_type='Sale'
+            ).values_list('reference_id', flat=True)
+            ecash_sales = ecash_sales.filter(id__in=linked_sale_ids)
+
+        from apps.payments.models import PaymentProviderConfig, ECashLedger
+        providers = PaymentProviderConfig.objects.filter(tenant=tenant, is_active=True)
+
+        # Build a map of sale_id -> provider_config.nickname for display in template
+        sale_ids_in_view = list(ecash_sales.values_list('id', flat=True))
+        ledger_entries = ECashLedger.objects.filter(
+            tenant=tenant,
+            reference_type='Sale',
+            reference_id__in=sale_ids_in_view
+        ).select_related('provider_config')
+        sale_provider_map = {
+            entry.reference_id: entry.provider_config.nickname if entry.provider_config else 'E-Cash'
+            for entry in ledger_entries
+        }
+
         context = {
             'ecash_sales': ecash_sales,
             'ecash_cts': ecash_cts,
@@ -1100,6 +1150,9 @@ class DigitalPaymentConfirmationView(LoginRequiredMixin, View):
             'date_to': date_to,
             'payment_method': payment_method,
             'tx_type': tx_type,
+            'providers': providers,
+            'selected_provider': provider_config_id,
+            'sale_provider_map': sale_provider_map,
         }
         
         return render(request, 'accounting/digital_confirmations.html', context)
@@ -1168,9 +1221,20 @@ class BankTransferCreateView(LoginRequiredMixin, View):
             bank_transfer = form.save(commit=False)
             bank_transfer.tenant = request.user.tenant
             bank_transfer.accountant = request.user
+            # Save the specific E-Cash provider if this is an E-Cash transfer
+            provider_config_id = form.cleaned_data.get('provider_config')
+            if bank_transfer.fund_source == 'ECASH' and provider_config_id:
+                try:
+                    from apps.payments.models import PaymentProviderConfig
+                    bank_transfer.provider_config = PaymentProviderConfig.objects.get(
+                        id=provider_config_id,
+                        tenant=request.user.tenant
+                    )
+                except PaymentProviderConfig.DoesNotExist:
+                    pass
             bank_transfer.save()
             messages.success(request, 'Bank transfer recorded successfully.')
-            return redirect('accounting:bank_transfer_receipt', pk=bank_transfer.pk)
+            return redirect('accounting:bank_history')
         
         return render(request, 'accounting/bank_transfer_form.html', {'form': form})
 
@@ -1322,38 +1386,64 @@ class ShopEcashListView(LoginRequiredMixin, TemplateView):
         tenant = self.request.user.tenant
         
         from apps.core.models import Location
-        from apps.sales.models import Sale
-        from apps.customers.models import CustomerTransaction
-        from apps.accounting.models import DigitalFundWithdrawal
+        from apps.payments.models import ECashLedger, PaymentProviderConfig
         from django.db.models import Sum
         
         shops = Location.objects.filter(tenant=tenant, location_type='SHOP', is_active=True).order_by('name')
+        providers = PaymentProviderConfig.objects.filter(tenant=tenant, is_active=True)
         
         shop_balances = []
+        total_ecash_by_provider = {p.id: Decimal('0') for p in providers}
+        total_ecash_by_provider['legacy'] = Decimal('0')
         total_ecash = Decimal('0')
         
         for shop in shops:
-            sales_ecash = Sale.objects.filter(
-                tenant=tenant, shop=shop, status='COMPLETED', payment_method='ECASH'
-            ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+            shop_data = {'shop': shop, 'providers': {}}
+            shop_total = Decimal('0')
             
-            ct_ecash = CustomerTransaction.objects.filter(
-                tenant=tenant, performed_by__location=shop, transaction_type='CREDIT', description__icontains='ECASH'
-            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+            # E-Cash balances per provider for this shop
+            ledger_balances = ECashLedger.objects.filter(
+                tenant=tenant, shop=shop
+            ).values('provider_config_id').annotate(total=Sum('amount'))
             
-            withdrawn_ecash = DigitalFundWithdrawal.objects.filter(
-                tenant=tenant, shop=shop, fund_source='ECASH'
-            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+            for lb in ledger_balances:
+                pid = lb['provider_config_id']
+                amt = lb['total'] or Decimal('0')
+                if pid in total_ecash_by_provider:
+                    shop_data['providers'][pid] = shop_data['providers'].get(pid, Decimal('0')) + amt
+                    total_ecash_by_provider[pid] += amt
+                else:
+                    # Legacy or inactive provider
+                    shop_data['providers']['legacy'] = shop_data['providers'].get('legacy', Decimal('0')) + amt
+                    total_ecash_by_provider['legacy'] += amt
+                shop_total += amt
             
-            balance = (sales_ecash + ct_ecash) - withdrawn_ecash
+            provider_balances = []
             
-            shop_balances.append({
-                'shop': shop,
-                'balance': balance
-            })
-            total_ecash += balance
+            for provider in providers:
+                pid = provider.id
+                amt = shop_data['providers'].get(pid, Decimal('0'))
+                provider_balances.append({
+                    'id': pid,
+                    'nickname': provider.nickname,
+                    'balance': amt
+                })
+                
+            legacy_amt = shop_data['providers'].get('legacy', Decimal('0'))
+            if legacy_amt > 0:
+                provider_balances.append({
+                    'id': '',
+                    'nickname': 'Legacy/Unknown',
+                    'balance': legacy_amt
+                })
+                
+            shop_data['provider_balances'] = provider_balances
+            shop_data['balance'] = shop_total
+            shop_balances.append(shop_data)
         
+        context['providers'] = providers
         context['shop_balances'] = shop_balances
+        context['total_ecash_by_provider'] = total_ecash_by_provider
         context['total_ecash'] = total_ecash
         return context
 
@@ -1377,9 +1467,16 @@ class ShopEcashWithdrawView(LoginRequiredMixin, View):
         shop = get_object_or_404(Location, pk=shop_id, tenant=tenant, location_type='SHOP')
         
         amount_str = request.POST.get('amount')
+        provider_config_id = request.POST.get('provider_config')
+        
         if not amount_str:
             messages.error(request, "Amount is required.")
             return redirect('accounting:shop_ecash_list')
+            
+        provider_config = None
+        if provider_config_id:
+            from apps.payments.models import PaymentProviderConfig
+            provider_config = PaymentProviderConfig.objects.filter(id=provider_config_id, tenant=tenant).first()
             
         try:
             from decimal import Decimal
@@ -1396,7 +1493,24 @@ class ShopEcashWithdrawView(LoginRequiredMixin, View):
             accountant=request.user,
             amount=amount,
             fund_source='ECASH',
+            provider_config=provider_config,
             notes=request.POST.get('notes', '')
+        )
+        
+        # Also record in ECashLedger to keep balance consistent
+        from apps.payments.models import ECashLedger
+        # We don't have an ECashWithdrawal object here, so we use None for reference
+        ECashLedger.objects.create(
+            tenant=tenant,
+            transaction_type='WITHDRAWAL',
+            amount=-abs(amount),
+            reference_type='DigitalFundWithdrawal',
+            reference_id=None,
+            provider_config=provider_config,
+            provider=provider_config.provider if provider_config else 'PAYSTACK',
+            created_by=request.user,
+            notes=request.POST.get('notes', '') or f"Withdrawal from {shop.name}",
+            shop=shop
         )
         
         messages.success(request, f"Successfully withdrew {tenant.currency_symbol}{amount} E-Cash from {shop.name}.")
@@ -1663,15 +1777,15 @@ class ShopMomoHistoryView(LoginRequiredMixin, TemplateView):
     def _get_shop(self):
         user = self.request.user
         tenant = user.tenant
+        role_name = user.role.name if user.role else None
         shop_id = self.request.GET.get('shop')
         
         from apps.core.models import Location
         
-        role_name = user.role.name if user.role else None
         if role_name in ['ACCOUNTANT', 'AUDITOR', 'ADMIN']:
             if shop_id:
                 return Location.objects.filter(pk=shop_id, tenant=tenant, location_type='SHOP').first()
-            return Location.objects.filter(tenant=tenant, location_type='SHOP', is_active=True).first()
+            return None
             
         if user.location and user.location.location_type == 'SHOP':
             return user.location
@@ -1701,6 +1815,18 @@ class ShopMomoHistoryView(LoginRequiredMixin, TemplateView):
             cts = CustomerTransaction.objects.filter(
                 tenant=tenant,
                 performed_by__location=shop,
+                transaction_type='CREDIT',
+                description__icontains='MOMO'
+            )
+        else:
+            sales = Sale.objects.filter(
+                tenant=tenant,
+                status='COMPLETED',
+                payment_method='MOMO'
+            )
+            
+            cts = CustomerTransaction.objects.filter(
+                tenant=tenant,
                 transaction_type='CREDIT',
                 description__icontains='MOMO'
             )
@@ -1746,9 +1872,14 @@ class ShopMomoHistoryView(LoginRequiredMixin, TemplateView):
             # Balance calc (from all time ledger, not just filtered results)
             from apps.accounting.models import DigitalFundWithdrawal
             
-            total_sales = Sale.objects.filter(tenant=tenant, shop=shop, status='COMPLETED', payment_method='MOMO').aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
-            total_cts = CustomerTransaction.objects.filter(tenant=tenant, performed_by__location=shop, transaction_type='CREDIT', description__icontains='MOMO').aggregate(total=Sum('amount'))['total'] or Decimal('0')
-            total_withdrawn = DigitalFundWithdrawal.objects.filter(tenant=tenant, shop=shop, fund_source='MOMO').aggregate(total=Sum('amount'))['total'] or Decimal('0')
+            if shop:
+                total_sales = Sale.objects.filter(tenant=tenant, shop=shop, status='COMPLETED', payment_method='MOMO').aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+                total_cts = CustomerTransaction.objects.filter(tenant=tenant, performed_by__location=shop, transaction_type='CREDIT', description__icontains='MOMO').aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                total_withdrawn = DigitalFundWithdrawal.objects.filter(tenant=tenant, shop=shop, fund_source='MOMO').aggregate(total=Sum('amount'))['total'] or Decimal('0')
+            else:
+                total_sales = Sale.objects.filter(tenant=tenant, status='COMPLETED', payment_method='MOMO').aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+                total_cts = CustomerTransaction.objects.filter(tenant=tenant, transaction_type='CREDIT', description__icontains='MOMO').aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                total_withdrawn = DigitalFundWithdrawal.objects.filter(tenant=tenant, fund_source='MOMO').aggregate(total=Sum('amount'))['total'] or Decimal('0')
             
             context['shop_balance'] = (total_sales + total_cts) - total_withdrawn
             context['shop'] = shop
@@ -1781,7 +1912,6 @@ class ShopMomoHistoryView(LoginRequiredMixin, TemplateView):
             context['max_amount'] = max_amount
             context['current_sort'] = sort_by
             context['current_dir'] = direction
-            
         role_name = user.role.name if user.role else None
         if role_name in ['ACCOUNTANT', 'AUDITOR', 'ADMIN']:
             from apps.core.models import Location
@@ -2388,6 +2518,10 @@ class CashHistoryView(LoginRequiredMixin, ListView):
                 qs = qs.filter(created_at__date__lte=datetime.strptime(date_to, '%Y-%m-%d').date())
             except ValueError:
                 pass
+                
+        shop_id = self.request.GET.get('shop')
+        if shop_id and role_name in ['ACCOUNTANT', 'AUDITOR', 'ADMIN']:
+            qs = qs.filter(shop_id=shop_id)
 
         # Sorting
         sort = self.request.GET.get('sort', 'date_desc')
@@ -2412,9 +2546,16 @@ class CashHistoryView(LoginRequiredMixin, ListView):
         date_from = self.request.GET.get('date_from', '')
         date_to = self.request.GET.get('date_to', '')
         sort = self.request.GET.get('sort', 'date_desc')
+        shop_id = self.request.GET.get('shop', '')
         context['date_from'] = date_from
         context['date_to'] = date_to
         context['sort'] = sort
+        context['selected_shop'] = shop_id
+        
+        if role_name in ['ACCOUNTANT', 'AUDITOR', 'ADMIN']:
+            from apps.core.models import Location
+            context['shops'] = Location.objects.filter(tenant=user.tenant, location_type='SHOP', is_active=True)
+            context['is_full_view'] = True
 
         # ---- Filtered queryset totals ----
         qs = self.get_queryset()
@@ -2486,3 +2627,191 @@ class CashHistoryView(LoginRequiredMixin, ListView):
         context['role_name'] = role_name
         return context
 
+class CashHistoryExportView(LoginRequiredMixin, View):
+    """
+    Export cash sales history to Excel or PDF.
+    Mirrors the queryset logic of CashHistoryView.
+    """
+    def get(self, request):
+        from apps.sales.models import Sale
+        from apps.core.excel_utils import create_export_workbook, build_excel_response
+        
+        user = request.user
+        role_name = user.role.name if user.role else None
+        
+        qs = Sale.objects.filter(
+            tenant=user.tenant,
+            status='COMPLETED',
+            payment_method__in=['CASH', 'MIXED'],
+        ).select_related('attendant', 'shop')
+
+        # Scope to user's shop unless accountant/admin
+        if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER', 'SHOP_ATTENDANT']:
+            if user.location:
+                qs = qs.filter(shop=user.location)
+            else:
+                qs = qs.filter(attendant=user)
+
+        date_from = request.GET.get('date_from', '')
+        date_to = request.GET.get('date_to', '')
+        if date_from:
+            try:
+                from datetime import datetime
+                qs = qs.filter(created_at__date__gte=datetime.strptime(date_from, '%Y-%m-%d').date())
+            except ValueError:
+                pass
+                
+        shop_id = request.GET.get('shop')
+        if shop_id and role_name in ['ACCOUNTANT', 'AUDITOR', 'ADMIN']:
+            qs = qs.filter(shop_id=shop_id)
+        if date_to:
+            try:
+                from datetime import datetime
+                qs = qs.filter(created_at__date__lte=datetime.strptime(date_to, '%Y-%m-%d').date())
+            except ValueError:
+                pass
+
+        qs = qs.order_by('-created_at')
+
+        headers = ['Date & Time', 'Invoice Number', 'Attendant', 'Shop', 'Payment Method', 'Amount']
+        rows = []
+        for sale in qs:
+            amount = float(sale.amount_paid) if sale.payment_method == 'MIXED' else float(sale.total)
+            method = "Mixed" if sale.payment_method == 'MIXED' else "Cash"
+            rows.append([
+                sale.created_at.strftime("%Y-%m-%d %H:%M"),
+                sale.sale_number,
+                sale.attendant.get_full_name() or sale.attendant.email,
+                sale.shop.name if sale.shop else '-',
+                method,
+                amount
+            ])
+
+        export_format = request.GET.get('format', 'excel')
+        if export_format == 'pdf':
+            from apps.core.pdf_utils import export_to_pdf
+            shop_name = "All Shops"
+            if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER']:
+                shop_name = user.location.name if user.location else ''
+            metadata = {
+                'generator_name': user.get_full_name() or user.email,
+                'shop_name': shop_name,
+                'date_range': f"{date_from or 'All Time'} to {date_to or 'All Time'}"
+            }
+            return export_to_pdf('cash_sales_history.pdf', 'Cash Sales History', headers, rows, metadata=metadata)
+        else:
+            wb = create_export_workbook('Cash Sales', headers, rows)
+            return build_excel_response(wb, 'cash_sales_history.xlsx')
+from apps.accounting.models import BankTransfer
+from apps.core.excel_utils import create_export_workbook, build_excel_response
+from apps.core.pdf_utils import export_to_pdf
+from django.db.models import Sum
+from datetime import datetime
+
+class BankHistoryListView(LoginRequiredMixin, SortableMixin, ListView):
+    """
+    Bank history page.
+    Shows bank transfers with date filtering, fund source filtering, and totals.
+    """
+    template_name = 'accounting/bank_history.html'
+    context_object_name = 'bank_transfers'
+    paginate_by = 30
+    model = BankTransfer
+
+    def get_queryset(self):
+        user = self.request.user
+        role_name = user.role.name if user.role else None
+        
+        qs = BankTransfer.objects.filter(tenant=user.tenant)
+        if role_name not in ['SUPER_ADMIN', 'ADMIN', 'AUDITOR']:
+            qs = qs.filter(accountant=user)
+            
+        date_from = self.request.GET.get('date_from')
+        date_to = self.request.GET.get('date_to')
+        fund_source = self.request.GET.get('fund_source')
+        provider_config_id = self.request.GET.get('provider_config')
+        
+        if date_from:
+            qs = qs.filter(created_at__date__gte=date_from)
+        if date_to:
+            qs = qs.filter(created_at__date__lte=date_to)
+        if fund_source:
+            qs = qs.filter(fund_source=fund_source)
+            if fund_source == 'ECASH' and provider_config_id:
+                qs = qs.filter(provider_config_id=provider_config_id)
+            
+        return qs.order_by(*self.get_ordering())
+        
+    def get_ordering(self):
+        sort_by = self.request.GET.get('sort', '-created_at')
+        return [sort_by]
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        qs = self.get_queryset()
+        
+        context['date_from'] = self.request.GET.get('date_from', '')
+        context['date_to'] = self.request.GET.get('date_to', '')
+        context['selected_fund_source'] = self.request.GET.get('fund_source', '')
+        context['selected_provider_config'] = self.request.GET.get('provider_config', '')
+        
+        from apps.payments.models import PaymentProviderConfig
+        context['providers'] = PaymentProviderConfig.objects.filter(
+            tenant=self.request.user.tenant, 
+            is_active=True
+        ).order_by('nickname')
+        
+        context['total_deposited'] = qs.aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
+        context['fund_choices'] = BankTransfer.FUND_CHOICES
+        return context
+
+class BankHistoryExportView(LoginRequiredMixin, View):
+    """
+    Export bank transfers history to Excel or PDF.
+    """
+    def get(self, request):
+        user = request.user
+        role_name = user.role.name if user.role else None
+        
+        qs = BankTransfer.objects.filter(tenant=user.tenant)
+        if role_name not in ['SUPER_ADMIN', 'ADMIN', 'AUDITOR']:
+            qs = qs.filter(accountant=user)
+            
+        date_from = request.GET.get('date_from')
+        date_to = request.GET.get('date_to')
+        fund_source = request.GET.get('fund_source')
+        
+        if date_from:
+            qs = qs.filter(created_at__date__gte=date_from)
+        if date_to:
+            qs = qs.filter(created_at__date__lte=date_to)
+        if fund_source:
+            qs = qs.filter(fund_source=fund_source)
+            
+        sort_by = request.GET.get('sort', '-created_at')
+        qs = qs.order_by(sort_by)
+        
+        export_format = request.GET.get('format', 'excel')
+        headers = ['Date', 'Accountant', 'Fund Source', 'Platform', 'Teller Name', 'Notes', 'Amount']
+        rows = []
+        for bt in qs:
+            provider = bt.provider_config.provider.name if bt.provider_config else ''
+            rows.append([
+                bt.created_at.strftime('%Y-%m-%d %H:%M'),
+                bt.accountant.get_full_name() or bt.accountant.email,
+                bt.get_fund_source_display(),
+                provider,
+                bt.teller_name,
+                bt.notes,
+                float(bt.amount)
+            ])
+            
+        if export_format == 'pdf':
+            metadata = {
+                'generator_name': user.get_full_name() or user.email,
+                'date_range': f"{date_from or 'All Time'} to {date_to or 'All Time'}"
+            }
+            return export_to_pdf('bank_history.pdf', 'Bank History', headers, rows, metadata=metadata)
+        else:
+            wb = create_export_workbook('Bank History', headers, rows)
+            return build_excel_response(wb, 'bank_history.xlsx')

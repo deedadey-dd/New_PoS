@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% load sort_tags %}
+{% load core_filters %}
 
 {% block title %}Sales History{% endblock %}
 
@@ -149,7 +150,11 @@
                             {% if sale.payment_method == 'CASH' %}
                             <span class="badge bg-success">Cash</span>
                             {% elif sale.payment_method == 'ECASH' %}
-                            <span class="badge bg-primary">E-Cash</span>
+                                {% if sale.id in sale_provider_map %}
+                                <span class="badge bg-primary">{{ sale_provider_map|get_item:sale.id }}</span>
+                                {% else %}
+                                <span class="badge bg-primary">E-Cash</span>
+                                {% endif %}
                             {% elif sale.payment_method == 'CREDIT' %}
                             <span class="badge bg-warning">Credit</span>
                             {% else %}
@@ -196,8 +201,8 @@
                                     </a>
                                 {% endif %}
                             {% endif %}
-                            <a href="{% url 'sales:sale_receipt' sale.pk %}" class="btn btn-sm btn-outline-info"
-                                target="_blank" data-bs-toggle="tooltip" title="Print Receipt">
+                            <a href="{% url 'sales:sale_receipt' sale.pk %}" class="btn btn-sm btn-outline-secondary"
+                                data-bs-toggle="tooltip" title="Print Receipt">
                                 <i class="bi bi-receipt"></i>
                             </a>
                         </td>
@@ -259,7 +264,7 @@
                     <i class="bi bi-arrow-counterclockwise me-1"></i>Request Refund
                 </button>
                 {% endif %}
-                <a href="#" class="btn btn-outline-info" id="saleDetailPrintBtn" target="_blank">
+                <a href="#" class="btn btn-outline-info" id="saleDetailPrintBtn">
                     <i class="bi bi-printer me-1"></i>Print Receipt
                 </a>
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>

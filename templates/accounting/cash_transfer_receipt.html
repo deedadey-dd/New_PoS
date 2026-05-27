@@ -151,5 +151,33 @@
     <button class="print-btn no-print" onclick="window.print()">
         🖨️ Print Receipt
     </button>
+    
+    <script>
+        // Auto-print on page load
+        window.addEventListener('load', function () {
+            // Small delay to ensure page is fully rendered
+            setTimeout(function () {
+                window.print();
+
+                // Return to previous page after print dialog is dismissed
+                window.addEventListener('afterprint', function () {
+                    if (document.referrer) {
+                        window.location.href = document.referrer;
+                    } else {
+                        window.history.back();
+                    }
+                });
+
+                // Fallback: return after 2 seconds if afterprint doesn't fire
+                setTimeout(function () {
+                    if (document.referrer) {
+                        window.location.href = document.referrer;
+                    } else {
+                        window.history.back();
+                    }
+                }, 2000);
+            }, 500);
+        });
+    </script>
 </body>
 </html>
