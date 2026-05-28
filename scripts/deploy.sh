@@ -63,8 +63,7 @@ echo "[INFO] Seeding Feature Messages..."
 python manage.py seed_feature_messages
 
 # Setup demo data (creates initial tenant, products, demo admin, etc.)
-# Note: setup_demo uses get_or_create under the hood so it's safe to run multiple times,
-# but it will recreate the default demo tenant if it was deleted.
+# WARNING: The user has requested to run this in production for demonstration purposes.
 echo "[INFO] Setting up Demo/Base Environment..."
 python manage.py setup_demo
 

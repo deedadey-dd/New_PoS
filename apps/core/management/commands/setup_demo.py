@@ -393,3 +393,42 @@ class Command(BaseCommand):
                 sale.total = sale_total
                 sale.subtotal = sale_total
                 sale.save()
+
+        # 12. Create Mock Expenditures
+        from apps.accounting.models import ExpenditureCategory, ExpenditureRequest, ExpenditureItem
+        
+        cat_office, _ = ExpenditureCategory.objects.get_or_create(tenant=tenant, name="Office Supplies", defaults={"description": "Stationery, etc."})
+        cat_maint, _ = ExpenditureCategory.objects.get_or_create(tenant=tenant, name="Maintenance", defaults={"description": "Shop repairs"})
+        
+        for _ in range(5):
+            days_ago = random.randint(0, 15)
+            exp_time = now - timedelta(days=days_ago, hours=random.randint(1, 10))
+            shop = random.choice([loc_shop1, loc_shop2])
+            manager = created_users[f'{prefix}manager1@demo.com'] if shop == loc_shop1 else created_users[f'{prefix}manager2@demo.com']
+            accountant_user = created_users[f'{prefix}accountant@demo.com']
+            
+            req = ExpenditureRequest.objects.create(
+                tenant=tenant,
+                location=shop,
+                requested_by=manager,
+                status='FULLY_APPROVED'
+            )
+            ExpenditureRequest.objects.filter(pk=req.pk).update(created_at=exp_time)
+            
+            source_of_funds = 'ACCOUNTANT'
+            if is_strict:
+                source_of_funds = 'SHOP_CASH'
+            else:
+                source_of_funds = random.choice(['SHOP_CASH', 'ACCOUNTANT'])
+
+            item = ExpenditureItem.objects.create(
+                tenant=tenant,
+                request=req,
+                category=random.choice([cat_office, cat_maint]),
+                description="Demo expenditure",
+                amount=Decimal(str(random.randint(20, 150))),
+                status='APPROVED',
+                approved_by=accountant_user,
+                approved_at=exp_time,
+                source_of_funds=source_of_funds
+            )
