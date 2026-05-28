@@ -49,26 +49,50 @@
 <div class="card border-0 shadow-sm rounded-4 mb-4">
     <div class="card-body p-4">
         <form method="get" class="row g-3">
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <label class="form-label text-muted fw-semibold small text-uppercase">From Date</label>
-                <input type="date" name="date_from" class="form-control form-control-lg bg-light border-0" value="{{ date_from }}">
+                <input type="date" name="date_from" class="form-control bg-light border-0" value="{{ date_from }}">
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <label class="form-label text-muted fw-semibold small text-uppercase">To Date</label>
-                <input type="date" name="date_to" class="form-control form-control-lg bg-light border-0" value="{{ date_to }}">
+                <input type="date" name="date_to" class="form-control bg-light border-0" value="{{ date_to }}">
             </div>
-            <div class="col-md-3">
+            {% if is_full_view %}
+            <div class="col-md-2">
+                <label class="form-label text-muted fw-semibold small text-uppercase">Shop</label>
+                <select name="shop" class="form-select bg-light border-0">
+                    <option value="">All Shops</option>
+                    {% for s in shops %}
+                    <option value="{{ s.pk }}" {% if selected_shop == s.pk|stringformat:"i" %}selected{% endif %}>
+                        {{ s.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label text-muted fw-semibold small text-uppercase">User</label>
+                <select name="user" class="form-select bg-light border-0">
+                    <option value="">All Users</option>
+                    {% for u in users %}
+                    <option value="{{ u.pk }}" {% if selected_user == u.pk|stringformat:"i" %}selected{% endif %}>
+                        {{ u.get_full_name|default:u.email }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+            <div class="col-md-{% if is_full_view %}2{% else %}3{% endif %}">
                 <label class="form-label text-muted fw-semibold small text-uppercase">Fund Source</label>
-                <select name="fund_source" id="fundSourceSelect" class="form-select form-select-lg bg-light border-0">
+                <select name="fund_source" id="fundSourceSelect" class="form-select bg-light border-0">
                     <option value="">All Sources</option>
                     {% for key, value in fund_choices %}
                     <option value="{{ key }}" {% if selected_fund_source == key %}selected{% endif %}>{{ value }}</option>
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-md-3" id="providerFilterContainer" style="display: none;">
+            <div class="col-md-{% if is_full_view %}2{% else %}3{% endif %}" id="providerFilterContainer" style="display: none;">
                 <label class="form-label text-muted fw-semibold small text-uppercase">E-Cash Platform</label>
-                <select name="provider_config" id="providerConfigSelect" class="form-select form-select-lg bg-light border-0">
+                <select name="provider_config" id="providerConfigSelect" class="form-select bg-light border-0">
                     <option value="">All Platforms</option>
                     {% for provider in providers %}
                     <option value="{{ provider.id }}" {% if selected_provider_config == provider.id|stringformat:"s" %}selected{% endif %}>
@@ -77,11 +101,11 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-md-2 d-flex align-items-end gap-2">
-                <button type="submit" class="btn btn-primary btn-lg flex-grow-1">
+            <div class="col-md-2 d-flex align-items-end gap-2 mt-4">
+                <button type="submit" class="btn btn-primary flex-grow-1">
                     <i class="bi bi-filter"></i> Filter
                 </button>
-                <a href="?" class="btn btn-light btn-lg border" data-bs-toggle="tooltip" title="Clear Filters">
+                <a href="?" class="btn btn-light border" data-bs-toggle="tooltip" title="Clear Filters">
                     <i class="bi bi-x-lg"></i>
                 </a>
             </div>

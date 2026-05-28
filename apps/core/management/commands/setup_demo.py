@@ -264,8 +264,8 @@ class Command(BaseCommand):
             status = 'COMPLETED'
             cashier = None
             if is_strict and days_ago == 0 and shop == loc_shop1:
-                status = random.choice(['PENDING', 'COMPLETED'])
-                if status == 'COMPLETED':
+                status = random.choice(['PENDING', 'PENDING_DISPATCH', 'COMPLETED'])
+                if status in ['COMPLETED', 'PENDING_DISPATCH']:
                     cashier = created_users.get('cashier_strict@demo.com')
 
             sale_customer = None
@@ -279,7 +279,9 @@ class Command(BaseCommand):
                 shift=shift if shop == loc_shop1 else None,
                 status=status, payment_method=payment_method, amount_paid=Decimal('0'),
                 sale_number=f"DEMO-SL-{random.randint(10000, 99999)}",
-                customer=sale_customer
+                customer=sale_customer,
+                dispatched_by=attendant if status == 'COMPLETED' else None,
+                dispatched_at=sale_time if status == 'COMPLETED' else None
             )
             Sale.objects.filter(pk=sale.pk).update(created_at=sale_time)
 
@@ -336,9 +338,15 @@ class Command(BaseCommand):
                 fund_source = random.choice(['CASH', 'ECASH', 'MOMO'])
                 provider_config = random.choice(demo_providers) if fund_source == 'ECASH' else None
                 
+                accountant_user = created_users[f'{prefix}accountant@demo.com']
+                # If strict workflow, 50% chance the transfer is made by the cashier instead
+                if is_strict and random.choice([True, False]):
+                    accountant_user = created_users['cashier_strict@demo.com']
+                    fund_source = 'CASH' # Cashiers only do cash bank transfers
+                
                 bt = BankTransfer.objects.create(
                     tenant=tenant, 
-                    accountant=created_users[f'{prefix}accountant@demo.com'],
+                    accountant=accountant_user,
                     amount=Decimal(str(random.randint(100, 500))),
                     fund_source=fund_source,
                     provider_config=provider_config,

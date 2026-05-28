@@ -24,7 +24,7 @@ from apps.core.tests.test_recent_fixes import (
 )
 from apps.sales.test_shifts import ShiftProcessTests
 from apps.payments.test_ecash_ledger import AccountantECashPaymentTests
-
+from apps.accounting.tests.test_cashier_bank_transfer import CashierBankTransferTests
 
 class RollbackTestResult(unittest.TextTestResult):
     def startTest(self, test):
@@ -72,10 +72,14 @@ def main():
     suite5 = unittest.TestLoader().loadTestsFromTestCase(ShiftProcessTests)
 
     # --- Suite 6: E-Cash Ledger Tests ---
-    print("[6/6] E-Cash Ledger Tests")
+    print("[6/7] E-Cash Ledger Tests")
     suite6 = unittest.TestLoader().loadTestsFromTestCase(AccountantECashPaymentTests)
+    
+    # --- Suite 7: Cashier Bank Transfer Tests ---
+    print("[7/7] Cashier Bank Transfer Tests")
+    suite7 = unittest.TestLoader().loadTestsFromTestCase(CashierBankTransferTests)
 
-    suite = unittest.TestSuite([suite1, suite2, suite3, suite4a, suite4b, suite5, suite6])
+    suite = unittest.TestSuite([suite1, suite2, suite3, suite4a, suite4b, suite5, suite6, suite7])
 
     runner = RollbackTestRunner(verbosity=2)
     result = runner.run(suite)

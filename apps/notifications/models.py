@@ -22,6 +22,7 @@ class Notification(TenantModel):
         ('SUBSCRIPTION_DEACTIVATED', 'Subscription Deactivated'),
         ('ACCOUNT_LOCKED', 'Account Locked'),
         ('PRICE_CHANGE', 'Price Change Alert'),
+        ('INVOICE_PAID', 'Invoice Paid'),
         ('SYSTEM', 'System Notification'),
     ]
     

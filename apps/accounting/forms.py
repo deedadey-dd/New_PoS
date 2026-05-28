@@ -289,6 +289,12 @@ class BankTransferForm(forms.ModelForm):
         # Populate provider choices
         choices = [('', '--- All E-Cash Platforms ---')]
         if self.user and self.user.tenant:
+            role_name = self.user.role.name if self.user.role else None
+            
+            # Cashiers in strict workflow can only transfer physical cash to bank
+            if role_name == 'SHOP_CASHIER':
+                self.fields['fund_source'].choices = [('CASH', 'Cash')]
+            
             from apps.payments.models import PaymentProviderConfig, ECashWithdrawal
             from django.db.models import Sum
             
@@ -314,9 +320,10 @@ class BankTransferForm(forms.ModelForm):
                 
         self.fields['provider_config'].choices = choices
         
-    def clean_amount(self):
-        amount = self.cleaned_data.get('amount')
-        fund_source = self.cleaned_data.get('fund_source')
+    def clean(self):
+        cleaned_data = super().clean()
+        amount = cleaned_data.get('amount')
+        fund_source = cleaned_data.get('fund_source')
         
         if amount and fund_source and self.user:
             # Check balances
@@ -324,18 +331,60 @@ class BankTransferForm(forms.ModelForm):
             from .models import CashTransfer, BankTransfer, DigitalFundWithdrawal
             
             tenant = self.user.tenant
+            role_name = self.user.role.name if self.user.role else None
             
             if fund_source == 'CASH':
-                received = CashTransfer.objects.filter(tenant=tenant, to_user=self.user, status='CONFIRMED').aggregate(total=Sum('amount'))['total'] or Decimal('0')
-                sent = CashTransfer.objects.filter(tenant=tenant, from_user=self.user, status='CONFIRMED').aggregate(total=Sum('amount'))['total'] or Decimal('0')
-                banked = BankTransfer.objects.filter(tenant=tenant, fund_source='CASH').aggregate(total=Sum('amount'))['total'] or Decimal('0')
-                available = received - sent - banked
+                if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER']:
+                    from apps.sales.models import Shift, Sale
+                    from apps.customers.models import CustomerTransaction
+                    
+                    received = CashTransfer.objects.filter(
+                        tenant=tenant, to_user=self.user, status='CONFIRMED', transfer_type='DEPOSIT'
+                    ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                    
+                    sent = CashTransfer.objects.filter(
+                        tenant=tenant, from_user=self.user, status__in=['CONFIRMED', 'PENDING'], transfer_type__in=['DEPOSIT', 'EXPENDITURE']
+                    ).exclude(to_user=self.user).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                    
+                    open_shift_cash = Decimal('0')
+                    open_shift = Shift.objects.filter(
+                        tenant=tenant, attendant=self.user, status='OPEN'
+                    ).first()
+                    if open_shift:
+                        shift_cash_sales = Sale.objects.filter(
+                            tenant=tenant, shift=open_shift, status='COMPLETED', payment_method='CASH'
+                        ).aggregate(total=Sum('total'))['total'] or Decimal('0')
+                        shift_mixed = Sale.objects.filter(
+                            tenant=tenant, shift=open_shift, status='COMPLETED', payment_method='MIXED'
+                        ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+                        open_shift_cash = open_shift.opening_cash + shift_cash_sales + shift_mixed
+                    
+                    shiftless_cash_sales = Sale.objects.filter(
+                        tenant=tenant, attendant=self.user, shift__isnull=True, status='COMPLETED', payment_method='CASH'
+                    ).aggregate(total=Sum('total'))['total'] or Decimal('0')
+                    shiftless_mixed = Sale.objects.filter(
+                        tenant=tenant, attendant=self.user, shift__isnull=True, status='COMPLETED', payment_method='MIXED'
+                    ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+                    own_sales = shiftless_cash_sales + shiftless_mixed
+                    
+                    customer_payments = CustomerTransaction.objects.filter(
+                        tenant=tenant, performed_by=self.user, transaction_type='CREDIT', description__icontains='(CASH)'
+                    ).exclude(description__icontains='ECASH').aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                    
+                    banked = BankTransfer.objects.filter(tenant=tenant, accountant=self.user, fund_source='CASH').aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                    
+                    available = received - sent + open_shift_cash + own_sales + customer_payments - banked
+                else:
+                    received = CashTransfer.objects.filter(tenant=tenant, to_user=self.user, status='CONFIRMED').aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                    sent = CashTransfer.objects.filter(tenant=tenant, from_user=self.user, status='CONFIRMED').aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                    banked = BankTransfer.objects.filter(tenant=tenant, accountant=self.user, fund_source='CASH').aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                    available = received - sent - banked
                 
                 if amount > available:
-                    raise forms.ValidationError(f"Insufficient cash. You only have {available:.2f} available.")
+                    self.add_error('amount', f"Insufficient cash. You only have {available:.2f} available.")
                     
             elif fund_source == 'ECASH':
-                provider_config_id = self.cleaned_data.get('provider_config')
+                provider_config_id = cleaned_data.get('provider_config')
                 if provider_config_id:
                     from apps.payments.models import ECashLedger, PaymentProviderConfig
                     try:
@@ -343,12 +392,11 @@ class BankTransferForm(forms.ModelForm):
                         available = ECashLedger.get_provider_balance(tenant, provider)
                         
                         if amount > available:
-                            raise forms.ValidationError(f"Insufficient E-Cash. {provider.nickname} only has {available:.2f} available.")
+                            self.add_error('amount', f"Insufficient E-Cash. {provider.nickname} only has {available:.2f} available.")
                     except PaymentProviderConfig.DoesNotExist:
                         pass
                 else:
-                    # If no specific platform selected, we could either error or use total balance
-                    raise forms.ValidationError("Please select an E-Cash platform to transfer from.")
+                    self.add_error('provider_config', "Please select an E-Cash platform to transfer from.")
                     
             elif fund_source == 'MOMO':
                 withdrawn = DigitalFundWithdrawal.objects.filter(tenant=tenant, fund_source='MOMO').aggregate(total=Sum('amount'))['total'] or Decimal('0')
@@ -356,9 +404,9 @@ class BankTransferForm(forms.ModelForm):
                 available = withdrawn - banked
                 
                 if amount > available:
-                    raise forms.ValidationError(f"Insufficient Local Momo. You only have {available:.2f} available.")
+                    self.add_error('amount', f"Insufficient Local Momo. You only have {available:.2f} available.")
                     
-        return amount
+        return cleaned_data
 
 
 # --- Expenditure Forms (ported from alpha) ---

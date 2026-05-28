@@ -50,6 +50,7 @@ urlpatterns = [
     path('customers/', include('apps.customers.urls')),
     path('payments/', include('apps.payments.urls')),
     path('audit/', include('apps.audit.urls')),
+    path('reports/', include('apps.reports.urls')),
     path('subscription/', include('apps.subscriptions.urls')),
     
     # Superadmin (Platform Management) - Superuser only

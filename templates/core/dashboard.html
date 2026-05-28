@@ -354,7 +354,13 @@
                                         </span>
                                     {% endif %}
                                 </td>
-                                <td>{{ sale.dispatched_by.get_full_name|default:sale.dispatched_by.email }}</td>
+                                  <td>
+                                      {% if sale.dispatched_by %}
+                                          {{ sale.dispatched_by.get_full_name|default:sale.dispatched_by.email }}
+                                      {% else %}
+                                          -
+                                      {% endif %}
+                                  </td>
                                 <td class="text-end fw-bold">{{ currency_symbol }}{{ sale.total|floatformat:"2g" }}</td>
                             </tr>
                             {% endfor %}
@@ -431,6 +437,89 @@
                 <div class="text-center py-5">
                     <i class="bi bi-check2-circle text-success fs-1"></i>
                     <p class="text-muted mt-2 mb-0">No pending invoices awaiting payment.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    
+    {% if recent_sales is not None %}
+    <!-- Recent Sales Section -->
+    <div class="col-12 mt-2">
+        <div class="card border-0 shadow-sm rounded-4 mb-4">
+            <div class="card-header bg-white border-0 pt-4 pb-0 d-flex justify-content-between align-items-center">
+                <h5 class="fw-bold mb-0 text-dark">
+                    <i class="bi bi-clock-history text-secondary me-2"></i>Recent Sales
+                </h5>
+                <a href="{% url 'sales:sale_list' %}" class="btn btn-sm btn-outline-secondary rounded-pill px-3">
+                    View All Sales
+                </a>
+            </div>
+            <div class="card-body">
+                {% if recent_sales %}
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th scope="col">Receipt #</th>
+                                <th scope="col">Completed At</th>
+                                <th scope="col">Customer</th>
+                                <th scope="col">Attendant</th>
+                                <th scope="col">Payment Method</th>
+                                <th scope="col" class="text-end">Sale Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for sale in recent_sales %}
+                            <tr>
+                                <td>
+                                    <a href="#" class="fw-bold text-decoration-none manager-sale-detail-btn" data-sale-id="{{ sale.id }}">
+                                        {{ sale.sale_number }}
+                                    </a>
+                                </td>
+                                <td>{{ sale.completed_at|date:"M d, Y H:i"|default:sale.created_at|date:"M d, Y H:i" }}</td>
+                                <td>
+                                    {% if sale.customer %}
+                                        <span class="badge bg-light text-dark border" data-bs-toggle="tooltip" title="Registered Customer">
+                                            <i class="bi bi-person-check-fill text-success me-1"></i>{{ sale.customer.name }}
+                                        </span>
+                                    {% elif sale.customer_name %}
+                                        <span class="badge bg-light text-dark border" data-bs-toggle="tooltip" title="Walk-in Customer">
+                                            <i class="bi bi-person-fill text-muted me-1"></i>{{ sale.customer_name }}
+                                        </span>
+                                    {% else %}
+                                        <span class="badge bg-light text-dark border" data-bs-toggle="tooltip" title="Walk-in Customer">
+                                            <i class="bi bi-person-fill text-muted me-1"></i>Walk-in Customer
+                                        </span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ sale.attendant.get_full_name|default:sale.attendant.email }}</td>
+                                <td>
+                                    {% if sale.payment_method == 'CASH' %}
+                                        <span class="badge bg-success">Cash</span>
+                                    {% elif sale.payment_method == 'ECASH' %}
+                                        <span class="badge bg-primary">E-Cash</span>
+                                    {% elif sale.payment_method == 'MOMO' %}
+                                        <span class="badge bg-warning">MoMo</span>
+                                    {% elif sale.payment_method == 'CREDIT' %}
+                                        <span class="badge bg-danger">Credit</span>
+                                    {% elif sale.payment_method == 'MIXED' %}
+                                        <span class="badge bg-info">Mixed</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">{{ sale.get_payment_method_display|default:sale.payment_method }}</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end fw-bold">{{ currency_symbol }}{{ sale.total|floatformat:"2g" }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-5">
+                    <i class="bi bi-receipt text-muted fs-1"></i>
+                    <p class="text-muted mt-2 mb-0">No recent sales.</p>
                 </div>
                 {% endif %}
             </div>

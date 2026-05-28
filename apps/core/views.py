@@ -108,7 +108,7 @@ class DemoAutoLoginView(View):
                 return redirect('sales:pos')
             elif user.role.name == 'AUDITOR':
                 return redirect('core:auditor_dashboard')
-            elif user.role.name == 'ACCOUNTANT':
+            elif user.role.name in ['ACCOUNTANT', 'SHOP_CASHIER']:
                 return redirect('accounting:accountant_dashboard')
             
             return redirect('core:dashboard')
@@ -249,8 +249,8 @@ class DashboardView(LoginRequiredMixin, View):
         if role_name == 'AUDITOR':
             return redirect('core:auditor_dashboard')
         
-        # Redirect ACCOUNTANT to financial dashboard
-        if role_name == 'ACCOUNTANT':
+        # Redirect ACCOUNTANT and SHOP_CASHIER to financial dashboard
+        if role_name in ['ACCOUNTANT', 'SHOP_CASHIER']:
             return redirect('accounting:accountant_dashboard')
         
         # Redirect TENANT_MANAGER to their subscription management dashboard
@@ -349,6 +349,49 @@ class DashboardView(LoginRequiredMixin, View):
             )['total'] or 0
             
             context['today_sales'] = today_sales
+
+            # --- Strict Sales Workflow Data for Shop Managers ---
+            if role_name == 'SHOP_MANAGER' and user.tenant.use_strict_sales_workflow and user.location:
+                # Pending Invoices
+                context['pending_invoices'] = Sale.objects.filter(
+                    tenant=user.tenant,
+                    shop=user.location,
+                    status='PENDING',
+                    payment_method='PENDING_INVOICE'
+                ).select_related('customer', 'attendant').order_by('-created_at')[:10]
+                context['pending_invoices_count'] = Sale.objects.filter(
+                    tenant=user.tenant,
+                    shop=user.location,
+                    status='PENDING',
+                    payment_method='PENDING_INVOICE'
+                ).count()
+
+                # Pending Dispatches
+                context['pending_dispatches'] = Sale.objects.filter(
+                    tenant=user.tenant,
+                    shop=user.location,
+                    status='PENDING_DISPATCH'
+                ).select_related('customer', 'attendant').order_by('-created_at')[:10]
+                context['pending_dispatches_count'] = Sale.objects.filter(
+                    tenant=user.tenant,
+                    shop=user.location,
+                    status='PENDING_DISPATCH'
+                ).count()
+
+                # Recent Dispatches
+                context['recent_dispatches'] = Sale.objects.filter(
+                    tenant=user.tenant,
+                    shop=user.location,
+                    status='COMPLETED'
+                ).select_related('customer', 'attendant', 'dispatched_by').order_by('-created_at')[:10]
+
+                # Recent Sales (Any status except pending)
+                context['recent_sales'] = Sale.objects.filter(
+                    tenant=user.tenant,
+                    shop=user.location
+                ).exclude(status='PENDING').select_related(
+                    'customer', 'attendant'
+                ).order_by('-created_at')[:10]
         
         return render(request, self.template_name, context)
 

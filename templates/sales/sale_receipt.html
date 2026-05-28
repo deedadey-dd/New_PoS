@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>Receipt - {{ sale.sale_number }}</title>
+    <title>{% if sale.status == 'PENDING' %}Proforma Invoice{% else %}Receipt{% endif %} - {{ sale.sale_number }}</title>
     <style>
         /* Thermal receipt styles (80mm width = ~300px at 96dpi) */
         * {
@@ -218,7 +218,7 @@
     {% if sale.tenant.use_strict_sales_workflow %}
         <!-- CASHIER COPY -->
         <div class="receipt-copy">
-            <div class="receipt-copy-label">*** CASHIER COPY ***</div>
+            <div class="receipt-copy-label">{% if sale.status == 'PENDING' %}*** PROFORMA INVOICE ***{% else %}*** CASHIER COPY ***{% endif %}</div>
             <div class="receipt-header">
                 {% if shop_settings.receipt_header %}
                 <p>{{ shop_settings.receipt_header|linebreaksbr }}</p>
@@ -338,7 +338,7 @@
 
         <!-- MANAGER COPY -->
         <div class="receipt-copy">
-            <div class="receipt-copy-label">*** MANAGER COPY ***</div>
+            <div class="receipt-copy-label">{% if sale.status == 'PENDING' %}*** PROFORMA INVOICE ***{% else %}*** MANAGER COPY ***{% endif %}</div>
             <div class="receipt-header">
                 {% if shop_settings.receipt_header %}
                 <p>{{ shop_settings.receipt_header|linebreaksbr }}</p>
@@ -458,7 +458,7 @@
 
         <!-- CUSTOMER COPY -->
         <div class="receipt-copy">
-            <div class="receipt-copy-label">*** CUSTOMER COPY ***</div>
+            <div class="receipt-copy-label">{% if sale.status == 'PENDING' %}*** PROFORMA INVOICE ***{% else %}*** CUSTOMER COPY ***{% endif %}</div>
             <div class="receipt-header">
                 {% if shop_settings.receipt_header %}
                 <p>{{ shop_settings.receipt_header|linebreaksbr }}</p>
@@ -576,6 +576,9 @@
         </div>
     {% else %}
         <!-- STANDARD SINGLE COPY -->
+        {% if sale.status == 'PENDING' %}
+        <div class="receipt-copy-label">*** PROFORMA INVOICE ***</div>
+        {% endif %}
         <div class="receipt-header">
             {% if shop_settings.receipt_header %}
             <p>{{ shop_settings.receipt_header|linebreaksbr }}</p>
@@ -705,7 +708,9 @@
 
                 // Return to previous page after print dialog is dismissed
                 window.addEventListener('afterprint', function () {
-                    if (document.referrer) {
+                    if (window.opener) {
+                        window.close();
+                    } else if (document.referrer) {
                         window.location.href = document.referrer;
                     } else {
                         window.history.back();
@@ -714,7 +719,9 @@
 
                 // Fallback: return after 2 seconds if afterprint doesn't fire
                 setTimeout(function () {
-                    if (document.referrer) {
+                    if (window.opener) {
+                        window.close();
+                    } else if (document.referrer) {
                         window.location.href = document.referrer;
                     } else {
                         window.history.back();

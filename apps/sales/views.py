@@ -673,6 +673,58 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
                 }
             else:
                 context['sale_provider_map'] = {}
+
+        # Inject available ECASH providers for the shop (or all for HQ)
+        from apps.payments.models import ShopPaymentAssignment, PaymentProviderConfig
+        user_shop = self.request.user.location
+        
+        configs_to_process = []
+        if user_shop and user_shop.location_type == 'SHOP':
+            assignments = ShopPaymentAssignment.objects.filter(
+                shop=user_shop,
+                provider_config__is_active=True
+            ).select_related('provider_config').order_by('priority')
+            configs_to_process = [a.provider_config for a in assignments]
+        else:
+            configs_to_process = PaymentProviderConfig.objects.filter(
+                tenant=user.tenant,
+                is_active=True
+            ).order_by('nickname')
+            
+        available_providers = []
+        for config in configs_to_process:
+            provider_cls = None
+            
+            if config.provider == 'PAYSTACK':
+                from apps.payments.services.paystack import PaystackProvider
+                provider_cls = PaystackProvider(config)
+            elif config.provider == 'EXPRESSPAY':
+                from apps.payments.services.expresspay import ExpressPayProvider
+                provider_cls = ExpressPayProvider(config)
+            elif config.provider == 'APPSNMOBILE':
+                from apps.payments.services.appsnmobile import AppsnMobileProvider
+                provider_cls = AppsnMobileProvider(config)
+            elif config.provider == 'NALOPAY':
+                from apps.payments.services.nalopay import NalopayProvider
+                provider_cls = NalopayProvider(config)
+            
+            if provider_cls:
+                available_providers.append({
+                    'id': config.id,
+                    'name': config.nickname,
+                    'provider': config.provider,
+                    'checkout_type': getattr(provider_cls, 'get_checkout_type', 'redirect')
+                })
+                
+        # Deduplicate IDs just in case
+        seen_ids = set()
+        unique_providers = []
+        for p in available_providers:
+            if p['id'] not in seen_ids:
+                seen_ids.add(p['id'])
+                unique_providers.append(p)
+                
+        context['available_providers'] = unique_providers
         
         return context
 
@@ -738,6 +790,7 @@ def api_sale_detail(request, pk):
         'amount_paid': str(sale.amount_paid),
         'change_given': str(sale.change_given) if sale.change_given else None,
         'customer': sale.customer.name if sale.customer else (sale.customer_name or None),
+        'has_registered_customer': bool(sale.customer),
         'customer_name': sale.customer_name,
         'customer_phone': sale.customer_phone,
         'is_dispatched': sale.is_dispatched,
@@ -1003,7 +1056,7 @@ class RefundRequestListView(LoginRequiredMixin, ListView):
         context['selected_attendant'] = self.request.GET.get('attendant', '')
         context['start_date'] = self.request.GET.get('start_date', '')
         context['end_date'] = self.request.GET.get('end_date', '')
-        
+            
         return context
 
 
@@ -1329,6 +1382,27 @@ def api_pay_invoice(request, pk):
                     user=request.user
                 )
             
+            # Notify Shop Manager if using strict sales workflow
+            if request.user.tenant.use_strict_sales_workflow:
+                from apps.notifications.models import Notification
+                from apps.core.models import User
+                shop_managers = User.objects.filter(
+                    tenant=request.user.tenant,
+                    location=sale.shop,
+                    role__name='SHOP_MANAGER',
+                    is_active=True
+                )
+                for manager in shop_managers:
+                    Notification.objects.create(
+                        tenant=request.user.tenant,
+                        user=manager,
+                        title='Invoice Paid',
+                        message=f'Invoice {sale.sale_number} has been paid and is ready for dispatch.',
+                        notification_type='INVOICE_PAID',
+                        reference_type='Sale',
+                        reference_id=sale.id
+                    )
+            
         return JsonResponse({
             'success': True,
             'sale_id': sale.pk,
@@ -1609,6 +1683,7 @@ def initialize_ecash_payment(request):
         customer_id = data.get('customer_id')
         total = Decimal(str(data.get('total', 0)))
         is_payment_on_account = data.get('is_payment_on_account', False)
+        existing_sale_id = data.get('existing_sale_id')
         
         # For payment on account, we only need customer and total
         if is_payment_on_account:
@@ -1622,7 +1697,7 @@ def initialize_ecash_payment(request):
                     'success': False,
                     'error': 'Invalid payment amount.'
                 }, status=400)
-        elif not items or total <= 0:
+        elif not existing_sale_id and (not items or total <= 0):
             return JsonResponse({
                 'success': False,
                 'error': 'Invalid cart data.'
@@ -1662,45 +1737,54 @@ def initialize_ecash_payment(request):
                 'customer_name': customer.name if customer else None
             })
         
-        # Create pending sale for normal cart checkout
         with transaction.atomic():
-            # Get current shift if any
-            current_shift = Shift.objects.filter(
-                tenant=tenant,
-                attendant=user,
-                status='OPEN'
-            ).first()
-            
-            sale = Sale.objects.create(
-                tenant=tenant,
-                shop=shop,
-                attendant=user,
-                shift=current_shift,
-                customer=customer,
-                payment_method='ECASH',
-                status='PENDING',
-                discount_amount=discount,
-                paystack_reference=reference
-            )
-            
-            # Create sale items
-            for item_data in items:
-                product = Product.objects.filter(
+            if existing_sale_id:
+                sale = Sale.objects.get(
                     tenant=tenant,
-                    pk=item_data['product_id'],
-                    is_active=True
+                    pk=existing_sale_id,
+                    status='PENDING'
+                )
+                sale.paystack_reference = reference
+                sale.save(update_fields=['paystack_reference'])
+            else:
+                # Create pending sale for normal cart checkout
+                # Get current shift if any
+                current_shift = Shift.objects.filter(
+                    tenant=tenant,
+                    attendant=user,
+                    status='OPEN'
                 ).first()
                 
-                if product:
-                    SaleItem.objects.create(
+                sale = Sale.objects.create(
+                    tenant=tenant,
+                    shop=shop,
+                    attendant=user,
+                    shift=current_shift,
+                    customer=customer,
+                    payment_method='ECASH',
+                    status='PENDING',
+                    discount_amount=discount,
+                    paystack_reference=reference
+                )
+                
+                # Create sale items
+                for item_data in items:
+                    product = Product.objects.filter(
                         tenant=tenant,
-                        sale=sale,
-                        product=product,
-                        quantity=Decimal(str(item_data['quantity'])),
-                        unit_price=Decimal(str(item_data['unit_price']))
-                    )
-            
-            sale.calculate_totals()
+                        pk=item_data['product_id'],
+                        is_active=True
+                    ).first()
+                    
+                    if product:
+                        SaleItem.objects.create(
+                            tenant=tenant,
+                            sale=sale,
+                            product=product,
+                            quantity=Decimal(str(item_data['quantity'])),
+                            unit_price=Decimal(str(item_data['unit_price']))
+                        )
+                
+                sale.calculate_totals()
             
         # Get checkout type and metadata
         checkout_type = provider.get_checkout_type
@@ -1890,6 +1974,27 @@ def verify_ecash_payment(request):
                 notes=f"Sale payment via {provider.provider_name}",
                 provider_config=provider.settings if hasattr(provider, 'settings') else None
             )
+
+            # Notify Shop Manager if using strict sales workflow
+            if tenant.use_strict_sales_workflow:
+                from apps.notifications.models import Notification
+                from apps.core.models import User
+                shop_managers = User.objects.filter(
+                    tenant=tenant,
+                    location=sale.shop,
+                    role__name='SHOP_MANAGER',
+                    is_active=True
+                )
+                for manager in shop_managers:
+                    Notification.objects.create(
+                        tenant=tenant,
+                        user=manager,
+                        title='Invoice Paid (E-Cash)',
+                        message=f'Invoice {sale.sale_number} has been paid via E-Cash and is ready for dispatch.',
+                        notification_type='INVOICE_PAID',
+                        reference_type='Sale',
+                        reference_id=sale.id
+                    )
         
         return JsonResponse({
             'success': True,

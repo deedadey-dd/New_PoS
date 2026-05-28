@@ -1128,3 +1128,173 @@ class WorkflowIntegrationTests(TestCase):
             notes__icontains=rr_momo.refund_number
         ).first()
         self.assertIsNotNone(reversal)
+
+    def test_15_strict_workflow_ecash_invoice(self):
+        """
+        Verify strict sale workflow with E-Cash invoice payment via Paystack inline initialization.
+        """
+        self.tenant.use_strict_sales_workflow = True
+        self.tenant.save()
+
+        # Attendant creates pending invoice
+        sale = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.attendant_user,
+            total=Decimal("120.00"),
+            status="PENDING",
+            payment_method="PENDING_INVOICE"
+        )
+        SaleItem.objects.create(
+            tenant=self.tenant,
+            sale=sale,
+            product=self.product,
+            batch=self.shop_batch,
+            quantity=Decimal("1.20"),
+            unit_price=Decimal("100.00")
+        )
+
+        # Call initialize_ecash_payment with existing_sale_id
+        from django.test import RequestFactory
+        from apps.sales.views import initialize_ecash_payment, verify_ecash_payment
+        from apps.payments.models import PaymentProviderConfig, ShopPaymentAssignment
+        import json
+        
+        # Setup payment provider for shop
+        config = PaymentProviderConfig.objects.create(
+            tenant=self.tenant,
+            provider='PAYSTACK',
+            nickname='Test Paystack',
+            is_active=True
+        )
+        ShopPaymentAssignment.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            provider_config=config,
+            priority=1
+        )
+        
+        factory = RequestFactory()
+        request = factory.post('/sales/api/ecash/initialize/', 
+            json.dumps({
+                'existing_sale_id': sale.pk,
+                'provider_config_id': config.pk,
+                'total': "120.00"
+            }),
+            content_type='application/json'
+        )
+        request.user = self.cashier_user
+        
+        # Test initialization
+        response = initialize_ecash_payment(request)
+        if response.status_code != 200:
+            print(f"DEBUG: {response.content}")
+        self.assertEqual(response.status_code, 200)
+        
+        data = json.loads(response.content)
+        self.assertTrue(data.get('success'))
+        self.assertEqual(data.get('checkout_type'), 'inline')
+        reference = data.get('reference')
+        
+        sale.refresh_from_db()
+        self.assertEqual(sale.paystack_reference, reference)
+        self.assertEqual(sale.payment_method, "PENDING_INVOICE")
+        self.assertEqual(sale.status, "PENDING") # still pending until verified
+        
+        # Test verification
+        request = factory.post('/sales/api/ecash/verify/',
+            json.dumps({
+                'sale_id': sale.pk,
+                'reference': reference
+            }),
+            content_type='application/json'
+        )
+        request.user = self.cashier_user
+        
+        # Mock PaystackProvider verify_payment to return success
+        import unittest.mock as mock
+        with mock.patch('apps.payments.services.paystack.PaystackProvider.verify_payment') as mock_verify:
+            from types import SimpleNamespace
+            mock_verify.return_value = SimpleNamespace(success=True, amount=120.00, message='Success')
+            
+            response = verify_ecash_payment(request)
+            self.assertEqual(response.status_code, 200)
+            data = json.loads(response.content)
+            self.assertTrue(data.get('success'))
+            
+        sale.refresh_from_db()
+        self.assertEqual(sale.status, "PENDING_DISPATCH")
+        
+        # Verify ECashLedger
+        from apps.payments.models import ECashLedger
+        ledger = ECashLedger.objects.filter(reference_type='Sale', reference_id=sale.pk).first()
+        self.assertIsNotNone(ledger)
+        self.assertEqual(ledger.amount, Decimal("120.00"))
+
+    def test_14_strict_sale_credit_validation(self):
+        """
+        Verify that walk-in customers cannot pay by CREDIT in strict sales workflow.
+        """
+        sale = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.attendant_user,
+            total=Decimal("120.00"),
+            status="PENDING",
+            payment_method="PENDING_INVOICE",
+            customer=None
+        )
+        SaleItem.objects.create(
+            tenant=self.tenant,
+            sale=sale,
+            product=self.product,
+            batch=self.shop_batch,
+            quantity=Decimal("1.20"),
+            unit_price=Decimal("100.00")
+        )
+
+        from django.core.exceptions import ValidationError
+        with self.assertRaises(ValidationError) as context:
+            sale.complete(amount_paid=Decimal("120.00"), payment_method="CREDIT")
+            
+        self.assertIn("Customer account required for credit/partial payment.", str(context.exception))
+
+    def test_15_credit_payment_increases_balance(self):
+        """
+        Verify that paying by CREDIT increases the registered customer's debt balance.
+        """
+        from apps.customers.models import Customer
+        customer = Customer.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            name="Test Credit User",
+            current_balance=Decimal("0.00")
+        )
+        
+        sale = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.attendant_user,
+            total=Decimal("150.00"),
+            status="PENDING",
+            payment_method="PENDING_INVOICE",
+            customer=customer
+        )
+        SaleItem.objects.create(
+            tenant=self.tenant,
+            sale=sale,
+            product=self.product,
+            batch=self.shop_batch,
+            quantity=Decimal("1.50"),
+            unit_price=Decimal("100.00")
+        )
+
+        sale.complete(amount_paid=Decimal("150.00"), payment_method="CREDIT")
+        
+        customer.refresh_from_db()
+        self.assertEqual(customer.current_balance, Decimal("150.00"))
+        
+        from apps.customers.models import CustomerTransaction
+        txn = CustomerTransaction.objects.filter(customer=customer, transaction_type="DEBIT").first()
+        self.assertIsNotNone(txn)
+        self.assertEqual(txn.amount, Decimal("150.00"))

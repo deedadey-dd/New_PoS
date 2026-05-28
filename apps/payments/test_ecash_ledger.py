@@ -7,6 +7,7 @@ import json
 from apps.core.models import Tenant, Location, Role
 from apps.customers.models import Customer, CustomerTransaction
 from apps.payments.models import ECashLedger, PaymentProviderConfig
+from apps.sales.models import Sale, Shift
 
 User = get_user_model()
 
@@ -69,15 +70,15 @@ class AccountantECashPaymentTests(TestCase):
         self.assertEqual(response.status_code, 302)
         
         # Verify CustomerTransaction
-        self.assertEqual(CustomerTransaction.objects.count(), 1)
+        self.assertEqual(CustomerTransaction.objects.filter(tenant=self.tenant).count(), 1)
         txn = CustomerTransaction.objects.first()
         self.assertEqual(txn.amount, Decimal('200.00'))
         self.assertEqual(txn.transaction_type, 'CREDIT')
         self.assertIn('ECASH', txn.description)
         
         # Verify ECashLedger
-        self.assertEqual(ECashLedger.objects.count(), 1)
-        ledger = ECashLedger.objects.first()
+        self.assertEqual(ECashLedger.objects.filter(tenant=self.tenant).count(), 1)
+        ledger = ECashLedger.objects.filter(tenant=self.tenant).first()
         self.assertEqual(ledger.amount, Decimal('200.00'))
         self.assertEqual(ledger.transaction_type, 'PAYMENT')
         self.assertEqual(ledger.reference_type, 'Payment')
@@ -91,3 +92,48 @@ class AccountantECashPaymentTests(TestCase):
         # The ecash_balance should now be 200.00
         ecash_balance = response.context.get('ecash_balance', Decimal('0'))
         self.assertEqual(ecash_balance, Decimal('200.00'))
+
+    def test_ecash_initialization_does_not_override_payment_method(self):
+        """
+        Verify that calling /sales/api/ecash/initialize/ for an existing sale
+        updates the paystack_reference but leaves the payment_method as PENDING_INVOICE.
+        """
+        self.client.force_login(self.accountant)
+        
+        # Create a pending invoice sale
+        sale = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop,
+            attendant=self.accountant,
+            customer=self.customer,
+            payment_method='PENDING_INVOICE',
+            status='PENDING',
+            total=Decimal('100.00')
+        )
+        
+        # Call initialization API
+        payload = {
+            'existing_sale_id': sale.pk,
+            'provider_config_id': self.provider_config.pk,
+            'total': 100.00,
+            'items': []
+        }
+        
+        response = self.client.post(
+            reverse('sales:initialize_ecash_payment'),
+            json.dumps(payload),
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data['success'])
+        
+        # Refresh sale from DB
+        sale.refresh_from_db()
+        
+        # Verify payment method wasn't prematurely changed
+        self.assertEqual(sale.payment_method, 'PENDING_INVOICE')
+        # Verify reference was saved
+        self.assertIsNotNone(sale.paystack_reference)
+        self.assertTrue(sale.paystack_reference.startswith('ECASH-'))
+

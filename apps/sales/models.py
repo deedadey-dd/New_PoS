@@ -432,6 +432,9 @@ class Sale(TenantModel):
         if self.status != 'PENDING':
             raise ValidationError(f"Cannot complete sale in {self.status} status.")
         
+        if payment_method == 'CREDIT':
+            amount_paid = Decimal('0')
+            
         self.amount_paid = Decimal(str(amount_paid))
         self.payment_method = payment_method
         self.cashier = cashier or self.attendant

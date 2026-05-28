@@ -365,6 +365,54 @@ class AccountantDashboardView(LoginRequiredMixin, View):
                 status='PENDING'
             ).count()
             
+            from apps.payments.models import ShopPaymentAssignment, PaymentProviderConfig
+            
+            configs_to_process = []
+            if user.location and user.location.location_type == 'SHOP':
+                assignments = ShopPaymentAssignment.objects.filter(
+                    shop=user.location,
+                    provider_config__is_active=True
+                ).select_related('provider_config').order_by('priority')
+                configs_to_process = [a.provider_config for a in assignments]
+            else:
+                configs_to_process = PaymentProviderConfig.objects.filter(
+                    tenant=tenant,
+                    is_active=True
+                ).order_by('nickname')
+                
+            available_providers = []
+            for config in configs_to_process:
+                provider_cls = None
+                
+                if config.provider == 'PAYSTACK':
+                    from apps.payments.services.paystack import PaystackProvider
+                    provider_cls = PaystackProvider(config)
+                elif config.provider == 'EXPRESSPAY':
+                    from apps.payments.services.expresspay import ExpressPayProvider
+                    provider_cls = ExpressPayProvider(config)
+                elif config.provider == 'APPSNMOBILE':
+                    from apps.payments.services.appsnmobile import AppsnMobileProvider
+                    provider_cls = AppsnMobileProvider(config)
+                elif config.provider == 'NALOPAY':
+                    from apps.payments.services.nalopay import NalopayProvider
+                    provider_cls = NalopayProvider(config)
+                
+                if provider_cls:
+                    available_providers.append({
+                        'id': config.id,
+                        'name': config.nickname,
+                        'provider': config.provider,
+                        'checkout_type': getattr(provider_cls, 'get_checkout_type', 'redirect')
+                    })
+                    
+            # Deduplicate IDs just in case
+            seen_ids = set()
+            unique_providers = []
+            for p in available_providers:
+                if p['id'] not in seen_ids:
+                    seen_ids.add(p['id'])
+                    unique_providers.append(p)
+            
             context = {
                 'pending_invoices': pending_invoices[:10],
                 'pending_invoices_count': pending_invoices.count(),
@@ -372,6 +420,7 @@ class AccountantDashboardView(LoginRequiredMixin, View):
                 'today_sales_total': today_sales_total,
                 'pending_deposits_count': pending_deposits_count,
                 'shop': user.location,
+                'available_providers': unique_providers,
             }
             return render(request, 'accounting/cashier_dashboard.html', context)
         
@@ -1206,7 +1255,13 @@ class BankTransferCreateView(LoginRequiredMixin, View):
     
     def dispatch(self, request, *args, **kwargs):
         role_name = request.user.role.name if request.user.role else None
-        if role_name not in ['ACCOUNTANT', 'ADMIN']:
+        
+        # In strict sales workflow, Cashiers can perform bank transfers
+        allowed_roles = ['ACCOUNTANT', 'ADMIN']
+        if request.user.tenant.use_strict_sales_workflow:
+            allowed_roles.append('SHOP_CASHIER')
+            
+        if role_name not in allowed_roles:
             messages.error(request, 'Only accountants can perform bank transfers.')
             return redirect('core:dashboard')
         return super().dispatch(request, *args, **kwargs)
@@ -2723,13 +2778,15 @@ class BankHistoryListView(LoginRequiredMixin, SortableMixin, ListView):
         role_name = user.role.name if user.role else None
         
         qs = BankTransfer.objects.filter(tenant=user.tenant)
-        if role_name not in ['SUPER_ADMIN', 'ADMIN', 'AUDITOR']:
+        if role_name not in ['SUPER_ADMIN', 'ADMIN', 'AUDITOR', 'ACCOUNTANT']:
             qs = qs.filter(accountant=user)
             
         date_from = self.request.GET.get('date_from')
         date_to = self.request.GET.get('date_to')
         fund_source = self.request.GET.get('fund_source')
         provider_config_id = self.request.GET.get('provider_config')
+        filter_user_id = self.request.GET.get('user')
+        filter_shop_id = self.request.GET.get('shop')
         
         if date_from:
             qs = qs.filter(created_at__date__gte=date_from)
@@ -2739,6 +2796,12 @@ class BankHistoryListView(LoginRequiredMixin, SortableMixin, ListView):
             qs = qs.filter(fund_source=fund_source)
             if fund_source == 'ECASH' and provider_config_id:
                 qs = qs.filter(provider_config_id=provider_config_id)
+                
+        if role_name in ['SUPER_ADMIN', 'ADMIN', 'AUDITOR', 'ACCOUNTANT']:
+            if filter_user_id:
+                qs = qs.filter(accountant_id=filter_user_id)
+            if filter_shop_id:
+                qs = qs.filter(accountant__location_id=filter_shop_id)
             
         return qs.order_by(*self.get_ordering())
         
@@ -2761,6 +2824,21 @@ class BankHistoryListView(LoginRequiredMixin, SortableMixin, ListView):
             is_active=True
         ).order_by('nickname')
         
+        user = self.request.user
+        role_name = user.role.name if user.role else None
+        
+        if role_name in ['SUPER_ADMIN', 'ADMIN', 'AUDITOR', 'ACCOUNTANT']:
+            from apps.core.models import Location, User
+            context['is_full_view'] = True
+            context['shops'] = Location.objects.filter(tenant=user.tenant, location_type='SHOP', is_active=True).order_by('name')
+            context['users'] = User.objects.filter(
+                tenant=user.tenant, 
+                role__name__in=['SHOP_CASHIER', 'ACCOUNTANT', 'ADMIN'], 
+                is_active=True
+            ).order_by('first_name', 'email')
+            context['selected_shop'] = self.request.GET.get('shop', '')
+            context['selected_user'] = self.request.GET.get('user', '')
+        
         context['total_deposited'] = qs.aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
         context['fund_choices'] = BankTransfer.FUND_CHOICES
         return context
@@ -2774,12 +2852,15 @@ class BankHistoryExportView(LoginRequiredMixin, View):
         role_name = user.role.name if user.role else None
         
         qs = BankTransfer.objects.filter(tenant=user.tenant)
-        if role_name not in ['SUPER_ADMIN', 'ADMIN', 'AUDITOR']:
+        if role_name not in ['SUPER_ADMIN', 'ADMIN', 'AUDITOR', 'ACCOUNTANT']:
             qs = qs.filter(accountant=user)
             
         date_from = request.GET.get('date_from')
         date_to = request.GET.get('date_to')
         fund_source = request.GET.get('fund_source')
+        provider_config_id = request.GET.get('provider_config')
+        filter_user_id = request.GET.get('user')
+        filter_shop_id = request.GET.get('shop')
         
         if date_from:
             qs = qs.filter(created_at__date__gte=date_from)
@@ -2787,6 +2868,14 @@ class BankHistoryExportView(LoginRequiredMixin, View):
             qs = qs.filter(created_at__date__lte=date_to)
         if fund_source:
             qs = qs.filter(fund_source=fund_source)
+            if fund_source == 'ECASH' and provider_config_id:
+                qs = qs.filter(provider_config_id=provider_config_id)
+                
+        if role_name in ['SUPER_ADMIN', 'ADMIN', 'AUDITOR', 'ACCOUNTANT']:
+            if filter_user_id:
+                qs = qs.filter(accountant_id=filter_user_id)
+            if filter_shop_id:
+                qs = qs.filter(accountant__location_id=filter_shop_id)
             
         sort_by = request.GET.get('sort', '-created_at')
         qs = qs.order_by(sort_by)

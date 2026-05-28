@@ -12,7 +12,10 @@
             <p class="text-muted mb-0">Manage pending invoices and cash operations for <strong>{{ shop.name }}</strong></p>
         </div>
         <div>
-            <span class="badge bg-light text-dark border p-2">
+            <a href="{% url 'accounting:bank_transfer_create' %}" class="btn btn-outline-primary shadow-sm rounded-pill px-3 me-2">
+                <i class="bi bi-bank me-1"></i>Bank Transfer
+            </a>
+            <span class="badge bg-light text-dark border p-2 shadow-sm">
                 <i class="bi bi-calendar me-1"></i>Today: {% now "F j, Y" %}
             </span>
         </div>
@@ -122,7 +125,8 @@
                                         <button class="btn btn-sm btn-success pay-invoice-btn rounded-pill px-3" 
                                                 data-sale-id="{{ invoice.id }}" 
                                                 data-sale-number="{{ invoice.sale_number }}"
-                                                data-sale-total="{{ invoice.total }}">
+                                                data-sale-total="{{ invoice.total }}"
+                                                data-has-customer="{% if invoice.customer %}true{% else %}false{% endif %}">
                                             <i class="bi bi-credit-card me-1"></i>Pay
                                         </button>
                                     </td>
@@ -258,10 +262,21 @@
                         </select>
                     </div>
 
+                    <div class="mb-3 d-none" id="ecashProviderContainer">
+                        <label for="ecashProviderSelect" class="form-label fw-bold">E-Cash Provider</label>
+                        <select class="form-select rounded-3" id="ecashProviderSelect">
+                            {% for provider in available_providers %}
+                                <option value="{{ provider.id }}" data-type="{{ provider.checkout_type }}">{{ provider.name }}</option>
+                            {% empty %}
+                                <option value="" disabled>No providers configured</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
                     <div class="mb-3">
                         <label for="amountPaidInput" class="form-label fw-bold">Amount Paid</label>
                         <div class="input-group">
-                            <span class="input-group-text bg-light fw-bold">{{ currency_symbol }}</span>
+                            <span class="input-group-text bg-light fw-bold">{{ current_tenant.currency_symbol|default:"$" }}</span>
                             <input type="number" step="0.01" class="form-control rounded-3" id="amountPaidInput" placeholder="0.00" required>
                         </div>
                         <div class="form-text text-danger d-none" id="amountError">Amount paid must be at least total due unless it's a credit sale.</div>
@@ -269,14 +284,14 @@
 
                     <!-- Digital Ref (Momo / E-cash) -->
                     <div class="mb-3 d-none" id="digitalRefContainer">
-                        <label for="paystackReferenceInput" class="form-label fw-bold">Paystack / Transaction Reference</label>
-                        <input type="text" class="form-control rounded-3" id="paystackReferenceInput" placeholder="Enter reference ID">
+                        <label for="paystackReferenceInput" class="form-label fw-bold">Transaction Reference</label>
+                        <input type="text" class="form-control rounded-3" id="paystackReferenceInput" placeholder="Enter reference ID (if applicable)">
                     </div>
 
                     <!-- Change Calculation Display -->
                     <div class="bg-success-light rounded-3 p-3 mb-3 d-flex justify-content-between align-items-center d-none" id="changeDisplayContainer">
                         <span class="fw-bold text-success">Change to Return</span>
-                        <h4 class="fw-bold mb-0 text-success" id="modalChangeValue">{{ currency_symbol }}0.00</h4>
+                        <h4 class="fw-bold mb-0 text-success" id="modalChangeValue">{{ current_tenant.currency_symbol|default:"$" }}0.00</h4>
                     </div>
 
                     <div class="d-grid">
@@ -314,7 +329,7 @@
                     <i class="bi bi-credit-card me-1"></i>Pay Invoice
                 </button>
                 <a href="#" class="btn btn-outline-info rounded-pill px-4" id="saleDetailPrintBtn" target="_blank">
-                    <i class="bi bi-printer me-1"></i>Print Receipt
+                    <i class="bi bi-printer me-1"></i><span id="saleDetailPrintBtnText">Print Receipt</span>
                 </a>
                 <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">Close</button>
             </div>
@@ -368,10 +383,13 @@ document.addEventListener('DOMContentLoaded', function () {
     const amountPaidInput = document.getElementById('amountPaidInput');
     const paymentMethodSelect = document.getElementById('paymentMethodSelect');
     const digitalRefContainer = document.getElementById('digitalRefContainer');
+    const ecashProviderContainer = document.getElementById('ecashProviderContainer');
+    const ecashProviderSelect = document.getElementById('ecashProviderSelect');
     const paystackReferenceInput = document.getElementById('paystackReferenceInput');
     const changeDisplayContainer = document.getElementById('changeDisplayContainer');
     const modalChangeValue = document.getElementById('modalChangeValue');
     const amountError = document.getElementById('amountError');
+    const submitPaymentBtn = document.getElementById('submitPaymentBtn');
 
     let currentTotalDue = 0;
 
@@ -394,6 +412,14 @@ document.addEventListener('DOMContentLoaded', function () {
             changeDisplayContainer.classList.add('d-none');
             amountError.classList.add('d-none');
 
+            const hasCustomer = this.dataset.hasCustomer === 'true';
+            Array.from(paymentMethodSelect.options).forEach(opt => {
+                if (opt.value === 'CREDIT' || opt.value === 'MIXED') {
+                    opt.disabled = !hasCustomer;
+                    if (!hasCustomer) opt.title = "Requires a registered customer account";
+                }
+            });
+
             payModal.show();
         });
     });
@@ -401,10 +427,19 @@ document.addEventListener('DOMContentLoaded', function () {
     // Handle Payment Method Select Change
     paymentMethodSelect.addEventListener('change', function() {
         const method = this.value;
-        if (method === 'ECASH' || method === 'MOMO') {
+        if (method === 'ECASH') {
+            ecashProviderContainer.classList.remove('d-none');
+            ecashProviderSelect.required = true;
+            digitalRefContainer.classList.add('d-none');
+            paystackReferenceInput.required = false;
+        } else if (method === 'MOMO') {
+            ecashProviderContainer.classList.add('d-none');
+            ecashProviderSelect.required = false;
             digitalRefContainer.classList.remove('d-none');
             paystackReferenceInput.required = true;
         } else {
+            ecashProviderContainer.classList.add('d-none');
+            ecashProviderSelect.required = false;
             digitalRefContainer.classList.add('d-none');
             paystackReferenceInput.required = false;
             paystackReferenceInput.value = '';
@@ -459,6 +494,90 @@ document.addEventListener('DOMContentLoaded', function () {
         };
 
         const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+        
+        if (method === 'ECASH') {
+            const providerId = ecashProviderSelect.value;
+            if (!providerId) {
+                alert('Please select an E-Cash provider.');
+                return;
+            }
+            
+            submitPaymentBtn.disabled = true;
+            submitPaymentBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Processing...';
+            
+            fetch('/sales/api/ecash/initialize/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
+                },
+                body: JSON.stringify({
+                    existing_sale_id: saleId,
+                    provider_config_id: providerId,
+                    total: paid,
+                    items: []
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    if (data.checkout_type === 'inline') {
+                        const handler = PaystackPop.setup({
+                            key: data.public_key,
+                            email: data.customer_email || 'customer@example.com',
+                            amount: Math.round(paid * 100), // convert to kobo/pesewas
+                            currency: 'GHS', // or from context
+                            ref: data.reference,
+                            callback: function(response) {
+                                // Verify
+                                fetch('/sales/api/ecash/verify/', {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                        'X-CSRFToken': csrfToken
+                                    },
+                                    body: JSON.stringify({
+                                        reference: response.reference,
+                                        sale_id: saleId
+                                    })
+                                })
+                                .then(res => res.json())
+                                .then(verifyData => {
+                                    if (verifyData.success) {
+                                        payModal.hide();
+                                        window.open(`/sales/${saleId}/receipt/`, '_blank');
+                                        location.reload();
+                                    } else {
+                                        alert(verifyData.error || 'Verification failed');
+                                        submitPaymentBtn.disabled = false;
+                                        submitPaymentBtn.innerHTML = '<i class="bi bi-check-circle me-2"></i>Complete Payment';
+                                    }
+                                });
+                            },
+                            onClose: function() {
+                                alert('Payment cancelled.');
+                                submitPaymentBtn.disabled = false;
+                                submitPaymentBtn.innerHTML = '<i class="bi bi-check-circle me-2"></i>Complete Payment';
+                            }
+                        });
+                        handler.openIframe();
+                    } else {
+                        // Redirect
+                        window.location.href = data.authorization_url;
+                    }
+                } else {
+                    alert(data.error || 'Failed to initialize payment');
+                    submitPaymentBtn.disabled = false;
+                    submitPaymentBtn.innerHTML = '<i class="bi bi-check-circle me-2"></i>Complete Payment';
+                }
+            })
+            .catch(error => {
+                alert('An error occurred. Please try again.');
+                submitPaymentBtn.disabled = false;
+                submitPaymentBtn.innerHTML = '<i class="bi bi-check-circle me-2"></i>Complete Payment';
+            });
+            return;
+        }
 
         fetch(`/sales/api/invoices/${saleId}/pay/`, {
             method: 'POST',
@@ -528,12 +647,18 @@ document.addEventListener('DOMContentLoaded', function () {
                         saleDetailPayBtn.dataset.saleId = saleId;
                         saleDetailPayBtn.dataset.saleNumber = data.sale_number;
                         saleDetailPayBtn.dataset.saleTotal = data.total;
+                        saleDetailPayBtn.dataset.hasCustomer = data.has_registered_customer ? 'true' : 'false';
                         
                         if (data.status_code === 'PENDING') {
                             saleDetailPayBtn.style.display = 'inline-block';
                         } else {
                             saleDetailPayBtn.style.display = 'none';
                         }
+                    }
+                    
+                    const printBtnText = document.getElementById('saleDetailPrintBtnText');
+                    if (printBtnText) {
+                        printBtnText.innerText = (data.status_code === 'PENDING') ? 'Print Invoice' : 'Print Receipt';
                     }
                 })
                 .catch(error => {
@@ -684,9 +809,18 @@ document.addEventListener('DOMContentLoaded', function () {
             document.getElementById('modalInvoiceNumber').innerText = saleNumber;
             document.getElementById('modalTotalDue').innerText = currencySymbol + currentTotalDue.toFixed(2);
             
+            const hasCustomer = this.dataset.hasCustomer === 'true';
+            Array.from(paymentMethodSelect.options).forEach(opt => {
+                if (opt.value === 'CREDIT' || opt.value === 'MIXED') {
+                    opt.disabled = !hasCustomer;
+                    if (!hasCustomer) opt.title = "Requires a registered customer account";
+                }
+            });
+
             amountPaidInput.value = currentTotalDue.toFixed(2);
             paymentMethodSelect.value = 'CASH';
             digitalRefContainer.classList.add('d-none');
+            ecashProviderContainer.classList.add('d-none');
             paystackReferenceInput.value = '';
             changeDisplayContainer.classList.add('d-none');
             amountError.classList.add('d-none');

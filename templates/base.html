@@ -38,12 +38,20 @@
             </div>
 
             <nav class="sidebar-nav p-2">
-                <ul class="nav flex-column">
+                <ul class="nav flex-column" id="sidebarAccordion">
 
                     <!-- Dashboard -->
                     <li class="nav-item">
+                        {% if role_name == 'ACCOUNTANT' or role_name == 'SHOP_CASHIER' %}
+                        <a class="nav-link text-white {% if request.resolver_match.url_name == 'accountant_dashboard' %}active{% endif %}"
+                            href="{% url 'accounting:accountant_dashboard' %}">
+                        {% elif role_name == 'AUDITOR' %}
+                        <a class="nav-link text-white {% if request.resolver_match.url_name == 'auditor_dashboard' %}active{% endif %}"
+                            href="{% url 'core:auditor_dashboard' %}">
+                        {% else %}
                         <a class="nav-link text-white {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}"
                             href="{% url 'core:dashboard' %}">
+                        {% endif %}
                             <i class="bi bi-speedometer2 me-2"></i> Dashboard
                         </a>
                     </li>
@@ -78,11 +86,25 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a href="{% url 'sales:sale_list' %}?payment=PENDING_INVOICE"
-                            class="nav-link {% if 'payment=PENDING_INVOICE' in request.get_full_path %}active{% endif %}">
-                            <i class="bi bi-receipt"></i>
-                            <span>Invoices</span>
+                        <a class="nav-link text-white d-flex justify-content-between align-items-center {% if 'payment=PENDING_INVOICE' in request.get_full_path or 'payment_method=PENDING_INVOICE' in request.get_full_path %}active{% endif %}"
+                            data-bs-toggle="collapse" href="#invoicesMenu" role="button"
+                            aria-expanded="{% if 'payment=PENDING_INVOICE' in request.get_full_path or 'payment_method=PENDING_INVOICE' in request.get_full_path %}true{% else %}false{% endif %}">
+                            <span><i class="bi bi-receipt me-2"></i>Invoices</span>
+                            <i class="bi bi-chevron-down small"></i>
                         </a>
+                        <div class="collapse {% if 'payment=PENDING_INVOICE' in request.get_full_path or 'payment_method=PENDING_INVOICE' in request.get_full_path %}show{% endif %}"
+                            data-bs-parent="#sidebarAccordion" id="invoicesMenu">
+                            <ul class="nav flex-column ms-3 border-start border-secondary ps-2">
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if 'payment=PENDING_INVOICE' in request.get_full_path and 'status=COMPLETED' not in request.get_full_path %}text-white{% endif %}"
+                                        href="{% url 'sales:sale_list' %}?payment=PENDING_INVOICE">Pending Invoices</a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if 'payment=PENDING_INVOICE' in request.get_full_path and 'status=COMPLETED' in request.get_full_path %}text-white{% endif %}"
+                                        href="{% url 'sales:sale_list' %}?payment=PENDING_INVOICE&status=COMPLETED">Invoice History</a>
+                                </li>
+                            </ul>
+                        </div>
                     </li>
                     {% endif %}
 
@@ -96,7 +118,7 @@
                             <i class="bi bi-chevron-down small"></i>
                         </a>
                         <div class="collapse {% if 'sales' in request.path and 'payment=PENDING_INVOICE' not in request.get_full_path or 'price-history' in request.path %}show{% endif %}"
-                            id="salesMenu">
+                            data-bs-parent="#sidebarAccordion" id="salesMenu">
                             <ul class="nav flex-column ms-3 border-start border-secondary ps-2">
                                 <li class="nav-item">
                                     <a class="nav-link text-white-50 py-1 {% if 'report' in request.path and 'sales' in request.path %}text-white{% endif %}"
@@ -176,7 +198,7 @@
                         </a>
 
                         <div class="collapse {% if 'accounting' in request.path and 'price-history' not in request.path %}show{% endif %}"
-                            id="accountingMenu">
+                            data-bs-parent="#sidebarAccordion" id="accountingMenu">
                             <ul class="nav flex-column ms-3">
                                 {% if role_name == 'ACCOUNTANT' or role_name == 'ADMIN' or role_name == 'SHOP_CASHIER' or role_name == 'AUDITOR' %}
                                 <li class="nav-item">
@@ -294,7 +316,7 @@
                             <span><i class="bi bi-wallet2 me-2"></i>Expenditures</span>
                             <i class="bi bi-chevron-down small"></i>
                         </a>
-                        <div class="collapse {% if 'expenditures' in request.path %}show{% endif %}" id="managerExpenditureMenu">
+                        <div class="collapse {% if 'expenditures' in request.path %}show{% endif %}" data-bs-parent="#sidebarAccordion" id="managerExpenditureMenu">
                             <ul class="nav flex-column ms-3 border-start border-secondary ps-2">
                                 <li class="nav-item">
                                     <a class="nav-link text-white-50 py-1 {% if 'expenditures' in request.path and 'report' not in request.path and 'categories' not in request.path %}text-white{% endif %}"
@@ -323,7 +345,7 @@
                         </a>
 
                         <div class="collapse {% if 'inventory' in request.path or 'transfers' in request.path and 'cash-transfers' not in request.path %}show{% endif %}"
-                            id="inventoryMenu">
+                            data-bs-parent="#sidebarAccordion" id="inventoryMenu">
                             <ul class="nav flex-column ms-3">
                                 <li class="nav-item">
                                     <a class="nav-link text-white-50 py-1 {% if 'products' in request.path and 'shop-prices' not in request.path %}active text-white{% endif %}"
@@ -410,7 +432,7 @@
                             <i class="bi bi-chevron-down small"></i>
                         </a>
                         <div class="collapse {% if 'settings' in request.path or 'payments' in request.path or 'users' in request.path or 'locations' in request.path %}show{% endif %}"
-                            id="settingsMenu">
+                            data-bs-parent="#sidebarAccordion" id="settingsMenu">
                             <ul class="nav flex-column ms-3 border-start border-secondary ps-2">
                                 <li class="nav-item">
                                     <span class="nav-link text-white-50 py-0 fw-bold small text-uppercase" style="letter-spacing:0.5px;font-size:0.7rem;">Organisation</span>
@@ -454,7 +476,7 @@
                             <i class="bi bi-chevron-down small"></i>
                         </a>
                         <div class="collapse {% if 'subscription' in request.path %}show{% endif %}"
-                            id="subscriptionMenu">
+                            data-bs-parent="#sidebarAccordion" id="subscriptionMenu">
                             <ul class="nav flex-column ms-3 border-start border-secondary ps-2">
                                 <li class="nav-item">
                                     <a class="nav-link text-white-50 py-1 {% if 'status' in request.path and 'subscription' in request.path %}text-white{% endif %}"
@@ -483,7 +505,7 @@
                             <span><i class="bi bi-graph-up-arrow me-2"></i>Tracking & Reports</span>
                             <i class="bi bi-chevron-down small"></i>
                         </a>
-                        <div class="collapse {% if 'audit' in request.path or 'users' in request.path or 'locations' in request.path %}show{% endif %}" id="auditMenu">
+                        <div class="collapse {% if 'audit' in request.path or 'users' in request.path or 'locations' in request.path %}show{% endif %}" data-bs-parent="#sidebarAccordion" id="auditMenu">
                             <ul class="nav flex-column ms-3 border-start border-secondary ps-2">
                                 {% if role_name != 'ADMIN' %}
                                 <li class="nav-item">
@@ -557,7 +579,7 @@
                             <i class="bi bi-chevron-down small"></i>
                         </a>
                         <div class="collapse {% if 'ledger' in request.path or 'transfers' in request.path and 'cash-transfers' not in request.path %}show{% endif %}"
-                            id="auditorInventoryMenu">
+                            data-bs-parent="#sidebarAccordion" id="auditorInventoryMenu">
                             <ul class="nav flex-column ms-3 border-start border-secondary ps-2">
                                 <li class="nav-item">
                                     <a class="nav-link text-white-50 py-1 {% if 'ledger' in request.path %}text-white{% endif %}"
@@ -592,7 +614,7 @@
                             <span><i class="bi bi-wallet2 me-2"></i>Expenditures</span>
                             <i class="bi bi-chevron-down small"></i>
                         </a>
-                        <div class="collapse {% if 'expenditures' in request.path %}show{% endif %}" id="auditorExpenditureMenu">
+                        <div class="collapse {% if 'expenditures' in request.path %}show{% endif %}" data-bs-parent="#sidebarAccordion" id="auditorExpenditureMenu">
                             <ul class="nav flex-column ms-3 border-start border-secondary ps-2">
                                 <li class="nav-item">
                                     <a class="nav-link text-white-50 py-1 {% if 'expenditures' in request.path and 'report' not in request.path %}text-white{% endif %}"
@@ -763,7 +785,7 @@
                     {% endif %}
 
                     <!-- Credit Debt Badge (exclude ADMIN) -->
-                    {% if total_credit_debt and total_credit_debt > 0 and role_name != 'ADMIN' %}
+                    {% if total_credit_debt is not None and role_name != 'ADMIN' %}
                     <a href="{% url 'customers:customer_list' %}" class="me-3 text-decoration-none"
                         title="Total Customer Debt">
                         <span class="badge text-white fs-6" style="background-color: #fd7e14;">
@@ -850,6 +872,9 @@
                     </div>
 
                     <span class="text-dark">{{ user.get_full_name|default:user.email }}</span>
+                    <a href="{% url 'reports:end_of_day_summary' %}" class="ms-3 text-decoration-none" title="End of Day Summary">
+                        <i class="bi bi-file-earmark-bar-graph"></i> Summary
+                    </a>
                     <a href="{% url 'core:help' %}" class="ms-3 text-decoration-none" title="Help & Documentation">
                         <i class="bi bi-question-circle"></i>
                     </a>

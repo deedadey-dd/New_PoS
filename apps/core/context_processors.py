@@ -220,12 +220,21 @@ def tenant_context(request):
                 description__icontains='ECASH'
             ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
             
+            # Deduct cash transferred to the bank
+            from apps.accounting.models import BankTransfer
+            banked_cash = BankTransfer.objects.filter(
+                tenant=tenant,
+                accountant=user,
+                fund_source='CASH'
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+            
             context['cash_on_hand'] = max(Decimal('0'), (
                 received
                 - sent
                 + own_sales
                 + customer_payments
                 + all_opening_cash
+                - banked_cash
             ))
         
         elif role_name == 'ACCOUNTANT':

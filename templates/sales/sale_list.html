@@ -179,7 +179,8 @@
                                     <button class="btn btn-sm btn-success pay-invoice-btn me-1"
                                             data-sale-id="{{ sale.id }}"
                                             data-sale-number="{{ sale.sale_number }}"
-                                            data-sale-total="{{ sale.total }}">
+                                            data-sale-total="{{ sale.total }}"
+                                            data-has-customer="{% if sale.customer %}true{% else %}false{% endif %}">
                                         Pay
                                     </button>
                                 {% elif sale.status == 'COMPLETED' or sale.status == 'PENDING_DISPATCH' %}
@@ -201,10 +202,17 @@
                                     </a>
                                 {% endif %}
                             {% endif %}
+                            {% if sale.status == 'PENDING' %}
+                            <a href="{% url 'sales:sale_receipt' sale.pk %}?invoice=1" class="btn btn-sm btn-outline-info"
+                                data-bs-toggle="tooltip" title="Print Invoice">
+                                <i class="bi bi-file-earmark-spreadsheet"></i>
+                            </a>
+                            {% else %}
                             <a href="{% url 'sales:sale_receipt' sale.pk %}" class="btn btn-sm btn-outline-secondary"
                                 data-bs-toggle="tooltip" title="Print Receipt">
                                 <i class="bi bi-receipt"></i>
                             </a>
+                            {% endif %}
                         </td>
                     </tr>
                     {% endfor %}
@@ -311,6 +319,17 @@
                         </select>
                     </div>
 
+                    <div class="mb-3 d-none" id="ecashProviderContainer">
+                        <label for="ecashProviderSelect" class="form-label fw-bold">E-Cash Provider</label>
+                        <select class="form-select rounded-3" id="ecashProviderSelect">
+                            {% for provider in available_providers %}
+                                <option value="{{ provider.id }}" data-type="{{ provider.checkout_type }}">{{ provider.name }}</option>
+                            {% empty %}
+                                <option value="" disabled>No providers configured</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
                     <div class="mb-3">
                         <label for="amountPaidInput" class="form-label fw-bold">Amount Paid</label>
                         <div class="input-group">
@@ -322,8 +341,8 @@
 
                     <!-- Digital Ref (Momo / E-cash) -->
                     <div class="mb-3 d-none" id="digitalRefContainer">
-                        <label for="paystackReferenceInput" class="form-label fw-bold">Paystack / Transaction Reference</label>
-                        <input type="text" class="form-control rounded-3" id="paystackReferenceInput" placeholder="Enter reference ID">
+                        <label for="paystackReferenceInput" class="form-label fw-bold">Transaction Reference</label>
+                        <input type="text" class="form-control rounded-3" id="paystackReferenceInput" placeholder="Enter reference ID (if applicable)">
                     </div>
 
                     <!-- Change Calculation Display -->
@@ -346,6 +365,7 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="https://js.paystack.co/v1/inline.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const modal = new bootstrap.Modal(document.getElementById('saleDetailModal'));
@@ -393,6 +413,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             payBtn.dataset.saleId = saleId;
                             payBtn.dataset.saleNumber = data.sale_number;
                             payBtn.dataset.saleTotal = data.total;
+                            payBtn.dataset.hasCustomer = data.has_registered_customer ? 'true' : 'false';
                         } else {
                             payBtn.style.display = 'none';
                         }
@@ -641,6 +662,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 changeDisplayContainer.classList.add('d-none');
                 amountError.classList.add('d-none');
 
+                const hasCustomer = this.dataset.hasCustomer === 'true';
+                Array.from(paymentMethodSelect.options).forEach(opt => {
+                    if (opt.value === 'CREDIT' || opt.value === 'MIXED') {
+                        opt.disabled = !hasCustomer;
+                        if (!hasCustomer) opt.title = "Requires a registered customer account";
+                    }
+                });
+
                 payModal.show();
             });
         });
@@ -665,18 +694,39 @@ document.addEventListener('DOMContentLoaded', function() {
                 changeDisplayContainer.classList.add('d-none');
                 amountError.classList.add('d-none');
 
+                const hasCustomer = this.dataset.hasCustomer === 'true';
+                Array.from(paymentMethodSelect.options).forEach(opt => {
+                    if (opt.value === 'CREDIT' || opt.value === 'MIXED') {
+                        opt.disabled = !hasCustomer;
+                        if (!hasCustomer) opt.title = "Requires a registered customer account";
+                    }
+                });
+
                 setTimeout(function() {
                     payModal.show();
                 }, 150);
             });
         }
 
+        const ecashProviderContainer = document.getElementById('ecashProviderContainer');
+        const ecashProviderSelect = document.getElementById('ecashProviderSelect');
+        const submitPaymentBtn = document.getElementById('submitPaymentBtn');
+
         paymentMethodSelect.addEventListener('change', function() {
             const method = this.value;
-            if (method === 'ECASH' || method === 'MOMO') {
+            if (method === 'ECASH') {
+                ecashProviderContainer.classList.remove('d-none');
+                ecashProviderSelect.required = true;
+                digitalRefContainer.classList.add('d-none');
+                paystackReferenceInput.required = false;
+            } else if (method === 'MOMO') {
+                ecashProviderContainer.classList.add('d-none');
+                ecashProviderSelect.required = false;
                 digitalRefContainer.classList.remove('d-none');
                 paystackReferenceInput.required = true;
             } else {
+                ecashProviderContainer.classList.add('d-none');
+                ecashProviderSelect.required = false;
                 digitalRefContainer.classList.add('d-none');
                 paystackReferenceInput.required = false;
                 paystackReferenceInput.value = '';
@@ -721,14 +771,98 @@ document.addEventListener('DOMContentLoaded', function() {
                 amountError.classList.remove('d-none');
                 return;
             }
+            
+            const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+            
+            if (method === 'ECASH') {
+                const providerId = ecashProviderSelect.value;
+                if (!providerId) {
+                    alert('Please select an E-Cash provider.');
+                    return;
+                }
+                
+                submitPaymentBtn.disabled = true;
+                submitPaymentBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Processing...';
+                
+                fetch('/sales/api/ecash/initialize/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrfToken
+                    },
+                    body: JSON.stringify({
+                        existing_sale_id: saleId,
+                        provider_config_id: providerId,
+                        total: paid,
+                        items: []
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        if (data.checkout_type === 'inline') {
+                            const handler = PaystackPop.setup({
+                                key: data.public_key,
+                                email: data.customer_email || 'customer@example.com',
+                                amount: Math.round(paid * 100), // convert to kobo/pesewas
+                                currency: 'GHS', // or from context
+                                ref: data.reference,
+                                callback: function(response) {
+                                    // Verify
+                                    fetch('/sales/api/ecash/verify/', {
+                                        method: 'POST',
+                                        headers: {
+                                            'Content-Type': 'application/json',
+                                            'X-CSRFToken': csrfToken
+                                        },
+                                        body: JSON.stringify({
+                                            reference: response.reference,
+                                            sale_id: saleId
+                                        })
+                                    })
+                                    .then(res => res.json())
+                                    .then(verifyData => {
+                                        if (verifyData.success) {
+                                            payModal.hide();
+                                            window.open(`/sales/${saleId}/receipt/`, '_blank');
+                                            location.reload();
+                                        } else {
+                                            alert(verifyData.error || 'Verification failed');
+                                            submitPaymentBtn.disabled = false;
+                                            submitPaymentBtn.innerHTML = '<i class="bi bi-check-circle me-2"></i>Complete Payment';
+                                        }
+                                    });
+                                },
+                                onClose: function() {
+                                    alert('Payment cancelled.');
+                                    submitPaymentBtn.disabled = false;
+                                    submitPaymentBtn.innerHTML = '<i class="bi bi-check-circle me-2"></i>Complete Payment';
+                                }
+                            });
+                            handler.openIframe();
+                        } else {
+                            // Redirect
+                            window.location.href = data.authorization_url;
+                        }
+                    } else {
+                        alert(data.error || 'Failed to initialize payment');
+                        submitPaymentBtn.disabled = false;
+                        submitPaymentBtn.innerHTML = '<i class="bi bi-check-circle me-2"></i>Complete Payment';
+                    }
+                })
+                .catch(err => {
+                    alert('Error initializing payment: ' + err.message);
+                    submitPaymentBtn.disabled = false;
+                    submitPaymentBtn.innerHTML = '<i class="bi bi-check-circle me-2"></i>Complete Payment';
+                });
+                return;
+            }
 
             const data = {
                 payment_method: method,
                 amount_paid: paid,
                 paystack_reference: ref
             };
-
-            const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
 
             fetch(`/sales/api/invoices/${saleId}/pay/`, {
                 method: 'POST',
