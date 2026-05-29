@@ -96,6 +96,29 @@
                 placeholder: "Search and select a product..."
             });
         }
+
+        // Damage/Write-off quantity validation
+        const typeSelect = document.getElementById('id_adjustment_type');
+        const qtyInput = document.getElementById('id_quantity');
+        
+        function validateQuantity() {
+            if (typeSelect && qtyInput && typeSelect.value === 'DAMAGE') {
+                let val = parseFloat(qtyInput.value);
+                if (val > 0) {
+                    // Auto-convert to negative if they already entered a positive number
+                    qtyInput.value = '-' + qtyInput.value;
+                }
+                qtyInput.setAttribute('max', '0');
+            } else if (qtyInput) {
+                qtyInput.removeAttribute('max');
+            }
+        }
+        
+        if (typeSelect && qtyInput) {
+            typeSelect.addEventListener('change', validateQuantity);
+            qtyInput.addEventListener('input', validateQuantity);
+            validateQuantity();
+        }
     });
 </script>
 {% endblock %}

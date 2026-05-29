@@ -47,58 +47,73 @@
         </div>
     </div>
 
-    <!-- Date Range Filter -->
+    <!-- Filters -->
     <div class="card shadow-sm mb-4">
         <div class="card-body">
-            <div class="d-flex flex-wrap gap-2 align-items-center">
-                <span class="fw-semibold me-2">Period:</span>
-                <a href="?range=week"
-                    class="btn btn-sm {% if date_range == 'week' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
-                    Last 7 Days
-                </a>
-                <a href="?range=month"
-                    class="btn btn-sm {% if date_range == 'month' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
-                    Last 30 Days
-                </a>
-                <a href="?range=quarter"
-                    class="btn btn-sm {% if date_range == 'quarter' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
-                    Last 90 Days
-                </a>
-                <a href="?range=year"
-                    class="btn btn-sm {% if date_range == 'year' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
-                    Last Year
-                </a>
-                <a href="?range=all"
-                    class="btn btn-sm {% if date_range == 'all' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
-                    All Time
-                </a>
-                <button type="button"
-                    class="btn btn-sm {% if date_range == 'custom' %}btn-success{% else %}btn-outline-success{% endif %}"
-                    data-bs-toggle="collapse" data-bs-target="#customDatePicker">
-                    <i class="bi bi-calendar-range me-1"></i>Custom
-                </button>
-                <span class="ms-auto text-muted">
-                    <i class="bi bi-calendar3 me-1"></i> {{ date_label }}
-                </span>
-            </div>
-            <!-- Custom Date Picker (Collapsible) -->
-            <div class="collapse {% if date_range == 'custom' %}show{% endif %} mt-3" id="customDatePicker">
-                <form method="get" class="row g-2 align-items-end">
-                    <div class="col-auto">
-                        <label class="form-label small mb-1">From Date</label>
-                        <input type="date" name="date_from" class="form-control form-control-sm"
-                            value="{{ date_from|date:'Y-m-d' }}">
+            <form method="get" class="row g-3 align-items-end">
+                <input type="hidden" name="range" value="{{ date_range }}">
+                {% if current_sort %}<input type="hidden" name="sort" value="{{ current_sort }}">{% endif %}
+                {% if current_dir %}<input type="hidden" name="dir" value="{{ current_dir }}">{% endif %}
+                
+                <div class="col-md-12 d-flex flex-wrap gap-2 align-items-center mb-2">
+                    <span class="fw-semibold me-2">Period:</span>
+                    <a href="?range=week{% if selected_location %}&location={{ selected_location }}{% endif %}{% if selected_category %}&category={{ selected_category }}{% endif %}{% if search_q %}&q={{ search_q }}{% endif %}" class="btn btn-sm {% if date_range == 'week' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Last 7 Days</a>
+                    <a href="?range=month{% if selected_location %}&location={{ selected_location }}{% endif %}{% if selected_category %}&category={{ selected_category }}{% endif %}{% if search_q %}&q={{ search_q }}{% endif %}" class="btn btn-sm {% if date_range == 'month' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Last 30 Days</a>
+                    <a href="?range=quarter{% if selected_location %}&location={{ selected_location }}{% endif %}{% if selected_category %}&category={{ selected_category }}{% endif %}{% if search_q %}&q={{ search_q }}{% endif %}" class="btn btn-sm {% if date_range == 'quarter' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Last 90 Days</a>
+                    <a href="?range=year{% if selected_location %}&location={{ selected_location }}{% endif %}{% if selected_category %}&category={{ selected_category }}{% endif %}{% if search_q %}&q={{ search_q }}{% endif %}" class="btn btn-sm {% if date_range == 'year' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Last Year</a>
+                    <a href="?range=all{% if selected_location %}&location={{ selected_location }}{% endif %}{% if selected_category %}&category={{ selected_category }}{% endif %}{% if search_q %}&q={{ search_q }}{% endif %}" class="btn btn-sm {% if date_range == 'all' %}btn-primary{% else %}btn-outline-secondary{% endif %}">All Time</a>
+                    <button type="button" class="btn btn-sm {% if date_range == 'custom' %}btn-success{% else %}btn-outline-success{% endif %}" data-bs-toggle="collapse" data-bs-target="#customDatePicker">
+                        <i class="bi bi-calendar-range me-1"></i>Custom
+                    </button>
+                    <span class="ms-auto text-muted">
+                        <i class="bi bi-calendar3 me-1"></i> {{ date_label }}
+                    </span>
+                </div>
+                
+                <!-- Custom Date Picker (Collapsible) -->
+                <div class="collapse {% if date_range == 'custom' %}show{% endif %} col-12" id="customDatePicker">
+                    <div class="row g-2">
+                        <div class="col-md-3">
+                            <label class="form-label small mb-1">From Date</label>
+                            <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from|default:''|date:'Y-m-d' }}">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small mb-1">To Date</label>
+                            <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to|default:''|date:'Y-m-d' }}">
+                        </div>
                     </div>
-                    <div class="col-auto">
-                        <label class="form-label small mb-1">To Date</label>
-                        <input type="date" name="date_to" class="form-control form-control-sm"
-                            value="{{ date_to|date:'Y-m-d' }}">
-                    </div>
-                    <div class="col-auto">
-                        <button type="submit" class="btn btn-primary btn-sm">Apply</button>
-                    </div>
-                </form>
-            </div>
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label small mb-1">Location</label>
+                    <select name="location" class="form-select form-select-sm">
+                        <option value="">All Locations</option>
+                        {% for loc in locations %}
+                        <option value="{{ loc.id }}" {% if selected_location == loc.id %}selected{% endif %}>{{ loc.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div class="col-md-3">
+                    <label class="form-label small mb-1">Category</label>
+                    <select name="category" class="form-select form-select-sm">
+                        <option value="">All Categories</option>
+                        {% for cat in categories %}
+                        <option value="{{ cat.id }}" {% if selected_category == cat.id %}selected{% endif %}>{{ cat.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div class="col-md-4">
+                    <label class="form-label small mb-1">Product Name / SKU</label>
+                    <input type="text" name="q" class="form-control form-control-sm" value="{{ search_q|default:'' }}" placeholder="Search products...">
+                </div>
+
+                <div class="col-md-2 d-flex gap-2">
+                    <button type="submit" class="btn btn-primary btn-sm flex-grow-1"><i class="bi bi-filter me-1"></i>Filter</button>
+                    <a href="?" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-clockwise"></i></a>
+                </div>
+            </form>
         </div>
     </div>
 
@@ -164,15 +179,64 @@
                     <thead class="table-dark">
                         <tr>
                             <th class="text-white">#</th>
-                            <th class="text-white">Name</th>
+                            <th>
+                                <a href="?range={{ date_range }}&date_from={{ date_from|default:''|date:'Y-m-d' }}&date_to={{ date_to|default:''|date:'Y-m-d' }}{% if selected_location %}&location={{ selected_location }}{% endif %}{% if selected_category %}&category={{ selected_category }}{% endif %}{% if search_q %}&q={{ search_q }}{% endif %}&sort=user&dir={% if current_sort == 'user' and current_dir == 'asc' %}desc{% else %}asc{% endif %}" class="text-white text-decoration-none d-flex align-items-center">
+                                    Name
+                                    {% if current_sort == 'user' %}
+                                        <i class="bi bi-caret-{% if current_dir == 'asc' %}up{% else %}down{% endif %}-fill ms-1"></i>
+                                    {% endif %}
+                                </a>
+                            </th>
                             <th class="text-white">Role</th>
                             <th class="text-white">Location</th>
-                            <th class="text-end text-white ">Sales</th>
-                            <th class="text-end text-white">Revenue</th>
-                            <th class="text-end text-white">Cost</th>
-                            <th class="text-end text-white">Profit</th>
-                            <th class="text-end text-white">Margin</th>
-                            <th class="text-end text-white">Avg Sale</th>
+                            <th class="text-end">
+                                <a href="?range={{ date_range }}&date_from={{ date_from|default:''|date:'Y-m-d' }}&date_to={{ date_to|default:''|date:'Y-m-d' }}{% if selected_location %}&location={{ selected_location }}{% endif %}{% if selected_category %}&category={{ selected_category }}{% endif %}{% if search_q %}&q={{ search_q }}{% endif %}&sort=sale_count&dir={% if current_sort == 'sale_count' and current_dir == 'asc' %}desc{% else %}asc{% endif %}" class="text-white text-decoration-none d-flex align-items-center justify-content-end">
+                                    Sales
+                                    {% if current_sort == 'sale_count' %}
+                                        <i class="bi bi-caret-{% if current_dir == 'asc' %}up{% else %}down{% endif %}-fill ms-1"></i>
+                                    {% endif %}
+                                </a>
+                            </th>
+                            <th class="text-end">
+                                <a href="?range={{ date_range }}&date_from={{ date_from|default:''|date:'Y-m-d' }}&date_to={{ date_to|default:''|date:'Y-m-d' }}{% if selected_location %}&location={{ selected_location }}{% endif %}{% if selected_category %}&category={{ selected_category }}{% endif %}{% if search_q %}&q={{ search_q }}{% endif %}&sort=revenue&dir={% if current_sort == 'revenue' and current_dir == 'asc' %}desc{% else %}asc{% endif %}" class="text-white text-decoration-none d-flex align-items-center justify-content-end">
+                                    Revenue
+                                    {% if current_sort == 'revenue' %}
+                                        <i class="bi bi-caret-{% if current_dir == 'asc' %}up{% else %}down{% endif %}-fill ms-1"></i>
+                                    {% endif %}
+                                </a>
+                            </th>
+                            <th class="text-end">
+                                <a href="?range={{ date_range }}&date_from={{ date_from|default:''|date:'Y-m-d' }}&date_to={{ date_to|default:''|date:'Y-m-d' }}{% if selected_location %}&location={{ selected_location }}{% endif %}{% if selected_category %}&category={{ selected_category }}{% endif %}{% if search_q %}&q={{ search_q }}{% endif %}&sort=cost&dir={% if current_sort == 'cost' and current_dir == 'asc' %}desc{% else %}asc{% endif %}" class="text-white text-decoration-none d-flex align-items-center justify-content-end">
+                                    Cost
+                                    {% if current_sort == 'cost' %}
+                                        <i class="bi bi-caret-{% if current_dir == 'asc' %}up{% else %}down{% endif %}-fill ms-1"></i>
+                                    {% endif %}
+                                </a>
+                            </th>
+                            <th class="text-end">
+                                <a href="?range={{ date_range }}&date_from={{ date_from|default:''|date:'Y-m-d' }}&date_to={{ date_to|default:''|date:'Y-m-d' }}{% if selected_location %}&location={{ selected_location }}{% endif %}{% if selected_category %}&category={{ selected_category }}{% endif %}{% if search_q %}&q={{ search_q }}{% endif %}&sort=profit&dir={% if current_sort == 'profit' and current_dir == 'asc' %}desc{% else %}asc{% endif %}" class="text-white text-decoration-none d-flex align-items-center justify-content-end">
+                                    Profit
+                                    {% if current_sort == 'profit' %}
+                                        <i class="bi bi-caret-{% if current_dir == 'asc' %}up{% else %}down{% endif %}-fill ms-1"></i>
+                                    {% endif %}
+                                </a>
+                            </th>
+                            <th class="text-end">
+                                <a href="?range={{ date_range }}&date_from={{ date_from|default:''|date:'Y-m-d' }}&date_to={{ date_to|default:''|date:'Y-m-d' }}{% if selected_location %}&location={{ selected_location }}{% endif %}{% if selected_category %}&category={{ selected_category }}{% endif %}{% if search_q %}&q={{ search_q }}{% endif %}&sort=margin&dir={% if current_sort == 'margin' and current_dir == 'asc' %}desc{% else %}asc{% endif %}" class="text-white text-decoration-none d-flex align-items-center justify-content-end">
+                                    Margin
+                                    {% if current_sort == 'margin' %}
+                                        <i class="bi bi-caret-{% if current_dir == 'asc' %}up{% else %}down{% endif %}-fill ms-1"></i>
+                                    {% endif %}
+                                </a>
+                            </th>
+                            <th class="text-end">
+                                <a href="?range={{ date_range }}&date_from={{ date_from|default:''|date:'Y-m-d' }}&date_to={{ date_to|default:''|date:'Y-m-d' }}{% if selected_location %}&location={{ selected_location }}{% endif %}{% if selected_category %}&category={{ selected_category }}{% endif %}{% if search_q %}&q={{ search_q }}{% endif %}&sort=avg_sale&dir={% if current_sort == 'avg_sale' and current_dir == 'asc' %}desc{% else %}asc{% endif %}" class="text-white text-decoration-none d-flex align-items-center justify-content-end">
+                                    Avg Sale
+                                    {% if current_sort == 'avg_sale' %}
+                                        <i class="bi bi-caret-{% if current_dir == 'asc' %}up{% else %}down{% endif %}-fill ms-1"></i>
+                                    {% endif %}
+                                </a>
+                            </th>
                         </tr>
                     </thead>
                     <tbody>

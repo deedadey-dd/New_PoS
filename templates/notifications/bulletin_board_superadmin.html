@@ -1,0 +1,210 @@
+{% extends 'superadmin/base.html' %}
+
+{% block title %}Bulletin Board{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row mb-4 align-items-center">
+        <div class="col-md-6">
+            <h2 class="mb-0 text-white">
+                <i class="bi bi-megaphone me-2" style="color: var(--sa-primary);"></i>Bulletin Board
+            </h2>
+            <p class="text-muted mb-0">Platform-wide announcements and system updates.</p>
+        </div>
+        <div class="col-md-6 text-md-end mt-3 mt-md-0">
+            {% if bulletin_unread_count > 0 %}
+            <form method="POST" action="{% url 'notifications:bulletin_mark_all_read' %}" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-outline-secondary me-2">
+                    <i class="bi bi-check-all me-1"></i>Mark All Read
+                </button>
+            </form>
+            {% endif %}
+            {% if can_post %}
+            <a href="{% url 'notifications:bulletin_post_create' %}" class="btn btn-primary" style="background: var(--sa-primary); border-color: var(--sa-primary);">
+                <i class="bi bi-pencil-square me-1"></i>New Post
+            </a>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="{% if can_post %}col-lg-8{% else %}col-lg-10 mx-auto{% endif %}">
+            {% if posts %}
+                {% for post in posts %}
+                <div class="sa-card mb-4 {% if post.id not in read_post_ids %}border-start border-primary border-4{% endif %}" style="border-radius: 1rem; overflow: hidden; min-width: 0;">
+                    <div class="card-header d-flex flex-wrap justify-content-between align-items-center py-3 px-4" style="background: rgba(255,255,255,0.07); border-bottom: 1px solid rgba(255,255,255,0.1); gap: 1rem;">
+                        <div class="d-flex align-items-start" style="min-width: 0; flex: 1;">
+                            {% if post.post_type == 'SYSTEM_UPDATE' %}
+                            <div class="rounded p-2 me-3" style="background: rgba(111,66,193,0.2); color: #9b72ef;">
+                                <i class="bi bi-shield-check fs-4"></i>
+                            </div>
+                            {% elif post.post_type == 'ANNOUNCEMENT' %}
+                            <div class="rounded p-2 me-3" style="background: rgba(13,202,240,0.15); color: #0dcaf0;">
+                                <i class="bi bi-info-circle fs-4"></i>
+                            </div>
+                            {% elif post.post_type == 'PRICE_ALERT' %}
+                            <div class="rounded p-2 me-3" style="background: rgba(255,193,7,0.15); color: #ffc107;">
+                                <i class="bi bi-currency-dollar fs-4"></i>
+                            </div>
+                            {% else %}
+                            <div class="rounded p-2 me-3" style="background: rgba(108,117,125,0.2); color: #adb5bd;">
+                                <i class="bi bi-chat-text fs-4"></i>
+                            </div>
+                            {% endif %}
+                            <div style="min-width: 0; flex: 1;">
+                                <h5 class="mb-0 fw-bold text-white text-break">{{ post.title }}</h5>
+                                <div class="small mt-1 text-truncate-multiline" style="color: rgba(255,255,255,0.5); word-wrap: break-word;">
+                                    <i class="bi bi-person me-1"></i>{{ post.created_by.get_full_name|default:post.created_by.email }}
+                                    <span class="mx-1">&bull;</span>
+                                    <i class="bi bi-clock me-1"></i>{{ post.created_at|date:"M d, Y h:i A" }}
+                                    {% if post.post_type == 'SYSTEM_UPDATE' %}
+                                    <span class="badge ms-2" style="background: rgba(111,66,193,0.4); color: #c9b3f7;">System Update</span>
+                                    {% endif %}
+                                    {% if post.target_roles.exists %}
+                                        {% for role in post.target_roles.all %}
+                                        <span class="badge bg-secondary ms-1">{{ role.get_name_display|default:role.name }}</span>
+                                        {% endfor %}
+                                    {% endif %}
+                                    {% if post.target_locations.exists %}
+                                        {% for loc in post.target_locations.all %}
+                                        <span class="badge bg-secondary ms-1">@ {{ loc.name }}</span>
+                                        {% endfor %}
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="d-flex align-items-center flex-shrink-0">
+                            {% if post.id not in read_post_ids %}
+                            <span class="badge rounded-pill me-3" style="background: var(--sa-primary);" id="badge-{{ post.id }}">New</span>
+                            <button class="btn btn-sm btn-outline-success mark-read-btn" data-post-id="{{ post.id }}">
+                                <i class="bi bi-check2"></i> Mark Read
+                            </button>
+                            {% endif %}
+                            {% if request.user == post.created_by or role_name == 'ADMIN' or role_name == 'SUPER_ADMIN' or role_name == 'TENANT_MANAGER' %}
+                            <form method="POST" action="{% url 'notifications:bulletin_post_delete' post.id %}" class="ms-2"
+                                onsubmit="return confirm('Are you sure you want to delete this post?');">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-sm btn-outline-danger">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="card-body px-4 py-3">
+                        <div class="text-white-50" style="white-space: pre-wrap; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word;">{{ post.body }}</div>
+                    </div>
+                </div>
+                {% endfor %}
+
+                {% include 'includes/multi_pagination.html' with page_obj=page_obj %}
+            {% else %}
+                <div class="sa-card text-center py-5">
+                    <i class="bi bi-mailbox2 fs-1 d-block mb-3" style="color: rgba(255,255,255,0.3);"></i>
+                    <h4 class="text-white-50">No messages yet</h4>
+                    <p style="color: rgba(255,255,255,0.3);">Post the first bulletin to get started.</p>
+                </div>
+            {% endif %}
+        </div>
+
+        {% if can_post %}
+        <div class="col-lg-4">
+            <div class="sa-card sticky-top p-0" style="top: 20px; overflow: hidden;">
+                <div class="px-4 py-3" style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+                    <h5 class="mb-0 fw-bold text-white">
+                        <i class="bi bi-clock-history me-2" style="color: var(--sa-primary);"></i>Your History
+                    </h5>
+                    <form style="display:none;" id="history-csrf-form">{% csrf_token %}</form>
+                </div>
+                <div style="max-height: 70vh; overflow-y: auto;">
+                    {% if not history_pinned_posts and not history_recent_posts %}
+                    <div class="p-4 text-center" style="color: rgba(255,255,255,0.4);">
+                        <small>No previous posts found.</small>
+                    </div>
+                    {% else %}
+                        {% for h_post in history_pinned_posts %}
+                        <div class="px-4 py-3" style="border-bottom: 1px solid rgba(255,255,255,0.07); background: rgba(111,66,193,0.1); min-width: 0;">
+                            <div class="d-flex w-100 justify-content-between align-items-start mb-1 gap-2">
+                                <h6 class="mb-0 text-truncate text-white" style="flex: 1; min-width: 0;">{{ h_post.title }}</h6>
+                                <div class="flex-shrink-0">
+                                    <button class="btn btn-sm btn-link p-0 me-2 toggle-pin-btn" data-post-id="{{ h_post.id }}" title="Unpin post" style="color: #ffc107;">
+                                        <i class="bi bi-pin-fill"></i>
+                                    </button>
+                                    <a href="{% url 'notifications:bulletin_post_create' %}?repost={{ h_post.id }}" class="btn btn-sm btn-link p-0" style="color: var(--sa-primary);" title="Repost">
+                                        <i class="bi bi-arrow-repeat fs-5"></i>
+                                    </a>
+                                </div>
+                            </div>
+                            <small class="d-block text-truncate" style="color: rgba(255,255,255,0.4); min-width: 0;">{{ h_post.body }}</small>
+                        </div>
+                        {% endfor %}
+                        {% for h_post in history_recent_posts %}
+                        <div class="px-4 py-3" style="border-bottom: 1px solid rgba(255,255,255,0.07); min-width: 0;">
+                            <div class="d-flex w-100 justify-content-between align-items-start mb-1 gap-2">
+                                <h6 class="mb-0 text-truncate text-white" style="flex: 1; min-width: 0;">{{ h_post.title }}</h6>
+                                <div class="flex-shrink-0">
+                                    <button class="btn btn-sm btn-link p-0 me-2 toggle-pin-btn" data-post-id="{{ h_post.id }}" title="Pin post" style="color: rgba(255,255,255,0.4);">
+                                        <i class="bi bi-pin"></i>
+                                    </button>
+                                    <a href="{% url 'notifications:bulletin_post_create' %}?repost={{ h_post.id }}" class="btn btn-sm btn-link p-0" style="color: var(--sa-primary);" title="Repost">
+                                        <i class="bi bi-arrow-repeat fs-5"></i>
+                                    </a>
+                                </div>
+                            </div>
+                            <small class="d-block text-truncate" style="color: rgba(255,255,255,0.4); min-width: 0;">{{ h_post.body }}</small>
+                        </div>
+                        {% endfor %}
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const markReadBtns = document.querySelectorAll('.mark-read-btn');
+    markReadBtns.forEach(btn => {
+        btn.addEventListener('click', function() {
+            const postId = this.getAttribute('data-post-id');
+            fetch(`/notifications/bulletin/${postId}/read/`, {
+                method: 'GET',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    this.style.display = 'none';
+                    const badge = document.getElementById(`badge-${postId}`);
+                    if (badge) badge.style.display = 'none';
+                    const card = this.closest('.sa-card');
+                    if (card) {
+                        card.classList.remove('border-start', 'border-primary', 'border-4');
+                    }
+                }
+            });
+        });
+    });
+
+    const togglePinBtns = document.querySelectorAll('.toggle-pin-btn');
+    togglePinBtns.forEach(btn => {
+        btn.addEventListener('click', function(e) {
+            e.preventDefault();
+            const postId = this.getAttribute('data-post-id');
+            const csrfInputs = document.querySelectorAll('input[name=csrfmiddlewaretoken]');
+            const csrfToken = csrfInputs.length > 0 ? csrfInputs[0].value : '';
+            fetch(`/notifications/bulletin/${postId}/pin/`, {
+                method: 'POST',
+                headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': csrfToken }
+            })
+            .then(r => r.ok ? r.json() : null)
+            .then(data => { if (data && data.status === 'success') window.location.reload(); });
+        });
+    });
+});
+</script>
+{% endblock %}

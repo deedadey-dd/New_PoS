@@ -802,14 +802,22 @@ class BulkBatchReceiveView(LoginRequiredMixin, View):
 
     def _get_allowed_locations(self, request):
         role_name = request.user.role.name if request.user.role else None
+        
+        # If user is a SHOP_MANAGER, strictly limit to their assigned location
+        if role_name == 'SHOP_MANAGER':
+            if request.user.location:
+                return Location.objects.filter(pk=request.user.location.pk, tenant=request.user.tenant, is_active=True)
+            return Location.objects.none() # They have no assigned location, cannot receive
+
+        if request.user.location:
+            return Location.objects.filter(pk=request.user.location.pk, tenant=request.user.tenant, is_active=True)
+            
         allowed_types = ['PRODUCTION', 'STORES']
         if role_name == 'STORES_MANAGER':
             allowed_types = ['STORES']
         elif role_name == 'PRODUCTION_MANAGER':
             allowed_types = ['PRODUCTION']
-        elif role_name == 'SHOP_MANAGER':
-            # Shop managers receive directly into their SHOP location
-            allowed_types = ['SHOP']
+
         return Location.objects.filter(
             tenant=request.user.tenant,
             is_active=True,
@@ -825,7 +833,7 @@ class BulkBatchReceiveView(LoginRequiredMixin, View):
 
         # Auto-select user's location if applicable
         auto_location = None
-        if request.user.location and request.user.location.location_type in ['PRODUCTION', 'STORES']:
+        if request.user.location:
             auto_location = request.user.location
         elif locations.count() == 1:
             auto_location = locations.first()

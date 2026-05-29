@@ -1856,117 +1856,97 @@ class ShopMomoHistoryView(LoginRequiredMixin, TemplateView):
         from apps.sales.models import Sale
         from apps.customers.models import CustomerTransaction
         from django.db.models import Sum, Q
-        
         from datetime import datetime
+        from decimal import Decimal
+        from apps.accounting.models import DigitalFundWithdrawal
+
+        sales = Sale.objects.filter(tenant=tenant, status='COMPLETED', payment_method='MOMO')
+        cts = CustomerTransaction.objects.filter(tenant=tenant, transaction_type='CREDIT', description__icontains='MOMO')
         
         if shop:
-            sales = Sale.objects.filter(
-                tenant=tenant,
-                shop=shop,
-                status='COMPLETED',
-                payment_method='MOMO'
-            )
+            sales = sales.filter(shop=shop)
+            cts = cts.filter(performed_by__location=shop)
             
-            cts = CustomerTransaction.objects.filter(
-                tenant=tenant,
-                performed_by__location=shop,
-                transaction_type='CREDIT',
-                description__icontains='MOMO'
-            )
+        # Apply filters
+        date_from = self.request.GET.get('date_from')
+        date_to = self.request.GET.get('date_to')
+        min_amount = self.request.GET.get('min_amount')
+        max_amount = self.request.GET.get('max_amount')
+        
+        if date_from:
+            try:
+                date_from_parsed = datetime.strptime(date_from, '%Y-%m-%d').date()
+                sales = sales.filter(created_at__date__gte=date_from_parsed)
+                cts = cts.filter(created_at__date__gte=date_from_parsed)
+            except ValueError:
+                pass
+                
+        if date_to:
+            try:
+                date_to_parsed = datetime.strptime(date_to, '%Y-%m-%d').date()
+                sales = sales.filter(created_at__date__lte=date_to_parsed)
+                cts = cts.filter(created_at__date__lte=date_to_parsed)
+            except ValueError:
+                pass
+                
+        if min_amount:
+            try:
+                min_val = Decimal(min_amount)
+                sales = sales.filter(amount_paid__gte=min_val)
+                cts = cts.filter(amount__gte=min_val)
+            except (ValueError, TypeError):
+                pass
+                
+        if max_amount:
+            try:
+                max_val = Decimal(max_amount)
+                sales = sales.filter(amount_paid__lte=max_val)
+                cts = cts.filter(amount__lte=max_val)
+            except (ValueError, TypeError):
+                pass
+        
+        # Balance calc (from all time ledger)
+        if shop:
+            total_sales = Sale.objects.filter(tenant=tenant, shop=shop, status='COMPLETED', payment_method='MOMO').aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+            total_cts = CustomerTransaction.objects.filter(tenant=tenant, performed_by__location=shop, transaction_type='CREDIT', description__icontains='MOMO').aggregate(total=Sum('amount'))['total'] or Decimal('0')
+            total_withdrawn = DigitalFundWithdrawal.objects.filter(tenant=tenant, shop=shop, fund_source='MOMO').aggregate(total=Sum('amount'))['total'] or Decimal('0')
         else:
-            sales = Sale.objects.filter(
-                tenant=tenant,
-                status='COMPLETED',
-                payment_method='MOMO'
-            )
-            
-            cts = CustomerTransaction.objects.filter(
-                tenant=tenant,
-                transaction_type='CREDIT',
-                description__icontains='MOMO'
-            )
-            
-            # Apply filters
-            date_from = self.request.GET.get('date_from')
-            date_to = self.request.GET.get('date_to')
-            min_amount = self.request.GET.get('min_amount')
-            max_amount = self.request.GET.get('max_amount')
-            
-            if date_from:
-                try:
-                    date_from_parsed = datetime.strptime(date_from, '%Y-%m-%d').date()
-                    sales = sales.filter(created_at__date__gte=date_from_parsed)
-                    cts = cts.filter(created_at__date__gte=date_from_parsed)
-                except ValueError:
-                    pass
-                    
-            if date_to:
-                try:
-                    date_to_parsed = datetime.strptime(date_to, '%Y-%m-%d').date()
-                    sales = sales.filter(created_at__date__lte=date_to_parsed)
-                    cts = cts.filter(created_at__date__lte=date_to_parsed)
-                except ValueError:
-                    pass
-                    
-            if min_amount:
-                try:
-                    min_val = Decimal(min_amount)
-                    sales = sales.filter(amount_paid__gte=min_val)
-                    cts = cts.filter(amount__gte=min_val)
-                except (ValueError, TypeError):
-                    pass
-                    
-            if max_amount:
-                try:
-                    max_val = Decimal(max_amount)
-                    sales = sales.filter(amount_paid__lte=max_val)
-                    cts = cts.filter(amount__lte=max_val)
-                except (ValueError, TypeError):
-                    pass
-            
-            # Balance calc (from all time ledger, not just filtered results)
-            from apps.accounting.models import DigitalFundWithdrawal
-            
-            if shop:
-                total_sales = Sale.objects.filter(tenant=tenant, shop=shop, status='COMPLETED', payment_method='MOMO').aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
-                total_cts = CustomerTransaction.objects.filter(tenant=tenant, performed_by__location=shop, transaction_type='CREDIT', description__icontains='MOMO').aggregate(total=Sum('amount'))['total'] or Decimal('0')
-                total_withdrawn = DigitalFundWithdrawal.objects.filter(tenant=tenant, shop=shop, fund_source='MOMO').aggregate(total=Sum('amount'))['total'] or Decimal('0')
-            else:
-                total_sales = Sale.objects.filter(tenant=tenant, status='COMPLETED', payment_method='MOMO').aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
-                total_cts = CustomerTransaction.objects.filter(tenant=tenant, transaction_type='CREDIT', description__icontains='MOMO').aggregate(total=Sum('amount'))['total'] or Decimal('0')
-                total_withdrawn = DigitalFundWithdrawal.objects.filter(tenant=tenant, fund_source='MOMO').aggregate(total=Sum('amount'))['total'] or Decimal('0')
-            
-            context['shop_balance'] = (total_sales + total_cts) - total_withdrawn
-            context['shop'] = shop
-            
-            # Combine manually
-            transactions = list(sales) + list(cts)
-            
-            # Apply Sorting
-            sort_by = self.request.GET.get('sort', 'created_at')
-            direction = self.request.GET.get('dir', 'desc')
-            is_reverse = direction == 'desc'
-            
-            if sort_by == 'amount':
-                transactions.sort(key=lambda x: getattr(x, 'amount_paid', getattr(x, 'amount', 0)), reverse=is_reverse)
-            elif sort_by == 'type':
-                transactions.sort(key=lambda x: 'Sale' if hasattr(x, 'sale_number') else 'Debt Payment', reverse=is_reverse)
-            elif sort_by == 'status':
-                transactions.sort(key=lambda x: x.is_accountant_confirmed, reverse=is_reverse)
-            elif sort_by == 'reference':
-                transactions.sort(key=lambda x: getattr(x, 'sale_number', getattr(x, 'customer', getattr(x, 'customer', ''))), reverse=is_reverse)
-            else: # default created_at
-                transactions.sort(key=lambda x: x.created_at, reverse=is_reverse)
-            
-            context['transactions'] = transactions
-            
-            # Pass filters back to context
-            context['date_from'] = date_from
-            context['date_to'] = date_to
-            context['min_amount'] = min_amount
-            context['max_amount'] = max_amount
-            context['current_sort'] = sort_by
-            context['current_dir'] = direction
+            total_sales = Sale.objects.filter(tenant=tenant, status='COMPLETED', payment_method='MOMO').aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+            total_cts = CustomerTransaction.objects.filter(tenant=tenant, transaction_type='CREDIT', description__icontains='MOMO').aggregate(total=Sum('amount'))['total'] or Decimal('0')
+            total_withdrawn = DigitalFundWithdrawal.objects.filter(tenant=tenant, fund_source='MOMO').aggregate(total=Sum('amount'))['total'] or Decimal('0')
+        
+        context['shop_balance'] = (total_sales + total_cts) - total_withdrawn
+        context['shop'] = shop
+        
+        # Combine manually
+        transactions = list(sales) + list(cts)
+        
+        # Apply Sorting
+        sort_by = self.request.GET.get('sort', 'created_at')
+        direction = self.request.GET.get('dir', 'desc')
+        is_reverse = direction == 'desc'
+        
+        if sort_by == 'amount':
+            transactions.sort(key=lambda x: getattr(x, 'amount_paid', getattr(x, 'amount', 0)), reverse=is_reverse)
+        elif sort_by == 'type':
+            transactions.sort(key=lambda x: 'Sale' if hasattr(x, 'sale_number') else 'Debt Payment', reverse=is_reverse)
+        elif sort_by == 'status':
+            transactions.sort(key=lambda x: x.is_accountant_confirmed, reverse=is_reverse)
+        elif sort_by == 'reference':
+            transactions.sort(key=lambda x: getattr(x, 'sale_number', getattr(x, 'customer', getattr(x, 'customer', ''))), reverse=is_reverse)
+        else: # default created_at
+            transactions.sort(key=lambda x: x.created_at, reverse=is_reverse)
+        
+        context['transactions'] = transactions
+        
+        # Pass filters back to context
+        context['date_from'] = date_from
+        context['date_to'] = date_to
+        context['min_amount'] = min_amount
+        context['max_amount'] = max_amount
+        context['current_sort'] = sort_by
+        context['current_dir'] = direction
+        
         role_name = user.role.name if user.role else None
         if role_name in ['ACCOUNTANT', 'AUDITOR', 'ADMIN']:
             from apps.core.models import Location

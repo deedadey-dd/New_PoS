@@ -63,10 +63,23 @@ def main():
     suite3 = unittest.TestLoader().loadTestsFromTestCase(DigitalFundWithdrawalTests)
 
     # --- Suite 4: Recent Fixes Tests ---
-    print("[4/4] Recent Fixes Tests (Logout redirect, transfer form, bank exit)")
+    print("[4/4] Recent Fixes Tests (Logout redirect, transfer form, bank exit, bulk receive, momo history, bulletins)")
     suite4a = unittest.TestLoader().loadTestsFromTestCase(LogoutRedirectTests)
     suite4b = unittest.TestLoader().loadTestsFromTestCase(CashTransferFormRecipientTests)
-
+    
+    from apps.inventory.tests.test_bulk_receive import BulkReceiveTests
+    from apps.accounting.tests.test_momo_history import MomoHistoryTests
+    from apps.notifications.tests.test_bulletins import BulletinTests
+    
+    suite4c = unittest.TestLoader().loadTestsFromTestCase(BulkReceiveTests)
+    suite4d = unittest.TestLoader().loadTestsFromTestCase(MomoHistoryTests)
+    suite4e = unittest.TestLoader().loadTestsFromTestCase(BulletinTests)
+    
+    # Combine all suites
+    all_tests = unittest.TestSuite([
+        suite1, suite2, suite3, 
+        suite4a, suite4b, suite4c, suite4d, suite4e
+    ])
     # --- Suite 5: Shift Process Tests ---
     print("[5/6] Shift Process Tests")
     suite5 = unittest.TestLoader().loadTestsFromTestCase(ShiftProcessTests)

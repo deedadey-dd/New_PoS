@@ -190,6 +190,18 @@ class ProductProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
             filters &= Q(sale__created_at__date__gte=date_from)
         if date_to:
             filters &= Q(sale__created_at__date__lte=date_to)
+            
+        location_id = request.GET.get('location')
+        if location_id:
+            filters &= Q(sale__shop_id=location_id)
+            
+        q = request.GET.get('q')
+        if q:
+            filters &= (Q(product__name__icontains=q) | Q(product__sku__icontains=q))
+            
+        category_id = request.GET.get('category')
+        if category_id:
+            filters &= Q(product__category_id=category_id)
         
         product_data = list(SaleItem.objects.filter(filters).values(
             'product__id', 'product__name', 'product__sku', 'product__category__name'
@@ -209,9 +221,19 @@ class ProductProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
                 item['margin_pct'] = round((item['profit'] / item['revenue']) * 100, 1)
             else:
                 item['margin_pct'] = 0
-        
-        # Sort by profit
-        product_data.sort(key=lambda x: x['profit'], reverse=True)
+                
+        # Sort logic
+        sort_by = request.GET.get('sort', 'profit')
+        sort_dir = request.GET.get('dir', 'desc')
+        valid_sort_fields = ['product__name', 'qty_sold', 'revenue', 'cost', 'profit', 'margin_pct']
+        if sort_by not in valid_sort_fields:
+            sort_by = 'profit'
+            
+        reverse_sort = sort_dir == 'desc'
+        if sort_by == 'product__name':
+            product_data.sort(key=lambda x: x['product__name'].lower(), reverse=reverse_sort)
+        else:
+            product_data.sort(key=lambda x: x[sort_by], reverse=reverse_sort)
         
         # Totals
         totals = {
@@ -228,6 +250,9 @@ class ProductProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
         # Paginate products
         paginated_products, per_page = self.paginate_queryset(request, product_data)
 
+        from apps.core.models import Location
+        from apps.inventory.models import Category
+
         context = {
             'products': paginated_products,
             'page_obj': paginated_products,
@@ -238,6 +263,13 @@ class ProductProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
             'date_from': date_from,
             'date_to': date_to,
             'date_warning': date_warning,
+            'current_sort': sort_by,
+            'current_dir': sort_dir,
+            'locations': Location.objects.filter(tenant=tenant, location_type='SHOP', is_active=True),
+            'categories': Category.objects.filter(tenant=tenant, is_active=True),
+            'selected_location': int(location_id) if location_id and location_id.isdigit() else None,
+            'search_q': q,
+            'selected_category': int(category_id) if category_id and category_id.isdigit() else None,
         }
         
         return render(request, self.template_name, context)
@@ -316,6 +348,9 @@ class LocationProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
         location_data = []
         shops = Location.objects.filter(tenant=tenant, location_type='SHOP', is_active=True)
         
+        q = request.GET.get('q')
+        category_id = request.GET.get('category')
+        
         for shop in shops:
             shop_sales = Sale.objects.filter(
                 tenant=tenant, shop=shop, status='COMPLETED'
@@ -328,11 +363,23 @@ class LocationProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
             # Get items for these sales
             sale_items = SaleItem.objects.filter(sale__in=shop_sales)
             
-            revenue = shop_sales.aggregate(total=Sum('total'))['total'] or Decimal('0')
+            item_filters = Q()
+            if q:
+                item_filters &= (Q(product__name__icontains=q) | Q(product__sku__icontains=q))
+            if category_id:
+                item_filters &= Q(product__category_id=category_id)
+                
+            if item_filters:
+                sale_items = sale_items.filter(item_filters)
+                revenue = sale_items.aggregate(total=Sum('total'))['total'] or Decimal('0')
+                sale_count = shop_sales.filter(items__in=sale_items).distinct().count()
+            else:
+                revenue = shop_sales.aggregate(total=Sum('total'))['total'] or Decimal('0')
+                sale_count = shop_sales.count()
+            
             cost = sale_items.aggregate(
                 total=Sum(F('quantity') * F('unit_cost'))
             )['total'] or Decimal('0')
-            sale_count = shop_sales.count()
             
             profit = revenue - cost
             margin = round((profit / revenue * 100), 1) if revenue > 0 else 0
@@ -348,8 +395,18 @@ class LocationProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
                 'avg_sale': avg_sale,
             })
         
-        # Sort by profit
-        location_data.sort(key=lambda x: x['profit'], reverse=True)
+        # Sorting logic
+        sort_by = request.GET.get('sort', 'profit')
+        sort_dir = request.GET.get('dir', 'desc')
+        valid_sort_fields = ['shop', 'sale_count', 'revenue', 'cost', 'profit', 'margin', 'avg_sale']
+        if sort_by not in valid_sort_fields:
+            sort_by = 'profit'
+            
+        reverse_sort = sort_dir == 'desc'
+        if sort_by == 'shop':
+            location_data.sort(key=lambda x: x['shop'].name.lower(), reverse=reverse_sort)
+        else:
+            location_data.sort(key=lambda x: x[sort_by], reverse=reverse_sort)
         
         # Totals
         totals = {
@@ -363,6 +420,8 @@ class LocationProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
         # Paginate locations
         paginated_locations, per_page = self.paginate_queryset(request, location_data)
 
+        from apps.inventory.models import Category
+
         context = {
             'locations': paginated_locations,
             'page_obj': paginated_locations,
@@ -373,6 +432,11 @@ class LocationProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
             'date_from': date_from,
             'date_to': date_to,
             'date_warning': date_warning,
+            'current_sort': sort_by,
+            'current_dir': sort_dir,
+            'categories': Category.objects.filter(tenant=tenant, is_active=True),
+            'search_q': q,
+            'selected_category': int(category_id) if category_id and category_id.isdigit() else None,
         }
         
         return render(request, self.template_name, context)
@@ -450,12 +514,18 @@ class ManagerProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
         # Manager-level aggregation
         manager_data = []
         
+        location_id = request.GET.get('location')
+        q = request.GET.get('q')
+        category_id = request.GET.get('category')
+        
         # Get all users who have made sales in the period
         base_sales_filter = Q(tenant=tenant, status='COMPLETED')
         if date_from:
             base_sales_filter &= Q(created_at__date__gte=date_from)
         if date_to:
             base_sales_filter &= Q(created_at__date__lte=date_to)
+        if location_id:
+            base_sales_filter &= Q(shop_id=location_id)
         
         attendants = User.objects.filter(tenant=tenant).filter(
             sales__in=Sale.objects.filter(base_sales_filter)
@@ -466,11 +536,23 @@ class ManagerProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
             
             sale_items = SaleItem.objects.filter(sale__in=attendant_sales)
             
-            revenue = attendant_sales.aggregate(total=Sum('total'))['total'] or Decimal('0')
+            item_filters = Q()
+            if q:
+                item_filters &= (Q(product__name__icontains=q) | Q(product__sku__icontains=q))
+            if category_id:
+                item_filters &= Q(product__category_id=category_id)
+                
+            if item_filters:
+                sale_items = sale_items.filter(item_filters)
+                revenue = sale_items.aggregate(total=Sum('total'))['total'] or Decimal('0')
+                sale_count = attendant_sales.filter(items__in=sale_items).distinct().count()
+            else:
+                revenue = attendant_sales.aggregate(total=Sum('total'))['total'] or Decimal('0')
+                sale_count = attendant_sales.count()
+            
             cost = sale_items.aggregate(
                 total=Sum(F('quantity') * F('unit_cost'))
             )['total'] or Decimal('0')
-            sale_count = attendant_sales.count()
             
             if sale_count > 0:  # Only include if they have sales
                 profit = revenue - cost
@@ -489,7 +571,18 @@ class ManagerProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
                     'avg_sale': avg_sale,
                 })
         
-        manager_data.sort(key=lambda x: x['profit'], reverse=True)
+        # Sort logic
+        sort_by = request.GET.get('sort', 'profit')
+        sort_dir = request.GET.get('dir', 'desc')
+        valid_sort_fields = ['user', 'sale_count', 'revenue', 'cost', 'profit', 'margin', 'avg_sale']
+        if sort_by not in valid_sort_fields:
+            sort_by = 'profit'
+            
+        reverse_sort = sort_dir == 'desc'
+        if sort_by == 'user':
+            manager_data.sort(key=lambda x: x['user'].get_full_name().lower() if x['user'].get_full_name() else '', reverse=reverse_sort)
+        else:
+            manager_data.sort(key=lambda x: x[sort_by], reverse=reverse_sort)
         
         # Totals
         totals = {
@@ -503,6 +596,9 @@ class ManagerProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
         # Paginate managers
         paginated_managers, per_page = self.paginate_queryset(request, manager_data)
 
+        from apps.core.models import Location
+        from apps.inventory.models import Category
+
         context = {
             'managers': paginated_managers,
             'page_obj': paginated_managers,
@@ -513,6 +609,13 @@ class ManagerProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
             'date_from': date_from,
             'date_to': date_to,
             'date_warning': date_warning,
+            'current_sort': sort_by,
+            'current_dir': sort_dir,
+            'locations': Location.objects.filter(tenant=tenant, location_type='SHOP', is_active=True),
+            'categories': Category.objects.filter(tenant=tenant, is_active=True),
+            'selected_location': int(location_id) if location_id and location_id.isdigit() else None,
+            'search_q': q,
+            'selected_category': int(category_id) if category_id and category_id.isdigit() else None,
         }
         
         return render(request, self.template_name, context)
@@ -636,6 +739,18 @@ class ProductProfitLossExportView(LoginRequiredMixin, AuditAccessMixin, View):
         if date_to:
             filters &= Q(sale__created_at__date__lte=date_to)
 
+        location_id = request.GET.get('location')
+        if location_id:
+            filters &= Q(sale__shop_id=location_id)
+            
+        q = request.GET.get('q')
+        if q:
+            filters &= (Q(product__name__icontains=q) | Q(product__sku__icontains=q))
+            
+        category_id = request.GET.get('category')
+        if category_id:
+            filters &= Q(product__category_id=category_id)
+
         product_data = list(SaleItem.objects.filter(filters).values(
             'product__name', 'product__sku', 'product__category__name'
         ).annotate(
@@ -722,6 +837,9 @@ class LocationProfitLossExportView(LoginRequiredMixin, AuditAccessMixin, View):
         headers = ['Shop', 'Sales Count', 'Revenue', 'Cost', 'Profit', 'Margin %', 'Avg Sale']
         rows = []
 
+        q = request.GET.get('q')
+        category_id = request.GET.get('category')
+
         for shop in shops:
             shop_sales = Sale.objects.filter(tenant=tenant, shop=shop, status='COMPLETED')
             if date_from:
@@ -730,11 +848,24 @@ class LocationProfitLossExportView(LoginRequiredMixin, AuditAccessMixin, View):
                 shop_sales = shop_sales.filter(created_at__date__lte=date_to)
 
             sale_items = SaleItem.objects.filter(sale__in=shop_sales)
-            revenue = shop_sales.aggregate(total=Sum('total'))['total'] or Decimal('0')
+            
+            item_filters = Q()
+            if q:
+                item_filters &= (Q(product__name__icontains=q) | Q(product__sku__icontains=q))
+            if category_id:
+                item_filters &= Q(product__category_id=category_id)
+                
+            if item_filters:
+                sale_items = sale_items.filter(item_filters)
+                revenue = sale_items.aggregate(total=Sum('total'))['total'] or Decimal('0')
+                sale_count = shop_sales.filter(items__in=sale_items).distinct().count()
+            else:
+                revenue = shop_sales.aggregate(total=Sum('total'))['total'] or Decimal('0')
+                sale_count = shop_sales.count()
+            
             cost = sale_items.aggregate(
                 total=Sum(F('quantity') * F('unit_cost'))
             )['total'] or Decimal('0')
-            sale_count = shop_sales.count()
 
             profit = revenue - cost
             margin = round((profit / revenue * 100), 1) if revenue > 0 else 0
@@ -805,11 +936,17 @@ class ManagerProfitLossExportView(LoginRequiredMixin, AuditAccessMixin, View):
             else:
                 date_from = today - timedelta(days=30)
 
+        location_id = request.GET.get('location')
+        q = request.GET.get('q')
+        category_id = request.GET.get('category')
+
         base_sales_filter = Q(tenant=tenant, status='COMPLETED')
         if date_from:
             base_sales_filter &= Q(created_at__date__gte=date_from)
         if date_to:
             base_sales_filter &= Q(created_at__date__lte=date_to)
+        if location_id:
+            base_sales_filter &= Q(shop_id=location_id)
 
         attendants = User.objects.filter(tenant=tenant).filter(
             sales__in=Sale.objects.filter(base_sales_filter)
@@ -822,11 +959,23 @@ class ManagerProfitLossExportView(LoginRequiredMixin, AuditAccessMixin, View):
             attendant_sales = Sale.objects.filter(base_sales_filter, attendant=attendant)
             sale_items = SaleItem.objects.filter(sale__in=attendant_sales)
 
-            revenue = attendant_sales.aggregate(total=Sum('total'))['total'] or Decimal('0')
+            item_filters = Q()
+            if q:
+                item_filters &= (Q(product__name__icontains=q) | Q(product__sku__icontains=q))
+            if category_id:
+                item_filters &= Q(product__category_id=category_id)
+                
+            if item_filters:
+                sale_items = sale_items.filter(item_filters)
+                revenue = sale_items.aggregate(total=Sum('total'))['total'] or Decimal('0')
+                sale_count = attendant_sales.filter(items__in=sale_items).distinct().count()
+            else:
+                revenue = attendant_sales.aggregate(total=Sum('total'))['total'] or Decimal('0')
+                sale_count = attendant_sales.count()
+
             cost = sale_items.aggregate(
                 total=Sum(F('quantity') * F('unit_cost'))
             )['total'] or Decimal('0')
-            sale_count = attendant_sales.count()
 
             if sale_count > 0:
                 profit = revenue - cost

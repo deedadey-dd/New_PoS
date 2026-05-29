@@ -336,7 +336,7 @@
                     {% endif %}
 
                     <!-- Inventory -->
-                    {% if role_name == 'ADMIN' or role_name == 'STORES_MANAGER' or role_name == 'PRODUCTION_MANAGER' or role_name == 'SHOP_MANAGER' %}
+                    {% if role_name == 'ADMIN' or role_name == 'STORES_MANAGER' or role_name == 'PRODUCTION_MANAGER' or role_name == 'SHOP_MANAGER' or role_name == 'ACCOUNTANT' and current_tenant.accountants_can_approve_adjustments %}
                     <li class="nav-item">
                         <a class="nav-link text-white d-flex justify-content-between align-items-center {% if 'inventory' in request.path or 'transfers' in request.path and 'cash-transfers' not in request.path %}active{% endif %}"
                             data-bs-toggle="collapse" href="#inventoryMenu" role="button">

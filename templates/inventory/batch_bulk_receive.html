@@ -75,7 +75,7 @@
             </button>
         </div>
 
-        <div class="table-responsive">
+        <div class="table-responsive overflow-visible">
             <table class="table table-hover mb-0 align-middle" id="items-table">
                 <thead class="table-light">
                     <tr>
@@ -193,12 +193,14 @@
 <template id="row-template">
     <tr class="item-row" data-row-index="">
         <td class="text-center text-muted fw-bold row-num"></td>
-        <td class="position-relative">
-            <input type="text" class="form-control form-control-sm product-search-input"
-                placeholder="Type to search product…" autocomplete="off">
-            <input type="hidden" class="product-id-input">
-            <input type="hidden" class="product-name-hidden">
-            <div class="autocomplete-dropdown list-group shadow position-absolute w-100 z-3" style="display:none; top:100%; max-height:220px; overflow-y:auto;"></div>
+        <td>
+            <div class="position-relative">
+                <input type="text" class="form-control form-control-sm product-search-input"
+                    placeholder="Type to search product…" autocomplete="off">
+                <input type="hidden" class="product-id-input">
+                <input type="hidden" class="product-name-hidden">
+                <div class="autocomplete-dropdown list-group shadow position-absolute w-100 z-3" style="display:none; top:100%; max-height:220px; overflow-y:auto;"></div>
+            </div>
         </td>
         <td>
             <input type="number" class="form-control form-control-sm qty-input"
@@ -355,12 +357,22 @@ function bindAutocomplete(tr) {
     function showDropdown(products) {
         dropdown.innerHTML = '';
         activeIdx = -1;
-        if (!products.length) { dropdown.style.display = 'none'; return; }
+        if (!products.length) { 
+            dropdown.innerHTML = '<div class="list-group-item text-muted">No products found</div>';
+            dropdown.style.display = 'block';
+            return; 
+        }
         products.forEach((p, i) => {
             const li = document.createElement('button');
             li.type = 'button';
-            li.className = 'list-group-item list-group-item-action py-1 px-2';
-            li.innerHTML = `<span class="fw-medium">${p.name}</span><span class="text-muted ms-2 small">${p.sku}</span>${p.category ? `<span class="badge bg-light text-dark ms-1 small">${p.category}</span>` : ''}`;
+            li.className = 'list-group-item list-group-item-action py-1 px-2 d-flex justify-content-between align-items-center';
+            li.innerHTML = `
+                <div>
+                    <span class="fw-medium">${p.name}</span>
+                    <span class="text-muted ms-2 small">${p.sku}</span>
+                </div>
+                ${p.category ? `<span class="badge bg-light text-dark ms-1 small">${p.category}</span>` : ''}
+            `;
             li.addEventListener('mousedown', e => { e.preventDefault(); selectProduct(p); });
             dropdown.appendChild(li);
         });
@@ -388,6 +400,12 @@ function bindAutocomplete(tr) {
             .then(r => r.json())
             .then(data => showDropdown(data.products || []));
         }, 220);
+    });
+
+    input.addEventListener('focus', function () {
+        if (this.value.trim().length >= 2 && dropdown.children.length > 0) {
+            dropdown.style.display = 'block';
+        }
     });
 
     input.addEventListener('keydown', e => {

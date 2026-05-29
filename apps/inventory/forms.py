@@ -343,6 +343,16 @@ class StockAdjustmentForm(forms.Form):
             else:
                 self.fields['location'].queryset = Location.objects.filter(tenant=tenant, is_active=True)
 
+    def clean(self):
+        cleaned_data = super().clean()
+        adjustment_type = cleaned_data.get('adjustment_type')
+        quantity = cleaned_data.get('quantity')
+        
+        if adjustment_type == 'DAMAGE' and quantity is not None and quantity > 0:
+            self.add_error('quantity', "Quantity must be negative for Damage/Write-off.")
+            
+        return cleaned_data
+
 
 class ShopPriceForm(forms.ModelForm):
     """Form for setting shop-specific pricing."""

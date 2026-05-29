@@ -1,0 +1,180 @@
+{% extends 'superadmin/base.html' %}
+
+{% block title %}New Bulletin Post - Superadmin{% endblock %}
+
+{% block extra_css %}
+<link href="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/css/tom-select.bootstrap5.min.css" rel="stylesheet">
+<style>
+    /* Dark theme adjustments for tom-select */
+    .ts-control {
+        background-color: transparent !important;
+        border: 1px solid rgba(255, 255, 255, 0.2) !important;
+        color: #fff !important;
+    }
+    .ts-control input {
+        color: #fff !important;
+    }
+    .ts-dropdown, .ts-dropdown.form-control, .ts-dropdown.form-select {
+        background-color: var(--sa-darker) !important;
+        border: 1px solid rgba(255, 255, 255, 0.2) !important;
+        color: #fff !important;
+    }
+    .ts-dropdown .active {
+        background-color: var(--sa-primary) !important;
+        color: #fff !important;
+    }
+    .ts-dropdown .option {
+        color: #fff !important;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col-md-8 mx-auto">
+            <h2 class="mb-0 text-white">
+                <i class="bi bi-pencil-square me-2" style="color: var(--sa-primary);"></i>New Bulletin Post
+            </h2>
+            <p class="text-muted">Broadcast a system message or alert to users across the platform.</p>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8 mx-auto">
+            <div class="sa-card shadow-sm border-0">
+                <div class="card-body p-4">
+                    <form method="POST">
+                        {% csrf_token %}
+                        
+                        {% if form.non_field_errors %}
+                        <div class="alert alert-danger">
+                            {% for error in form.non_field_errors %}
+                                {{ error }}
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                        
+                        {% if feature_messages %}
+                        <div class="mb-4 pb-3 border-bottom border-secondary">
+                            <label class="form-label fw-bold text-white">
+                                <i class="bi bi-magic me-1" style="color: var(--sa-primary);"></i>Use a Template
+                            </label>
+                            <select id="feature-message-select" class="form-select" style="background-color: var(--sa-darker); border-color: rgba(255,255,255,0.2); color: #fff;">
+                                <option value="">-- Select a Feature Message to auto-fill --</option>
+                                {% for fm in feature_messages %}
+                                <option value="{{ fm.id }}">{{ fm.title }} ({{ fm.feature_key }})</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        {% endif %}
+                        
+                        <div class="mb-3">
+                            <label class="form-label fw-bold text-white">Title</label>
+                            {{ form.title }}
+                            {% if form.title.errors %}
+                            <div class="text-danger small mt-1">{{ form.title.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="mb-4">
+                            <label class="form-label fw-bold text-white">Message Content</label>
+                            {{ form.body }}
+                            {% if form.body.errors %}
+                            <div class="text-danger small mt-1">{{ form.body.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                        
+                        <h5 class="border-bottom pb-2 mb-3 text-white border-secondary">Settings</h5>
+                        
+                        <div class="row mb-4">
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold text-white">Post Type</label>
+                                {{ form.post_type }}
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold text-white">Target Roles</label>
+                                {{ form.target_roles }}
+                                <div class="form-text small" style="color: rgba(255,255,255,0.5);">Leave blank to target all roles.</div>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold text-white">Target Locations</label>
+                                {{ form.target_locations }}
+                                <div class="form-text small" style="color: rgba(255,255,255,0.5);">Leave blank to target all allowed locations.</div>
+                            </div>
+                        </div>
+                        
+                        <div class="d-flex justify-content-end">
+                            <a href="{% url 'notifications:bulletin_board' %}" class="btn btn-outline-light me-2">Cancel</a>
+                            <button type="submit" class="btn btn-primary" style="background: var(--sa-primary); border-color: var(--sa-primary);">
+                                <i class="bi bi-send me-1"></i>Post Message
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/js/tom-select.complete.min.js"></script>
+
+{% if feature_messages %}
+<!-- Feature message data for auto-filling -->
+<script type="application/json" id="feature-messages-data">
+{
+    {% for fm in feature_messages %}
+    "{{ fm.id }}": {
+        "title": "{{ fm.title|escapejs }}",
+        "content": "{{ fm.content|striptags|escapejs }}"
+    }{% if not forloop.last %},{% endif %}
+    {% endfor %}
+}
+</script>
+{% endif %}
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var tomSelectElements = document.querySelectorAll('.tom-select');
+    tomSelectElements.forEach(function(el) {
+        new TomSelect(el, {
+            plugins: ['remove_button'],
+            maxItems: null,
+        });
+    });
+
+    // Auto-fill form from Feature Message template
+    const featureSelect = document.getElementById('feature-message-select');
+    if (featureSelect) {
+        const featureDataEl = document.getElementById('feature-messages-data');
+        if (featureDataEl) {
+            const featureData = JSON.parse(featureDataEl.textContent);
+            
+            featureSelect.addEventListener('change', function() {
+                const fmId = this.value;
+                if (fmId && featureData[fmId]) {
+                    const titleField = document.getElementById('id_title');
+                    const bodyField = document.getElementById('id_body');
+                    const postTypeField = document.getElementById('id_post_type');
+                    
+                    if (titleField) titleField.value = featureData[fmId].title;
+                    if (bodyField) bodyField.value = featureData[fmId].content;
+                    
+                    // Auto-select SYSTEM_UPDATE if available
+                    if (postTypeField) {
+                        for (let i = 0; i < postTypeField.options.length; i++) {
+                            if (postTypeField.options[i].value === 'SYSTEM_UPDATE') {
+                                postTypeField.selectedIndex = i;
+                                break;
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    }
+});
+</script>
+{% endblock %}

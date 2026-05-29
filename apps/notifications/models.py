@@ -75,6 +75,7 @@ class BulletinPost(TenantModel):
     POST_TYPES = [
         ('ANNOUNCEMENT', 'Announcement'),
         ('PRICE_ALERT', 'Price Alert'),
+        ('SYSTEM_UPDATE', 'Feature/System Update'),
         ('GENERAL', 'General'),
     ]
 

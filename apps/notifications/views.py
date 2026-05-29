@@ -82,6 +82,14 @@ class BulletinBoardView(LoginRequiredMixin, ListView):
     template_name = 'notifications/bulletin_board.html'
     context_object_name = 'posts'
     paginate_by = 15
+
+    def get_template_names(self):
+        """Use the superadmin-themed template for SUPER_ADMIN and TENANT_MANAGER roles."""
+        user = self.request.user
+        role_name = user.role.name if user.role else None
+        if role_name in ['SUPER_ADMIN', 'TENANT_MANAGER'] or user.is_superuser:
+            return ['notifications/bulletin_board_superadmin.html']
+        return [self.template_name]
     
     def get_queryset(self):
         user = self.request.user
@@ -90,6 +98,12 @@ class BulletinBoardView(LoginRequiredMixin, ListView):
         # Base query for active posts in this tenant
         qs = BulletinPost.objects.filter(tenant=tenant, is_active=True)
         
+        role_name = user.role.name if user.role else None
+        
+        # SUPER_ADMIN, TENANT_MANAGER, and ADMIN see everything
+        if role_name in ['ADMIN', 'SUPER_ADMIN', 'TENANT_MANAGER'] or user.is_superuser:
+            return qs.order_by('-created_at')
+
         # Role-based filtering
         role_filter = Q(target_roles__isnull=True)
         if user.role:
@@ -99,16 +113,8 @@ class BulletinBoardView(LoginRequiredMixin, ListView):
         loc_filter = Q(target_locations__isnull=True)
         if user.location:
             loc_filter |= Q(target_locations=user.location)
-            
-        role_name = user.role.name if user.role else None
-        
-        if role_name == 'ADMIN':
-            # Admins see everything
-            pass
-        else:
-            qs = qs.filter(role_filter, loc_filter).distinct()
-            
-        return qs.order_by('-created_at')
+
+        return qs.filter(role_filter, loc_filter).distinct().order_by('-created_at')
         
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -120,10 +126,10 @@ class BulletinBoardView(LoginRequiredMixin, ListView):
         
         # Add permissions context
         can_post = False
-        if user.role:
-            if user.role.name in ['ADMIN', 'ACCOUNTANT', 'STORES_MANAGER']:
-                can_post = True
-            elif user.role.name == 'SHOP_MANAGER':
+        if user.is_superuser:
+            can_post = True
+        elif user.role:
+            if user.role.name in ['ADMIN', 'SUPER_ADMIN', 'TENANT_MANAGER', 'ACCOUNTANT', 'STORES_MANAGER', 'SHOP_MANAGER']:
                 can_post = True
         context['can_post'] = can_post
         
@@ -132,10 +138,40 @@ class BulletinBoardView(LoginRequiredMixin, ListView):
             from .forms import BulletinPostForm
             context['form'] = BulletinPostForm(user=user)
             
-            # Add user's post history
-            user_posts = BulletinPost.objects.filter(created_by=user).order_by('-created_at')
-            context['history_pinned_posts'] = user_posts.filter(is_pinned=True)[:5]
-            context['history_recent_posts'] = user_posts.filter(is_pinned=False)[:10]
+            role_name = user.role.name if user.role else None
+            is_broadcaster = role_name in ['SUPER_ADMIN', 'TENANT_MANAGER'] or user.is_superuser
+
+            if is_broadcaster:
+                # Super admins broadcast one post per tenant, so deduplicate history
+                # by picking one representative (highest id) per unique title
+                from django.db.models import Max
+                unique_broadcasts = (
+                    BulletinPost.objects
+                    .filter(created_by=user)
+                    .values('title')
+                    .annotate(latest_id=Max('id'))
+                    .order_by('-latest_id')
+                )
+                representative_ids = [b['latest_id'] for b in unique_broadcasts]
+                
+                # Preserve ordering via Case/When
+                from django.db.models import Case, When, IntegerField
+                ordering = Case(
+                    *[When(id=pk, then=pos) for pos, pk in enumerate(representative_ids)],
+                    output_field=IntegerField()
+                )
+                user_posts = (
+                    BulletinPost.objects
+                    .filter(id__in=representative_ids)
+                    .order_by(ordering)
+                )
+                context['history_pinned_posts'] = user_posts.filter(is_pinned=True)[:5]
+                context['history_recent_posts'] = user_posts.filter(is_pinned=False)[:10]
+            else:
+                # Regular users: show their posts directly, no deduplication needed
+                user_posts = BulletinPost.objects.filter(created_by=user).order_by('-created_at')
+                context['history_pinned_posts'] = user_posts.filter(is_pinned=True)[:5]
+                context['history_recent_posts'] = user_posts.filter(is_pinned=False)[:10]
             
         return context
 
@@ -143,6 +179,23 @@ class BulletinPostCreateView(LoginRequiredMixin, CreateView):
     model = BulletinPost
     template_name = 'notifications/bulletin_post_form.html'
     success_url = reverse_lazy('notifications:bulletin_board')
+
+    def get_template_names(self):
+        """Use the superadmin-themed template for SUPER_ADMIN and TENANT_MANAGER roles."""
+        user = self.request.user
+        role_name = user.role.name if user.role else None
+        if role_name in ['SUPER_ADMIN', 'TENANT_MANAGER'] or user.is_superuser:
+            return ['notifications/bulletin_post_form_superadmin.html']
+        return [self.template_name]
+        
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        user = self.request.user
+        role_name = user.role.name if user.role else None
+        if role_name in ['SUPER_ADMIN', 'TENANT_MANAGER'] or user.is_superuser:
+            from apps.core.models import FeatureMessage
+            context['feature_messages'] = FeatureMessage.objects.filter(is_active=True).order_by('-created_at')
+        return context
     
     def get_form_class(self):
         from .forms import BulletinPostForm
@@ -169,10 +222,45 @@ class BulletinPostCreateView(LoginRequiredMixin, CreateView):
         return initial
         
     def form_valid(self, form):
-        form.instance.tenant = self.request.user.tenant
-        form.instance.created_by = self.request.user
-        messages.success(self.request, 'Bulletin post created successfully.')
-        return super().form_valid(form)
+        user = self.request.user
+        role_name = user.role.name if user.role else None
+
+        # Standard tenant users
+        if user.tenant:
+            form.instance.tenant = user.tenant
+            form.instance.created_by = user
+            messages.success(self.request, 'Bulletin post created successfully.')
+            return super().form_valid(form)
+            
+        # Super Admins / Tenant Managers broadcast to their tenants
+        elif role_name in ['SUPER_ADMIN', 'TENANT_MANAGER'] or user.is_superuser:
+            from apps.core.models import Tenant
+            if role_name == 'TENANT_MANAGER':
+                from apps.subscriptions.models import TenantManagerAssignment
+                tenant_ids = TenantManagerAssignment.objects.filter(manager=user).values_list('tenant_id', flat=True)
+                tenants = Tenant.objects.filter(id__in=tenant_ids, is_active=True)
+            else:
+                tenants = Tenant.objects.filter(is_active=True)
+                
+            post_data = form.cleaned_data
+            
+            for tenant in tenants:
+                post = BulletinPost.objects.create(
+                    tenant=tenant,
+                    created_by=user,
+                    title=post_data['title'],
+                    body=post_data['body'],
+                    post_type=post_data['post_type']
+                )
+                if post_data.get('target_roles'):
+                    post.target_roles.set(post_data['target_roles'])
+                    
+            messages.success(self.request, f'Bulletin broadcasted successfully to {tenants.count()} active tenants.')
+            return redirect(self.success_url)
+            
+        # Fallback (shouldn't be reached ideally)
+        messages.error(self.request, 'You do not have permission to create bulletin posts without a tenant context.')
+        return redirect(self.success_url)
 
 class BulletinPostDeleteView(LoginRequiredMixin, DeleteView):
     model = BulletinPost

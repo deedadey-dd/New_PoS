@@ -26,6 +26,11 @@ class BulletinPostForm(forms.ModelForm):
             # Restrict target_roles and target_locations choices based on who is posting
             role_name = user.role.name if user.role else None
             
+            # Restrict SYSTEM_UPDATE post_type to ADMIN and TENANT_MANAGER
+            if role_name not in ['ADMIN', 'TENANT_MANAGER', 'SUPER_ADMIN']:
+                choices = [c for c in self.fields['post_type'].choices if c[0] != 'SYSTEM_UPDATE']
+                self.fields['post_type'].choices = choices
+            
             if role_name == 'SHOP_MANAGER':
                 # Shop managers can only target their own shop's staff
                 # Or other shop managers if inter-shop transfers is allowed
