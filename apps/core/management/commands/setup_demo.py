@@ -742,16 +742,22 @@ class Command(BaseCommand):
             tenant=tenant, name='Transportation', defaults={'is_default': True}
         )
 
-        for _ in range(6):
+        # Use explicit voucher numbers to avoid the race between auto-gen
+        # (which counts created_at__date=today) and our backdating update.
+        # Format: DEMO-<tenant_pk>-EXP-<nn>  — guaranteed unique across both tenants.
+        tenant_tag = f'DEMO-{tenant.pk}'
+        for exp_idx in range(6):
             days_ago = random.randint(0, 20)
             exp_time = now - timedelta(days=days_ago, hours=random.randint(1, 10))
             shop     = random.choice([loc_shop1, loc_shop2])
             mgr      = manager1 if shop == loc_shop1 else manager2
             source   = 'SHOP_CASH' if is_strict else random.choice(['SHOP_CASH', 'ACCOUNTANT'])
 
+            voucher_number = f'{tenant_tag}-EXP-{exp_idx + 1:04d}'
             req = ExpenditureRequest.objects.create(
                 tenant=tenant, location=shop,
                 requested_by=mgr, status='FULLY_APPROVED',
+                voucher_number=voucher_number,
             )
             ExpenditureRequest.objects.filter(pk=req.pk).update(created_at=exp_time)
 
