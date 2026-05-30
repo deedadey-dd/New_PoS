@@ -800,7 +800,13 @@ class AuditorDashboardView(LoginRequiredMixin, View):
             
             # Deposits from this shop (confirmed)
             deposits_filter = Q(tenant=tenant, from_location=shop, transfer_type='DEPOSIT', status='CONFIRMED') & get_date_filter()
+            deposits_filter &= ~Q(to_user__role__name__in=['SHOP_MANAGER', 'SHOP_ATTENDANT', 'SHOP_CASHIER'])
             deposits = CashTransfer.objects.filter(deposits_filter).aggregate(
+                total=Sum('amount')
+            )['total'] or Decimal('0')
+
+            expenditures_filter = Q(tenant=tenant, from_location=shop, transfer_type='EXPENDITURE', status='CONFIRMED') & get_date_filter()
+            expenditures = CashTransfer.objects.filter(expenditures_filter).aggregate(
                 total=Sum('amount')
             )['total'] or Decimal('0')
             
@@ -809,8 +815,16 @@ class AuditorDashboardView(LoginRequiredMixin, View):
             floats_received = CashTransfer.objects.filter(floats_filter).aggregate(
                 total=Sum('amount')
             )['total'] or Decimal('0')
+
+            # Customer Cash Payments
+            from apps.customers.models import CustomerTransaction
+            customer_payments = CustomerTransaction.objects.filter(
+                Q(tenant=tenant, performed_by__location=shop, transaction_type='CREDIT', description__icontains='(CASH)') &
+                ~Q(description__icontains='ECASH') & ~Q(description__icontains='MOMO') &
+                get_date_filter('created_at__date')
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
             
-            est_cash = cash_sales_val + floats_received - deposits
+            est_cash = cash_sales_val + customer_payments + floats_received - deposits - expenditures
             
             location_summary.append({
                 'shop_name': shop.name,
@@ -1167,13 +1181,19 @@ class LocationSummaryModalView(LoginRequiredMixin, View):
 
             deposits = CashTransfer.objects.filter(
                 tenant=request.user.tenant, from_location=location, transfer_type='DEPOSIT', status='CONFIRMED'
+            ).exclude(
+                to_user__role__name__in=['SHOP_MANAGER', 'SHOP_ATTENDANT', 'SHOP_CASHIER']
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
+            expenditures = CashTransfer.objects.filter(
+                tenant=request.user.tenant, from_location=location, transfer_type='EXPENDITURE', status='CONFIRMED'
             ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
             
             floats_received = CashTransfer.objects.filter(
                 tenant=request.user.tenant, to_location=location, transfer_type='FLOAT', status='CONFIRMED'
             ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
             
-            context['cash_on_hand'] = cash_sales_val + customer_payments + floats_received - deposits
+            context['cash_on_hand'] = cash_sales_val + customer_payments + floats_received - deposits - expenditures
 
             # 2. E-Cash Balance
             ecash_sales = all_time_sales.filter(payment_method='ECASH').aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
