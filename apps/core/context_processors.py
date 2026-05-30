@@ -204,10 +204,11 @@ def tenant_context(request):
             
             own_sales = cash_sales + mixed_sales
             
-            # Sum of all opening cash from shifts run by this user
-            all_opening_cash = Shift.objects.filter(
+            # Opening cash from the currently OPEN shift run by this user
+            open_shift_opening_cash = Shift.objects.filter(
                 tenant=tenant,
-                attendant=user
+                attendant=user,
+                status='OPEN'
             ).aggregate(total=Sum('opening_cash'))['total'] or Decimal('0')
             
             # Customer cash payments received (payments on account in cash)
@@ -233,7 +234,7 @@ def tenant_context(request):
                 - sent
                 + own_sales
                 + customer_payments
-                + all_opening_cash
+                + open_shift_opening_cash
                 - banked_cash
             ))
         

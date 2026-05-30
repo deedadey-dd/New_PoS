@@ -604,6 +604,33 @@ class WorkflowIntegrationTests(TestCase):
         ctx_manager = self.get_navbar_context(self.manager_user)
         self.assertEqual(ctx_manager['cash_on_hand'], Decimal("200.00"))
 
+        # Test manager shift opening cash bloat bug (regression test)
+        # Manager opens a shift with 100 float
+        shift = Shift.objects.create(
+            tenant=self.tenant,
+            attendant=self.manager_user,
+            shop=self.shop_location,
+            opening_cash=Decimal("100.00"),
+            status="OPEN"
+        )
+        
+        # Cash on hand should now include the 100 open shift cash
+        ctx_manager = self.get_navbar_context(self.manager_user)
+        self.assertEqual(ctx_manager['cash_on_hand'], Decimal("300.00"))
+        
+        # Manager closes shift
+        shift.close(closing_cash=Decimal("300.00"))
+        
+        # Cash on hand should REMAIN 200 (since the 100 opening cash is no longer counted,
+        # but wait, the closed shift's cash doesn't disappear into thin air. 
+        # For a manager, their own sales remain in their hand.
+        # But where does the 100 float come from? In reality, it came from their 
+        # existing cash_on_hand or was received via a CashTransfer.
+        # So when the shift closes, the 100 opening cash is NO LONGER added on top.
+        # It drops back to 200 (the base sales they made).
+        ctx_manager = self.get_navbar_context(self.manager_user)
+        self.assertEqual(ctx_manager['cash_on_hand'], Decimal("200.00"))
+
         # Create expenditure request
         req = ExpenditureRequest.objects.create(
             tenant=self.tenant,
