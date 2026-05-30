@@ -324,10 +324,29 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function () {
-            var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
-            var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-                return new bootstrap.Tooltip(tooltipTriggerEl)
-            })
+            // ── Tooltip init ─────────────────────────────────────────────
+            var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+            tooltipTriggerList.map(function (el) { return new bootstrap.Tooltip(el); });
+
+            // ── Tab persistence via localStorage ─────────────────────────
+            var STORAGE_KEY = 'demo_workflow_tab';
+            var tabButtons  = document.querySelectorAll('#demoTabs [data-bs-toggle="tab"]');
+
+            // Restore saved tab on page load
+            var savedTab = localStorage.getItem(STORAGE_KEY);
+            if (savedTab) {
+                var targetBtn = document.querySelector('#demoTabs [data-bs-target="' + savedTab + '"]');
+                if (targetBtn) {
+                    bootstrap.Tab.getOrCreateInstance(targetBtn).show();
+                }
+            }
+
+            // Save the active tab whenever the user clicks a different one
+            tabButtons.forEach(function (btn) {
+                btn.addEventListener('shown.bs.tab', function (e) {
+                    localStorage.setItem(STORAGE_KEY, e.target.getAttribute('data-bs-target'));
+                });
+            });
         });
     </script>
 </body>
