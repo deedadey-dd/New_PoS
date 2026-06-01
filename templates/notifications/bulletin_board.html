@@ -112,7 +112,7 @@
         
         {% if can_post %}
         <div class="col-lg-4">
-            <div class="card shadow-sm border-0 sticky-top" style="top: 20px;">
+            <div class="card shadow-sm border-0 sticky-top" style="top: 20px; z-index: 1;">
                 <div class="card-header bg-white py-3">
                     <h5 class="mb-0 fw-bold"><i class="bi bi-clock-history me-2 text-primary"></i>Your History</h5>
                     <form style="display:none;" id="history-csrf-form">{% csrf_token %}</form>
