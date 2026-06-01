@@ -2108,7 +2108,7 @@
                     // Open Paystack inline popup
                     const handler = PaystackPop.setup({
                         key: data.public_key,
-                        email: data.customer_email || 'customer@example.com',
+                        email: data.customer_email || `walkin_${Math.random().toString(36).substring(2, 10)}@example.com`,
                         amount: Math.round(total * 100), // Convert to pesewas
                         currency: 'GHS',
                         ref: data.reference,

@@ -803,7 +803,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         if (data.checkout_type === 'inline') {
                             const handler = PaystackPop.setup({
                                 key: data.public_key,
-                                email: data.customer_email || 'customer@example.com',
+                                email: data.customer_email || `walkin_${Math.random().toString(36).substring(2, 10)}@example.com`,
                                 amount: Math.round(paid * 100), // convert to kobo/pesewas
                                 currency: 'GHS', // or from context
                                 ref: data.reference,

@@ -1119,8 +1119,12 @@ def api_complete_sale(request):
     
     cart_items  = data.get('items', []) or data.get('cart', [])
     payment_method = data.get('payment_method', 'CASH')
+    
+    if payment_method == 'ECASH':
+        return JsonResponse({'error': 'E-Cash payments must be verified via the ECASH endpoint.'}, status=400)
+        
     # Ensure payment_method is valid - handle empty string or invalid values
-    valid_payment_methods = ['CASH', 'CREDIT', 'ECASH', 'MIXED', 'PAYMENT_ON_ACCOUNT', 'MOMO', 'PENDING_INVOICE']
+    valid_payment_methods = ['CASH', 'CREDIT', 'MIXED', 'PAYMENT_ON_ACCOUNT', 'MOMO', 'PENDING_INVOICE']
     if not payment_method or payment_method not in valid_payment_methods:
         payment_method = 'CASH'
     amount_paid = Decimal(str(data.get('amount_paid', 0)))
@@ -1362,7 +1366,11 @@ def api_pay_invoice(request, pk):
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
         
     payment_method = data.get('payment_method', 'CASH')
-    valid_payment_methods = ['CASH', 'CREDIT', 'ECASH', 'MIXED', 'PAYMENT_ON_ACCOUNT', 'MOMO']
+    
+    if payment_method == 'ECASH':
+        return JsonResponse({'error': 'E-Cash payments must be verified via the ECASH endpoint.'}, status=400)
+        
+    valid_payment_methods = ['CASH', 'CREDIT', 'MIXED', 'PAYMENT_ON_ACCOUNT', 'MOMO']
     if not payment_method or payment_method not in valid_payment_methods:
         payment_method = 'CASH'
         
@@ -1372,15 +1380,6 @@ def api_pay_invoice(request, pk):
     try:
         with transaction.atomic():
             sale.complete(amount_paid, payment_method, paystack_ref, cashier=request.user)
-            if payment_method == 'ECASH':
-                from apps.payments.models import ECashLedger
-                ECashLedger.record_payment(
-                    tenant=request.user.tenant,
-                    amount=sale.total,
-                    sale=sale,
-                    paystack_ref=paystack_ref,
-                    user=request.user
-                )
             
             # Notify Shop Manager if using strict sales workflow
             if request.user.tenant.use_strict_sales_workflow:
@@ -1705,9 +1704,13 @@ def initialize_ecash_payment(request):
         
         # Shop is already retrieved up top
         
+        import uuid
+        
         # Get customer if specified
         customer = None
-        customer_email = 'customer@example.com'
+        unique_suffix = uuid.uuid4().hex[:8]
+        customer_email = f'walkin_{unique_suffix}@example.com'
+        
         if customer_id:
             from apps.customers.models import Customer
             customer = Customer.objects.filter(
@@ -1718,7 +1721,6 @@ def initialize_ecash_payment(request):
                 customer_email = customer.email
         
         # Generate unique reference
-        import uuid
         reference = f"ECASH-{timezone.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8].upper()}"
         
         # For payment on account, we don't create a sale - just return Paystack config
