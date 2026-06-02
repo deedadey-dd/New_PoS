@@ -1702,14 +1702,13 @@ def initialize_ecash_payment(request):
                 'error': 'Invalid cart data.'
             }, status=400)
         
-        # Shop is already retrieved up top
+        phone = str(data.get('phone', '')).strip()
         
         import uuid
+        import re
         
         # Get customer if specified
         customer = None
-        unique_suffix = uuid.uuid4().hex[:8]
-        customer_email = f'walkin_{unique_suffix}@example.com'
         
         if customer_id:
             from apps.customers.models import Customer
@@ -1717,8 +1716,28 @@ def initialize_ecash_payment(request):
                 tenant=tenant,
                 pk=customer_id
             ).first()
-            if customer and customer.email:
-                customer_email = customer.email
+            if customer and customer.phone and not phone:
+                phone = str(customer.phone).strip()
+                
+        # If we have an existing sale, try to get phone from it
+        if existing_sale_id and not phone:
+            sale_obj = Sale.objects.filter(tenant=tenant, pk=existing_sale_id).first()
+            if sale_obj:
+                if getattr(sale_obj, 'customer_phone', None):
+                    phone = sale_obj.customer_phone
+                elif getattr(sale_obj, 'customer', None) and sale_obj.customer.phone:
+                    phone = sale_obj.customer.phone
+                    
+        # Generate predictable email based on phone to avoid Paystack fraud drops
+        if phone:
+            clean_phone = re.sub(r'\D', '', phone)
+            customer_email = f'momo_{clean_phone}@hendaxis.com'
+        else:
+            unique_suffix = uuid.uuid4().hex[:8]
+            customer_email = f'walkin_{unique_suffix}@hendaxis.com'
+        
+        if customer and customer.email and not phone:
+            customer_email = customer.email
         
         # Generate unique reference
         reference = f"ECASH-{timezone.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8].upper()}"

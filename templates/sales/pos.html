@@ -2059,7 +2059,7 @@
             if (selectedCustomer && selectedCustomer.phone) {
                 phone = selectedCustomer.phone;
             }
-            if (!phone && ['appsnmobile', 'expresspay', 'nalopay'].includes(provider.provider.toLowerCase())) {
+            if (!phone && ['paystack', 'appsnmobile', 'expresspay', 'nalopay'].includes(provider.provider.toLowerCase())) {
                 phone = prompt(`Please enter customer's Mobile Money phone number for ${provider.name}:`);
                 if (!phone) {
                     alert('Phone number is required for this payment method.');
@@ -2113,6 +2113,8 @@
                         currency: 'GHS',
                         ref: data.reference,
                         metadata: {
+                            device_type: "pos_terminal",
+                            is_pos_checkout: "true",
                             tenant_id: data.tenant_id,
                             sale_id: data.sale_id,
                             custom_fields: [
