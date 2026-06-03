@@ -144,45 +144,31 @@ class CashTransferForm(forms.ModelForm):
                     to_user=user
                 ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
                 
-                # Cash from current open shift
-                open_shift_cash = Decimal('0')
-                open_shift = Shift.objects.filter(
+                # Own cash collected from sales (either as cashier or attendant)
+                cash_sales = Sale.objects.filter(
+                    tenant=user.tenant,
+                    status__in=['COMPLETED', 'PENDING_DISPATCH'],
+                    payment_method='CASH'
+                ).filter(
+                    Q(cashier=user) | Q(cashier__isnull=True, attendant=user)
+                ).aggregate(total=Sum('total'))['total'] or Decimal('0')
+                
+                mixed_sales = Sale.objects.filter(
+                    tenant=user.tenant,
+                    status__in=['COMPLETED', 'PENDING_DISPATCH'],
+                    payment_method='MIXED'
+                ).filter(
+                    Q(cashier=user) | Q(cashier__isnull=True, attendant=user)
+                ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+                
+                own_sales = cash_sales + mixed_sales
+                
+                # Opening cash from the currently OPEN shift run by this user
+                open_shift_opening_cash = Shift.objects.filter(
                     tenant=user.tenant,
                     attendant=user,
                     status='OPEN'
-                ).first()
-                
-                if open_shift:
-                    shift_cash_sales = Sale.objects.filter(
-                        tenant=user.tenant,
-                        shift=open_shift,
-                        status='COMPLETED',
-                        payment_method='CASH'
-                    ).aggregate(total=Sum('total'))['total'] or Decimal('0')
-                    shift_mixed = Sale.objects.filter(
-                        tenant=user.tenant,
-                        shift=open_shift,
-                        status='COMPLETED',
-                        payment_method='MIXED'
-                    ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
-                    open_shift_cash = open_shift.opening_cash + shift_cash_sales + shift_mixed
-                
-                # Own shiftless cash sales
-                shiftless_cash_sales = Sale.objects.filter(
-                    tenant=user.tenant,
-                    attendant=user,
-                    shift__isnull=True,
-                    status='COMPLETED',
-                    payment_method='CASH'
-                ).aggregate(total=Sum('total'))['total'] or Decimal('0')
-                shiftless_mixed = Sale.objects.filter(
-                    tenant=user.tenant,
-                    attendant=user,
-                    shift__isnull=True,
-                    status='COMPLETED',
-                    payment_method='MIXED'
-                ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
-                own_sales = shiftless_cash_sales + shiftless_mixed
+                ).aggregate(total=Sum('opening_cash'))['total'] or Decimal('0')
                 
                 # Customer payments on account
                 customer_payments = CustomerTransaction.objects.filter(
@@ -194,7 +180,61 @@ class CashTransferForm(forms.ModelForm):
                     description__icontains='ECASH'
                 ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
                 
-                self.cash_on_hand = max(Decimal('0'), received - sent + open_shift_cash + own_sales + customer_payments)
+                # Deduct cash transferred to the bank
+                from apps.accounting.models import BankTransfer
+                banked_cash = BankTransfer.objects.filter(
+                    tenant=user.tenant,
+                    accountant=user,
+                    fund_source='CASH'
+                ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                
+                # Check if using strict sales workflow
+                if not user.tenant.use_strict_sales_workflow and user.location:
+                    # In standard workflow, the shop manager holds all of the shop's cash
+                    location = user.location
+                    
+                    # All time cash sales at this location
+                    all_sales_agg = Sale.objects.filter(tenant=user.tenant, shop=location, status__in=['COMPLETED', 'PENDING_DISPATCH']).aggregate(
+                        cash_sales=Sum('total', filter=Q(payment_method='CASH')),
+                        mixed_paid=Sum('amount_paid', filter=Q(payment_method='MIXED')),
+                    )
+                    cash_sales_val = (all_sales_agg['cash_sales'] or Decimal('0')) + (all_sales_agg['mixed_paid'] or Decimal('0'))
+                    
+                    # Customer Cash Payments
+                    loc_customer_payments = CustomerTransaction.objects.filter(
+                        tenant=user.tenant,
+                        performed_by__location=location,
+                        transaction_type='CREDIT',
+                        description__icontains='(CASH)'
+                    ).exclude(description__icontains='ECASH').exclude(description__icontains='MOMO').aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
+                    # Cash transferred OUT of the location (deposits to accountant, expenditures)
+                    deposits = CashTransfer.objects.filter(
+                        tenant=user.tenant, from_location=location, transfer_type='DEPOSIT', status='CONFIRMED'
+                    ).exclude(
+                        to_user__role__name__in=['SHOP_MANAGER', 'SHOP_ATTENDANT', 'SHOP_CASHIER']
+                    ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
+                    expenditures = CashTransfer.objects.filter(
+                        tenant=user.tenant, from_location=location, transfer_type='EXPENDITURE', status='CONFIRMED'
+                    ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                    
+                    # Floats received at the location
+                    floats_received = CashTransfer.objects.filter(
+                        tenant=user.tenant, to_location=location, transfer_type='FLOAT', status='CONFIRMED'
+                    ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                    
+                    self.cash_on_hand = max(Decimal('0'), cash_sales_val + loc_customer_payments + floats_received - deposits - expenditures - banked_cash)
+                else:
+                    # Strict workflow: Cash is tracked individually per user
+                    self.cash_on_hand = max(Decimal('0'), (
+                        received
+                        - sent
+                        + own_sales
+                        + customer_payments
+                        + open_shift_opening_cash
+                        - banked_cash
+                    ))
                 
                 # Shop managers and cashiers can send to accountants
                 accountants = User.objects.filter(
