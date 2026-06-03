@@ -2109,6 +2109,7 @@
                     const handler = PaystackPop.setup({
                         key: data.public_key,
                         email: data.customer_email || `walkin_${Math.random().toString(36).substring(2, 10)}@example.com`,
+                        phone: data.phone,
                         amount: Math.round(total * 100), // Convert to pesewas
                         currency: 'GHS',
                         ref: data.reference,

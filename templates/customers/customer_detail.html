@@ -281,22 +281,24 @@
                     } else {
                         // Open Paystack popup (inline JS)
                         const handler = PaystackPop.setup({
-                            key: data.paystack_public_key,
-                        email: CUSTOMER_EMAIL || `walkin_${Math.random().toString(36).substring(2, 10)}@example.com`,
-                        amount: Math.round(amount * 100),  // Convert to pesewas
-                        currency: 'GHS',
-                        ref: data.reference,
-                        metadata: {
-                            tenant_id: data.tenant_id,
-                            customer_id: CUSTOMER_ID,
-                            payment_type: 'customer_payment_on_account',
-                            custom_fields: [
-                                {
-                                    display_name: "Customer Name",
-                                    variable_name: "customer_name",
-                                    value: CUSTOMER_NAME
-                                }
-                            ]
+                            key: data.public_key,
+                            email: data.customer_email || `walkin_${Math.random().toString(36).substring(2, 10)}@example.com`,
+                            phone: data.phone,
+                            amount: Math.round(amount * 100), // Convert to pesewas
+                            currency: 'GHS',
+                            ref: data.reference,
+                            metadata: {
+                                tenant_id: data.tenant_id,
+                                customer_id: CUSTOMER_ID,
+                                payment_type: 'customer_payment_on_account',
+                                custom_fields: [
+                                    {
+                                        display_name: "Customer Name",
+                                        variable_name: "customer_name",
+                                        value: CUSTOMER_NAME
+                                    }
+                                ]
+                            }
                         },
                         callback: function (response) {
                             // Payment successful - verify and complete

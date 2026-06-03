@@ -1836,6 +1836,7 @@ def initialize_ecash_payment(request):
             'checkout_type': checkout_type,
             'authorization_url': authorization_url,
             'customer_email': customer_email,
+            'phone': phone,
             'tenant_id': tenant.pk,
             'total': str(total if is_payment_on_account else sale.total),
             'provider': provider.provider_name

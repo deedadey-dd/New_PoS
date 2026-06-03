@@ -804,6 +804,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             const handler = PaystackPop.setup({
                                 key: data.public_key,
                                 email: data.customer_email || `walkin_${Math.random().toString(36).substring(2, 10)}@example.com`,
+                                phone: data.phone,
                                 amount: Math.round(paid * 100), // convert to kobo/pesewas
                                 currency: 'GHS', // or from context
                                 ref: data.reference,
