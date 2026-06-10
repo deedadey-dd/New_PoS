@@ -501,7 +501,11 @@ document.addEventListener('DOMContentLoaded', function() {
         if (data.customer) {
             html += '<div class="col-sm-6">';
             html += '<small class="text-muted d-block">Customer</small>';
-            html += '<span class="fw-medium">' + data.customer + '</span>';
+            let customerHtml = data.customer;
+            if (data.customer_id) {
+                customerHtml = '<a href="/customers/' + data.customer_id + '/" class="text-decoration-none fw-bold">' + data.customer + '</a>';
+            }
+            html += '<span class="fw-medium">' + customerHtml + '</span>';
             if (data.customer_phone) {
                 html += '<br><small class="text-muted"><i class="bi bi-telephone me-1"></i>' + data.customer_phone + '</small>';
             }
@@ -554,7 +558,11 @@ document.addEventListener('DOMContentLoaded', function() {
         html += '<span>Amount Paid</span><span>' + currencySymbol + parseFloat(data.amount_paid).toFixed(2) + '</span>';
         html += '</div>';
 
-        if (data.change_given && parseFloat(data.change_given) > 0) {
+        if (data.overpayment_credited && parseFloat(data.overpayment_credited) > 0) {
+            html += '<div class="d-flex justify-content-between mt-1 text-info">';
+            html += '<span>Overage (Credited to Account)</span><span>' + currencySymbol + parseFloat(data.overpayment_credited).toFixed(2) + '</span>';
+            html += '</div>';
+        } else if (data.change_given && parseFloat(data.change_given) > 0 && !data.customer) {
             html += '<div class="d-flex justify-content-between text-success">';
             html += '<span>Change</span><span>' + currencySymbol + parseFloat(data.change_given).toFixed(2) + '</span>';
             html += '</div>';

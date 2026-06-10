@@ -66,8 +66,10 @@
                     {% for customer in customers %}
                     <tr>
                         <td>
-                            <div class="fw-bold">{{ customer.name }}</div>
-                            <small class="text-muted">Created {{ customer.created_at|date:"M d, Y" }}</small>
+                            <a href="{% url 'customers:customer_detail' customer.pk %}" class="fw-bold text-decoration-none text-dark customer-name-link">
+                                {{ customer.name }}
+                            </a>
+                            <br><small class="text-muted">Created {{ customer.created_at|date:"M d, Y" }}</small>
                         </td>
                         <td>
                             {% if customer.shop %}
@@ -106,10 +108,18 @@
                         </td>
                         <td>
                             <div class="btn-group">
-                                <a href="{% url 'customers:customer_detail' customer.pk %}"
-                                    class="btn btn-sm btn-outline-primary" title="View Ledger">
-                                    <i class="bi bi-journal-text"></i> View
-                                </a>
+                                <button type="button" class="btn btn-sm btn-outline-primary btn-customer-preview"
+                                    data-customer-id="{{ customer.pk }}"
+                                    data-customer-name="{{ customer.name|escapejs }}"
+                                    data-customer-phone="{{ customer.phone|escapejs }}"
+                                    data-customer-email="{{ customer.email|escapejs }}"
+                                    data-customer-shop="{% if customer.shop %}{{ customer.shop.name|escapejs }}{% endif %}"
+                                    data-customer-balance="{{ customer.current_balance }}"
+                                    data-customer-status="{% if customer.is_active %}Active{% else %}Inactive{% endif %}"
+                                    data-customer-created="{{ customer.created_at|date:'M d, Y' }}"
+                                    title="Quick Preview">
+                                    <i class="bi bi-eye"></i> View
+                                </button>
                                 <a href="{% url 'customers:customer_edit' customer.pk %}"
                                     class="btn btn-sm btn-outline-secondary" title="Edit">
                                     <i class="bi bi-pencil"></i>
@@ -134,4 +144,79 @@
         {% endif %}
     </div>
 </div>
+
+<!-- Customer Quick Preview Modal -->
+<div class="modal fade" id="customerPreviewModal" tabindex="-1" aria-labelledby="customerPreviewModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="customerPreviewModalLabel">
+                    <i class="bi bi-person-circle me-2 text-primary"></i>
+                    <span id="previewCustomerName">Customer</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <dl class="row mb-0" id="customerPreviewContent">
+                    <!-- Populated by JS -->
+                </dl>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <a id="previewGoToPageBtn" href="#" class="btn btn-primary">
+                    <i class="bi bi-journal-text me-1"></i>View Full Ledger
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const modal = new bootstrap.Modal(document.getElementById('customerPreviewModal'));
+    const currencySymbol = '{{ currency_symbol }}';
+
+    document.querySelectorAll('.btn-customer-preview').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            const id = this.dataset.customerId;
+            const name = this.dataset.customerName;
+            const phone = this.dataset.customerPhone;
+            const email = this.dataset.customerEmail;
+            const shop = this.dataset.customerShop;
+            const balance = parseFloat(this.dataset.customerBalance);
+            const status = this.dataset.customerStatus;
+            const created = this.dataset.customerCreated;
+
+            document.getElementById('previewCustomerName').textContent = name;
+            document.getElementById('previewGoToPageBtn').href = '/customers/' + id + '/';
+
+            let balanceHtml;
+            if (balance > 0) {
+                balanceHtml = '<span class="badge bg-danger fs-6">' + currencySymbol + balance.toFixed(2) + '</span> <small class="text-danger ms-1">Owes Shop</small>';
+            } else if (balance < 0) {
+                balanceHtml = '<span class="badge bg-success fs-6">' + currencySymbol + Math.abs(balance).toFixed(2) + '</span> <small class="text-success ms-1">Credit</small>';
+            } else {
+                balanceHtml = '<span class="badge bg-secondary">No Balance</span>';
+            }
+
+            const statusBadge = status === 'Active'
+                ? '<span class="badge bg-success-subtle text-success">Active</span>'
+                : '<span class="badge bg-danger-subtle text-danger">Inactive</span>';
+
+            let html = '';
+            html += '<dt class="col-sm-4">Phone</dt><dd class="col-sm-8">' + (phone || '<span class="text-muted">—</span>') + '</dd>';
+            html += '<dt class="col-sm-4">Email</dt><dd class="col-sm-8">' + (email || '<span class="text-muted">—</span>') + '</dd>';
+            html += '<dt class="col-sm-4">Shop</dt><dd class="col-sm-8">' + (shop || '<span class="text-muted">Global</span>') + '</dd>';
+            html += '<dt class="col-sm-4">Balance</dt><dd class="col-sm-8">' + balanceHtml + '</dd>';
+            html += '<dt class="col-sm-4">Status</dt><dd class="col-sm-8">' + statusBadge + '</dd>';
+            html += '<dt class="col-sm-4">Member Since</dt><dd class="col-sm-8">' + created + '</dd>';
+
+            document.getElementById('customerPreviewContent').innerHTML = html;
+            modal.show();
+        });
+    });
+});
+</script>
 {% endblock %}

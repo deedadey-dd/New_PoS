@@ -458,7 +458,7 @@ class Sale(TenantModel):
                     customer=self.customer,
                     transaction_type='CREDIT',
                     amount=self.change_given,
-                    description=f"Change from Sale {self.sale_number} (CASH)",
+                    description=f"Change (CASH)",
                     reference_id=self.sale_number,
                     balance_before=balance_before,
                     balance_after=self.customer.current_balance,
@@ -494,7 +494,7 @@ class Sale(TenantModel):
                     customer=self.customer,
                     transaction_type='DEBIT', # Debit = Increase Debt
                     amount=debt_amount,
-                    description=f"Credit Purchase (Sale {self.sale_number})",
+                    description=f"Credit Purchase",
                     reference_id=self.sale_number,
                     balance_before=balance_before,
                     balance_after=self.customer.current_balance,
@@ -614,19 +614,29 @@ class Sale(TenantModel):
                     created_by=user or self.attendant
                 )
                 
-        # 2. Reverse Customer Transactions (if credit sale)
-        if self.payment_method == 'PENDING_INVOICE' and self.customer:
-            from apps.customers.models import CustomerTransaction
-            # Create a compensating credit to remove the debt
-            CustomerTransaction.objects.create(
-                tenant=self.tenant,
-                customer=self.customer,
-                transaction_type='CREDIT',
-                amount=self.total,
-                reference_id=str(self.pk),
-                description=f"Refund for Sale {self.sale_number}: {reason}",
-                created_by=user or self.attendant
-            )
+        # 2. Reverse Customer Transactions (if credit or partial payment)
+        if self.customer:
+            debt_amount = self.total - self.amount_paid
+            if self.payment_method == 'PENDING_INVOICE':
+                debt_amount = self.total
+                
+            if debt_amount > 0:
+                from apps.customers.models import CustomerTransaction
+                balance_before = self.customer.current_balance
+                self.customer.current_balance -= debt_amount
+                self.customer.save()
+                
+                CustomerTransaction.objects.create(
+                    tenant=self.tenant,
+                    customer=self.customer,
+                    transaction_type='CREDIT',
+                    amount=debt_amount,
+                    reference_id=self.sale_number,
+                    balance_before=balance_before,
+                    balance_after=self.customer.current_balance,
+                    description=f"Refund: {reason}",
+                    performed_by=user or self.attendant
+                )
             
         self.status = 'REFUNDED'
         self.notes = f"REFUNDED: {reason}" if reason else "REFUNDED"
@@ -820,6 +830,12 @@ class RefundRequest(TenantModel):
         shop = sale.shop
         shop_manager = self.requested_by
 
+        # The actual cash/funds the customer paid us
+        paid_amount = sale.amount_paid
+        
+        if paid_amount <= 0:
+            return
+
         # Find the accountant user for the to_user field on CashTransfer
         accountant_user = (
             User.objects.filter(
@@ -835,16 +851,33 @@ class RefundRequest(TenantModel):
             or approver
         )
 
-        # Determine effective payment method
         pay_method = sale.payment_method
         always_cash = tenant.refund_always_cash
 
-        if always_cash or pay_method in ('CASH', 'MIXED', 'CREDIT', 'PENDING_INVOICE'):
-            # Deduct from shop cash-on-hand via an auto-confirmed EXPENDITURE transfer
+        # Since sale.status becomes REFUNDED, the sale's amount_paid is automatically
+        # excluded from the shop's cash_sales, ecash_sales, or momo_sales aggregations.
+        # This naturally drops the balance of whatever the original payment method was.
+
+        if always_cash and pay_method in ('ECASH', 'MOMO'):
+            # The sale was digital, but we are paying back in physical cash.
+            # 1. Restore the digital balance (because excluding the sale artificially dropped it)
+            DigitalFundWithdrawal.objects.create(
+                tenant=tenant,
+                shop=shop,
+                accountant=approver,
+                amount=-abs(paid_amount),   # Negative = reversal / money back out
+                fund_source=pay_method,
+                notes=(
+                    f"Refund reversal (Cross-payment): Sale {sale.sale_number} "
+                    f"[{self.refund_number}]"
+                ),
+            )
+            
+            # 2. Deduct physical cash via EXPENDITURE
             if shop_manager:
                 CashTransfer.objects.create(
                     tenant=tenant,
-                    amount=sale.total,
+                    amount=paid_amount,
                     transfer_type='EXPENDITURE',
                     status='CONFIRMED',
                     from_user=shop_manager,
@@ -852,38 +885,12 @@ class RefundRequest(TenantModel):
                     to_user=accountant_user,
                     to_location=shop,
                     notes=(
-                        f"Refund payout: Sale {sale.sale_number} "
+                        f"Refund payout (Cross-payment): Sale {sale.sale_number} "
                         f"[{self.refund_number}] — {self.reason[:100]}"
                     ),
                     confirmed_at=timezone.now(),
                     confirmed_by=approver,
                 )
-        elif pay_method == 'ECASH':
-            # Reverse the shop's e-cash balance with a negative DigitalFundWithdrawal
-            DigitalFundWithdrawal.objects.create(
-                tenant=tenant,
-                shop=shop,
-                accountant=approver,
-                amount=-abs(sale.total),   # Negative = reversal / money back out of accountant's pool
-                fund_source='ECASH',
-                notes=(
-                    f"Refund reversal: Sale {sale.sale_number} "
-                    f"[{self.refund_number}]"
-                ),
-            )
-        elif pay_method == 'MOMO':
-            # Reverse the shop's momo balance
-            DigitalFundWithdrawal.objects.create(
-                tenant=tenant,
-                shop=shop,
-                accountant=approver,
-                amount=-abs(sale.total),
-                fund_source='MOMO',
-                notes=(
-                    f"Refund reversal: Sale {sale.sale_number} "
-                    f"[{self.refund_number}]"
-                ),
-            )
 
     def reject(self, approver, rejection_reason=''):
         """Reject the refund request and notify the shop manager."""

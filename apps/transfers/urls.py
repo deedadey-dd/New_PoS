@@ -25,6 +25,7 @@ urlpatterns = [
     path('api/batches/', views.get_batches_for_transfer, name='api_batches'),
     path('api/batch-details/', views.get_batch_details, name='api_batch_details'),
     path('api/requests/summary/', views.api_request_summary, name='api_request_summary'),
+    path('api/requests/<int:pk>/detail/', views.api_request_detail, name='api_request_detail'),
     
     # Stock Requests
     path('requests/', views.StockRequestListView.as_view(), name='stock_request_list'),

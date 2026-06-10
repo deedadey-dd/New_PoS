@@ -756,14 +756,15 @@ class SaleDetailView(LoginRequiredMixin, DetailView):
 
 
 @login_required
-def api_sale_detail(request, pk):
+def api_sale_detail(request, pk_or_number):
     """Return sale detail as JSON for modal display."""
-    sale = get_object_or_404(
-        Sale.objects.select_related('shop', 'attendant', 'customer')
-                    .prefetch_related('items__product'),
-        pk=pk,
-        tenant=request.user.tenant,
-    )
+    queryset = Sale.objects.select_related('shop', 'attendant', 'customer').prefetch_related('items__product')
+    
+    if str(pk_or_number).startswith('S'):
+        sale = get_object_or_404(queryset, sale_number=pk_or_number, tenant=request.user.tenant)
+    else:
+        sale = get_object_or_404(queryset, pk=pk_or_number, tenant=request.user.tenant)
+        
     items = []
     for item in sale.items.all():
         items.append({
@@ -773,6 +774,20 @@ def api_sale_detail(request, pk):
             'unit_price': str(item.unit_price),
             'total': str(item.total),
         })
+
+    # Look up actual overpayment credited to customer account from CustomerTransaction.
+    # The sale.change_given field is not always populated; the source of truth is the
+    # CustomerTransaction record with description starting 'Overpayment'.
+    overpayment_credited = None
+    if sale.customer:
+        from apps.customers.models import CustomerTransaction
+        op_tx = CustomerTransaction.objects.filter(
+            customer=sale.customer,
+            reference_id=sale.sale_number,
+            description__startswith='Overpayment',
+        ).first()
+        if op_tx:
+            overpayment_credited = str(op_tx.amount)
 
     data = {
         'sale_number': sale.sale_number,
@@ -789,7 +804,9 @@ def api_sale_detail(request, pk):
         'total': str(sale.total),
         'amount_paid': str(sale.amount_paid),
         'change_given': str(sale.change_given) if sale.change_given else None,
+        'overpayment_credited': overpayment_credited,
         'customer': sale.customer.name if sale.customer else (sale.customer_name or None),
+        'customer_id': sale.customer.pk if sale.customer else None,
         'has_registered_customer': bool(sale.customer),
         'customer_name': sale.customer_name,
         'customer_phone': sale.customer_phone,

@@ -1719,12 +1719,22 @@
                         badgeClass = 'badge-warning';
                     }
                 }
+                // Generate a consistent color based on product name
+                let colorHash = 0;
+                for (let i = 0; i < p.name.length; i++) {
+                    colorHash = p.name.charCodeAt(i) + ((colorHash << 5) - colorHash);
+                }
+                const hue = Math.abs(colorHash) % 360;
+                const initials = p.name.substring(0, 2).toUpperCase();
 
                 return `
                     <div class="product-card" onclick="addToCart(${p.id})">
                         <div class="product-quantity-badge ${badgeClass}">${Math.floor(qty)}</div>
-                        <div class="product-img-wrapper">
-                            ${p.image ? `<img src="${p.image}" class="product-card-img" alt="${p.name}">` : `<div class="product-img-placeholder"><i class="bi bi-image text-muted"></i></div>`}
+                        <div class="product-img-wrapper" ${!p.image ? `style="background: linear-gradient(135deg, hsl(${hue}, 70%, 60%), hsl(${(hue + 40) % 360}, 70%, 50%));"` : ''}>
+                            ${p.image 
+                                ? `<img src="${p.image}" class="product-card-img" alt="${p.name}">` 
+                                : `<div class="product-img-placeholder" style="color: rgba(255,255,255,0.9); font-weight: bold; font-size: 2.5rem; letter-spacing: -1px; text-shadow: 1px 1px 2px rgba(0,0,0,0.2); margin-top: -15px;">${initials}</div>`
+                            }
                             <div class="product-name-overlay">${p.name}</div>
                         </div>
                         <div class="product-card-footer">

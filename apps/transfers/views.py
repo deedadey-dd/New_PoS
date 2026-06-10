@@ -628,6 +628,42 @@ def api_request_summary(request):
     return JsonResponse({'summary': result})
 
 
+@login_required
+def api_request_detail(request, pk):
+    """API endpoint to get full details of a single stock request for modal display."""
+    stock_request = get_object_or_404(
+        StockRequest, pk=pk, tenant=request.user.tenant
+    )
+
+    if not stock_request.user_can_view(request.user):
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+
+    items = []
+    for item in stock_request.items.select_related('product').all():
+        items.append({
+            'product_name': item.product.name,
+            'sku': item.product.sku or '',
+            'quantity_requested': str(item.quantity_requested),
+            'notes': item.notes or '',
+        })
+
+    data = {
+        'request_number': stock_request.request_number,
+        'status': stock_request.get_status_display(),
+        'status_code': stock_request.status,
+        'requesting_location': stock_request.requesting_location.name,
+        'supplying_location': stock_request.supplying_location.name,
+        'requested_by': stock_request.requested_by.get_full_name() or stock_request.requested_by.email,
+        'created_at': stock_request.created_at.strftime('%b %d, %Y %H:%M'),
+        'approved_at': stock_request.approved_at.strftime('%b %d, %Y %H:%M') if stock_request.approved_at else None,
+        'approved_by': (stock_request.approved_by.get_full_name() or stock_request.approved_by.email) if stock_request.approved_by else None,
+        'notes': stock_request.notes or '',
+        'items': items,
+        'detail_url': f'/transfers/requests/{stock_request.pk}/',
+    }
+    return JsonResponse(data)
+
+
 class TransferItemHistoryView(LoginRequiredMixin, ListView):
     """
     Product-centric view of transfers showing individual items 
@@ -781,6 +817,24 @@ class StockRequestListView(LoginRequiredMixin, SortableMixin, ListView):
         status = self.request.GET.get('status')
         if status:
             queryset = queryset.filter(status=status)
+
+        # Filter by date range
+        date_from = self.request.GET.get('date_from')
+        date_to = self.request.GET.get('date_to')
+        if date_from:
+            queryset = queryset.filter(created_at__date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(created_at__date__lte=date_to)
+
+        # Filter by requesting location ("From") for incoming tab
+        from_location = self.request.GET.get('from_location')
+        if from_location:
+            queryset = queryset.filter(requesting_location_id=from_location)
+
+        # Filter by requester
+        requested_by = self.request.GET.get('requested_by')
+        if requested_by:
+            queryset = queryset.filter(requested_by_id=requested_by)
         
         return self.apply_sorting(queryset.select_related(
             'requesting_location', 'supplying_location', 'requested_by'
@@ -790,6 +844,19 @@ class StockRequestListView(LoginRequiredMixin, SortableMixin, ListView):
         context = super().get_context_data(**kwargs)
         context['status_choices'] = StockRequest.STATUS_CHOICES
         context['current_tab'] = self.request.GET.get('tab', 'incoming')
+
+        # Populate filter dropdowns
+        from apps.core.models import Location, User as CoreUser
+        tenant = self.request.user.tenant
+        context['all_locations'] = Location.objects.filter(tenant=tenant, is_active=True).order_by('name')
+        context['all_requestors'] = CoreUser.objects.filter(
+            tenant=tenant, is_active=True
+        ).exclude(role__name__in=['AUDITOR']).order_by('first_name', 'last_name')
+        # Preserve filter values for the template
+        context['filter_date_from'] = self.request.GET.get('date_from', '')
+        context['filter_date_to'] = self.request.GET.get('date_to', '')
+        context['filter_from_location'] = self.request.GET.get('from_location', '')
+        context['filter_requested_by'] = self.request.GET.get('requested_by', '')
         
         # Count for tabs
         user = self.request.user

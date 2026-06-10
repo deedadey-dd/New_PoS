@@ -188,9 +188,9 @@ class WorkflowIntegrationTests(TestCase):
         ctx_attendant = self.get_navbar_context(self.attendant_user)
         self.assertEqual(ctx_attendant['cash_on_hand'], Decimal("200.00"))
 
-        # Context check for manager (no own sales completed yet)
+        # Context check for manager (includes the attendant's sale in standard workflow)
         ctx_manager = self.get_navbar_context(self.manager_user)
-        self.assertEqual(ctx_manager['cash_on_hand'], Decimal("0.00"))
+        self.assertEqual(ctx_manager['cash_on_hand'], Decimal("200.00"))
 
         # Complete a cash sale for manager
         sale2 = Sale.objects.create(
@@ -212,7 +212,8 @@ class WorkflowIntegrationTests(TestCase):
         sale2.complete(amount_paid=Decimal("150.00"), payment_method="CASH")
 
         ctx_manager = self.get_navbar_context(self.manager_user)
-        self.assertEqual(ctx_manager['cash_on_hand'], Decimal("150.00"))
+        # Standard workflow: manager sees ALL shop cash (200 attendant + 150 own = 350)
+        self.assertEqual(ctx_manager['cash_on_hand'], Decimal("350.00"))
 
         # Scenario B: Shift Open for Attendant
         shift = Shift.objects.create(
@@ -489,9 +490,9 @@ class WorkflowIntegrationTests(TestCase):
         ctx_attendant = self.get_navbar_context(self.attendant_user)
         self.assertEqual(ctx_attendant['cash_on_hand'], Decimal("0.00"))
 
-        # Manager cash is 0 until transfer is confirmed
+        # Manager cash is 100 (the sale amount, ignoring the internal 50 float)
         ctx_manager = self.get_navbar_context(self.manager_user)
-        self.assertEqual(ctx_manager['cash_on_hand'], Decimal("0.00"))
+        self.assertEqual(ctx_manager['cash_on_hand'], Decimal("100.00"))
 
         # Confirm the transfer
         transfer.status = "CONFIRMED"
@@ -500,7 +501,7 @@ class WorkflowIntegrationTests(TestCase):
         transfer.save()
 
         ctx_manager = self.get_navbar_context(self.manager_user)
-        self.assertEqual(ctx_manager['cash_on_hand'], Decimal("150.00"))
+        self.assertEqual(ctx_manager['cash_on_hand'], Decimal("100.00"))
 
         # 2. Manager transfers to Accountant
         manager_to_acc = CashTransfer.objects.create(
@@ -517,7 +518,7 @@ class WorkflowIntegrationTests(TestCase):
 
         # Manager has not had deduction yet because status is PENDING
         ctx_manager = self.get_navbar_context(self.manager_user)
-        self.assertEqual(ctx_manager['cash_on_hand'], Decimal("150.00"))
+        self.assertEqual(ctx_manager['cash_on_hand'], Decimal("100.00"))
 
         # Confirm transfer
         manager_to_acc.status = "CONFIRMED"
@@ -525,9 +526,9 @@ class WorkflowIntegrationTests(TestCase):
         manager_to_acc.confirmed_by = self.accountant_user
         manager_to_acc.save()
 
-        # Manager cash drops to 50
+        # Manager cash drops to 0
         ctx_manager = self.get_navbar_context(self.manager_user)
-        self.assertEqual(ctx_manager['cash_on_hand'], Decimal("50.00"))
+        self.assertEqual(ctx_manager['cash_on_hand'], Decimal("0.00"))
 
         # Accountant cash becomes 100
         ctx_accountant = self.get_navbar_context(self.accountant_user)
@@ -614,20 +615,13 @@ class WorkflowIntegrationTests(TestCase):
             status="OPEN"
         )
         
-        # Cash on hand should now include the 100 open shift cash
+        # Cash on hand should STILL be 200 because internal floats do not increase global shop cash
         ctx_manager = self.get_navbar_context(self.manager_user)
-        self.assertEqual(ctx_manager['cash_on_hand'], Decimal("300.00"))
+        self.assertEqual(ctx_manager['cash_on_hand'], Decimal("200.00"))
         
         # Manager closes shift
         shift.close(closing_cash=Decimal("300.00"))
         
-        # Cash on hand should REMAIN 200 (since the 100 opening cash is no longer counted,
-        # but wait, the closed shift's cash doesn't disappear into thin air. 
-        # For a manager, their own sales remain in their hand.
-        # But where does the 100 float come from? In reality, it came from their 
-        # existing cash_on_hand or was received via a CashTransfer.
-        # So when the shift closes, the 100 opening cash is NO LONGER added on top.
-        # It drops back to 200 (the base sales they made).
         ctx_manager = self.get_navbar_context(self.manager_user)
         self.assertEqual(ctx_manager['cash_on_hand'], Decimal("200.00"))
 
@@ -1072,10 +1066,12 @@ class WorkflowIntegrationTests(TestCase):
     def test_14_refund_requests_workflow(self):
         """
         Verify the refund request approval workflow and financial adjustments.
-        1. Manager requests refund -> PENDING.
-        2. Accountant approves -> refund_always_cash=True -> CashTransfer EXPENDITURE created.
+        1. Manager requests refund for CASH sale -> PENDING.
+        2. Accountant approves -> refund_always_cash=True, but since it's a CASH sale, NO EXPENDITURE is created.
+           Cash-on-hand must drop by exactly the sale amount once.
         3. Manager requests refund for MOMO sale.
-        4. Admin approves -> refund_always_cash=False -> Negative DigitalFundWithdrawal created.
+        4. Admin approves -> refund_always_cash=False -> NO DigitalFundWithdrawal created. MOMO drops naturally.
+        5. Test Cross-payment refund: ECASH sale, refund_always_cash=True -> EXPENDITURE created, ECASH restored.
         """
         from apps.sales.models import RefundRequest
         from apps.accounting.models import CashTransfer, DigitalFundWithdrawal
@@ -1090,6 +1086,9 @@ class WorkflowIntegrationTests(TestCase):
             status="COMPLETED",
             payment_method="CASH"
         )
+        
+        ctx_before = self.get_navbar_context(self.manager_user)
+        cash_before = ctx_before['cash_on_hand']
 
         # Manager requests refund
         rr_cash = RefundRequest.objects.create(
@@ -1107,16 +1106,18 @@ class WorkflowIntegrationTests(TestCase):
         sale_cash.refresh_from_db()
         self.assertEqual(sale_cash.status, "REFUNDED")
 
-        # Check financial adjustment: CashTransfer(EXPENDITURE)
+        # Check financial adjustment: For CASH, NO CashTransfer(EXPENDITURE) should be created
         exp_ct = CashTransfer.objects.filter(
             tenant=self.tenant,
             transfer_type="EXPENDITURE",
-            amount=Decimal("150.00"),
             notes__icontains=rr_cash.refund_number
         ).first()
-        self.assertIsNotNone(exp_ct)
-        self.assertEqual(exp_ct.status, "CONFIRMED")
-        self.assertEqual(exp_ct.from_user, self.manager_user)  # shop manager deducted
+        self.assertIsNone(exp_ct, "CashTransfer EXPENDITURE should NOT be created for CASH refunds")
+
+        # Verify double-deduction fix: Cash should drop by exactly 150
+        ctx_after = self.get_navbar_context(self.manager_user)
+        cash_after = ctx_after['cash_on_hand']
+        self.assertEqual(cash_after, cash_before - Decimal("150.00"), "Cash-on-hand double deducted!")
 
         # 2. Sale with MOMO and refund_always_cash=False
         self.tenant.refund_always_cash = False
@@ -1131,6 +1132,9 @@ class WorkflowIntegrationTests(TestCase):
             status="COMPLETED",
             payment_method="MOMO"
         )
+        
+        ctx_before = self.get_navbar_context(self.manager_user)
+        momo_before = ctx_before['momo_balance']
 
         rr_momo = RefundRequest.objects.create(
             tenant=self.tenant,
@@ -1146,15 +1150,74 @@ class WorkflowIntegrationTests(TestCase):
         sale_momo.refresh_from_db()
         self.assertEqual(sale_momo.status, "REFUNDED")
 
-        # Check financial adjustment: Negative DigitalFundWithdrawal
+        # Check financial adjustment: NO DigitalFundWithdrawal should be created
         reversal = DigitalFundWithdrawal.objects.filter(
             tenant=self.tenant,
-            shop=self.shop_location,
-            amount=Decimal("-80.00"),
             fund_source="MOMO",
             notes__icontains=rr_momo.refund_number
         ).first()
-        self.assertIsNotNone(reversal)
+        self.assertIsNone(reversal, "DigitalFundWithdrawal should NOT be created for same-method refunds")
+        
+        ctx_after = self.get_navbar_context(self.manager_user)
+        self.assertEqual(ctx_after['momo_balance'], momo_before - Decimal("80.00"))
+        
+        # 3. Sale with ECASH and refund_always_cash=True (Cross-payment)
+        self.tenant.refund_always_cash = True
+        self.tenant.save()
+        
+        sale_ecash = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.manager_user,
+            total=Decimal("120.00"),
+            amount_paid=Decimal("120.00"),
+            status="COMPLETED",
+            payment_method="ECASH"
+        )
+        
+        # Give manager some physical cash so it doesn't floor at 0
+        Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.manager_user,
+            total=Decimal("200.00"),
+            amount_paid=Decimal("200.00"),
+            status="COMPLETED",
+            payment_method="CASH"
+        )
+        
+        ctx_before = self.get_navbar_context(self.manager_user)
+        ecash_before = ctx_before['ecash_balance']
+        cash_before = ctx_before['cash_on_hand']
+        
+        rr_ecash = RefundRequest.objects.create(
+            tenant=self.tenant,
+            sale=sale_ecash,
+            requested_by=self.manager_user,
+            reason="Cross payment test"
+        )
+        rr_ecash.approve(self.admin_user)
+        
+        # Cross payment MUST create both an EXPENDITURE and a DigitalFundWithdrawal restoration
+        exp_ct = CashTransfer.objects.filter(
+            tenant=self.tenant,
+            transfer_type="EXPENDITURE",
+            notes__icontains=rr_ecash.refund_number
+        ).first()
+        self.assertIsNotNone(exp_ct, "EXPENDITURE missing for cross-payment refund")
+        
+        reversal = DigitalFundWithdrawal.objects.filter(
+            tenant=self.tenant,
+            fund_source="ECASH",
+            notes__icontains=rr_ecash.refund_number
+        ).first()
+        self.assertIsNotNone(reversal, "ECASH restoration missing for cross-payment refund")
+        
+        ctx_after = self.get_navbar_context(self.manager_user)
+        # ECASH should be unchanged because it was returned via physical cash
+        self.assertEqual(ctx_after['ecash_balance'], ecash_before)
+        # Physical cash should drop by 120
+        self.assertEqual(ctx_after['cash_on_hand'], cash_before - Decimal("120.00"))
 
     def test_15_strict_workflow_ecash_invoice(self):
         """

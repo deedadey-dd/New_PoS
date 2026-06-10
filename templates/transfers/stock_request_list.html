@@ -36,18 +36,60 @@
         </li>
     </ul>
 
-    <!-- Status Filter and Summary Button -->
-    <div class="mb-3 d-flex justify-content-between align-items-center">
-        <form method="get" class="d-inline-flex align-items-center">
-            <input type="hidden" name="tab" value="{{ current_tab }}">
-            <label class="me-2">Status:</label>
-            <select name="status" class="form-select form-select-sm" style="width: auto;" onchange="this.form.submit()">
-                <option value="">All Statuses</option>
-                {% for code, label in status_choices %}
-                <option value="{{ code }}" {% if request.GET.status == code %}selected{% endif %}>{{ label }}</option>
-                {% endfor %}
-            </select>
-        </form>
+    <!-- Filters -->
+    <div class="card mb-3">
+        <div class="card-body py-3">
+            <form method="get" class="row g-2 align-items-end" id="requestFilterForm">
+                <input type="hidden" name="tab" value="{{ current_tab }}">
+                <div class="col-md-2">
+                    <label class="form-label small mb-1">From Date</label>
+                    <input type="date" name="date_from" class="form-control form-control-sm" value="{{ filter_date_from }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small mb-1">To Date</label>
+                    <input type="date" name="date_to" class="form-control form-control-sm" value="{{ filter_date_to }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small mb-1">{% if current_tab == 'incoming' %}From (Location){% else %}To (Location){% endif %}</label>
+                    <select name="from_location" class="form-select form-select-sm">
+                        <option value="">All Locations</option>
+                        {% for loc in all_locations %}
+                        <option value="{{ loc.pk }}" {% if filter_from_location == loc.pk|stringformat:"i" %}selected{% endif %}>{{ loc.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small mb-1">Requested By</label>
+                    <select name="requested_by" class="form-select form-select-sm">
+                        <option value="">All Users</option>
+                        {% for u in all_requestors %}
+                        <option value="{{ u.pk }}" {% if filter_requested_by == u.pk|stringformat:"i" %}selected{% endif %}>{{ u.get_full_name|default:u.email }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small mb-1">Status</label>
+                    <select name="status" class="form-select form-select-sm">
+                        <option value="">All Statuses</option>
+                        {% for code, label in status_choices %}
+                        <option value="{{ code }}" {% if request.GET.status == code %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2 d-flex gap-2">
+                    <button type="submit" class="btn btn-primary btn-sm flex-grow-1">
+                        <i class="bi bi-funnel me-1"></i>Filter
+                    </button>
+                    <a href="?tab={{ current_tab }}" class="btn btn-outline-secondary btn-sm">
+                        <i class="bi bi-x-lg"></i>
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Summary Button Row -->
+    <div class="mb-3 d-flex justify-content-end align-items-center">
         <div class="d-flex gap-2">
             <button type="button" id="btn-view-summary" class="btn btn-sm btn-info text-white" disabled>
                 <i class="bi bi-list-check me-1"></i>View Summary
@@ -83,8 +125,8 @@
                         <tr>
                             <td><input type="checkbox" class="form-check-input request-checkbox" value="{{ req.pk }}" data-status="{{ req.status }}" data-source="{{ req.supplying_location.pk }}" data-dest="{{ req.requesting_location.pk }}"></td>
                             <td>
-                                <a href="{% url 'transfers:stock_request_detail' pk=req.pk %}"
-                                    class="fw-semibold text-decoration-none">
+                                <a href="#" class="fw-semibold text-decoration-none request-detail-link"
+                                    data-request-id="{{ req.pk }}">
                                     {{ req.request_number }}
                                 </a>
                             </td>
@@ -192,6 +234,34 @@
                 <button type="button" class="btn btn-primary" onclick="printSummary()">
                     <i class="bi bi-printer me-1"></i>Print / Save PDF
                 </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Request Detail Modal -->
+<div class="modal fade" id="requestDetailModal" tabindex="-1" aria-labelledby="requestDetailModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="requestDetailModalLabel">
+                    <i class="bi bi-box-arrow-in-down me-2 text-primary"></i>
+                    Request <span id="reqDetailNumber"></span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="reqDetailBody">
+                <div class="text-center py-5" id="reqDetailLoading">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <p class="text-muted mt-2">Loading request details...</p>
+                </div>
+                <div id="reqDetailContent" style="display:none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <a id="reqDetailFullPageBtn" href="#" class="btn btn-outline-primary">
+                    <i class="bi bi-box-arrow-up-right me-1"></i>View Full Details
+                </a>
             </div>
         </div>
     </div>
@@ -358,5 +428,101 @@
         // Re-initialize bootstrap components after replacing body HTML
         window.location.reload(); 
     }
+</script>
+
+<script>
+// Request Detail Modal
+(function () {
+    const reqModal = new bootstrap.Modal(document.getElementById('requestDetailModal'));
+    const loadingEl = document.getElementById('reqDetailLoading');
+    const contentEl = document.getElementById('reqDetailContent');
+    const numberEl = document.getElementById('reqDetailNumber');
+    const fullPageBtn = document.getElementById('reqDetailFullPageBtn');
+
+    const statusColors = {
+        'PENDING': 'warning text-dark',
+        'APPROVED': 'success',
+        'REJECTED': 'danger',
+        'CONVERTED': 'primary',
+        'CANCELLED': 'secondary'
+    };
+
+    function renderRequestDetail(data) {
+        const badge = `<span class="badge bg-${statusColors[data.status_code] || 'secondary'}">${data.status}</span>`;
+
+        let html = '';
+        html += `<div class="row mb-3 py-2 bg-light rounded">`;
+        html += `<div class="col-sm-4"><small class="text-muted d-block">Date</small><span class="fw-medium">${data.created_at}</span></div>`;
+        html += `<div class="col-sm-4"><small class="text-muted d-block">Status</small>${badge}</div>`;
+        html += `<div class="col-sm-4"><small class="text-muted d-block">Requested By</small><span class="fw-medium">${data.requested_by}</span></div>`;
+        html += `</div>`;
+
+        html += `<div class="row mb-3">`;
+        html += `<div class="col-sm-6"><small class="text-muted d-block">From (Requesting)</small><span class="badge bg-info">${data.requesting_location}</span></div>`;
+        html += `<div class="col-sm-6"><small class="text-muted d-block">To (Supplying)</small><span class="badge bg-primary">${data.supplying_location}</span></div>`;
+        html += `</div>`;
+
+        if (data.approved_by) {
+            html += `<div class="row mb-3">`;
+            html += `<div class="col-sm-6"><small class="text-muted d-block">Approved By</small><span class="fw-medium">${data.approved_by}</span></div>`;
+            html += `<div class="col-sm-6"><small class="text-muted d-block">Approved At</small><span class="fw-medium">${data.approved_at}</span></div>`;
+            html += `</div>`;
+        }
+
+        if (data.notes) {
+            html += `<div class="mb-3"><small class="text-muted d-block">Notes</small><p class="mb-0">${data.notes}</p></div>`;
+        }
+
+        html += `<h6 class="border-bottom pb-2 mt-3">Requested Items</h6>`;
+        html += `<div class="table-responsive"><table class="table table-sm table-hover mb-0">`;
+        html += `<thead class="table-light"><tr><th>Product</th><th>SKU</th><th class="text-end">Qty Requested</th><th>Notes</th></tr></thead><tbody>`;
+        data.items.forEach(function (item) {
+            html += `<tr>
+                <td class="fw-semibold">${item.product_name}</td>
+                <td><code>${item.sku}</code></td>
+                <td class="text-end fw-bold">${parseFloat(item.quantity_requested).toLocaleString()}</td>
+                <td class="text-muted small">${item.notes || ''}</td>
+            </tr>`;
+        });
+        if (data.items.length === 0) {
+            html += `<tr><td colspan="4" class="text-center text-muted py-3">No items</td></tr>`;
+        }
+        html += `</tbody></table></div>`;
+
+        contentEl.innerHTML = html;
+    }
+
+    document.querySelectorAll('.request-detail-link').forEach(function (link) {
+        link.addEventListener('click', function (e) {
+            e.preventDefault();
+            const reqId = this.dataset.requestId;
+
+            loadingEl.style.display = 'block';
+            contentEl.style.display = 'none';
+            numberEl.textContent = '';
+            fullPageBtn.href = '/transfers/requests/' + reqId + '/';
+            reqModal.show();
+
+            fetch('/transfers/api/requests/' + reqId + '/detail/')
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (data.error) {
+                        contentEl.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
+                    } else {
+                        numberEl.textContent = data.request_number;
+                        fullPageBtn.href = data.detail_url;
+                        renderRequestDetail(data);
+                    }
+                    loadingEl.style.display = 'none';
+                    contentEl.style.display = 'block';
+                })
+                .catch(function () {
+                    contentEl.innerHTML = '<div class="alert alert-danger">Failed to load request details.</div>';
+                    loadingEl.style.display = 'none';
+                    contentEl.style.display = 'block';
+                });
+        });
+    });
+}());
 </script>
 {% endblock %}
