@@ -1741,7 +1741,7 @@ class ShopPriceSetView(LoginRequiredMixin, View):
                 location=shop,
                 role__name='SHOP_MANAGER'
             )
-            changer_name = "you" if request.user.location == shop else (request.user.get_full_name() or request.user.email)
+            changer_name = request.user.get_full_name() or request.user.email
             message_body = f'The price for {product.name} at {shop.name} has been updated to {request.user.tenant.currency_symbol}{selling_price} by {changer_name}.'
             
             for mgr in shop_managers:
