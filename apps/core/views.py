@@ -83,7 +83,7 @@ class DemoAutoLoginView(View):
             'production_strict': 'strict_production@demo.com',
             'stores_strict': 'strict_stores@demo.com',
             'manager1_strict': 'strict_manager1@demo.com',
-            'cashier_strict': 'cashier_strict@demo.com',
+            'cashier_strict': 'strict_cashier@demo.com',
             'attendant1_strict': 'strict_attendant1@demo.com',
         }
         
