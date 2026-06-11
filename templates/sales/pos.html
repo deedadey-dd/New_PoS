@@ -1174,6 +1174,23 @@
         </div>
     </div>
 
+    <!-- ── Number Prompt Modal ─────────────────────────────────── -->
+    <div class="checkout-modal" id="number-prompt-modal">
+        <div class="checkout-dialog" style="max-width:400px;">
+            <h4 class="mb-3 text-center" id="number-prompt-title" style="color:#a78bfa;">Title</h4>
+            <p class="text-muted text-center small mb-3" id="number-prompt-text">Message</p>
+            <div class="mb-4">
+                <input type="number" class="checkout-input" id="number-prompt-input" step="any">
+            </div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-secondary flex-fill" id="btn-number-prompt-cancel">Cancel</button>
+                <button class="btn flex-fill" id="btn-number-prompt-submit" style="background:#7c3aed;color:#fff;">
+                    Submit
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Mobile Cart Toggle Button -->
     <button class="mobile-cart-toggle" id="mobile-cart-toggle" onclick="toggleMobileCart()">
         <i class="bi bi-cart3"></i>
@@ -1226,6 +1243,59 @@
                 toast.classList.add('hide');
                 setTimeout(() => toast.remove(), 350);
             }, durationMs);
+        }
+
+        function promptAsync(title, message, defaultValue = '', type = 'number') {
+            return new Promise((resolve) => {
+                document.getElementById('number-prompt-title').innerHTML = title;
+                document.getElementById('number-prompt-text').innerHTML = message;
+                const input = document.getElementById('number-prompt-input');
+                input.type = type;
+                input.value = defaultValue;
+                
+                const modal = document.getElementById('number-prompt-modal');
+                modal.classList.add('active');
+                
+                const oldBtn = document.getElementById('btn-number-prompt-submit');
+                const newBtn = oldBtn.cloneNode(true);
+                oldBtn.parentNode.replaceChild(newBtn, oldBtn);
+                
+                const cancelBtn = document.getElementById('btn-number-prompt-cancel');
+                const newCancelBtn = cancelBtn.cloneNode(true);
+                cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
+                
+                const cleanup = () => {
+                    modal.classList.remove('active');
+                    document.removeEventListener('keydown', keydownHandler);
+                };
+                
+                newBtn.addEventListener('click', () => {
+                    cleanup();
+                    resolve(input.value);
+                });
+                
+                newCancelBtn.addEventListener('click', () => {
+                    cleanup();
+                    resolve(null);
+                });
+                
+                const keydownHandler = function(e) {
+                    if (!modal.classList.contains('active')) return;
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        newBtn.click();
+                    } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        newCancelBtn.click();
+                    }
+                };
+                document.addEventListener('keydown', keydownHandler);
+
+                setTimeout(() => {
+                    input.focus();
+                    input.select();
+                }, 100);
+            });
         }
 
         let cart = [];
@@ -1870,9 +1940,9 @@
             saveCartToStorage();
         }
 
-        function applyDiscount() {
-            const amount = prompt('Enter discount amount:', discountAmount);
-            if (amount !== null) {
+        async function applyDiscount() {
+            const amount = await promptAsync('<i class="bi bi-percent me-2"></i>Discount', 'Enter discount amount:', discountAmount, 'number');
+            if (amount !== null && amount !== '') {
                 discountAmount = Math.max(0, parseFloat(amount) || 0);
                 updateTotals();
                 saveCartToStorage();
@@ -2043,10 +2113,10 @@
 
             if (isPaymentOnAccount) {
                 // Payment on account - ask for amount
-                const amountStr = prompt(
-                    `E-Cash Payment on Account for ${selectedCustomer.name}\n` +
-                    `Current Balance: ${CURRENCY}${selectedCustomer.current_balance}\n\n` +
-                    'Enter payment amount:'
+                const amountStr = await promptAsync(
+                    `<i class="bi bi-wallet me-2"></i>Payment on Account`,
+                    `<b>${selectedCustomer.name}</b><br>Current Balance: ${CURRENCY}${selectedCustomer.current_balance}<br><br>Enter payment amount:`,
+                    '', 'number'
                 );
                 if (!amountStr) return;  // User cancelled
 
@@ -2070,7 +2140,7 @@
                 phone = selectedCustomer.phone;
             }
             if (!phone && ['paystack', 'appsnmobile', 'expresspay', 'nalopay'].includes(provider.provider.toLowerCase())) {
-                phone = prompt(`Please enter customer's Mobile Money phone number for ${provider.name}:`);
+                phone = await promptAsync(`<i class="bi bi-phone me-2"></i>Phone Number`, `Please enter customer's Mobile Money phone number for ${provider.name}:`, '', 'tel');
                 if (!phone) {
                     alert('Phone number is required for this payment method.');
                     return;
