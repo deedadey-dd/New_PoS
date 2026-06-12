@@ -5,10 +5,17 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
-from django.http import Http404
+from django.http import Http404, HttpResponse
+from django.contrib.sitemaps.views import sitemap
+from pos_system.sitemaps import StaticViewSitemap, PricingPageSitemap
 import logging
 
 logger = logging.getLogger(__name__)
+
+SITEMAPS = {
+    'static': StaticViewSitemap,
+    'pricing': PricingPageSitemap,
+}
 
 
 def serve_serviceworker(request):
@@ -61,6 +68,13 @@ urlpatterns = [
 
     # PWA: Service worker must be served from root for full scope
     path('serviceworker.js', serve_serviceworker, name='serviceworker'),
+
+    # SEO: Sitemap and robots.txt
+    path('sitemap.xml', sitemap, {'sitemaps': SITEMAPS}, name='django.contrib.sitemaps.views.sitemap'),
+    path('robots.txt', lambda request: HttpResponse(
+        f"User-agent: *\nAllow: /\nDisallow: /dashboard/\nDisallow: /super_office/\nDisallow: /superadmin/\nDisallow: /accounting/\nDisallow: /inventory/\nDisallow: /transfers/\nDisallow: /sales/\nDisallow: /customers/\nDisallow: /reports/\nDisallow: /audit/\nDisallow: /users/\nDisallow: /settings/\nSitemap: {settings.FRONTEND_URL}/sitemap.xml\n",
+        content_type='text/plain'
+    ), name='robots_txt'),
 ]
 
 # Serve media files during development

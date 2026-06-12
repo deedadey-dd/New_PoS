@@ -1,6 +1,47 @@
 {% extends 'base.html' %}
 
-{% block title %}Help & Documentation{% endblock %}
+{% block title %}Help & Documentation - Hendaxis POS{% endblock %}
+
+{% block extra_head %}
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-7S8QMJ7SVX"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-7S8QMJ7SVX');
+</script>
+
+<!-- SEO Meta Tags -->
+<meta name="description"
+    content="Get help and documentation for Hendaxis POS. Learn how to manage inventory, process sales, handle stock transfers, and configure your retail point of sale system.">
+<meta name="keywords"
+    content="Hendaxis POS help, POS documentation, point of sale guide, POS system tutorial, retail software help">
+<meta name="author" content="Hendaxis">
+<meta name="robots" content="index, follow">
+
+<!-- Canonical URL -->
+<link rel="canonical" href="https://pos.hendaxis.com/help/">
+
+<!-- Open Graph / Facebook -->
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://pos.hendaxis.com/help/">
+<meta property="og:site_name" content="Hendaxis POS">
+<meta property="og:title" content="Help & Documentation - Hendaxis POS">
+<meta property="og:description"
+    content="Get help and documentation for Hendaxis POS. Learn how to manage inventory, process sales, and configure your retail point of sale system.">
+<meta property="og:image" content="https://pos.hendaxis.com{% static 'images/og-image.png' %}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:locale" content="en_GH">
+
+<!-- Twitter Card -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Help & Documentation - Hendaxis POS">
+<meta name="twitter:description"
+    content="Get help and documentation for Hendaxis POS. Learn how to manage inventory, process sales, and configure your retail point of sale system.">
+<meta name="twitter:image" content="https://pos.hendaxis.com{% static 'images/og-image.png' %}">
+{% endblock %}
 
 {% block content %}
 <div class="container-fluid py-4">
