@@ -1204,18 +1204,82 @@ class DigitalPaymentConfirmationView(LoginRequiredMixin, View):
             for entry in ledger_entries
         }
 
+        # Combine all queries into a single list of transactions
+        transactions = []
+
+        for sale in ecash_sales:
+            transactions.append({
+                'tx_type': 'sale',
+                'payment_method': 'E-Cash',
+                'provider': sale_provider_map.get(sale.id, 'E-Cash'),
+                'id': sale.id,
+                'created_at': sale.created_at,
+                'shop_name': sale.shop.name if sale.shop else '-',
+                'performed_by': sale.attendant.get_full_name() or sale.attendant.email if sale.attendant else '-',
+                'reference_number': sale.sale_number,
+                'reference_id': sale.id,
+                'amount': sale.amount_paid,
+            })
+            
+        for ct in ecash_cts:
+            transactions.append({
+                'tx_type': 'ct',
+                'payment_method': 'E-Cash',
+                'provider': 'E-Cash',
+                'id': ct.id,
+                'created_at': ct.created_at,
+                'shop_name': '-',
+                'performed_by': ct.performed_by.get_full_name() or ct.performed_by.email if ct.performed_by else '-',
+                'reference_number': ct.customer.name,
+                'reference_id': ct.customer.id,
+                'customer': ct.customer,
+                'amount': ct.amount,
+            })
+            
+        for sale in momo_sales:
+            transactions.append({
+                'tx_type': 'sale',
+                'payment_method': 'Momo',
+                'provider': 'Momo',
+                'id': sale.id,
+                'created_at': sale.created_at,
+                'shop_name': sale.shop.name if sale.shop else '-',
+                'performed_by': sale.attendant.get_full_name() or sale.attendant.email if sale.attendant else '-',
+                'reference_number': sale.sale_number,
+                'reference_id': sale.id,
+                'amount': sale.amount_paid,
+            })
+            
+        for ct in momo_cts:
+            transactions.append({
+                'tx_type': 'ct',
+                'payment_method': 'Momo',
+                'provider': 'Momo',
+                'id': ct.id,
+                'created_at': ct.created_at,
+                'shop_name': '-',
+                'performed_by': ct.performed_by.get_full_name() or ct.performed_by.email if ct.performed_by else '-',
+                'reference_number': ct.customer.name,
+                'reference_id': ct.customer.id,
+                'customer': ct.customer,
+                'amount': ct.amount,
+            })
+            
+        transactions.sort(key=lambda x: x['created_at'], reverse=True)
+        
+        from django.core.paginator import Paginator
+        paginator = Paginator(transactions, 50)  # Show 50 items per page
+        page_number = request.GET.get('page')
+        page_obj = paginator.get_page(page_number)
+
         context = {
-            'ecash_sales': ecash_sales,
-            'ecash_cts': ecash_cts,
-            'momo_sales': momo_sales,
-            'momo_cts': momo_cts,
+            'page_obj': page_obj,
             'date_from': date_from,
             'date_to': date_to,
             'payment_method': payment_method,
             'tx_type': tx_type,
             'providers': providers,
             'selected_provider': provider_config_id,
-            'sale_provider_map': sale_provider_map,
         }
         
         return render(request, 'accounting/digital_confirmations.html', context)

@@ -107,99 +107,63 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {% for sale in ecash_sales %}
+                                    {% for tx in page_obj %}
                                     <tr>
                                         <td class="ps-4">
                                             <div class="form-check">
-                                                <input class="form-check-input tx-checkbox" type="checkbox" name="sale_ids" value="{{ sale.id }}" data-amount="{{ sale.amount_paid }}">
+                                                <input class="form-check-input tx-checkbox" type="checkbox" name="{% if tx.tx_type == 'sale' %}sale_ids{% else %}ct_ids{% endif %}" value="{{ tx.id }}" data-amount="{{ tx.amount }}">
                                             </div>
                                         </td>
-                                        <td>{{ sale.created_at|date:"M d, Y H:i" }}</td>
-                                        <td><span class="badge bg-success">Sale</span></td>
+                                        <td>{{ tx.created_at|date:"M d, Y H:i" }}</td>
                                         <td>
-                                            {% if sale.id in sale_provider_map %}
-                                                <span class="badge bg-info text-dark">{{ sale_provider_map|get_item:sale.id }}</span>
+                                            {% if tx.tx_type == 'sale' %}
+                                            <span class="badge bg-success">Sale</span>
                                             {% else %}
-                                                <span class="badge bg-info text-dark">E-Cash</span>
+                                            <span class="badge bg-warning text-dark">Cust. Payment</span>
                                             {% endif %}
                                         </td>
-                                        <td>{{ sale.shop.name|default:"-" }}</td>
-                                        <td>{{ sale.sale_number }}</td>
-                                        <td class="text-end pe-4 fw-bold">{{ sale.amount_paid|floatformat:2 }}</td>
+                                        <td>
+                                            {% if tx.payment_method == 'Momo' %}
+                                            <span class="badge bg-warning text-dark">Momo</span>
+                                            {% else %}
+                                            <span class="badge bg-info text-dark">{{ tx.provider }}</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ tx.shop_name }}<br><small class="text-muted">{{ tx.performed_by }}</small></td>
+                                        <td>
+                                            {% if tx.tx_type == 'sale' %}
+                                            <a href="#" class="text-decoration-none fw-semibold sale-detail-link-ct"
+                                               data-reference-id="{{ tx.reference_id }}"
+                                               title="View Sale Details">
+                                                {{ tx.reference_number }}
+                                            </a>
+                                            {% else %}
+                                            <a href="#" class="text-decoration-none fw-semibold btn-customer-preview"
+                                               data-customer-id="{{ tx.customer.pk }}"
+                                               data-customer-name="{{ tx.customer.name|escapejs }}"
+                                               data-customer-phone="{{ tx.customer.phone|escapejs }}"
+                                               data-customer-email="{{ tx.customer.email|escapejs }}"
+                                               data-customer-shop="{% if tx.customer.shop %}{{ tx.customer.shop.name|escapejs }}{% endif %}"
+                                               data-customer-balance="{{ tx.customer.current_balance }}"
+                                               data-customer-status="{% if tx.customer.is_active %}Active{% else %}Inactive{% endif %}"
+                                               data-customer-created="{{ tx.customer.created_at|date:'M d, Y' }}"
+                                               title="View Customer Details">
+                                                {{ tx.reference_number }}
+                                            </a>
+                                            {% endif %}
+                                        </td>
+                                        <td class="text-end pe-4 fw-bold">{{ tx.amount|floatformat:2 }}</td>
                                         <td class="text-end pe-4">
-                                            <button type="submit" name="single_sale_id" value="{{ sale.id }}" class="btn btn-sm btn-outline-success" title="Confirm this transaction">
+                                            <button type="submit" name="{% if tx.tx_type == 'sale' %}single_sale_id{% else %}single_ct_id{% endif %}" value="{{ tx.id }}" class="btn btn-sm btn-outline-success" title="Confirm this transaction">
                                                 <i class="bi bi-check-lg"></i> Confirm
                                             </button>
                                         </td>
                                     </tr>
                                     {% endfor %}
                                     
-                                    {% for ct in ecash_cts %}
+                                    {% if not page_obj %}
                                     <tr>
-                                        <td class="ps-4">
-                                            <div class="form-check">
-                                                <input class="form-check-input tx-checkbox" type="checkbox" name="ct_ids" value="{{ ct.id }}" data-amount="{{ ct.amount }}">
-                                            </div>
-                                        </td>
-                                        <td>{{ ct.created_at|date:"M d, Y H:i" }}</td>
-                                        <td><span class="badge bg-warning text-dark">Cust. Payment</span></td>
-                                        <td><span class="badge bg-info text-dark">E-Cash</span></td>
-                                        <td>{{ ct.performed_by.get_full_name|default:ct.performed_by.email }}</td>
-                                        <td>{{ ct.customer.name }}</td>
-                                        <td class="text-end pe-4 fw-bold">{{ ct.amount|floatformat:2 }}</td>
-                                        <td class="text-end pe-4">
-                                            <button type="submit" name="single_ct_id" value="{{ ct.id }}" class="btn btn-sm btn-outline-success" title="Confirm this transaction">
-                                                <i class="bi bi-check-lg"></i> Confirm
-                                            </button>
-                                        </td>
-                                    </tr>
-                                    {% endfor %}
-                                    
-                                    {% for sale in momo_sales %}
-                                    <tr>
-                                        <td class="ps-4">
-                                            <div class="form-check">
-                                                <input class="form-check-input tx-checkbox" type="checkbox" name="sale_ids" value="{{ sale.id }}" data-amount="{{ sale.amount_paid }}">
-                                            </div>
-                                        </td>
-                                        <td>{{ sale.created_at|date:"M d, Y H:i" }}</td>
-                                        <td><span class="badge bg-success">Sale</span></td>
-                                        <td><span class="badge bg-warning text-dark">Momo</span></td>
-                                        <td>{{ sale.shop.name|default:"-" }}</td>
-                                        <td>{{ sale.sale_number }}</td>
-                                        <td class="text-end pe-4 fw-bold">{{ sale.amount_paid|floatformat:2 }}</td>
-                                        <td class="text-end pe-4">
-                                            <button type="submit" name="single_sale_id" value="{{ sale.id }}" class="btn btn-sm btn-outline-success" title="Confirm this transaction">
-                                                <i class="bi bi-check-lg"></i> Confirm
-                                            </button>
-                                        </td>
-                                    </tr>
-                                    {% endfor %}
-                                    
-                                    {% for ct in momo_cts %}
-                                    <tr>
-                                        <td class="ps-4">
-                                            <div class="form-check">
-                                                <input class="form-check-input tx-checkbox" type="checkbox" name="ct_ids" value="{{ ct.id }}" data-amount="{{ ct.amount }}">
-                                            </div>
-                                        </td>
-                                        <td>{{ ct.created_at|date:"M d, Y H:i" }}</td>
-                                        <td><span class="badge bg-warning text-dark">Cust. Payment</span></td>
-                                        <td><span class="badge bg-warning text-dark">Momo</span></td>
-                                        <td>{{ ct.performed_by.get_full_name|default:ct.performed_by.email }}</td>
-                                        <td>{{ ct.customer.name }}</td>
-                                        <td class="text-end pe-4 fw-bold">{{ ct.amount|floatformat:2 }}</td>
-                                        <td class="text-end pe-4">
-                                            <button type="submit" name="single_ct_id" value="{{ ct.id }}" class="btn btn-sm btn-outline-success" title="Confirm this transaction">
-                                                <i class="bi bi-check-lg"></i> Confirm
-                                            </button>
-                                        </td>
-                                    </tr>
-                                    {% endfor %}
-                                    
-                                    {% if not ecash_sales and not ecash_cts and not momo_sales and not momo_cts %}
-                                    <tr>
-                                        <td colspan="7" class="text-center py-4 text-muted">
+                                        <td colspan="8" class="text-center py-4 text-muted">
                                             <i class="bi bi-check2-all fs-1 d-block mb-2 text-success"></i>
                                             All digital payments are currently confirmed!
                                         </td>
@@ -210,10 +174,67 @@
                         </div>
                     </div>
                 </div>
+                
+                {% include 'includes/audit_pagination.html' %}
+                
             </div>
         </div>
     </form>
 </div>
+
+<!-- Sale Detail Modal -->
+<div class="modal fade" id="saleDetailModal" tabindex="-1" aria-labelledby="saleDetailModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="saleDetailModalLabel">
+                    <i class="bi bi-receipt-cutoff me-2"></i>Sale Details
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="saleDetailBody">
+                <div class="text-center py-5" id="saleDetailLoading">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <p class="text-muted mt-2">Loading sale details...</p>
+                </div>
+                <div id="saleDetailContent" style="display:none;"></div>
+            </div>
+            <div class="modal-footer">
+                <a href="#" class="btn btn-outline-info" id="saleDetailPrintBtn">
+                    <i class="bi bi-printer me-1"></i>Print Receipt
+                </a>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Customer Quick Preview Modal -->
+<div class="modal fade" id="customerPreviewModal" tabindex="-1" aria-labelledby="customerPreviewModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="customerPreviewModalLabel">
+                    <i class="bi bi-person-circle me-2 text-primary"></i>
+                    <span id="previewCustomerName">Customer</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <dl class="row mb-0" id="customerPreviewContent">
+                    <!-- Populated by JS -->
+                </dl>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <a id="previewGoToPageBtn" href="#" class="btn btn-primary">
+                    <i class="bi bi-journal-text me-1"></i>View Full Ledger
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block extra_js %}
@@ -258,6 +279,135 @@ document.addEventListener('DOMContentLoaded', function() {
             calculateTotal();
         });
     }
+
+    // Sale detail modal
+    const saleModal = new bootstrap.Modal(document.getElementById('saleDetailModal'));
+    const loadingEl = document.getElementById('saleDetailLoading');
+    const contentEl = document.getElementById('saleDetailContent');
+    const printBtn = document.getElementById('saleDetailPrintBtn');
+    const currencySymbol = '{{ request.user.tenant.currency_symbol|default:"GH₵" }}';
+
+    function getStatusBadge(code, display) {
+        const colors = { 'COMPLETED': 'success', 'VOIDED': 'danger', 'PENDING': 'warning', 'REFUNDED': 'secondary' };
+        return '<span class="badge bg-' + (colors[code] || 'secondary') + '">' + display + '</span>';
+    }
+
+    function getPaymentBadge(code, display) {
+        const colors = { 'CASH': 'success', 'ECASH': 'primary', 'CREDIT': 'warning', 'MOMO': 'warning' };
+        return '<span class="badge bg-' + (colors[code] || 'secondary') + '">' + display + '</span>';
+    }
+
+    function renderSaleDetail(data) {
+        let html = '';
+        html += '<div class="row mb-3"><div class="col-sm-6"><h6 class="text-muted mb-1">Sale Number</h6><p class="fw-bold fs-5 mb-2">' + data.sale_number + '</p></div>';
+        html += '<div class="col-sm-6 text-sm-end"><h6 class="text-muted mb-1">Status</h6><p class="mb-2">' + getStatusBadge(data.status_code, data.status) + '</p></div></div>';
+        html += '<div class="row mb-3 py-2 bg-light rounded">';
+        html += '<div class="col-sm-4"><small class="text-muted d-block">Date</small><span class="fw-medium">' + data.created_at + '</span></div>';
+        html += '<div class="col-sm-4"><small class="text-muted d-block">Shop</small><span class="fw-medium">' + data.shop + '</span></div>';
+        html += '<div class="col-sm-4"><small class="text-muted d-block">Attendant</small><span class="fw-medium">' + data.attendant + '</span></div></div>';
+        html += '<div class="row mb-3"><div class="col-sm-6"><small class="text-muted d-block">Payment Method</small>' + getPaymentBadge(data.payment_method_code, data.payment_method) + '</div>';
+        if (data.customer) {
+            let customerHtml = data.customer;
+            if (data.customer_id) {
+                customerHtml = '<a href="/customers/' + data.customer_id + '/" class="text-decoration-none fw-bold">' + data.customer + '</a>';
+            }
+            html += '<div class="col-sm-6"><small class="text-muted d-block">Customer</small><span class="fw-medium">' + customerHtml + '</span></div>';
+        }
+        html += '</div>';
+        html += '<h6 class="border-bottom pb-2 mb-0">Items</h6><div class="table-responsive"><table class="table table-sm mb-0">';
+        html += '<thead class="table-light"><tr><th>Product</th><th class="text-center">Qty</th><th class="text-end">Price</th><th class="text-end">Total</th></tr></thead><tbody>';
+        data.items.forEach(function (item) {
+            html += '<tr><td>' + item.product_name + '<br><small class="text-muted">' + item.sku + '</small></td>';
+            html += '<td class="text-center">' + parseFloat(item.quantity) + '</td>';
+            html += '<td class="text-end">' + currencySymbol + parseFloat(item.unit_price).toFixed(2) + '</td>';
+            html += '<td class="text-end">' + currencySymbol + parseFloat(item.total).toFixed(2) + '</td></tr>';
+        });
+        html += '</tbody></table></div>';
+        html += '<div class="border-top pt-2 mt-2">';
+        html += '<div class="d-flex justify-content-between mb-1"><span>Subtotal</span><span>' + currencySymbol + parseFloat(data.subtotal).toFixed(2) + '</span></div>';
+        if (data.discount_amount) {
+            html += '<div class="d-flex justify-content-between mb-1 text-danger"><span>Discount</span><span>-' + currencySymbol + parseFloat(data.discount_amount).toFixed(2) + '</span></div>';
+        }
+        html += '<div class="d-flex justify-content-between fw-bold fs-5 border-top pt-2"><span>Total</span><span>' + currencySymbol + parseFloat(data.total).toFixed(2) + '</span></div>';
+        html += '<div class="d-flex justify-content-between mt-1 text-muted"><span>Amount Paid</span><span>' + currencySymbol + parseFloat(data.amount_paid).toFixed(2) + '</span></div>';
+        if (data.overpayment_credited && parseFloat(data.overpayment_credited) > 0) {
+            html += '<div class="d-flex justify-content-between mt-1 text-info"><span>Overage (Credited to Account)</span><span>' + currencySymbol + parseFloat(data.overpayment_credited).toFixed(2) + '</span></div>';
+        } else if (data.change_given && parseFloat(data.change_given) > 0 && !data.customer) {
+            html += '<div class="d-flex justify-content-between mt-1 text-success"><span>Change</span><span>' + currencySymbol + parseFloat(data.change_given).toFixed(2) + '</span></div>';
+        }
+        html += '</div>';
+        contentEl.innerHTML = html;
+    }
+
+    document.querySelectorAll('.sale-detail-link-ct').forEach(function (link) {
+        link.addEventListener('click', function (e) {
+            e.preventDefault();
+            const refId = this.dataset.referenceId;
+            if (!refId || (!refId.startsWith('S') && isNaN(parseInt(refId)))) return;
+
+            loadingEl.style.display = 'block';
+            contentEl.style.display = 'none';
+            printBtn.href = '/sales/' + refId + '/receipt/';
+            saleModal.show();
+
+            fetch('/sales/api/' + refId + '/detail/')
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    renderSaleDetail(data);
+                    loadingEl.style.display = 'none';
+                    contentEl.style.display = 'block';
+                })
+                .catch(function () {
+                    contentEl.innerHTML = '<div class="alert alert-danger">Failed to load sale details.</div>';
+                    loadingEl.style.display = 'none';
+                    contentEl.style.display = 'block';
+                });
+        });
+    });
+
+    // Customer Preview modal
+    const customerModal = new bootstrap.Modal(document.getElementById('customerPreviewModal'));
+
+    document.querySelectorAll('.btn-customer-preview').forEach(function (btn) {
+        btn.addEventListener('click', function (e) {
+            e.preventDefault();
+            const id = this.dataset.customerId;
+            const name = this.dataset.customerName;
+            const phone = this.dataset.customerPhone;
+            const email = this.dataset.customerEmail;
+            const shop = this.dataset.customerShop;
+            const balance = parseFloat(this.dataset.customerBalance);
+            const status = this.dataset.customerStatus;
+            const created = this.dataset.customerCreated;
+
+            document.getElementById('previewCustomerName').textContent = name;
+            document.getElementById('previewGoToPageBtn').href = '/customers/' + id + '/';
+
+            let balanceHtml;
+            if (balance > 0) {
+                balanceHtml = '<span class="badge bg-danger fs-6">' + currencySymbol + balance.toFixed(2) + '</span> <small class="text-danger ms-1">Owes Shop</small>';
+            } else if (balance < 0) {
+                balanceHtml = '<span class="badge bg-success fs-6">' + currencySymbol + Math.abs(balance).toFixed(2) + '</span> <small class="text-success ms-1">Credit</small>';
+            } else {
+                balanceHtml = '<span class="badge bg-secondary">No Balance</span>';
+            }
+
+            const statusBadge = status === 'Active'
+                ? '<span class="badge bg-success-subtle text-success">Active</span>'
+                : '<span class="badge bg-danger-subtle text-danger">Inactive</span>';
+
+            let html = '';
+            html += '<dt class="col-sm-4">Phone</dt><dd class="col-sm-8">' + (phone || '<span class="text-muted">—</span>') + '</dd>';
+            html += '<dt class="col-sm-4">Email</dt><dd class="col-sm-8">' + (email || '<span class="text-muted">—</span>') + '</dd>';
+            html += '<dt class="col-sm-4">Shop</dt><dd class="col-sm-8">' + (shop || '<span class="text-muted">Global</span>') + '</dd>';
+            html += '<dt class="col-sm-4">Balance</dt><dd class="col-sm-8">' + balanceHtml + '</dd>';
+            html += '<dt class="col-sm-4">Status</dt><dd class="col-sm-8">' + statusBadge + '</dd>';
+            html += '<dt class="col-sm-4">Member Since</dt><dd class="col-sm-8">' + created + '</dd>';
+
+            document.getElementById('customerPreviewContent').innerHTML = html;
+            customerModal.show();
+        });
+    });
 });
 </script>
 {% endblock %}

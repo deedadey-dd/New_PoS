@@ -114,7 +114,7 @@ class DemoAutoLoginView(View):
             return redirect('core:dashboard')
             
         except User.DoesNotExist:
-            messages.error(request, "The demo environment is currently being reset or is unavailable. Please try again later. (Run `python manage.py setup_demo` on your server)")
+            messages.error(request, "The demo environment is currently being reset or is unavailable. Please try again later.")
             return redirect('core:demo_hub')
 
 class LoginView(View):
