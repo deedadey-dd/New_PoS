@@ -1,11 +1,11 @@
 """
-Sitemap configuration for Hendaxis POS.
+Sitemap configuration for HendAxis POS.
 Covers all public-facing pages to improve Google indexing.
 
 NOTE: The domain used in sitemap URLs is controlled by the django.contrib.sites
 framework (database). Run this to update it:
   python manage.py shell -c "from django.contrib.sites.models import Site;
-  s=Site.objects.get(id=1); s.domain='pos.hendaxis.com'; s.name='Hendaxis POS'; s.save()"
+  s=Site.objects.get(id=1); s.domain='pos.hendaxis.com'; s.name='HendAxis POS'; s.save()"
 """
 from django.contrib.sitemaps import Sitemap
 from django.urls import reverse

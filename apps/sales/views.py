@@ -2049,6 +2049,43 @@ def verify_ecash_payment(request):
         }, status=500)
 
 
+@login_required
+def api_pending_ecash_sales(request):
+    """Return a list of pending e-cash sales for the current shift to allow manual verification."""
+    user = request.user
+    tenant = user.tenant
+    
+    # Get current shift if any
+    current_shift = Shift.objects.filter(
+        tenant=tenant,
+        attendant=user,
+        status='OPEN'
+    ).first()
+    
+    if not current_shift:
+        return JsonResponse({'success': True, 'sales': []})
+        
+    pending_sales = Sale.objects.filter(
+        tenant=tenant,
+        shift=current_shift,
+        payment_method='ECASH',
+        status='PENDING'
+    ).order_by('-created_at')
+    
+    sales_data = []
+    for s in pending_sales:
+        sales_data.append({
+            'id': s.id,
+            'sale_number': s.sale_number,
+            'reference': s.paystack_reference,
+            'total': str(s.total),
+            'customer_name': s.customer.name if s.customer else 'Walk-in',
+            'created_at': s.created_at.strftime('%I:%M %p')
+        })
+        
+    return JsonResponse({'success': True, 'sales': sales_data})
+
+
 # ============ Offline Sync API ============
 
 @login_required

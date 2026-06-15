@@ -892,6 +892,10 @@
             <a href="{% url 'core:dashboard' %}" class="btn btn-outline-light btn-sm" title="Dashboard">
                 <i class="bi bi-speedometer2"></i>
             </a>
+            <!-- Pending Digital Sales Button -->
+            <button class="btn btn-outline-warning btn-sm" id="btn-pending-ecash" style="display: none;" onclick="showPendingEcashModal()" title="Pending Digital Payments">
+                <i class="bi bi-hourglass-split"></i> Pending <span id="pending-ecash-badge" class="badge bg-danger ms-1">0</span>
+            </button>
             <span class="text-light">{{ user.get_full_name|default:user.email }}</span>
             <a href="{% url 'core:logout' %}" class="btn btn-outline-light btn-sm">
                 <i class="bi bi-box-arrow-right"></i>
@@ -1191,6 +1195,23 @@
         </div>
     </div>
 
+    <!-- ── Pending E-Cash Sales Modal ──────────────────────────── -->
+    <div class="checkout-modal" id="pending-ecash-modal">
+        <div class="checkout-dialog" style="max-width:500px; max-height:80vh; display:flex; flex-direction:column;">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h4 class="mb-0" style="color:#f59e0b;"><i class="bi bi-hourglass-split me-2"></i>Pending Digital Payments</h4>
+                <button type="button" class="btn-close btn-close-white" onclick="closePendingEcashModal()"></button>
+            </div>
+            <p class="text-muted small mb-3">These are digital payments that were initialized but not confirmed. You can verify their status here if the system delayed previously. If they failed, void them from Sales History.</p>
+            <div id="pending-ecash-list" class="flex-grow-1 overflow-auto mb-3" style="min-height:200px; max-height: 400px; padding-right: 5px;">
+                <div class="text-center text-muted py-4"><i class="bi bi-arrow-repeat spin"></i> Loading...</div>
+            </div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-secondary flex-fill" onclick="closePendingEcashModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Mobile Cart Toggle Button -->
     <button class="mobile-cart-toggle" id="mobile-cart-toggle" onclick="toggleMobileCart()">
         <i class="bi bi-cart3"></i>
@@ -1367,6 +1388,10 @@
             loadCartFromStorage();
             initSearchAutocomplete();
             initCustomerSearch(); // NEW
+            fetchPendingEcashSales(); // Fetch on load
+            
+            // Auto fetch pending sales periodically
+            setInterval(fetchPendingEcashSales, 60000);
 
             // Category tabs
             document.querySelectorAll('.category-tab').forEach(tab => {
@@ -2193,6 +2218,9 @@
                         amount: Math.round(total * 100), // Convert to pesewas
                         currency: 'GHS',
                         ref: data.reference,
+                        mobile_money: {
+                            phone: data.phone
+                        },
                         metadata: {
                             device_type: "pos_terminal",
                             is_pos_checkout: "true",
@@ -2203,6 +2231,11 @@
                                     display_name: "Sale Number",
                                     variable_name: "sale_number",
                                     value: data.sale_number
+                                },
+                                {
+                                    display_name: "Phone Number",
+                                    variable_name: "phone",
+                                    value: data.phone
                                 }
                             ]
                         },
@@ -2341,7 +2374,100 @@
             } catch (error) {
                 console.error('Verification error:', error);
                 alert('Failed to verify payment. Please check your transaction history.');
+            } finally {
+                // Refresh pending sales list in case it changed
+                fetchPendingEcashSales();
             }
+        }
+
+        // Pending E-Cash Sales Logic
+        async function fetchPendingEcashSales() {
+            if (!HAS_SHIFT && !WAIVE_SHIFT) return;
+            try {
+                const response = await fetch('{% url "sales:api_pending_ecash_sales" %}');
+                const data = await response.json();
+                
+                const btn = document.getElementById('btn-pending-ecash');
+                const badge = document.getElementById('pending-ecash-badge');
+                
+                if (data.success && data.sales && data.sales.length > 0) {
+                    btn.style.display = 'inline-block';
+                    badge.textContent = data.sales.length;
+                    
+                    // Render list if modal is open
+                    const listContainer = document.getElementById('pending-ecash-list');
+                    if (listContainer) {
+                        listContainer.innerHTML = data.sales.map(s => `
+                            <div class="card bg-dark border-secondary mb-2">
+                                <div class="card-body p-2 d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <div class="fw-bold">${s.sale_number || 'Payment on Account'}</div>
+                                        <div class="small text-muted">${s.customer_name} • ${s.created_at}</div>
+                                        <div class="small text-warning font-monospace">${s.reference}</div>
+                                    </div>
+                                    <div class="text-end">
+                                        <div class="fw-bold text-success mb-1">${CURRENCY}${s.total}</div>
+                                        <div class="d-flex gap-1 justify-content-end">
+                                            <button class="btn btn-sm btn-outline-danger" onclick="voidPendingSale(${s.id || 'null'})" title="Cancel/Void Sale">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-warning" onclick="manualVerify('${s.reference}', ${s.id || 'null'}, ${!s.sale_number}, null, ${s.total}, null, '')">
+                                                Verify
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        `).join('');
+                    }
+                } else {
+                    btn.style.display = 'none';
+                    const listContainer = document.getElementById('pending-ecash-list');
+                    if (listContainer) {
+                        listContainer.innerHTML = '<div class="text-center text-muted py-4">No pending digital payments.</div>';
+                    }
+                }
+            } catch (e) {
+                console.error("Failed to fetch pending ECASH sales", e);
+            }
+        }
+
+        async function voidPendingSale(saleId) {
+            if (!saleId) return;
+            if (!confirm("Are you sure you want to cancel and void this pending sale?")) return;
+            
+            try {
+                const formData = new FormData();
+                formData.append('reason', 'Payment failed or cancelled via POS');
+                
+                const response = await fetch(`/sales/api/${saleId}/void/`, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': CSRF_TOKEN
+                    },
+                    body: formData
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    showPosToast('Sale voided successfully.', 'success');
+                    fetchPendingEcashSales();
+                } else {
+                    alert(data.error || 'Failed to void sale.');
+                }
+            } catch (e) {
+                console.error(e);
+                alert('Error voiding sale.');
+            }
+        }
+
+        function showPendingEcashModal() {
+            fetchPendingEcashSales();
+            document.getElementById('pending-ecash-modal').classList.add('active');
+        }
+
+        function closePendingEcashModal() {
+            document.getElementById('pending-ecash-modal').classList.remove('active');
         }
 
         function updateChange() {
