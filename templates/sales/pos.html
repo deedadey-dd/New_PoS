@@ -1894,6 +1894,40 @@
             saveCartToStorage();
         }
 
+        async function promptEditQty(productId, currentQty) {
+            const result = await promptAsync(`<i class="bi bi-pencil-square me-2"></i>Edit Quantity`, `Enter new quantity:`, currentQty, 'number');
+            if (result !== null && result !== '') {
+                const qty = parseFloat(result);
+                if (qty > 0) {
+                    setItemQty(productId, qty);
+                } else if (qty === 0) {
+                    removeItem(productId);
+                }
+            }
+        }
+
+        function setItemQty(productId, qty) {
+            const item = cart.find(i => i.id === productId);
+            if (!item) return;
+
+            if (!ALLOW_NEGATIVE_STOCK) {
+                const product = PRODUCTS.find(p => p.id === productId);
+                if (product && qty > (product.quantity || 0)) {
+                    showPosToast(`⚠ Only ${Math.floor(product.quantity || 0)} in stock. Cannot set to ${qty}.`, 'warning');
+                    qty = product.quantity || 0;
+                }
+            }
+
+            if (qty <= 0) {
+                cart = cart.filter(i => i.id !== productId);
+            } else {
+                item.quantity = qty;
+            }
+
+            updateCart();
+            saveCartToStorage();
+        }
+
         function updateCart() {
             const cartDiv = document.getElementById('cart-items');
             const countEl = document.getElementById('cart-count');
@@ -1916,7 +1950,7 @@
                         </div>
                         <div class="cart-item-qty">
                             <button class="qty-btn" onclick="updateItemQty(${item.id}, -1)">-</button>
-                            <span class="qty-value">${item.quantity}</span>
+                            <span class="qty-value" onclick="promptEditQty(${item.id}, ${item.quantity})" style="cursor: pointer; text-decoration: underline dashed;" title="Click to edit quantity">${item.quantity}</span>
                             <button class="qty-btn" onclick="updateItemQty(${item.id}, 1)">+</button>
                             <span class="cart-item-remove" onclick="removeItem(${item.id})">
                                 <i class="bi bi-x-lg"></i>

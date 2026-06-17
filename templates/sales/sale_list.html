@@ -46,6 +46,15 @@
             {% if selected_dispatch_status %}
             <input type="hidden" name="dispatch_status" value="{{ selected_dispatch_status }}">
             {% endif %}
+            
+            <div class="col-md-3">
+                <label class="form-label">Search</label>
+                <div class="input-group">
+                    <span class="input-group-text bg-white border-end-0 text-muted"><i class="bi bi-search"></i></span>
+                    <input type="text" name="q" class="form-control border-start-0 ps-0" placeholder="Invoice #, Customer Name, Phone..." value="{{ q }}">
+                </div>
+            </div>
+            
             <div class="col-md-2">
                 <label class="form-label">From Date</label>
                 <input type="date" name="date_from" class="form-control" value="{{ date_from }}">
@@ -184,8 +193,10 @@
                                         Pay
                                     </button>
                                 {% elif sale.status == 'COMPLETED' or sale.status == 'PENDING_DISPATCH' %}
-                                    {% if current_tenant.require_refund_approval %}
-                                        <button class="btn btn-sm btn-outline-warning me-1" onclick="alert('Refund feature coming soon!')">Refund</button>
+                                    {% if current_tenant.enable_refunds %}
+                                        <button class="btn btn-sm btn-outline-warning me-1 inline-refund-btn" 
+                                                data-sale-id="{{ sale.id }}" 
+                                                data-sale-number="{{ sale.sale_number }}">Refund</button>
                                     {% endif %}
                                 {% endif %}
                             {% elif role_name == 'SHOP_MANAGER' and request.user.tenant.use_strict_sales_workflow %}
@@ -267,7 +278,7 @@
                     <i class="bi bi-credit-card me-1"></i>Pay Invoice
                 </button>
                 {% endif %}
-                {% if request.user.tenant.enable_refunds and role_name == 'SHOP_MANAGER' %}
+                {% if request.user.tenant.enable_refunds and role_name == 'SHOP_MANAGER' or role_name == 'SHOP_CASHIER' %}
                 <button type="button" class="btn btn-warning text-dark" id="saleDetailRefundBtn" style="display: none;">
                     <i class="bi bi-arrow-counterclockwise me-1"></i>Request Refund
                 </button>
@@ -609,32 +620,50 @@ document.addEventListener('DOMContentLoaded', function() {
         refundBtn.addEventListener('click', function() {
             const saleId = this.dataset.saleId;
             const saleNumber = this.dataset.saleNumber;
-            const reason = prompt('Please enter a reason for refunding sale ' + saleNumber + ':');
-            if (reason !== null) {
-                const csrfToken = '{{ csrf_token }}';
-                fetch('/sales/api/' + saleId + '/refund/', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': csrfToken
-                    },
-                    body: JSON.stringify({ reason: reason })
-                })
-                .then(function(response) {
-                    if (!response.ok) {
-                        return response.json().then(function(err) { throw new Error(err.error || 'Refund failed') });
-                    }
-                    return response.json();
-                })
-                .then(function(res) {
-                    alert(res.message || 'Sale refunded successfully.');
-                    location.reload();
-                })
-                .catch(function(err) {
-                    alert(err.message);
-                });
-            }
+            handleRefundRequest(saleId, saleNumber);
         });
+    }
+
+    // Also attach to the inline refund buttons in the table
+    document.querySelectorAll('.inline-refund-btn').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            const saleId = this.dataset.saleId;
+            const saleNumber = this.dataset.saleNumber;
+            handleRefundRequest(saleId, saleNumber);
+        });
+    });
+
+    function handleRefundRequest(saleId, saleNumber) {
+        const reason = prompt('Please enter a reason for refunding sale ' + saleNumber + ':');
+        if (reason !== null) {
+            if (reason.trim() === '') {
+                alert('A reason is required.');
+                return;
+            }
+            const csrfToken = '{{ csrf_token }}';
+            fetch('/sales/api/' + saleId + '/refund/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
+                },
+                body: JSON.stringify({ reason: reason })
+            })
+            .then(function(response) {
+                if (!response.ok) {
+                    return response.json().then(function(err) { throw new Error(err.error || 'Refund failed') });
+                }
+                return response.json();
+            })
+            .then(function(res) {
+                alert(res.message || 'Sale refunded successfully.');
+                location.reload();
+            })
+            .catch(function(err) {
+                alert(err.message);
+            });
+        }
     }
 
     // Payment Logic

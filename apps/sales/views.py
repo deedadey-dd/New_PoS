@@ -619,6 +619,18 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
             )
         elif dispatch_status in ['dispatched', 'completed']:
             queryset = queryset.filter(status='COMPLETED', is_dispatched=True)
+            
+        # Text search (Invoice Number, Customer Name, Customer Phone)
+        q = self.request.GET.get('q', '').strip()
+        if q:
+            from django.db.models import Q
+            queryset = queryset.filter(
+                Q(sale_number__icontains=q) |
+                Q(customer__name__icontains=q) |
+                Q(customer__phone__icontains=q) |
+                Q(customer_name__icontains=q) |
+                Q(customer_phone__icontains=q)
+            )
          
         return self.apply_sorting(queryset)
     
@@ -654,6 +666,7 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
         context['selected_status'] = self.request.GET.get('status', '')
         context['selected_payment'] = self.request.GET.get('payment', '')
         context['selected_dispatch_status'] = self.request.GET.get('dispatch_status', '')
+        context['q'] = self.request.GET.get('q', '')
         
         # Build sale_provider_map for the sales on this page
         sales = context.get('sales', [])
@@ -834,13 +847,13 @@ def api_refund_sale(request, pk):
         return JsonResponse({'success': False, 'error': 'Refunds are disabled for this tenant.'}, status=403)
 
     role_name = request.user.role.name if request.user.role else None
-    if role_name not in ['SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN']:
+    if role_name not in ['SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN', 'SHOP_CASHIER']:
         return JsonResponse({'success': False, 'error': 'You do not have permission to request or process refunds.'}, status=403)
 
     sale = get_object_or_404(Sale, pk=pk, tenant=tenant)
 
-    # Shop managers can only refund their own shop
-    if role_name == 'SHOP_MANAGER' and sale.shop != request.user.location:
+    # Shop managers and cashiers can only refund their own shop
+    if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER'] and sale.shop != request.user.location:
         return JsonResponse({'success': False, 'error': 'You can only request refunds for your own shop.'}, status=403)
 
     if sale.status == 'REFUNDED':
