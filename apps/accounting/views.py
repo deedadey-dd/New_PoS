@@ -349,21 +349,27 @@ class AccountantDashboardView(LoginRequiredMixin, View):
             recent_sales = Sale.objects.filter(
                 tenant=tenant,
                 shop=user.location,
-                status='COMPLETED'
+                status__in=['COMPLETED', 'PENDING_DISPATCH']
             ).select_related('attendant', 'customer').order_by('-created_at')
             
             today_sales_total = Sale.objects.filter(
                 tenant=tenant,
                 shop=user.location,
-                status='COMPLETED',
+                status__in=['COMPLETED', 'PENDING_DISPATCH'],
                 completed_at__date=timezone.now().date()
             ).aggregate(total=Sum('total'))['total'] or Decimal('0')
             
-            pending_deposits_count = CashTransfer.objects.filter(
+            pending_invoices_agg = pending_invoices.aggregate(total=Sum('total'))
+            pending_invoices_total = pending_invoices_agg['total'] or Decimal('0')
+            
+            pending_deposits_agg = CashTransfer.objects.filter(
                 tenant=tenant,
                 from_user=user,
                 status='PENDING'
-            ).count()
+            ).aggregate(total=Sum('amount'), count=Count('id'))
+            
+            pending_deposits_count = pending_deposits_agg['count'] or 0
+            pending_deposits_total = pending_deposits_agg['total'] or Decimal('0')
             
             from apps.payments.models import ShopPaymentAssignment, PaymentProviderConfig
             
@@ -416,9 +422,11 @@ class AccountantDashboardView(LoginRequiredMixin, View):
             context = {
                 'pending_invoices': pending_invoices[:10],
                 'pending_invoices_count': pending_invoices.count(),
+                'pending_invoices_total': pending_invoices_total,
                 'recent_sales': recent_sales[:10],
                 'today_sales_total': today_sales_total,
                 'pending_deposits_count': pending_deposits_count,
+                'pending_deposits_total': pending_deposits_total,
                 'shop': user.location,
                 'available_providers': unique_providers,
             }
@@ -468,7 +476,7 @@ class AccountantDashboardView(LoginRequiredMixin, View):
         }
         
         # ===== SALES SUMMARY =====
-        sales_filter = Q(tenant=tenant, status='COMPLETED') & get_date_filter()
+        sales_filter = Q(tenant=tenant, status__in=['COMPLETED', 'PENDING_DISPATCH']) & get_date_filter()
         if role_name == 'SHOP_CASHIER' and user.location:
             sales_filter &= Q(shop=user.location)
         
@@ -528,7 +536,7 @@ class AccountantDashboardView(LoginRequiredMixin, View):
         location_summary = []
         for shop in shops:
             shop_sales = Sale.objects.filter(
-                Q(tenant=tenant, shop=shop, status='COMPLETED') & get_date_filter()
+                Q(tenant=tenant, shop=shop, status__in=['COMPLETED', 'PENDING_DISPATCH']) & get_date_filter()
             )
             
             sales_agg = shop_sales.aggregate(
@@ -622,7 +630,7 @@ class AccountantDashboardView(LoginRequiredMixin, View):
         sales_by_user = []
         for u in shop_users:
             user_sales = Sale.objects.filter(
-                Q(tenant=tenant, attendant=u, status='COMPLETED') & get_date_filter()
+                Q(tenant=tenant, attendant=u, status__in=['COMPLETED', 'PENDING_DISPATCH']) & get_date_filter()
             )
             
             user_agg = user_sales.aggregate(
@@ -690,7 +698,7 @@ class SalesReportView(LoginRequiredMixin, View):
         # Base queryset
         sales = Sale.objects.filter(
             tenant=tenant,
-            status='COMPLETED',
+            status__in=['COMPLETED', 'PENDING_DISPATCH'],
             created_at__date__gte=date_from,
             created_at__date__lte=date_to
         ).select_related('shop', 'attendant', 'shift')
