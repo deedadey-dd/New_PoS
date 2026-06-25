@@ -1,0 +1,297 @@
+{% extends "base.html" %}
+{% load humanize %}
+
+{% block title %}Detailed Breakdown Report{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-1">
+                    <li class="breadcrumb-item"><a href="{% url 'reports:end_of_day_summary' %}?{% if viewing_shop %}shop_id={{ viewing_shop.id }}&{% endif %}start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}">Summary Report</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">Detailed Breakdown</li>
+                </ol>
+            </nav>
+            <h2 class="mb-1">Detailed Breakdown</h2>
+            <p class="text-muted mb-0">
+                {% if start_date == end_date %}
+                    For {{ start_date|date:"F j, Y" }}
+                {% else %}
+                    From {{ start_date|date:"F j, Y" }} to {{ end_date|date:"F j, Y" }}
+                {% endif %}
+                {% if viewing_shop %}
+                    &mdash; <span class="fw-bold">{{ viewing_shop.name }}</span>
+                {% endif %}
+            </p>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="?{% if viewing_shop %}shop_id={{ viewing_shop.id }}&{% endif %}start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}&exclude_inactive={{ exclude_inactive|lower }}&top_n={{ top_n }}&pdf=true" class="btn btn-primary">
+                <i class="bi bi-file-earmark-pdf me-2"></i>Print Combined PDF
+            </a>
+        </div>
+    </div>
+
+    <!-- ===== SUMMARY CARDS ===== -->
+    <div class="row g-3 mb-4">
+        {% if role_name == 'SHOP_ATTENDANT' %}
+            <div class="col-6 col-md-3">
+                <div class="card border-0 shadow-sm rounded-4 h-100">
+                    <div class="card-body">
+                        <div class="text-muted small text-uppercase fw-bold mb-1">Total Sales</div>
+                        <h4 class="mb-0 text-success fw-bold">{{ currency_symbol }}{{ total_sales_value|floatformat:2|intcomma }}</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card border-0 shadow-sm rounded-4 h-100">
+                    <div class="card-body">
+                        <div class="text-muted small text-uppercase fw-bold mb-1">Invoices Created</div>
+                        <h4 class="mb-0 text-primary fw-bold">{{ invoice_count|intcomma }}</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card border-0 shadow-sm rounded-4 h-100">
+                    <div class="card-body">
+                        <div class="text-muted small text-uppercase fw-bold mb-1">Items Sold</div>
+                        <h4 class="mb-0 text-info fw-bold">{{ items_sold_qty|floatformat:0|intcomma }}</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card border-0 shadow-sm rounded-4 h-100">
+                    <div class="card-body">
+                        <div class="text-muted small text-uppercase fw-bold mb-1">Customer Payments</div>
+                        <h4 class="mb-0 text-warning fw-bold">{{ currency_symbol }}{{ customer_payments_received|floatformat:2|intcomma }}</h4>
+                    </div>
+                </div>
+            </div>
+
+        {% elif role_name == 'SHOP_CASHIER' %}
+            <div class="col-6 col-md-3">
+                <div class="card border-0 shadow-sm rounded-4 h-100 bg-primary text-white">
+                    <div class="card-body">
+                        <div class="text-white-50 small text-uppercase fw-bold mb-1">Total Processed</div>
+                        <h4 class="mb-0 fw-bold">{{ currency_symbol }}{{ total_sales_value|floatformat:2|intcomma }}</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card border-0 shadow-sm rounded-4 h-100">
+                    <div class="card-body">
+                        <div class="text-muted small text-uppercase fw-bold mb-1">Invoices Processed</div>
+                        <h4 class="mb-0 text-primary fw-bold">{{ invoice_count|intcomma }}</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card border-0 shadow-sm rounded-4 h-100">
+                    <div class="card-body">
+                        <div class="text-muted small text-uppercase fw-bold mb-1">Customer Payments</div>
+                        <h4 class="mb-0 text-warning fw-bold">{{ currency_symbol }}{{ customer_payments_received|floatformat:2|intcomma }}</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card border-0 shadow-sm rounded-4 h-100">
+                    <div class="card-body">
+                        <div class="text-muted small text-uppercase fw-bold mb-1">Bank Transfers</div>
+                        <h4 class="mb-0 text-success fw-bold">{{ currency_symbol }}{{ bank_transfers_made|floatformat:2|intcomma }}</h4>
+                    </div>
+                </div>
+            </div>
+
+        {% elif role_name == 'SHOP_MANAGER' or viewing_shop %}
+            <div class="col-6 col-md-4">
+                <div class="card border-0 shadow-sm rounded-4 h-100 bg-success text-white">
+                    <div class="card-body">
+                        <div class="text-white-50 small text-uppercase fw-bold mb-1">Shop Total Sales</div>
+                        <h4 class="mb-0 fw-bold">{{ currency_symbol }}{{ shop_total_sales_value|floatformat:2|intcomma }}</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-4">
+                <div class="card border-0 shadow-sm rounded-4 h-100">
+                    <div class="card-body">
+                        <div class="text-muted small text-uppercase fw-bold mb-1">Shop Invoices</div>
+                        <h4 class="mb-0 text-primary fw-bold">{{ shop_invoice_count|intcomma }}</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-4">
+                <div class="card border-0 shadow-sm rounded-4 h-100">
+                    <div class="card-body">
+                        <div class="text-muted small text-uppercase fw-bold mb-1">Items Sold</div>
+                        <h4 class="mb-0 text-info fw-bold">{{ shop_items_sold_qty|floatformat:0|intcomma }}</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-4">
+                <div class="card border-0 shadow-sm rounded-4 h-100">
+                    <div class="card-body">
+                        <div class="text-muted small text-uppercase fw-bold mb-1">Customer Payments</div>
+                        <h4 class="mb-0 text-warning fw-bold">{{ currency_symbol }}{{ shop_customer_payments_received|floatformat:2|intcomma }}</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-4">
+                <div class="card border-0 shadow-sm rounded-4 h-100">
+                    <div class="card-body">
+                        <div class="text-muted small text-uppercase fw-bold mb-1">Funds Sent Out</div>
+                        <h4 class="mb-0 text-danger fw-bold">{{ currency_symbol }}{{ transferred_funds_out|floatformat:2|intcomma }}</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-4">
+                <div class="card border-0 shadow-sm rounded-4 h-100">
+                    <div class="card-body">
+                        <div class="text-muted small text-uppercase fw-bold mb-1">Expenditures</div>
+                        <h4 class="mb-0 text-danger fw-bold">{{ currency_symbol }}{{ shop_expenditures|floatformat:2|intcomma }}</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-4">
+                <div class="card border-0 shadow-sm rounded-4 h-100">
+                    <div class="card-body">
+                        <div class="text-muted small text-uppercase fw-bold mb-1">Funds Sent to Bank</div>
+                        <h4 class="mb-0 text-success fw-bold">{{ currency_symbol }}{{ shop_bank_transfers_made|floatformat:2|intcomma }}</h4>
+                    </div>
+                </div>
+            </div>
+
+        {% elif role_name == 'ACCOUNTANT' or role_name == 'ADMIN' or role_name == 'AUDITOR' %}
+            <div class="col-6 col-md-3">
+                <div class="card border-0 shadow-sm rounded-4 h-100 bg-success text-white">
+                    <div class="card-body">
+                        <div class="text-white-50 small text-uppercase fw-bold mb-1">Funds Received</div>
+                        <h4 class="mb-0 fw-bold">{{ currency_symbol }}{{ cash_transfers_received|floatformat:2|intcomma }}</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card border-0 shadow-sm rounded-4 h-100">
+                    <div class="card-body">
+                        <div class="text-muted small text-uppercase fw-bold mb-1">Bank Deposits Made</div>
+                        <h4 class="mb-0 text-primary fw-bold">{{ currency_symbol }}{{ bank_transfers_made|floatformat:2|intcomma }}</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card border-0 shadow-sm rounded-4 h-100">
+                    <div class="card-body">
+                        <div class="text-muted small text-uppercase fw-bold mb-1">Expenditures Disbursed</div>
+                        <h4 class="mb-0 text-danger fw-bold">{{ currency_symbol }}{{ expenditures_disbursed|floatformat:2|intcomma }}</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card border-0 shadow-sm rounded-4 h-100">
+                    <div class="card-body">
+                        <div class="text-muted small text-uppercase fw-bold mb-1">Digital Withdrawn</div>
+                        <h4 class="mb-0 text-danger fw-bold">{{ currency_symbol }}{{ digital_funds_withdrawn|floatformat:2|intcomma }}</h4>
+                    </div>
+                </div>
+            </div>
+        {% endif %}
+    </div>
+
+    <!-- ===== FILTERS ===== -->
+    <div class="card border-0 shadow-sm rounded-4 mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3 align-items-end">
+                <input type="hidden" name="start_date" value="{{ start_date|date:'Y-m-d' }}">
+                <input type="hidden" name="end_date" value="{{ end_date|date:'Y-m-d' }}">
+                <input type="hidden" name="shop_id" value="{{ shop_id }}">
+                
+                <div class="col-md-3">
+                    <label class="form-label text-muted small fw-bold">Report Scope</label>
+                    <select name="top_n" class="form-select">
+                        <option value="all" {% if top_n == 'all' %}selected{% endif %}>All Products</option>
+                        <option value="10" {% if top_n == '10' %}selected{% endif %}>Top 10 Products</option>
+                        <option value="20" {% if top_n == '20' %}selected{% endif %}>Top 20 Products</option>
+                    </select>
+                </div>
+                
+                <div class="col-md-4 d-flex align-items-end pb-1">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" role="switch" id="excludeInactive" name="exclude_inactive" value="true" {% if exclude_inactive %}checked{% endif %}>
+                        <label class="form-check-label" for="excludeInactive">Exclude items with no sales activity</label>
+                    </div>
+                </div>
+                
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-outline-primary w-100">Apply Filters</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ===== BREAKDOWN TABLE ===== -->
+    <div class="card border-0 shadow-sm rounded-4">
+        <div class="card-header bg-white border-0 pt-4 pb-2 d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Product Sales &amp; Stock Breakdown</h5>
+            <span class="text-muted small">Sorted by Quantity Sold</span>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-dark">
+                        <tr>
+                            <th class="ps-4" style="width:3%;">#</th>
+                            <th>Product Name</th>
+                            <th class="text-center">Qty Sold</th>
+                            <th class="text-end">Total Revenue</th>
+                            <th class="text-center pe-4">Stock Remaining</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in stats %}
+                        <tr {% if item.name == 'Others' %}class="table-secondary fw-bold"{% endif %}>
+                            <td class="ps-4 text-muted small">
+                                {% if item.name != 'Others' %}{{ forloop.counter }}{% else %}&mdash;{% endif %}
+                            </td>
+                            <td>{{ item.name }}</td>
+                            <td class="text-center">
+                                {% if item.qty_sold > 0 %}
+                                    <span class="badge bg-success rounded-pill px-3">{{ item.qty_sold|floatformat:0|intcomma }}</span>
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end fw-medium">
+                                {% if item.revenue > 0 %}
+                                    {{ currency_symbol }}{{ item.revenue|floatformat:2|intcomma }}
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center pe-4">
+                                {% if item.stock_left == '-' %}
+                                    <span class="text-muted">—</span>
+                                {% elif item.stock_left == 'N/A' %}
+                                    <span class="badge bg-secondary rounded-pill px-3">N/A</span>
+                                {% elif item.stock_left > 10 %}
+                                    <span class="badge bg-info text-dark rounded-pill px-3">{{ item.stock_left|floatformat:0|intcomma }}</span>
+                                {% elif item.stock_left > 0 %}
+                                    <span class="badge bg-warning text-dark rounded-pill px-3">{{ item.stock_left|floatformat:0|intcomma }}</span>
+                                {% else %}
+                                    <span class="badge bg-danger rounded-pill px-3">Out of Stock</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="5" class="text-center py-5 text-muted">
+                                <i class="bi bi-inbox fs-1 d-block mb-3"></i>
+                                No data available for the selected filters.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

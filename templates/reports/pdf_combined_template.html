@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>End of Day Report</title>
+<style>
+    @page {
+        size: A4 portrait;
+        margin: 2cm;
+        @frame footer {
+            -pdf-frame-content: footerContent;
+            bottom: 1cm;
+            margin-left: 2cm;
+            margin-right: 2cm;
+            height: 1cm;
+        }
+    }
+    body {
+        font-family: Helvetica, Arial, sans-serif;
+        font-size: 11pt;
+        color: #333333;
+    }
+    h1 { font-size: 20pt; color: #2c3e50; margin-bottom: 4px; }
+    h2 { font-size: 13pt; color: #2c3e50; border-bottom: 2px solid #2c3e50; padding-bottom: 4px; margin-top: 20px; margin-bottom: 10px; }
+    h3 { font-size: 11pt; color: #555555; margin-bottom: 8px; }
+    .meta { color: #777777; font-size: 9pt; margin: 2px 0; }
+    .section-divider { border: none; border-top: 1px dashed #cccccc; margin: 20px 0; }
+
+    /* Summary Cards Row */
+    .cards-table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+    .cards-table td { padding: 10px; border: 1px solid #e0e0e0; width: 33%; vertical-align: top; background-color: #f8f9fa; }
+    .card-label { font-size: 8pt; color: #888888; text-transform: uppercase; font-weight: bold; margin-bottom: 4px; }
+    .card-value { font-size: 15pt; font-weight: bold; color: #2c3e50; }
+
+    /* Details Table */
+    .table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 10pt; }
+    .table th {
+        background-color: #2c3e50;
+        color: #ffffff;
+        padding: 7px 8px;
+        text-align: left;
+        font-size: 9pt;
+    }
+    .table td { border-bottom: 1px solid #eeeeee; padding: 6px 8px; }
+    .table tr:nth-child(even) td { background-color: #f9f9f9; }
+    .table .text-right { text-align: right; }
+    .table .text-center { text-align: center; }
+    .table .row-others td { background-color: #e9ecef; font-weight: bold; }
+
+    .badge-ok { background-color: #d4edda; color: #155724; padding: 2px 6px; border-radius: 3px; font-size: 8.5pt; }
+    .badge-low { background-color: #fff3cd; color: #856404; padding: 2px 6px; border-radius: 3px; font-size: 8.5pt; }
+    .badge-out { background-color: #f8d7da; color: #721c24; padding: 2px 6px; border-radius: 3px; font-size: 8.5pt; }
+
+    .footer-line { text-align: right; color: #aaaaaa; font-size: 8.5pt; }
+    .page-break { page-break-before: always; }
+</style>
+</head>
+<body>
+
+    <!-- ===== HEADER ===== -->
+    <h1>End of Day Report</h1>
+    <p class="meta"><strong>Period:</strong> {{ start_date }} {% if start_date != end_date %}&mdash; {{ end_date }}{% endif %}</p>
+    {% if viewing_shop %}<p class="meta"><strong>Shop:</strong> {{ viewing_shop.name }}</p>{% endif %}
+    <p class="meta"><strong>Role:</strong> {{ role_name|title }}</p>
+
+    <!-- ===== SECTION 1: FINANCIAL SUMMARY ===== -->
+    <h2>Financial Summary</h2>
+
+    {% if role_name == 'SHOP_ATTENDANT' %}
+    <table class="cards-table">
+        <tr>
+            <td><div class="card-label">Total Sales</div><div class="card-value">{{ currency_symbol }}{{ total_sales_value|default:"0.00" }}</div></td>
+            <td><div class="card-label">Invoices Created</div><div class="card-value">{{ invoice_count|default:"0" }}</div></td>
+            <td><div class="card-label">Items Sold</div><div class="card-value">{{ items_sold_qty|default:"0" }}</div></td>
+        </tr>
+        <tr>
+            <td colspan="3"><div class="card-label">Customer Payments Received</div><div class="card-value">{{ currency_symbol }}{{ customer_payments_received|default:"0.00" }}</div></td>
+        </tr>
+    </table>
+
+    {% elif role_name == 'SHOP_CASHIER' %}
+    <table class="cards-table">
+        <tr>
+            <td><div class="card-label">Total Processed Value</div><div class="card-value">{{ currency_symbol }}{{ total_sales_value|default:"0.00" }}</div></td>
+            <td><div class="card-label">Invoices Processed</div><div class="card-value">{{ invoice_count|default:"0" }}</div></td>
+            <td><div class="card-label">Bank Transfers Executed</div><div class="card-value">{{ currency_symbol }}{{ bank_transfers_made|default:"0.00" }}</div></td>
+        </tr>
+    </table>
+    {% if payments_breakdown %}
+    <h3>Payments Breakdown</h3>
+    <table class="table">
+        <thead>
+            <tr><th>Payment Method</th><th class="text-right">Amount</th></tr>
+        </thead>
+        <tbody>
+            {% for method, amount in payments_breakdown.items %}
+            <tr><td>{{ method|title }}</td><td class="text-right">{{ currency_symbol }}{{ amount }}</td></tr>
+            {% empty %}
+            <tr><td colspan="2" class="text-center">No payments processed.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    {% elif role_name == 'SHOP_MANAGER' or viewing_shop %}
+    <table class="cards-table">
+        <tr>
+            <td><div class="card-label">Shop Total Sales</div><div class="card-value">{{ currency_symbol }}{{ shop_total_sales_value|default:"0.00" }}</div></td>
+            <td><div class="card-label">Invoices Created</div><div class="card-value">{{ shop_invoice_count|default:"0" }}</div></td>
+            <td><div class="card-label">Items Sold</div><div class="card-value">{{ shop_items_sold_qty|default:"0" }}</div></td>
+        </tr>
+        <tr>
+            <td><div class="card-label">Customer Payments Received</div><div class="card-value">{{ currency_symbol }}{{ shop_customer_payments_received|default:"0.00" }}</div></td>
+            <td><div class="card-label">Funds Sent to Accountant</div><div class="card-value">{{ currency_symbol }}{{ transferred_funds_out|default:"0.00" }}</div></td>
+            <td><div class="card-label">Expenditures</div><div class="card-value">{{ currency_symbol }}{{ shop_expenditures|default:"0.00" }}</div></td>
+        </tr>
+        <tr>
+            <td colspan="3"><div class="card-label">Funds Sent to Bank</div><div class="card-value">{{ currency_symbol }}{{ shop_bank_transfers_made|default:"0.00" }}</div></td>
+        </tr>
+    </table>
+
+    {% elif role_name in 'ACCOUNTANT ADMIN AUDITOR' %}
+    <table class="cards-table">
+        <tr>
+            <td><div class="card-label">Funds Received In</div><div class="card-value">{{ currency_symbol }}{{ cash_transfers_received|default:"0.00" }}</div></td>
+            <td><div class="card-label">Bank Deposits Made</div><div class="card-value">{{ currency_symbol }}{{ bank_transfers_made|default:"0.00" }}</div></td>
+            <td><div class="card-label">Expenditures Disbursed</div><div class="card-value">{{ currency_symbol }}{{ expenditures_disbursed|default:"0.00" }}</div></td>
+        </tr>
+    </table>
+    {% endif %}
+
+    <!-- ===== SECTION 2: DETAILED BREAKDOWN ===== -->
+    <h2>Detailed Product Breakdown</h2>
+    <p class="meta">
+        Scope: {% if top_n == '10' %}Top 10 Products{% elif top_n == '20' %}Top 20 Products{% else %}All Products{% endif %}
+        &nbsp;&bull;&nbsp; Sorted by Quantity Sold
+        {% if exclude_inactive %}&nbsp;&bull;&nbsp; Inactive items excluded{% endif %}
+    </p>
+
+    <table class="table">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Product Name</th>
+                <th class="text-center">Qty Sold</th>
+                <th class="text-right">Total Revenue</th>
+                <th class="text-center">Stock Left</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in stats %}
+            <tr {% if item.name == 'Others' %}class="row-others"{% endif %}>
+                <td class="text-center" style="color:#aaa; font-size:9pt;">{% if item.name != 'Others' %}{{ forloop.counter }}{% else %}&mdash;{% endif %}</td>
+                <td>{{ item.name }}</td>
+                <td class="text-center">
+                    {% if item.qty_sold > 0 %}{{ item.qty_sold|floatformat:"0" }}{% else %}&mdash;{% endif %}
+                </td>
+                <td class="text-right">
+                    {% if item.revenue > 0 %}{{ currency_symbol }}{{ item.revenue }}{% else %}&mdash;{% endif %}
+                </td>
+                <td class="text-center">
+                    {% if item.stock_left == '-' %}&mdash;
+                    {% elif item.stock_left > 10 %}<span class="badge-ok">{{ item.stock_left|floatformat:"0" }}</span>
+                    {% elif item.stock_left > 0 %}<span class="badge-low">{{ item.stock_left|floatformat:"0" }}</span>
+                    {% else %}<span class="badge-out">{{ item.stock_left|floatformat:"0" }}</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="5" class="text-center">No data for this period.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- ===== FOOTER ===== -->
+    <div id="footerContent">
+        <div class="footer-line">
+            End of Day Report &bull; {{ start_date }} &bull; Page <pdf:pagenumber> of <pdf:pagecount>
+        </div>
+    </div>
+
+</body>
+</html>
