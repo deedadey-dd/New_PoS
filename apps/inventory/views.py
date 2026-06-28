@@ -88,6 +88,8 @@ class CategoryDeleteView(LoginRequiredMixin, DeleteView):
         return Category.objects.filter(tenant=self.request.user.tenant)
         
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         user = request.user
         if not user.is_superuser and user.role and user.role.name == 'SHOP_MANAGER':
             if not user.tenant.shop_manager_can_delete_categories:
@@ -363,6 +365,8 @@ class ProductCreateView(LoginRequiredMixin, CreateView):
     success_url = reverse_lazy('inventory:product_list')
     
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         # Check if shop manager has permission
         if request.user.role and request.user.role.name == 'SHOP_MANAGER':
             if not request.user.tenant.shop_manager_can_add_products:
@@ -442,6 +446,8 @@ class ProductBulkUploadView(LoginRequiredMixin, View):
     template_name = 'inventory/product_upload.html'
     
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         role_name = request.user.role.name if request.user.role else 'ATTENDANT'
         if role_name not in ['PRODUCTION_MANAGER', 'STORES_MANAGER', 'ADMIN']:
              messages.error(request, "Permission denied. Restricted to Managers and Admins.")
@@ -719,6 +725,8 @@ class BatchCreateView(LoginRequiredMixin, CreateView):
     success_url = reverse_lazy('inventory:batch_list')
     
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         # Check if shop manager has permission
         if request.user.role and request.user.role.name == 'SHOP_MANAGER':
             if not request.user.tenant.shop_manager_can_receive_stock:
@@ -1492,6 +1500,8 @@ class ShopPriceListView(LoginRequiredMixin, View):
     template_name = 'inventory/shop_price_list.html'
     
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         role_name = request.user.role.name if request.user.role else None
         if role_name not in ['SHOP_MANAGER', 'ADMIN', 'ACCOUNTANT']:
             messages.error(request, 'You do not have permission to access pricing.')
@@ -1588,6 +1598,8 @@ class ShopPriceSetView(LoginRequiredMixin, View):
     template_name = 'inventory/shop_price_form.html'
     
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         role_name = request.user.role.name if request.user.role else None
         if role_name not in ['SHOP_MANAGER', 'ADMIN', 'ACCOUNTANT']:
             messages.error(request, 'You do not have permission to access pricing.')
@@ -1904,6 +1916,8 @@ class PriceChangeCenterView(LoginRequiredMixin, SortableMixin, ListView):
     default_sort = '-created_at'
     
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         role_name = request.user.role.name if hasattr(request.user, 'role') and request.user.role else ''
         if role_name not in ['SHOP_MANAGER', 'ADMIN', 'ACCOUNTANT']:
             messages.error(request, 'You do not have permission to view the Price Change Center.')

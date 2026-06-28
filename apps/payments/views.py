@@ -33,6 +33,8 @@ class PaymentProviderConfigListView(LoginRequiredMixin, SortableMixin, ListView)
     default_sort = '-created_at'
 
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         if request.user.role and request.user.role.name != 'ADMIN':
             messages.error(request, "Only administrators can access payment settings.")
             return redirect('core:dashboard')
@@ -71,6 +73,8 @@ class PaymentProviderConfigCreateView(LoginRequiredMixin, CreateView):
     success_url = reverse_lazy('payments:provider_settings')
 
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         if request.user.role and request.user.role.name != 'ADMIN':
             return redirect('core:dashboard')
         return super().dispatch(request, *args, **kwargs)
@@ -88,6 +92,8 @@ class PaymentProviderConfigUpdateView(LoginRequiredMixin, UpdateView):
     success_url = reverse_lazy('payments:provider_settings')
 
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         if request.user.role and request.user.role.name != 'ADMIN':
             return redirect('core:dashboard')
         return super().dispatch(request, *args, **kwargs)
@@ -110,6 +116,8 @@ class ShopPaymentAssignmentListView(LoginRequiredMixin, SortableMixin, ListView)
     default_sort = 'shop__name'
 
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         if request.user.role and request.user.role.name != 'ADMIN':
             return redirect('core:dashboard')
         return super().dispatch(request, *args, **kwargs)
@@ -144,6 +152,8 @@ class ShopPaymentAssignmentCreateView(LoginRequiredMixin, CreateView):
     success_url = reverse_lazy('payments:shop_assignments')
 
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         if request.user.role and request.user.role.name != 'ADMIN':
             return redirect('core:dashboard')
         return super().dispatch(request, *args, **kwargs)
@@ -166,6 +176,8 @@ class ShopPaymentAssignmentUpdateView(LoginRequiredMixin, UpdateView):
     success_url = reverse_lazy('payments:shop_assignments')
 
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         if request.user.role and request.user.role.name != 'ADMIN':
             return redirect('core:dashboard')
         return super().dispatch(request, *args, **kwargs)
@@ -237,6 +249,8 @@ class ECashWithdrawalCreateView(LoginRequiredMixin, CreateView):
     fields = ['amount', 'notes']
     
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         # Only Accountant and Admin can withdraw
         if request.user.role and request.user.role.name not in ['ACCOUNTANT', 'ADMIN']:
             messages.error(request, "Only accountants can withdraw e-cash.")
@@ -401,6 +415,8 @@ class ShopECashListView(LoginRequiredMixin, TemplateView):
     template_name = 'payments/shop_ecash_list.html'
     
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         # Only Accountant and Admin can access
         if request.user.role and request.user.role.name not in ['ACCOUNTANT', 'ADMIN']:
             messages.error(request, "Only accountants can access shop e-cash balances.")
@@ -460,6 +476,8 @@ class ShopECashWithdrawView(LoginRequiredMixin, TemplateView):
     template_name = 'payments/shop_ecash_withdraw.html'
     
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         # Only Accountant and Admin can access
         if request.user.role and request.user.role.name not in ['ACCOUNTANT', 'ADMIN']:
             messages.error(request, "Only accountants can withdraw e-cash.")
@@ -555,6 +573,8 @@ class ShopECashHistoryView(LoginRequiredMixin, SortableMixin, ListView):
     default_sort = '-created_at'
     
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         # Shop managers, accountants, auditors, admins, and cashiers can access
         allowed_roles = ['SHOP_MANAGER', 'ACCOUNTANT', 'AUDITOR', 'ADMIN', 'SHOP_CASHIER']
         if request.user.role and request.user.role.name not in allowed_roles:
@@ -666,6 +686,8 @@ class ShopECashExportView(LoginRequiredMixin, View):
     """Export shop e-cash history to Excel or PDF."""
     
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         allowed_roles = ['SHOP_MANAGER', 'ACCOUNTANT', 'AUDITOR', 'ADMIN', 'SHOP_CASHIER']
         if request.user.role and request.user.role.name not in allowed_roles:
             messages.error(request, "You don't have permission to export e-cash history.")
@@ -776,6 +798,8 @@ class ECashLedgerExportView(LoginRequiredMixin, View):
     """Export global e-cash ledger to Excel or PDF."""
     
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         allowed_roles = ['ACCOUNTANT', 'AUDITOR', 'ADMIN']
         if request.user.role and request.user.role.name not in allowed_roles:
             messages.error(request, "You don't have permission to export the ledger.")

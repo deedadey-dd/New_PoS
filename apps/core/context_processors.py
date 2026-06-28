@@ -422,20 +422,28 @@ def tenant_context(request):
         # Low stock products for the user's location (Stock Alerts)
         if user.location and role_name in ['SHOP_MANAGER', 'SHOP_ATTENDANT', 'STORES_MANAGER', 'PRODUCTION_MANAGER', 'ADMIN', 'SHOP_CASHIER']:
             from apps.inventory.models import Product, InventoryLedger
-            from django.db.models import Value, Case, When, CharField
             
             user_location = user.location
+            
+            # Efficiently get all stock at this location
+            stock_data = InventoryLedger.objects.filter(
+                tenant=tenant,
+                location=user_location
+            ).values('product_id').annotate(
+                total_qty=Sum('quantity')
+            )
+            stock_map = {item['product_id']: item['total_qty'] or Decimal('0') for item in stock_data}
             
             # Get products with their stock at user's location
             products = Product.objects.filter(
                 tenant=tenant,
                 is_active=True,
                 reorder_level__gt=0  # Only products with a reorder level set
-            )
+            ).only('id', 'name', 'reorder_level')
             
             low_stock_list = []
             for product in products:
-                stock_qty = product.get_stock_at_location(user_location)
+                stock_qty = stock_map.get(product.id, Decimal('0'))
                 
                 if stock_qty <= product.reorder_level:
                     # Determine severity

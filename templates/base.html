@@ -1009,8 +1009,13 @@
 
         async function markNotificationRead(id) {
             try {
+                const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
                 const response = await fetch(`/notifications/api/${id}/read/`, {
-                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                    method: 'POST',
+                    headers: { 
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRFToken': csrfToken
+                    }
                 });
                 const data = await response.json();
                 if (data.status === 'success') {
@@ -1168,8 +1173,13 @@
 
         async function markBulletinToastRead(id) {
             try {
+                const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
                 const response = await fetch(`/notifications/bulletin/${id}/read/`, {
-                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                    method: 'POST',
+                    headers: { 
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRFToken': csrfToken
+                    }
                 });
                 if (response.ok) {
                     const toastEl = document.getElementById('bulletinToast');

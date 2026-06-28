@@ -26,6 +26,9 @@
             </p>
         </div>
         <div class="d-flex gap-2">
+            <a href="?{% if viewing_shop %}shop_id={{ viewing_shop.id }}&{% endif %}start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}&exclude_inactive={{ exclude_inactive|lower }}&top_n={{ top_n }}&excel=true" class="btn btn-success">
+                <i class="bi bi-file-earmark-excel me-2"></i>Export Excel
+            </a>
             <a href="?{% if viewing_shop %}shop_id={{ viewing_shop.id }}&{% endif %}start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}&exclude_inactive={{ exclude_inactive|lower }}&top_n={{ top_n }}&pdf=true" class="btn btn-primary">
                 <i class="bi bi-file-earmark-pdf me-2"></i>Print Combined PDF
             </a>

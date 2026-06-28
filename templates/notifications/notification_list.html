@@ -9,9 +9,12 @@
         <p class="text-muted mb-0">Stay updated with your latest alerts</p>
     </div>
     {% if notifications and unread_notification_count > 0 %}
-    <a href="{% url 'notifications:mark_all_read' %}" class="btn btn-outline-primary">
-        <i class="bi bi-check-all me-2"></i>Mark All as Read
-    </a>
+    <form method="POST" action="{% url 'notifications:mark_all_read' %}" class="d-inline">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-outline-primary">
+            <i class="bi bi-check-all me-2"></i>Mark All as Read
+        </button>
+    </form>
     {% endif %}
 </div>
 

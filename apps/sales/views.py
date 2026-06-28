@@ -433,7 +433,7 @@ class ShiftListView(LoginRequiredMixin, SortableMixin, ListView):
         if date_to:
             qs = qs.filter(start_time__date__lte=date_to)
             
-        qs = self.apply_sorting(qs)
+        qs = self.apply_sorting(qs).select_related('shop', 'attendant')
         
         role_name = self.request.user.role.name if self.request.user.role else ''
         
@@ -1008,6 +1008,8 @@ class RefundRequestListView(LoginRequiredMixin, ListView):
     paginate_by = 20
 
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         role_name = request.user.role.name if request.user.role else None
         if role_name not in ['SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN', 'AUDITOR']:
             messages.error(request, 'You do not have permission to view refund requests.')
@@ -1137,6 +1139,7 @@ def api_product_search(request):
 
 
 @login_required
+@require_POST
 def api_complete_sale(request):
     """Complete a sale via AJAX."""
     if request.method != 'POST':
@@ -1357,6 +1360,7 @@ def api_complete_sale(request):
 
 
 @login_required
+@require_POST
 def api_void_sale(request, pk):
     """Void a sale."""
     if request.method != 'POST':
@@ -1378,6 +1382,7 @@ def api_void_sale(request, pk):
 
 
 @login_required
+@require_POST
 def api_pay_invoice(request, pk):
     """Complete payment for a pending invoice (Cashier Workflow)."""
     if request.method != 'POST':
@@ -1444,6 +1449,7 @@ def api_pay_invoice(request, pk):
 
 
 @login_required
+@require_POST
 def api_dispatch_sale(request, pk):
     """Dispatch the goods for a completed sale (Shop Manager Workflow)."""
     if request.method != 'POST':

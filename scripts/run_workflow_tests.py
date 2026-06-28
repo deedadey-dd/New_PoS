@@ -26,6 +26,17 @@ from apps.sales.test_shifts import ShiftProcessTests
 from apps.payments.test_ecash_ledger import AccountantECashPaymentTests
 from apps.accounting.tests.test_cashier_bank_transfer import CashierBankTransferTests
 
+# New security & regression test suites
+from apps.sales.test_security_and_perf import (
+    AnonymousUserGuardTests,
+    RequirePostEnforcementTests,
+    TenantIsolationTests,
+    SaleVoidInventoryTests,
+    CashierWorkflowTests,
+    InventoryLedgerConsistencyTests,
+    CreditLimitEnforcementTests,
+)
+
 class RollbackTestResult(unittest.TextTestResult):
     def startTest(self, test):
         # Start transaction block
@@ -51,48 +62,69 @@ def main():
     print("=" * 70)
 
     # --- Suite 1: Core Workflow Integration Tests ---
-    print("\n[1/4] Core Workflow Integration Tests")
+    print("\n[1/11] Core Workflow Integration Tests")
     suite1 = unittest.TestLoader().loadTestsFromTestCase(WorkflowIntegrationTests)
 
     # --- Suite 2: Pricing Control Mode Tests ---
-    print("[2/4] Pricing Control Mode Tests")
+    print("[2/11] Pricing Control Mode Tests")
     suite2 = unittest.TestLoader().loadTestsFromTestCase(PricingControlModeTests)
 
     # --- Suite 3: Digital Fund Withdrawal Balance Tests ---
-    print("[3/4] Digital Fund Withdrawal Balance Tests (ECash/Momo)")
+    print("[3/11] Digital Fund Withdrawal Balance Tests (ECash/Momo)")
     suite3 = unittest.TestLoader().loadTestsFromTestCase(DigitalFundWithdrawalTests)
 
     # --- Suite 4: Recent Fixes Tests ---
-    print("[4/4] Recent Fixes Tests (Logout redirect, transfer form, bank exit, bulk receive, momo history, bulletins)")
+    print("[4/11] Recent Fixes Tests (Logout, transfer form, bank exit, bulk receive, momo history, bulletins)")
     suite4a = unittest.TestLoader().loadTestsFromTestCase(LogoutRedirectTests)
     suite4b = unittest.TestLoader().loadTestsFromTestCase(CashTransferFormRecipientTests)
-    
+
     from apps.inventory.tests.test_bulk_receive import BulkReceiveTests
     from apps.accounting.tests.test_momo_history import MomoHistoryTests
     from apps.notifications.tests.test_bulletins import BulletinTests
-    
+
     suite4c = unittest.TestLoader().loadTestsFromTestCase(BulkReceiveTests)
     suite4d = unittest.TestLoader().loadTestsFromTestCase(MomoHistoryTests)
     suite4e = unittest.TestLoader().loadTestsFromTestCase(BulletinTests)
-    
-    # Combine all suites
-    all_tests = unittest.TestSuite([
-        suite1, suite2, suite3, 
-        suite4a, suite4b, suite4c, suite4d, suite4e
-    ])
+
     # --- Suite 5: Shift Process Tests ---
-    print("[5/6] Shift Process Tests")
+    print("[5/11] Shift Process Tests")
     suite5 = unittest.TestLoader().loadTestsFromTestCase(ShiftProcessTests)
 
     # --- Suite 6: E-Cash Ledger Tests ---
-    print("[6/7] E-Cash Ledger Tests")
+    print("[6/11] E-Cash Ledger Tests")
     suite6 = unittest.TestLoader().loadTestsFromTestCase(AccountantECashPaymentTests)
-    
+
     # --- Suite 7: Cashier Bank Transfer Tests ---
-    print("[7/7] Cashier Bank Transfer Tests")
+    print("[7/11] Cashier Bank Transfer Tests")
     suite7 = unittest.TestLoader().loadTestsFromTestCase(CashierBankTransferTests)
 
-    suite = unittest.TestSuite([suite1, suite2, suite3, suite4a, suite4b, suite5, suite6, suite7])
+    # --- Suite 8: Anonymous User Guard Tests ---
+    print("[8/11] Anonymous User Guard Tests (login redirect for all apps)")
+    suite8 = unittest.TestLoader().loadTestsFromTestCase(AnonymousUserGuardTests)
+
+    # --- Suite 9: require_POST Enforcement Tests ---
+    print("[9/11] require_POST Enforcement Tests (GET -> 405 on mutating endpoints)")
+    suite9 = unittest.TestLoader().loadTestsFromTestCase(RequirePostEnforcementTests)
+
+    # --- Suite 10: Tenant Isolation / IDOR Tests ---
+    print("[10/11] Tenant Isolation / IDOR Protection Tests")
+    suite10a = unittest.TestLoader().loadTestsFromTestCase(TenantIsolationTests)
+    suite10b = unittest.TestLoader().loadTestsFromTestCase(SaleVoidInventoryTests)
+    suite10c = unittest.TestLoader().loadTestsFromTestCase(CashierWorkflowTests)
+    suite10d = unittest.TestLoader().loadTestsFromTestCase(InventoryLedgerConsistencyTests)
+
+    # --- Suite 11: Credit Limit Enforcement Tests ---
+    print("[11/11] Credit Limit Enforcement Tests")
+    suite11 = unittest.TestLoader().loadTestsFromTestCase(CreditLimitEnforcementTests)
+
+    suite = unittest.TestSuite([
+        suite1, suite2, suite3,
+        suite4a, suite4b, suite4c, suite4d, suite4e,
+        suite5, suite6, suite7,
+        suite8, suite9,
+        suite10a, suite10b, suite10c, suite10d,
+        suite11,
+    ])
 
     runner = RollbackTestRunner(verbosity=2)
     result = runner.run(suite)

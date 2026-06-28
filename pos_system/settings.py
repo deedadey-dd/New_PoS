@@ -13,10 +13,12 @@ load_dotenv()
 # Sentry Error Tracking
 sentry_dsn = os.getenv('SENTRY_DSN')
 if sentry_dsn:
+    from django.core.exceptions import DisallowedHost
     sentry_sdk.init(
         dsn=sentry_dsn,
         traces_sample_rate=1.0,
         profiles_sample_rate=1.0,
+        ignore_errors=[DisallowedHost]
     )
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -127,6 +129,11 @@ else:
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
             'NAME': BASE_DIR / f'db_{_branch}.sqlite3',
+            # Always use an in-memory database for the test suite so the
+            # runner never contends with the live dev server on the same file.
+            'TEST': {
+                'NAME': ':memory:',
+            },
         }
     }
 

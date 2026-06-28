@@ -4,6 +4,7 @@ Views for the notifications app.
 from django.shortcuts import redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.views.decorators.http import require_POST
 from django.views.generic import ListView
 from django.contrib import messages
 
@@ -33,6 +34,7 @@ class NotificationListView(LoginRequiredMixin, ListView):
 
 
 @login_required
+@require_POST
 def mark_all_read(request):
     """Mark all notifications as read for the current user."""
     Notification.objects.filter(user=request.user, is_read=False).update(
@@ -48,6 +50,7 @@ def mark_all_read(request):
 
 
 @login_required
+@require_POST
 def mark_as_read(request, pk):
     """Mark a single notification as read."""
     notification = get_object_or_404(Notification, pk=pk, user=request.user)
@@ -61,6 +64,7 @@ def mark_as_read(request, pk):
 
 
 @login_required
+@require_POST
 def mark_notification_read_api(request, pk):
     """AJAX endpoint to mark a single notification as read."""
     from django.http import JsonResponse
@@ -279,12 +283,14 @@ class BulletinPostDeleteView(LoginRequiredMixin, DeleteView):
         return super().delete(request, *args, **kwargs)
 
 @login_required
+@require_POST
 def bulletin_mark_read(request, pk):
     post = get_object_or_404(BulletinPost, pk=pk, tenant=request.user.tenant)
     BulletinRead.objects.get_or_create(bulletin_post=post, user=request.user)
     return JsonResponse({'status': 'success'})
 
 @login_required
+@require_POST
 def bulletin_toggle_pin(request, pk):
     if request.method == 'POST':
         post = get_object_or_404(BulletinPost, pk=pk, created_by=request.user)
@@ -294,6 +300,7 @@ def bulletin_toggle_pin(request, pk):
     return JsonResponse({'status': 'error'}, status=400)
 
 @login_required
+@require_POST
 def bulletin_mark_all_read(request):
     user = request.user
     # Get all unread posts that the user can see

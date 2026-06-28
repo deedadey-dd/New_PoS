@@ -321,6 +321,9 @@ class AccountantDashboardView(LoginRequiredMixin, View):
     template_name = 'accounting/accountant_dashboard.html'
     
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
+            
         role_name = request.user.role.name if request.user.role else None
         if role_name not in ['ACCOUNTANT', 'ADMIN', 'SHOP_CASHIER', 'AUDITOR']:
             messages.error(request, 'Only accountants, auditors, and cashiers can access this dashboard.')

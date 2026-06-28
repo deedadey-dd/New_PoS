@@ -28,11 +28,12 @@ def serve_serviceworker(request):
     return HttpResponse(content, content_type='application/javascript')
 
 
-def admin_honeypot(request):
+def admin_honeypot(request, subpath=None):
     """Honeypot for /admin/ - logs attempts and returns 404."""
     logger.warning(
         f"Admin honeypot triggered: IP={request.META.get('REMOTE_ADDR')}, "
-        f"User-Agent={request.META.get('HTTP_USER_AGENT', 'Unknown')}"
+        f"User-Agent={request.META.get('HTTP_USER_AGENT', 'Unknown')}, "
+        f"Path=/admin/{subpath or ''}"
     )
     raise Http404("Not Found")
 

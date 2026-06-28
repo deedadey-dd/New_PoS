@@ -263,21 +263,18 @@ class DashboardView(LoginRequiredMixin, View):
         if user.tenant:
             # Only show location/user stats to non-attendants
             if not is_attendant:
-                context['total_locations'] = Location.objects.filter(
-                    tenant=user.tenant
-                ).count()
-                context['total_users'] = User.objects.filter(
-                    tenant=user.tenant
-                ).count()
-                context['total_shops'] = Location.objects.filter(
-                    tenant=user.tenant,
-                    location_type='SHOP'
-                ).count()
-                
-                # Get locations by type
-                context['locations_by_type'] = Location.objects.filter(
-                    tenant=user.tenant
-                ).values('location_type').annotate(count=Count('id'))
+                from django.core.cache import cache
+                stats_cache_key = f'tenant_stats_{user.tenant.id}'
+                stats = cache.get(stats_cache_key)
+                if stats is None:
+                    stats = {
+                        'total_locations': Location.objects.filter(tenant=user.tenant).count(),
+                        'total_users': User.objects.filter(tenant=user.tenant).count(),
+                        'total_shops': Location.objects.filter(tenant=user.tenant, location_type='SHOP').count(),
+                        'locations_by_type': list(Location.objects.filter(tenant=user.tenant).values('location_type').annotate(count=Count('id')))
+                    }
+                    cache.set(stats_cache_key, stats, 3600)
+                context.update(stats)
             
             # Get pending transfer alerts for all non-attendant users
             if not is_attendant:
@@ -344,9 +341,14 @@ class DashboardView(LoginRequiredMixin, View):
             elif role_name == 'SHOP_MANAGER' and user.location:
                 sales_filter['shop'] = user.location
             
-            today_sales = Sale.objects.filter(**sales_filter).aggregate(
-                total=Sum('total')
-            )['total'] or 0
+            today_sales_cache_key = f'today_sales_{user.id}_{today}'
+            from django.core.cache import cache
+            today_sales = cache.get(today_sales_cache_key)
+            if today_sales is None:
+                today_sales = Sale.objects.filter(**sales_filter).aggregate(
+                    total=Sum('total')
+                )['total'] or 0
+                cache.set(today_sales_cache_key, today_sales, 300)
             
             context['today_sales'] = today_sales
 

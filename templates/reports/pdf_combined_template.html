@@ -86,22 +86,6 @@
             <td><div class="card-label">Bank Transfers Executed</div><div class="card-value">{{ currency_symbol }}{{ bank_transfers_made|default:"0.00" }}</div></td>
         </tr>
     </table>
-    {% if payments_breakdown %}
-    <h3>Payments Breakdown</h3>
-    <table class="table">
-        <thead>
-            <tr><th>Payment Method</th><th class="text-right">Amount</th></tr>
-        </thead>
-        <tbody>
-            {% for method, amount in payments_breakdown.items %}
-            <tr><td>{{ method|title }}</td><td class="text-right">{{ currency_symbol }}{{ amount }}</td></tr>
-            {% empty %}
-            <tr><td colspan="2" class="text-center">No payments processed.</td></tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    {% endif %}
-
     {% elif role_name == 'SHOP_MANAGER' or viewing_shop %}
     <table class="cards-table">
         <tr>
@@ -126,6 +110,22 @@
             <td><div class="card-label">Bank Deposits Made</div><div class="card-value">{{ currency_symbol }}{{ bank_transfers_made|default:"0.00" }}</div></td>
             <td><div class="card-label">Expenditures Disbursed</div><div class="card-value">{{ currency_symbol }}{{ expenditures_disbursed|default:"0.00" }}</div></td>
         </tr>
+    </table>
+    {% endif %}
+
+    {% if payments_breakdown %}
+    <h3>Payments Breakdown</h3>
+    <table class="table">
+        <thead>
+            <tr><th>Payment Method</th><th class="text-right">Amount</th></tr>
+        </thead>
+        <tbody>
+            {% for method, amount in payments_breakdown.items %}
+            <tr><td>{{ method|title }}</td><td class="text-right">{{ currency_symbol }}{{ amount|floatformat:2|intcomma|default:"0.00" }}</td></tr>
+            {% empty %}
+            <tr><td colspan="2" class="text-center">No payments processed.</td></tr>
+            {% endfor %}
+        </tbody>
     </table>
     {% endif %}
 
