@@ -1223,10 +1223,22 @@ class LocationSummaryModalView(LoginRequiredMixin, View):
             ).aggregate(total=Sum('current_balance'))['total'] or Decimal('0')
 
             # --- Low Stock Items Count ---
-            products = Product.objects.filter(tenant=request.user.tenant, is_active=True, reorder_level__gt=0)
+            from apps.inventory.models import InventoryLedger
+            from django.db.models import Sum
+            from decimal import Decimal
+            
+            stock_data = InventoryLedger.objects.filter(
+                tenant=request.user.tenant,
+                location=location
+            ).values('product_id').annotate(
+                total_qty=Sum('quantity')
+            )
+            stock_map = {item['product_id']: item['total_qty'] or Decimal('0') for item in stock_data}
+            
+            products = Product.objects.filter(tenant=request.user.tenant, is_active=True, reorder_level__gt=0).only('id', 'reorder_level')
             low_stock_count = 0
             for product in products:
-                if product.get_stock_at_location(location) <= product.reorder_level:
+                if stock_map.get(product.id, Decimal('0')) <= product.reorder_level:
                     low_stock_count += 1
             context['low_stock_count'] = low_stock_count
 
