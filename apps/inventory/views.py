@@ -1223,14 +1223,14 @@ class AdjustmentHistoryView(LoginRequiredMixin, SortableMixin, ListView):
         context['status_choices'] = StockAdjustment.STATUS_CHOICES
         
         # Pending count for the user's location (for the badge)
-        if role_name in ('SHOP_MANAGER', 'ADMIN', 'AUDITOR'):
+        if role_name in ('SHOP_MANAGER', 'ADMIN', 'AUDITOR') or (role_name == 'ACCOUNTANT' and user.tenant.accountants_can_approve_adjustments):
             if role_name == 'SHOP_MANAGER' and user.location:
                 context['pending_count'] = StockAdjustment.objects.filter(
                     tenant=user.tenant,
                     location=user.location,
                     status='PENDING'
                 ).count()
-            elif role_name in ('ADMIN', 'AUDITOR'):
+            elif role_name in ('ADMIN', 'AUDITOR') or (role_name == 'ACCOUNTANT' and user.tenant.accountants_can_approve_adjustments):
                 context['pending_count'] = StockAdjustment.objects.filter(
                     tenant=user.tenant,
                     status='PENDING'

@@ -87,13 +87,13 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link text-white d-flex justify-content-between align-items-center {% if 'payment=PENDING_INVOICE' in request.get_full_path or 'payment_method=PENDING_INVOICE' in request.get_full_path %}active{% endif %}"
+                        <a class="nav-link text-white d-flex justify-content-between align-items-center {% if 'payment=PENDING_INVOICE' in request.get_full_path or 'payment_method=PENDING_INVOICE' in request.get_full_path or 'payment' in request.get_full_path and 'PENDING_INVOICE' not in request.get_full_path %}active{% endif %}"
                             data-bs-toggle="collapse" href="#invoicesMenu" role="button"
-                            aria-expanded="{% if 'payment=PENDING_INVOICE' in request.get_full_path or 'payment_method=PENDING_INVOICE' in request.get_full_path %}true{% else %}false{% endif %}">
-                            <span><i class="bi bi-receipt me-2"></i>Invoices</span>
+                            aria-expanded="{% if 'payment=PENDING_INVOICE' in request.get_full_path or 'payment_method=PENDING_INVOICE' in request.get_full_path or 'payment' in request.get_full_path and 'PENDING_INVOICE' not in request.get_full_path %}true{% else %}false{% endif %}">
+                            <span><i class="bi bi-receipt me-2"></i>Invoices & Payments</span>
                             <i class="bi bi-chevron-down small"></i>
                         </a>
-                        <div class="collapse {% if 'payment=PENDING_INVOICE' in request.get_full_path or 'payment_method=PENDING_INVOICE' in request.get_full_path %}show{% endif %}"
+                        <div class="collapse {% if 'payment=PENDING_INVOICE' in request.get_full_path or 'payment_method=PENDING_INVOICE' in request.get_full_path or 'payment' in request.get_full_path and 'PENDING_INVOICE' not in request.get_full_path %}show{% endif %}"
                             data-bs-parent="#sidebarAccordion" id="invoicesMenu">
                             <ul class="nav flex-column ms-3 border-start border-secondary ps-2">
                                 <li class="nav-item">
@@ -101,8 +101,8 @@
                                         href="{% url 'sales:sale_list' %}?payment=PENDING_INVOICE">Pending Invoices</a>
                                 </li>
                                 <li class="nav-item">
-                                    <a class="nav-link text-white-50 py-1 {% if 'payment=PENDING_INVOICE' in request.get_full_path and 'status=COMPLETED' in request.get_full_path %}text-white{% endif %}"
-                                        href="{% url 'sales:sale_list' %}?payment=PENDING_INVOICE&status=COMPLETED">Invoice History</a>
+                                    <a class="nav-link text-white-50 py-1 {% if 'payment' in request.get_full_path and 'PENDING_INVOICE' not in request.get_full_path %}text-white{% endif %}"
+                                        href="{% url 'sales:sale_list' %}?payment=">Payment History</a>
                                 </li>
                             </ul>
                         </div>

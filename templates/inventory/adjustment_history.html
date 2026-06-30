@@ -126,7 +126,7 @@
                     <td>
                         {% if adj.status == 'PENDING' %}
                             {% with role_name=request.user.role.name %}
-                            {% if role_name == 'ADMIN' or role_name == 'AUDITOR' or role_name == 'SHOP_MANAGER' and request.user.location_id == adj.location_id %}
+                            {% if role_name == 'ADMIN' or role_name == 'AUDITOR' or role_name == 'SHOP_MANAGER' and request.user.location_id == adj.location_id or role_name == 'ACCOUNTANT' and request.user.tenant.accountants_can_approve_adjustments %}
                             <!-- Review Modal Trigger -->
                             <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#reviewModal{{ adj.pk }}">
                                 <i class="bi bi-pencil-square"></i> Review
