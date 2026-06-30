@@ -782,18 +782,20 @@ class Command(BaseCommand):
         refundable = [s for s in completed_sales if s.status == 'COMPLETED']
         if len(refundable) >= 2:
             pending_sale = refundable[0]
+            req_by_1 = cashier if (is_strict and pending_sale.shop == loc_shop1 and cashier) else (manager1 if pending_sale.shop == loc_shop1 else manager2)
             RefundRequest.objects.create(
                 tenant=tenant,
                 sale=pending_sale,
-                requested_by=manager1 if pending_sale.shop == loc_shop1 else manager2,
+                requested_by=req_by_1,
                 reason='Customer returned item — wrong size (demo).',
                 status='PENDING',
             )
             approved_sale = refundable[1]
+            req_by_2 = cashier if (is_strict and approved_sale.shop == loc_shop1 and cashier) else (manager1 if approved_sale.shop == loc_shop1 else manager2)
             RefundRequest.objects.create(
                 tenant=tenant,
                 sale=approved_sale,
-                requested_by=manager1 if approved_sale.shop == loc_shop1 else manager2,
+                requested_by=req_by_2,
                 reason='Damaged goods returned by customer (demo).',
                 status='APPROVED',
                 reviewed_by=accountant,
@@ -801,10 +803,11 @@ class Command(BaseCommand):
             )
         if len(refundable) >= 3:
             rejected_sale = refundable[2]
+            req_by_3 = cashier if (is_strict and rejected_sale.shop == loc_shop1 and cashier) else (manager1 if rejected_sale.shop == loc_shop1 else manager2)
             RefundRequest.objects.create(
                 tenant=tenant,
                 sale=rejected_sale,
-                requested_by=manager2,
+                requested_by=req_by_3,
                 reason='Customer changed mind after 14 days.',
                 status='REJECTED',
                 reviewed_by=accountant,
@@ -882,9 +885,14 @@ class Command(BaseCommand):
             t_time = now - timedelta(days=days_ago)
             fund_source = random.choice(['CASH', 'ECASH', 'MOMO'])
             pc = paystack_cfg if fund_source == 'ECASH' else (nalopay_cfg if fund_source == 'MOMO' else None)
+            
+            actor = accountant
+            if is_strict and tenant.cashier_transfers_to_bank and cashier and i < 2:
+                actor = cashier
+                
             bt = BankTransfer.objects.create(
                 tenant=tenant,
-                accountant=accountant,
+                accountant=actor,
                 amount=Decimal(str(random.randint(150, 1200))),
                 fund_source=fund_source,
                 provider_config=pc,
@@ -972,6 +980,8 @@ class Command(BaseCommand):
         adj_pen = products[0]  # Blue Ink Pen — well stocked
         adj_biscuit = products[4]  # Chocolate Biscuit — low stock
 
+        adj_reviewer = auditor if is_strict else accountant
+
         # Approved positive adjustment (cycle count)
         StockAdjustment.objects.create(
             tenant=tenant,
@@ -983,7 +993,7 @@ class Command(BaseCommand):
             reason='Cycle count correction — 15 units found during stock take.',
             status='APPROVED',
             requested_by=manager1,
-            reviewed_by=accountant,
+            reviewed_by=adj_reviewer,
             reviewed_at=now - timedelta(days=4),
         )
 
@@ -1011,7 +1021,7 @@ class Command(BaseCommand):
             reason='Attempted phantom stock inflation.',
             status='REJECTED',
             requested_by=manager2,
-            reviewed_by=accountant,
+            reviewed_by=adj_reviewer,
             reviewed_at=now - timedelta(days=8),
             review_notes='Rejected: unverified count without physical audit.',
         )
