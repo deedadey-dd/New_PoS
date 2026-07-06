@@ -787,6 +787,53 @@ class BatchUpdateView(LoginRequiredMixin, UpdateView):
         return Batch.objects.filter(tenant=self.request.user.tenant)
     
     def form_valid(self, form):
+        from .models import BatchEditHistory
+        from apps.notifications.models import BulletinPost
+        from apps.core.models import Role
+
+        # Detect changes
+        if form.has_changed():
+            changed_fields = form.changed_data
+            changes_summary = []
+
+            for field in changed_fields:
+                old_val = form.initial.get(field)
+                new_val = form.cleaned_data.get(field)
+                
+                # Record history
+                BatchEditHistory.objects.create(
+                    tenant=self.request.user.tenant,
+                    batch=form.instance,
+                    changed_by=self.request.user,
+                    field_changed=field,
+                    old_value=str(old_val),
+                    new_value=str(new_val)
+                )
+                changes_summary.append(f"{field}: '{old_val}' -> '{new_val}'")
+
+            # Check if user should trigger a bulletin
+            role_name = self.request.user.role.name if self.request.user.role else None
+            authorized_roles = ['ACCOUNTANT', 'SHOP_MANAGER', 'STORES_MANAGER', 'ADMIN', 'SUPER_ADMIN']
+            
+            if role_name not in authorized_roles:
+                # Target Accountant, Shop Manager, and Stores Manager
+                target_roles = Role.objects.filter(name__in=['ACCOUNTANT', 'SHOP_MANAGER', 'STORES_MANAGER'])
+                
+                body = (
+                    f"Batch {form.instance.batch_number} for {form.instance.product.name} was edited by "
+                    f"{self.request.user.get_full_name()} ({role_name}).\n\nChanges:\n- "
+                    + "\n- ".join(changes_summary)
+                )
+
+                post = BulletinPost.objects.create(
+                    tenant=self.request.user.tenant,
+                    created_by=self.request.user,
+                    title=f"Batch Edit Alert: {form.instance.batch_number}",
+                    body=body,
+                    post_type='SYSTEM_UPDATE'
+                )
+                post.target_roles.set(target_roles)
+
         messages.success(self.request, f'Batch "{form.instance.batch_number}" updated successfully!')
         return super().form_valid(form)
 

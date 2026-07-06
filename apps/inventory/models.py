@@ -3,8 +3,10 @@ Inventory models for the POS system.
 Includes: Category, Product, Batch, InventoryLedger, ShopPrice
 """
 from django.db import models
-from django.core.validators import MinValueValidator
+from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils import timezone
+from django.conf import settings
+from django.core.exceptions import ValidationError
 from decimal import Decimal
 
 from apps.core.models import TenantModel, Location
@@ -227,6 +229,25 @@ class Batch(TenantModel):
         elif self.status in ['DEPLETED', 'EXPIRED']:
             self.status = 'AVAILABLE'
         super().save(*args, **kwargs)
+
+
+class BatchEditHistory(TenantModel):
+    """
+    Tracks metadata changes to a batch (e.g., unit cost, expiry date) for accountability.
+    """
+    batch = models.ForeignKey(Batch, on_delete=models.CASCADE, related_name='edit_history')
+    changed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='batch_edits')
+    field_changed = models.CharField(max_length=50)
+    old_value = models.CharField(max_length=255, blank=True, null=True)
+    new_value = models.CharField(max_length=255, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name_plural = 'Batch Edit Histories'
+
+    def __str__(self):
+        return f"{self.batch.batch_number} - {self.field_changed} updated by {self.changed_by}"
 
 
 class InventoryLedger(TenantModel):

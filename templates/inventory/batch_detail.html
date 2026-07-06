@@ -127,4 +127,41 @@
         {% endif %}
     </div>
 </div>
+
+<!-- Edit History -->
+<div class="card mt-4">
+    <div class="card-header">
+        <h5 class="mb-0">Batch Edit History</h5>
+    </div>
+    <div class="card-body">
+        {% if batch.edit_history.all %}
+        <div class="table-responsive">
+            <table class="table table-sm">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Field Changed</th>
+                        <th>Old Value</th>
+                        <th>New Value</th>
+                        <th>Edited By</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for edit in batch.edit_history.all %}
+                    <tr>
+                        <td>{{ edit.created_at|date:"M d, Y H:i" }}</td>
+                        <td><span class="badge bg-secondary">{{ edit.field_changed|title }}</span></td>
+                        <td class="text-muted">{{ edit.old_value|default:"-" }}</td>
+                        <td class="fw-bold">{{ edit.new_value|default:"-" }}</td>
+                        <td>{{ edit.changed_by.get_full_name|default:"-" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted text-center mb-0">No edits have been made to this batch.</p>
+        {% endif %}
+    </div>
+</div>
 {% endblock %}
