@@ -210,6 +210,13 @@ class Batch(TenantModel):
             delta = self.expiry_date - timezone.now().date()
             return delta.days
         return None
+        
+    @property
+    def total_cost(self):
+        """Calculate total initial cost of the batch."""
+        if self.unit_cost is not None and self.initial_quantity is not None:
+            return self.unit_cost * self.initial_quantity
+        return Decimal('0.00')
     
     def save(self, *args, **kwargs):
         # Auto-update status based on quantity and expiry

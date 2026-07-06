@@ -138,6 +138,20 @@ class ProductForm(forms.ModelForm):
             instance.save()
         return instance
 
+class BatchUpdateForm(forms.ModelForm):
+    """Form for editing batches."""
+    
+    class Meta:
+        model = Batch
+        fields = ['batch_number', 'unit_cost', 'manufacture_date', 'expiry_date', 'notes']
+        widgets = {
+            'batch_number': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Batch/Lot Number'}),
+            'unit_cost': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0'}),
+            'manufacture_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
+            'expiry_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
+            'notes': forms.Textarea(attrs={'class': 'form-control', 'rows': 2, 'placeholder': 'Notes'}),
+        }
+
 
 class BatchForm(forms.ModelForm):
     """Form for creating batches (receiving stock)."""

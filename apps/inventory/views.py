@@ -17,7 +17,7 @@ import decimal
 from apps.core.mixins import PaginationMixin # Added this line
 
 from .models import Category, Product, Batch, InventoryLedger, ShopPrice, StockAdjustment
-from .forms import CategoryForm, ProductForm, BatchForm, StockAdjustmentForm, ShopPriceForm
+from .forms import CategoryForm, ProductForm, BatchForm, BatchUpdateForm, StockAdjustmentForm, ShopPriceForm
 from apps.core.models import Location
 from apps.core.mixins import PaginationMixin, SortableMixin
 
@@ -775,6 +775,20 @@ class BatchCreateView(LoginRequiredMixin, CreateView):
         messages.success(self.request, f'Batch "{self.object.batch_number}" received successfully!')
         return response
 
+
+class BatchUpdateView(LoginRequiredMixin, UpdateView):
+    """Update an existing batch."""
+    model = Batch
+    form_class = BatchUpdateForm
+    template_name = 'inventory/batch_update_modal.html'
+    success_url = reverse_lazy('inventory:batch_list')
+    
+    def get_queryset(self):
+        return Batch.objects.filter(tenant=self.request.user.tenant)
+    
+    def form_valid(self, form):
+        messages.success(self.request, f'Batch "{form.instance.batch_number}" updated successfully!')
+        return super().form_valid(form)
 
 class BulkBatchReceiveView(LoginRequiredMixin, View):
     """
