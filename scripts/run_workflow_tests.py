@@ -79,10 +79,12 @@ def main():
     suite4b = unittest.TestLoader().loadTestsFromTestCase(CashTransferFormRecipientTests)
 
     from apps.inventory.tests.test_bulk_receive import BulkReceiveTests
+    from apps.inventory.tests.test_batch_edit import BatchEditAccountabilityTests
     from apps.accounting.tests.test_momo_history import MomoHistoryTests
     from apps.notifications.tests.test_bulletins import BulletinTests
 
     suite4c = unittest.TestLoader().loadTestsFromTestCase(BulkReceiveTests)
+    suite4_batch = unittest.TestLoader().loadTestsFromTestCase(BatchEditAccountabilityTests)
     suite4d = unittest.TestLoader().loadTestsFromTestCase(MomoHistoryTests)
     suite4e = unittest.TestLoader().loadTestsFromTestCase(BulletinTests)
 
@@ -119,7 +121,7 @@ def main():
 
     suite = unittest.TestSuite([
         suite1, suite2, suite3,
-        suite4a, suite4b, suite4c, suite4d, suite4e,
+        suite4a, suite4b, suite4c, suite4_batch, suite4d, suite4e,
         suite5, suite6, suite7,
         suite8, suite9,
         suite10a, suite10b, suite10c, suite10d,
