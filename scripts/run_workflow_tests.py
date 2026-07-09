@@ -116,8 +116,13 @@ def main():
     suite10d = unittest.TestLoader().loadTestsFromTestCase(InventoryLedgerConsistencyTests)
 
     # --- Suite 11: Credit Limit Enforcement Tests ---
-    print("[11/11] Credit Limit Enforcement Tests")
+    print("[11/12] Credit Limit Enforcement Tests")
     suite11 = unittest.TestLoader().loadTestsFromTestCase(CreditLimitEnforcementTests)
+
+    # --- Suite 12: Discount Parameters Tests ---
+    print("[12/12] Discount Parameters Tests")
+    from apps.sales.test_discounts import DiscountParameterTests
+    suite12 = unittest.TestLoader().loadTestsFromTestCase(DiscountParameterTests)
 
     suite = unittest.TestSuite([
         suite1, suite2, suite3,
@@ -125,7 +130,7 @@ def main():
         suite5, suite6, suite7,
         suite8, suite9,
         suite10a, suite10b, suite10c, suite10d,
-        suite11,
+        suite11, suite12,
     ])
 
     runner = RollbackTestRunner(verbosity=2)

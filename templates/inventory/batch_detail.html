@@ -3,6 +3,7 @@
 {% block title %}Batch {{ batch.batch_number }} - {{ current_tenant.name }}{% endblock %}
 
 {% block content %}
+<div id="batch-detail-content">
 <div class="mb-4">
     <nav aria-label="breadcrumb">
         <ol class="breadcrumb">
@@ -163,5 +164,6 @@
         <p class="text-muted text-center mb-0">No edits have been made to this batch.</p>
         {% endif %}
     </div>
+</div>
 </div>
 {% endblock %}

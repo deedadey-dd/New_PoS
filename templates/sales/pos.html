@@ -1034,12 +1034,10 @@
                 </div>
                 {% endif %}
                 <div class="d-flex gap-2">
-                    {% if not request.user.tenant.use_strict_sales_workflow %}
                     <button class="btn btn-outline-warning flex-fill" id="btn-discount">
                         <i class="bi bi-percent"></i> Discount
                     </button>
-                    {% endif %}
-                    <button class="btn btn-outline-danger {% if not request.user.tenant.use_strict_sales_workflow %}flex-fill{% else %}w-100{% endif %}" id="btn-clear-cart">
+                    <button class="btn btn-outline-danger flex-fill" id="btn-clear-cart">
                         <i class="bi bi-trash"></i> Clear
                     </button>
                 </div>
@@ -1195,6 +1193,31 @@
         </div>
     </div>
 
+    <!-- ── Discount Modal ─────────────────────────────────── -->
+    <div class="checkout-modal" id="discount-modal">
+        <div class="checkout-dialog" style="max-width:400px;">
+            <h4 class="mb-3 text-center" style="color:#a78bfa;">
+                <i class="bi bi-tag me-2"></i>Apply Discount
+            </h4>
+            <div class="mb-3 d-flex gap-2">
+                <input type="radio" class="btn-check" name="discount-type" id="discount-amount-type" value="amount" checked autocomplete="off">
+                <label class="btn btn-outline-primary flex-fill" for="discount-amount-type">Amount (<span id="discount-currency-symbol"></span>)</label>
+
+                <input type="radio" class="btn-check" name="discount-type" id="discount-percent-type" value="percent" autocomplete="off">
+                <label class="btn btn-outline-primary flex-fill" for="discount-percent-type">Percentage (%)</label>
+            </div>
+            <div class="mb-4">
+                <input type="number" class="checkout-input" id="discount-input" step="any" inputmode="decimal" placeholder="0.00">
+            </div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-secondary flex-fill" onclick="closeDiscountModal()">Cancel</button>
+                <button class="btn flex-fill" id="btn-discount-submit" style="background:#7c3aed;color:#fff;" onclick="submitDiscount()">
+                    Apply
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- ── Pending E-Cash Sales Modal ──────────────────────────── -->
     <div class="checkout-modal" id="pending-ecash-modal">
         <div class="checkout-dialog" style="max-width:500px; max-height:80vh; display:flex; flex-direction:column;">
@@ -1320,7 +1343,8 @@
         }
 
         let cart = [];
-        let discountAmount = 0;
+        let discountType = 'amount';
+        let discountValue = 0;
         let currentCategory = 'all';
         let selectedCustomer = null;
         let paymentMode = 'CASH'; // CASH, ECASH, CREDIT
@@ -1966,10 +1990,17 @@
 
         function updateTotals() {
             const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-            const total = subtotal - discountAmount;
+            const calculatedDiscount = getCalculatedDiscount();
+            const total = subtotal - calculatedDiscount;
 
             document.getElementById('cart-subtotal').textContent = CURRENCY + subtotal.toFixed(2);
-            document.getElementById('cart-discount').textContent = '-' + CURRENCY + discountAmount.toFixed(2);
+            
+            let discountDisplay = '-' + CURRENCY + calculatedDiscount.toFixed(2);
+            if (discountType === 'percent' && discountValue > 0) {
+                discountDisplay += ` (${discountValue}%)`;
+            }
+            document.getElementById('cart-discount').textContent = discountDisplay;
+            
             document.getElementById('cart-total').textContent = CURRENCY + total.toFixed(2);
 
             const hasItems = cart.length > 0;
@@ -1988,28 +2019,66 @@
 
         function calculateTotal() {
             const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-            return subtotal - discountAmount;
+            return subtotal - getCalculatedDiscount();
         }
 
         function clearCart() {
             if (!confirm('Clear the cart?')) return;
             cart = [];
-            discountAmount = 0;
+            discountType = 'amount';
+            discountValue = 0;
             updateCart();
             saveCartToStorage();
         }
 
-        async function applyDiscount() {
-            const amount = await promptAsync('<i class="bi bi-percent me-2"></i>Discount', 'Enter discount amount:', discountAmount, 'number');
-            if (amount !== null && amount !== '') {
-                discountAmount = Math.max(0, parseFloat(amount) || 0);
-                updateTotals();
-                saveCartToStorage();
+        function getCalculatedDiscount() {
+            const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+            let amt = 0;
+            if (discountType === 'percent') {
+                amt = subtotal * (discountValue / 100);
+            } else {
+                amt = discountValue;
             }
+            return Math.min(amt, subtotal);
+        }
+
+        function applyDiscount() {
+            document.getElementById('discount-currency-symbol').textContent = CURRENCY;
+            if (discountType === 'percent') {
+                document.getElementById('discount-percent-type').checked = true;
+            } else {
+                document.getElementById('discount-amount-type').checked = true;
+            }
+            document.getElementById('discount-input').value = discountValue > 0 ? discountValue : '';
+            document.getElementById('discount-modal').classList.add('active');
+            setTimeout(() => {
+                document.getElementById('discount-input').focus();
+                document.getElementById('discount-input').select();
+            }, 100);
+        }
+
+        function closeDiscountModal() {
+            document.getElementById('discount-modal').classList.remove('active');
+        }
+
+        function submitDiscount() {
+            const isPercent = document.getElementById('discount-percent-type').checked;
+            const val = parseFloat(document.getElementById('discount-input').value) || 0;
+            
+            discountType = isPercent ? 'percent' : 'amount';
+            discountValue = Math.max(0, val);
+            
+            if (discountType === 'percent' && discountValue > 100) {
+                discountValue = 100;
+            }
+            
+            updateTotals();
+            saveCartToStorage();
+            closeDiscountModal();
         }
 
         function openCashCheckout() {
-            const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0) - discountAmount;
+            const total = calculateTotal();
             document.getElementById('modal-total').textContent = CURRENCY + total.toFixed(2);
             document.getElementById('amount-received').value = '';
             document.getElementById('modal-change').textContent = CURRENCY + '0.00';
@@ -2186,7 +2255,7 @@
                 }
             } else {
                 // Normal cart sale
-                total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0) - discountAmount;
+                total = calculateTotal();
             }
 
             if (total <= 0) {
@@ -2223,7 +2292,7 @@
                             quantity: item.quantity,
                             unit_price: item.price
                         })),
-                        discount_amount: discountAmount,
+                        discount_amount: getCalculatedDiscount(),
                         customer_id: selectedCustomer ? selectedCustomer.id : null,
                         total: total,
                         is_payment_on_account: isPaymentOnAccount,
@@ -2379,7 +2448,8 @@
                     closeVerifyModal();
                     // Reset cart
                     cart = [];
-                    discountAmount = 0;
+                    discountType = 'amount';
+                    discountValue = 0;
                     selectedCustomer = null;
                     updateCart();
                     saveCartToStorage();
@@ -2505,7 +2575,7 @@
         }
 
         function updateChange() {
-            const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0) - discountAmount;
+            const total = calculateTotal();
             const received = parseFloat(document.getElementById('amount-received').value) || 0;
             const change = Math.max(0, received - total);
             document.getElementById('modal-change').textContent = CURRENCY + change.toFixed(2);
@@ -2567,7 +2637,7 @@
                 })),
                 amount_paid: received,
                 payment_method: paymentMode,
-                discount_amount: discountAmount,
+                discount_amount: getCalculatedDiscount(),
                 customer_id: selectedCustomer ? selectedCustomer.id : null,
                 is_payment_on_account: isPaymentOnAccount
             };
@@ -2579,7 +2649,8 @@
                 if (result.success) {
                     // Reset cart data
                     cart = [];
-                    discountAmount = 0;
+                    discountType = 'amount';
+                    discountValue = 0;
                     selectedCustomer = null;
                     updateCart();
                     saveCartToStorage();
@@ -2621,7 +2692,7 @@
             }
         }
         function saveCartToStorage() {
-            localStorage.setItem('pos_cart', JSON.stringify({ cart, discountAmount }));
+            localStorage.setItem('pos_cart', JSON.stringify({ cart, discountType, discountValue }));
         }
 
         function loadCartFromStorage() {
@@ -2630,7 +2701,17 @@
                 if (saved) {
                     const data = JSON.parse(saved);
                     cart = data.cart || [];
-                    discountAmount = data.discountAmount || 0;
+                    
+                    discountType = data.discountType || 'amount';
+                    if (data.discountValue !== undefined) {
+                        discountValue = data.discountValue;
+                    } else if (data.discountAmount !== undefined) {
+                        discountValue = data.discountAmount;
+                        discountType = 'amount';
+                    } else {
+                        discountValue = 0;
+                    }
+                    
                     updateCart();
                 }
             } catch (e) { }
@@ -2666,7 +2747,8 @@
             document.getElementById('invoice-created-modal').classList.remove('active');
             // Clear cart silently without the confirm() prompt
             cart = [];
-            discountAmount = 0;
+            discountType = 'amount';
+            discountValue = 0;
             selectedCustomer = null;
             document.getElementById('customer-search').value = '';
             document.getElementById('btn-clear-customer').style.display = 'none';
@@ -2696,12 +2778,12 @@
             btn.disabled = true;
             btn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Saving...';
 
-            const total = cart.reduce((sum, i) => sum + i.price * i.quantity, 0) - discountAmount;
+            const total = calculateTotal();
 
             const payload = {
                 cart: cart.map(i => ({ product_id: i.id, quantity: i.quantity, unit_price: i.price })),
                 total: total.toFixed(2),
-                discount: discountAmount.toFixed(2),
+                discount: getCalculatedDiscount().toFixed(2),
                 payment_method: 'PENDING_INVOICE',
                 customer_name: name,
                 customer_phone: phone,

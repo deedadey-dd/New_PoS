@@ -184,7 +184,9 @@
                             </td>
                             <td>
                                 {% if entry.batch %}
-                                <small>{{ entry.batch.batch_number }}</small>
+                                <a href="#" onclick="showBatchModal('{% url 'inventory:batch_detail' entry.batch.id %}'); return false;" class="text-decoration-none fw-semibold text-primary">
+                                    <small>{{ entry.batch.batch_number }}</small>
+                                </a>
                                 {% else %}
                                 <span class="text-muted">-</span>
                                 {% endif %}
@@ -228,6 +230,27 @@
             </div>
         </div>
         {% include 'includes/audit_pagination.html' %}
+    </div>
+</div>
+
+<!-- Batch Details Modal -->
+<div class="modal fade" id="batchDetailsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Batch Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body position-relative" style="min-height: 200px;">
+                <div id="batchModalLoading" class="position-absolute top-50 start-50 translate-middle text-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2 text-muted">Loading batch details...</p>
+                </div>
+                <div id="batchModalContent" style="display: none;"></div>
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}
@@ -334,5 +357,44 @@
             }
         });
     });
+
+    function showBatchModal(url) {
+        const modal = new bootstrap.Modal(document.getElementById('batchDetailsModal'));
+        const loading = document.getElementById('batchModalLoading');
+        const content = document.getElementById('batchModalContent');
+        
+        loading.style.display = 'block';
+        content.style.display = 'none';
+        content.innerHTML = '';
+        
+        modal.show();
+
+        fetch(url)
+            .then(response => response.text())
+            .then(html => {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
+                const batchContent = doc.getElementById('batch-detail-content');
+                
+                if (batchContent) {
+                    // Remove breadcrumbs from modal view to save space
+                    const breadcrumbs = batchContent.querySelector('nav[aria-label="breadcrumb"]');
+                    if (breadcrumbs) breadcrumbs.remove();
+                    
+                    content.innerHTML = batchContent.innerHTML;
+                } else {
+                    content.innerHTML = '<div class="alert alert-danger">Failed to load batch details.</div>';
+                }
+                
+                loading.style.display = 'none';
+                content.style.display = 'block';
+            })
+            .catch(error => {
+                loading.style.display = 'none';
+                content.innerHTML = '<div class="alert alert-danger">An error occurred while loading batch details.</div>';
+                content.style.display = 'block';
+                console.error('Error fetching batch details:', error);
+            });
+    }
 </script>
 {% endblock %}
