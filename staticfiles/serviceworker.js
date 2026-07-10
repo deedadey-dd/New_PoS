@@ -20,7 +20,13 @@ self.addEventListener('install', (event) => {
     event.waitUntil(
         caches.open(CACHE_NAME).then((cache) => {
             console.log('[ServiceWorker] Pre-caching app shell');
-            return cache.addAll(PRECACHE_URLS);
+            return Promise.all(
+                PRECACHE_URLS.map(url => {
+                    return cache.add(url).catch(err => {
+                        console.warn(`[ServiceWorker] Failed to cache ${url}:`, err);
+                    });
+                })
+            );
         }).catch((err) => {
             console.warn('[ServiceWorker] Pre-cache failed (some resources may not be available):', err);
         })

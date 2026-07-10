@@ -201,10 +201,11 @@
                                 {% endif %}
                             {% elif role_name == 'SHOP_MANAGER' and request.user.tenant.use_strict_sales_workflow %}
                                 {% if sale.status == 'PENDING_DISPATCH' %}
-                                    <button class="btn btn-sm btn-success dispatch-inline-btn me-1"
+                                    <button type="button" 
+                                            class="btn btn-sm btn-success open-dispatch-modal me-1 rounded-pill px-3"
                                             data-sale-id="{{ sale.id }}"
                                             data-sale-number="{{ sale.sale_number }}">
-                                        <i class="bi bi-send me-1"></i>Dispatch
+                                        <i class="bi bi-box-seam me-1"></i>Dispatch Goods
                                     </button>
                                 {% elif sale.is_dispatched %}
                                     <a href="{% url 'sales:sale_waybill' sale.pk %}" class="btn btn-sm btn-outline-secondary me-1"
@@ -269,7 +270,8 @@
             </div>
             <div class="modal-footer">
                 {% if role_name == 'SHOP_MANAGER' and request.user.tenant.use_strict_sales_workflow %}
-                <button type="button" class="btn btn-success" id="saleDetailDispatchBtn" style="display: none;">
+                <button type="button" class="btn btn-success" id="saleDetailDispatchBtn" style="display: none;"
+                    data-bs-toggle="modal" data-bs-target="#partialDispatchModal">
                     <i class="bi bi-send me-1"></i>Dispatch Goods
                 </button>
                 {% endif %}
@@ -291,6 +293,68 @@
         </div>
     </div>
 </div>
+
+{% if role_name == 'SHOP_MANAGER' and request.user.tenant.use_strict_sales_workflow %}
+<!-- Partial Dispatch Modal -->
+<div class="modal fade" id="partialDispatchModal" tabindex="-1" aria-labelledby="partialDispatchModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content rounded-4 border-0 shadow">
+            <div class="modal-header border-0 pb-0 bg-success bg-opacity-10">
+                <h5 class="modal-title fw-bold text-success" id="partialDispatchModalLabel">
+                    <i class="bi bi-send-fill me-2"></i>Dispatch Goods
+                    <small class="text-muted fw-normal ms-2 fs-6" id="dispatchModalSaleNumber"></small>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info py-2 mb-3 d-flex align-items-center gap-2">
+                    <i class="bi bi-info-circle-fill"></i>
+                <span>Review the items below. Click <strong>Full Dispatch</strong> to release all remaining items, or adjust quantities and click <strong>Partial Dispatch</strong> to release only some items now.</span>
+                </div>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="mb-0 fw-bold">Items</h6>
+                    <div class="form-check form-switch mb-0" id="showDispatchedToggleContainer" style="display:none!important;">
+                        <input class="form-check-input" type="checkbox" id="showDispatchedToggle">
+                        <label class="form-check-label small text-muted" for="showDispatchedToggle">Show fully dispatched items</label>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle" id="dispatchItemsTable">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Product</th>
+                                <th class="text-center">Ordered</th>
+                                <th class="text-center">Dispatched</th>
+                                <th class="text-center">Remaining</th>
+                                <th class="text-center" style="min-width:120px;">Dispatch Now</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dispatchItemsBody"></tbody>
+                    </table>
+                </div>
+                <!-- Dispatch History -->
+                <div id="dispatchHistorySection" class="mt-3" style="display:none;">
+                    <hr class="my-2">
+                    <div class="d-flex align-items-center mb-2">
+                        <i class="bi bi-clock-history text-secondary me-2"></i>
+                        <h6 class="mb-0 fw-bold text-secondary">Dispatch History</h6>
+                    </div>
+                    <div id="dispatchHistoryBody"></div>
+                </div>
+            </div>
+            <div class="modal-footer gap-2">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" id="fullDispatchBtn">
+                    <i class="bi bi-check2-all me-1"></i>Full Dispatch
+                </button>
+                <button type="button" class="btn btn-outline-primary" id="partialDispatchSubmitBtn">
+                    <i class="bi bi-send me-1"></i>Partial Dispatch
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 <!-- Payment Modal -->
 {% if role_name == 'SHOP_CASHIER' %}
@@ -412,6 +476,8 @@ document.addEventListener('DOMContentLoaded', function() {
                             dispatchBtn.style.display = 'inline-block';
                             dispatchBtn.dataset.saleId = saleId;
                             dispatchBtn.dataset.saleNumber = data.sale_number;
+                            _dispatchSaleItems = data.items;  // store for modal
+                            window._dispatchHistory = data.dispatch_history;
                         } else {
                             dispatchBtn.style.display = 'none';
                         }
@@ -584,36 +650,8 @@ document.addEventListener('DOMContentLoaded', function() {
         contentEl.innerHTML = html;
     }
 
-    const dispatchBtn = document.getElementById('saleDetailDispatchBtn');
-    if (dispatchBtn) {
-        dispatchBtn.addEventListener('click', function() {
-            const saleId = this.dataset.saleId;
-            const saleNumber = this.dataset.saleNumber;
-            if (confirm('Are you sure you want to dispatch goods for sale ' + saleNumber + '?')) {
-                const csrfToken = '{{ csrf_token }}';
-                fetch('/sales/api/sales/' + saleId + '/dispatch/', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': csrfToken
-                    }
-                })
-                .then(function(response) {
-                    if (!response.ok) {
-                        return response.json().then(function(err) { throw new Error(err.error || 'Dispatch failed') });
-                    }
-                    return response.json();
-                })
-                .then(function(res) {
-                    alert(res.message || 'Goods dispatched successfully.');
-                    location.reload();
-                })
-                .catch(function(err) {
-                    alert(err.message);
-                });
-            }
-        });
-    }
+    {% include 'sales/partials/partial_dispatch_js.html' %}
+
 
     const refundBtn = document.getElementById('saleDetailRefundBtn');
     if (refundBtn) {
@@ -930,46 +968,6 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
-    // ── Inline Dispatch Goods buttons (Shop Manager in sale list) ──
-    document.querySelectorAll('.dispatch-inline-btn').forEach(function(btn) {
-        btn.addEventListener('click', function() {
-            const saleId = this.dataset.saleId;
-            const saleNumber = this.dataset.saleNumber;
-            if (!confirm(`Dispatch goods for sale ${saleNumber}? This will open the waybill for printing.`)) return;
 
-            const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]') 
-                ? document.querySelector('[name=csrfmiddlewaretoken]').value
-                : '{{ csrf_token }}';
-
-            this.disabled = true;
-            this.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Dispatching...';
-            const self = this;
-
-            fetch(`/sales/api/sales/${saleId}/dispatch/`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': csrfToken
-                }
-            })
-            .then(response => {
-                if (!response.ok) {
-                    return response.json().then(err => { throw new Error(err.error || 'Dispatch failed'); });
-                }
-                return response.json();
-            })
-            .then(res => {
-                if (res.waybill_url) {
-                    window.open(res.waybill_url, '_blank');
-                }
-                location.reload();
-            })
-            .catch(err => {
-                alert(err.message);
-                self.disabled = false;
-                self.innerHTML = '<i class="bi bi-send me-1"></i>Dispatch';
-            });
-        });
-    });
 </script>
 {% endblock %}

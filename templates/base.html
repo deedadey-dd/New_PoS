@@ -129,15 +129,27 @@
                                 </li>
                                 {% if role_name == 'SHOP_MANAGER' or role_name == 'ACCOUNTANT' or role_name == 'AUDITOR' or role_name == 'ADMIN' %}
                                 <li class="nav-item">
-                                    <a class="nav-link text-white-50 py-1 {% if '/sales/' in request.path and '/pos/' not in request.path and 'report' not in request.path and 'refund' not in request.path %}text-white{% endif %}"
+                                    <a class="nav-link text-white-50 py-1 {% if '/sales/' in request.path and '/pos/' not in request.path and 'report' not in request.path and 'refund' not in request.path and 'dispatches' not in request.path %}text-white{% endif %}"
                                         href="{% url 'sales:sale_list' %}">
                                         <i class="bi bi-clock-history me-1"></i>All Sales History
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if 'dispatches' in request.path %}text-white{% endif %}"
+                                        href="{% url 'sales:dispatch_list' %}">
+                                        <i class="bi bi-truck me-1"></i>Dispatch History
                                     </a>
                                 </li>
                                 <li class="nav-item">
                                     <a class="nav-link text-white-50 py-1 {% if 'refund-requests' in request.path %}text-white{% endif %}"
                                         href="{% url 'sales:refund_request_list' %}">
                                         <i class="bi bi-arrow-counterclockwise me-1"></i>Refunds
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if 'customer-footprint' in request.path %}text-white{% endif %}"
+                                        href="{% url 'sales:customer_footprint' %}">
+                                        <i class="bi bi-people me-1"></i>Customer Footprint
                                     </a>
                                 </li>
                                 <li class="nav-item">

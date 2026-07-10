@@ -285,10 +285,11 @@
                                 <td>{{ sale.attendant.get_full_name|default:sale.attendant.email }}</td>
                                 <td class="text-end fw-bold">{{ currency_symbol }}{{ sale.total|floatformat:"2g" }}</td>
                                 <td class="text-center">
-                                    <button class="btn btn-sm btn-success dispatch-btn rounded-pill px-3" 
-                                            data-sale-id="{{ sale.id }}" 
+                                    <button type="button" 
+                                            class="btn btn-sm btn-success open-dispatch-modal rounded-pill px-3"
+                                            data-sale-id="{{ sale.id }}"
                                             data-sale-number="{{ sale.sale_number }}">
-                                        <i class="bi bi-send me-1"></i>Dispatch Goods
+                                        <i class="bi bi-box-seam me-1"></i>Dispatch Goods
                                     </button>
                                 </td>
                             </tr>
@@ -567,40 +568,6 @@ document.addEventListener('DOMContentLoaded', function () {
         return new bootstrap.Tooltip(tooltipTriggerEl);
     });
 
-    // Handle Dispatch Action
-    document.querySelectorAll('.dispatch-btn').forEach(function(button) {
-        button.addEventListener('click', function(e) {
-            e.stopPropagation();
-            const saleId = this.dataset.saleId;
-            const saleNumber = this.dataset.saleNumber;
-            if (confirm(`Are you sure you want to dispatch goods for sale ${saleNumber}?`)) {
-                const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
-                fetch(`/sales/api/sales/${saleId}/dispatch/`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': csrfToken
-                    }
-                })
-                .then(response => {
-                    if (!response.ok) {
-                        return response.json().then(err => { throw new Error(err.error || 'Dispatch failed') });
-                    }
-                    return response.json();
-                })
-                .then(res => {
-                    if (res.waybill_url) {
-                        window.open(res.waybill_url, '_blank');
-                    }
-                    location.reload();
-                })
-                .catch(err => {
-                    alert(err.message);
-                });
-            }
-        });
-    });
-
     // Detail Modal elements
     const detailModal = new bootstrap.Modal(document.getElementById('saleDetailModal'));
     const loadingEl = document.getElementById('saleDetailLoading');
@@ -639,6 +606,8 @@ document.addEventListener('DOMContentLoaded', function () {
                         
                         if (data.status_code === 'COMPLETED' && !data.is_dispatched) {
                             modalDispatchBtn.style.display = 'inline-block';
+                            _dispatchSaleItems = data.items;
+                            window._dispatchHistory = data.dispatch_history;
                         } else {
                             modalDispatchBtn.style.display = 'none';
                         }
@@ -797,6 +766,8 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
     }
+
+    {% include 'sales/partials/partial_dispatch_js.html' %}
 });
 </script>
 {% endif %}
@@ -843,4 +814,7 @@ document.addEventListener('DOMContentLoaded', function () {
     </div>
 </div>
 {% endif %}
+
+{% include 'sales/partials/partial_dispatch_modal.html' %}
+{% include 'sales/partials/partial_dispatch_js.html' %}
 {% endblock %}

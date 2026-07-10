@@ -25,6 +25,8 @@ from apps.core.tests.test_recent_fixes import (
 from apps.sales.test_shifts import ShiftProcessTests
 from apps.payments.test_ecash_ledger import AccountantECashPaymentTests
 from apps.accounting.tests.test_cashier_bank_transfer import CashierBankTransferTests
+from apps.accounting.tests.test_digital_confirmation import DigitalConfirmationPendingDispatchTests
+from apps.sales.test_partial_dispatch import PartialDispatchTests
 
 # New security & regression test suites
 from apps.sales.test_security_and_perf import (
@@ -116,13 +118,21 @@ def main():
     suite10d = unittest.TestLoader().loadTestsFromTestCase(InventoryLedgerConsistencyTests)
 
     # --- Suite 11: Credit Limit Enforcement Tests ---
-    print("[11/12] Credit Limit Enforcement Tests")
+    print("[11/14] Credit Limit Enforcement Tests")
     suite11 = unittest.TestLoader().loadTestsFromTestCase(CreditLimitEnforcementTests)
 
     # --- Suite 12: Discount Parameters Tests ---
-    print("[12/12] Discount Parameters Tests")
+    print("[12/14] Discount Parameters Tests")
     from apps.sales.test_discounts import DiscountParameterTests
     suite12 = unittest.TestLoader().loadTestsFromTestCase(DiscountParameterTests)
+
+    # --- Suite 13: Digital Confirmation PENDING_DISPATCH Tests (MOMO + E-Cash) ---
+    print("[13/14] Digital Confirmation PENDING_DISPATCH Tests (MOMO + E-Cash)")
+    suite13 = unittest.TestLoader().loadTestsFromTestCase(DigitalConfirmationPendingDispatchTests)
+
+    # --- Suite 14: Partial Dispatch Tests ---
+    print("[14/14] Partial Dispatch Tests (strict workflow, per-item quantities, atomic rollback)")
+    suite14 = unittest.TestLoader().loadTestsFromTestCase(PartialDispatchTests)
 
     suite = unittest.TestSuite([
         suite1, suite2, suite3,
@@ -130,7 +140,7 @@ def main():
         suite5, suite6, suite7,
         suite8, suite9,
         suite10a, suite10b, suite10c, suite10d,
-        suite11, suite12,
+        suite11, suite12, suite13, suite14,
     ])
 
     runner = RollbackTestRunner(verbosity=2)

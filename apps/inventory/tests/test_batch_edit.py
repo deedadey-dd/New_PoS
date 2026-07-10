@@ -38,10 +38,11 @@ class BatchEditAccountabilityTests(TestCase):
         )
         self.category = Category.objects.create(name="Beverages", tenant=self.tenant)
         self.product = Product.objects.create(
-            name="Coke",
-            category=self.category,
             tenant=self.tenant,
-            base_price=Decimal('5.00')
+            name='Test Batch Product',
+            sku='BAT-100',
+            category=self.category,
+            default_selling_price=Decimal('10.00')
         )
         
         self.batch = Batch.objects.create(
@@ -100,7 +101,8 @@ class BatchEditAccountabilityTests(TestCase):
         post_data = {
             'batch_number': 'TEST-BATCH-002', # Changed batch number
             'unit_cost': '4.00',             # Changed cost
-            'notes': 'I made a mistake'
+            'notes': 'I made a mistake',
+            'manufacture_date': self.batch.manufacture_date.strftime('%Y-%m-%d'),  # unchanged
         }
         
         response = self.client.post(self.edit_url, data=post_data)

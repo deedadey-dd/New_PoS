@@ -50,6 +50,7 @@ class DiscountParameterTests(TestCase):
             category=self.category
         )
         ShopPrice.objects.create(
+            tenant=self.tenant,
             product=self.product,
             location=self.shop,
             selling_price=Decimal('100.00'),
@@ -110,22 +111,18 @@ class DiscountParameterTests(TestCase):
         """Test offline sync API correctly applies discount_amount"""
         # Selling 1 item at 100. Discount = 5
         payload = {
-            'sales': [
+            'client_sale_id': 'local-12345',
+            'items': [
                 {
-                    'offline_id': 'local-12345',
-                    'items': [
-                        {
-                            'product_id': self.product.id,
-                            'quantity': 1,
-                            'unit_price': '100.00'
-                        }
-                    ],
-                    'amount_paid': '95.00',
-                    'payment_method': 'CASH',
-                    'discount_amount': '5.00',
-                    'timestamp': timezone.now().isoformat()
+                    'product_id': self.product.id,
+                    'quantity': 1,
+                    'unit_price': '100.00'
                 }
-            ]
+            ],
+            'amount_paid': '95.00',
+            'payment_method': 'CASH',
+            'discount_amount': '5.00',
+            'offline_created_at': timezone.now().isoformat()
         }
         
         response = self.client.post(
@@ -134,11 +131,13 @@ class DiscountParameterTests(TestCase):
             content_type='application/json'
         )
         
+        if response.status_code != 200:
+            print("SYNC ERROR:", response.json())
         self.assertEqual(response.status_code, 200)
         response_data = response.json()
         self.assertTrue(response_data.get('success'))
         
-        sale = Sale.objects.get(sale_number=response_data['synced'][0]['sale_number'])
+        sale = Sale.objects.get(sale_number=response_data['sale_number'], tenant=self.tenant)
         self.assertEqual(sale.subtotal, Decimal('100.00'))
         self.assertEqual(sale.discount_amount, Decimal('5.00'))
         self.assertEqual(sale.total, Decimal('95.00'))

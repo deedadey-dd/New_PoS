@@ -742,6 +742,18 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
         return context
 
 
+class DispatchListView(SaleListView):
+    """List of all fully or partially dispatched sales."""
+    template_name = 'sales/dispatch_list.html'
+
+    def get_queryset(self):
+        from django.db.models import Q
+        queryset = super().get_queryset()
+        return queryset.filter(
+            Q(is_dispatched=True) | Q(items__dispatched_quantity__gt=0)
+        ).distinct()
+
+
 class SaleDetailView(LoginRequiredMixin, DetailView):
     """View sale details / receipt."""
     model = Sale
@@ -781,9 +793,13 @@ def api_sale_detail(request, pk_or_number):
     items = []
     for item in sale.items.all():
         items.append({
+            'id': item.id,
             'product_name': item.product.name,
             'sku': item.product.sku,
             'quantity': str(item.quantity),
+            'dispatched_quantity': str(item.dispatched_quantity),
+            'remaining_quantity': str(item.remaining_quantity),
+            'is_fully_dispatched': item.is_fully_dispatched,
             'unit_price': str(item.unit_price),
             'total': str(item.total),
         })
@@ -801,6 +817,33 @@ def api_sale_detail(request, pk_or_number):
         ).first()
         if op_tx:
             overpayment_credited = str(op_tx.amount)
+
+    # ── Dispatch History: group InventoryLedger SALE entries by (created_by, approx timestamp) ──
+    from apps.inventory.models import InventoryLedger
+    ledger_entries = InventoryLedger.objects.filter(
+        tenant=sale.tenant,
+        transaction_type='SALE',
+        reference_type='Sale',
+        reference_id=sale.pk,
+    ).select_related('product', 'created_by').order_by('created_at')
+
+    # Group by minute+user to cluster simultaneous dispatches
+    dispatch_events = {}
+    for entry in ledger_entries:
+        ts = entry.created_at
+        bucket = ts.strftime('%Y-%m-%d %H:%M') + str(entry.created_by_id or '')
+        if bucket not in dispatch_events:
+            dispatch_events[bucket] = {
+                'dispatched_at': ts.strftime('%b %d, %Y %H:%M'),
+                'dispatched_by': entry.created_by.get_full_name() if entry.created_by else 'System',
+                'items': []
+            }
+        dispatch_events[bucket]['items'].append({
+            'product_name': entry.product.name,
+            'qty': str(abs(entry.quantity)),
+        })
+
+    dispatch_history = list(dispatch_events.values())
 
     data = {
         'sale_number': sale.sale_number,
@@ -824,7 +867,9 @@ def api_sale_detail(request, pk_or_number):
         'customer_name': sale.customer_name,
         'customer_phone': sale.customer_phone,
         'is_dispatched': sale.is_dispatched,
+        'all_items_dispatched': sale.all_items_dispatched,
         'items': items,
+        'dispatch_history': dispatch_history,
     }
     return JsonResponse(data)
 
@@ -1451,45 +1496,157 @@ def api_pay_invoice(request, pk):
 @login_required
 @require_POST
 def api_dispatch_sale(request, pk):
-    """Dispatch the goods for a completed sale (Shop Manager Workflow)."""
+    """
+    Dispatch goods for a sale (full or partial) in the Strict Sales Workflow.
+
+    POST body (JSON):
+    {
+        "items": [
+            {"sale_item_id": 12, "qty": 3},
+            {"sale_item_id": 13, "qty": 1}
+        ]
+    }
+    If "items" is omitted or empty, all remaining quantities are dispatched.
+    """
+    import json
+    from decimal import Decimal, InvalidOperation
+    from django.db.models import F
+    from apps.inventory.models import Batch, InventoryLedger
+
     if request.method != 'POST':
         return JsonResponse({'error': 'POST required'}, status=405)
-        
+
     role_name = request.user.role.name if request.user.role else None
     if role_name not in ['SHOP_MANAGER', 'ADMIN']:
         return JsonResponse({'error': 'Only shop managers and admins can dispatch goods.'}, status=403)
-        
+
     sale = get_object_or_404(
         Sale,
         pk=pk,
         tenant=request.user.tenant,
         status__in=['COMPLETED', 'PENDING_DISPATCH']
     )
-    
+
     if sale.is_dispatched:
-        return JsonResponse({'error': 'This sale has already been dispatched.'}, status=400)
-        
+        return JsonResponse({'error': 'This sale has already been fully dispatched.'}, status=400)
+
+    # Parse requested dispatch quantities
+    try:
+        body = json.loads(request.body) if request.body else {}
+    except (json.JSONDecodeError, ValueError):
+        body = {}
+
+    requested_items = body.get('items', [])  # [{"sale_item_id": X, "qty": Y}, ...]
+
+    # Build a map of item_id -> qty_to_dispatch
+    if requested_items:
+        dispatch_map = {}
+        for entry in requested_items:
+            try:
+                item_id = int(entry['sale_item_id'])
+                qty = Decimal(str(entry['qty']))
+                if qty > 0:
+                    dispatch_map[item_id] = qty
+            except (KeyError, ValueError, InvalidOperation):
+                continue
+    else:
+        # Dispatch all remaining quantities
+        dispatch_map = {
+            item.id: item.remaining_quantity
+            for item in sale.items.all()
+            if item.remaining_quantity > 0
+        }
+
+    if not dispatch_map:
+        return JsonResponse({'error': 'No items to dispatch.'}, status=400)
+
     try:
         with transaction.atomic():
-            if sale.status == 'PENDING_DISPATCH':
-                sale.status = 'COMPLETED'
-                sale.deduct_inventory()
-            
-            sale.is_dispatched = True
-            sale.dispatched_at = timezone.now()
-            sale.dispatched_by = request.user
-            sale.save()
-            
+            sale_items = {item.id: item for item in sale.items.select_related('product', 'batch').all()}
+
+            for item_id, qty_to_dispatch in dispatch_map.items():
+                item = sale_items.get(item_id)
+                if not item:
+                    raise ValueError(f"Sale item {item_id} not found on this sale.")
+
+                remaining = item.remaining_quantity
+                if qty_to_dispatch > remaining:
+                    raise ValueError(
+                        f"Cannot dispatch {qty_to_dispatch} of '{item.product.name}' "
+                        f"— only {remaining} remaining."
+                    )
+
+                # Resolve batch (FEFO)
+                batch = item.batch
+                if not batch:
+                    batch = Batch.objects.filter(
+                        tenant=sale.tenant,
+                        product=item.product,
+                        location=sale.shop,
+                        status='AVAILABLE',
+                        current_quantity__gt=0,
+                    ).order_by('expiry_date', 'created_at').first()
+                    if batch:
+                        item.batch = batch
+
+                actual_cost = batch.unit_cost if batch and batch.unit_cost else Decimal('0')
+                if item.unit_cost == Decimal('0') and actual_cost > 0:
+                    item.unit_cost = actual_cost
+
+                # Deduct inventory for the dispatched quantity
+                InventoryLedger.objects.create(
+                    tenant=sale.tenant,
+                    product=item.product,
+                    batch=item.batch,
+                    location=sale.shop,
+                    transaction_type='SALE',
+                    quantity=-qty_to_dispatch,
+                    unit_cost=actual_cost,
+                    reference_type='Sale',
+                    reference_id=sale.pk,
+                    notes=f"Partial dispatch {qty_to_dispatch}/{item.quantity} — Sale {sale.sale_number}",
+                    created_by=request.user
+                )
+
+                # Update dispatched quantity on the item
+                item.dispatched_quantity += qty_to_dispatch
+                item.save(update_fields=['dispatched_quantity', 'unit_cost', 'batch'])
+
+            # Re-check: is everything now dispatched?
+            fully_dispatched = not sale.items.filter(
+                dispatched_quantity__lt=F('quantity')
+            ).exists()
+
+            if fully_dispatched:
+                if sale.status == 'PENDING_DISPATCH':
+                    sale.status = 'COMPLETED'
+                sale.is_dispatched = True
+                sale.dispatched_at = timezone.now()
+                sale.dispatched_by = request.user
+                sale.save()
+                status_msg = 'All goods dispatched. Sale completed.'
+            else:
+                # Partially dispatched — record who last dispatched and when
+                sale.dispatched_by = request.user
+                sale.dispatched_at = timezone.now()
+                sale.save(update_fields=['dispatched_by', 'dispatched_at'])
+                status_msg = 'Partial dispatch recorded successfully.'
+
         from django.urls import reverse
         return JsonResponse({
             'success': True,
             'sale_id': sale.pk,
             'sale_number': sale.sale_number,
-            'message': 'Goods dispatched successfully.',
-            'waybill_url': reverse('sales:sale_waybill', args=[sale.pk])
+            'fully_dispatched': fully_dispatched,
+            'message': status_msg,
+            'waybill_url': reverse('sales:sale_waybill', args=[sale.pk]) if fully_dispatched else None,
         })
+    except ValueError as e:
+        return JsonResponse({'error': str(e)}, status=400)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=400)
+
+
 
 
 class ShopSalesReportView(LoginRequiredMixin, View):
@@ -2660,3 +2817,254 @@ class AdminShopPaymentConfigView(LoginRequiredMixin, AdminRequiredMixin, UpdateV
         messages.success(self.request, f"Payment settings for {self.shop_name} updated.")
         return super().form_valid(form)
 
+
+class CustomerFootprintView(LoginRequiredMixin, View):
+    """
+    Displays a unified list of all customers (registered + walk-in) who have
+    transacted through the system, with their transaction counts, total value,
+    and last visit date.
+
+    Accessible to: SHOP_MANAGER (own shop), ACCOUNTANT, AUDITOR, ADMIN (all shops).
+    Supports filtering by date range, shop, and customer type.
+    Supports sorting by name, transaction count, or total value.
+    """
+
+    ALLOWED_ROLES = ['SHOP_MANAGER', 'ACCOUNTANT', 'AUDITOR', 'ADMIN']
+
+    def get(self, request):
+        from django.db.models import Count, Sum, Max
+        from apps.core.models import Location
+
+        user = request.user
+        tenant = user.tenant
+        role_name = user.role.name if user.role else None
+
+        if role_name not in self.ALLOWED_ROLES:
+            messages.error(request, 'You do not have permission to view customer footprints.')
+            return redirect('sales:sale_list')
+
+        # --- Filter parameters ---
+        date_from = request.GET.get('date_from', '')
+        date_to = request.GET.get('date_to', '')
+        shop_id = request.GET.get('shop', '')
+        customer_type = request.GET.get('customer_type', '')  # 'registered', 'walk_in', ''
+        sort_by = request.GET.get('sort', 'name')             # 'name', 'count', 'value', 'last_visit'
+        sort_dir = request.GET.get('dir', 'asc')
+        search_query = request.GET.get('search', '').lower().strip()
+
+        # Base queryset — only paid sales
+        qs = Sale.objects.filter(
+            tenant=tenant,
+            status__in=['COMPLETED', 'PENDING_DISPATCH']
+        )
+
+        # Restrict shop managers to their own shop
+        if role_name == 'SHOP_MANAGER':
+            qs = qs.filter(shop=user.location)
+        elif shop_id:
+            qs = qs.filter(shop_id=shop_id)
+
+        if date_from:
+            qs = qs.filter(created_at__date__gte=date_from)
+        if date_to:
+            qs = qs.filter(created_at__date__lte=date_to)
+
+        # --- Build registered customer rows ---
+        registered_rows = []
+        if customer_type in ('', 'registered'):
+            reg_qs = (
+                qs.filter(customer__isnull=False)
+                .values('customer__id', 'customer__name', 'customer__phone')
+                .annotate(
+                    tx_count=Count('id'),
+                    total_value=Sum('total'),
+                    last_visit=Max('created_at'),
+                )
+                .order_by()
+            )
+            for row in reg_qs:
+                registered_rows.append({
+                    'type': 'registered',
+                    'customer_id': row['customer__id'],
+                    'name': row['customer__name'] or '(No Name)',
+                    'phone': row['customer__phone'] or '-',
+                    'tx_count': row['tx_count'],
+                    'total_value': row['total_value'] or 0,
+                    'last_visit': row['last_visit'],
+                })
+
+        # --- Build walk-in customer rows (group by phone, then name) ---
+        walk_in_rows = []
+        if customer_type in ('', 'walk_in'):
+            # Walk-ins: customer field is NULL but customer_name or customer_phone is set
+            walkin_qs = (
+                qs.filter(customer__isnull=True)
+                .exclude(customer_name='', customer_phone='')
+            )
+
+            # Group by phone (primary) then name
+            walkin_agg = {}
+            for sale in walkin_qs.values('customer_name', 'customer_phone', 'total', 'created_at'):
+                phone = sale['customer_phone'].strip() if sale['customer_phone'] else ''
+                name = sale['customer_name'].strip() if sale['customer_name'] else 'Walk-in Customer'
+                # Key: phone if provided, else name
+                key = phone if phone else name
+                if key not in walkin_agg:
+                    walkin_agg[key] = {
+                        'type': 'walk_in',
+                        'customer_id': None,
+                        'name': name,
+                        'phone': phone or '-',
+                        'tx_count': 0,
+                        'total_value': 0,
+                        'last_visit': None,
+                    }
+                walkin_agg[key]['tx_count'] += 1
+                walkin_agg[key]['total_value'] += sale['total'] or 0
+                if sale['created_at']:
+                    if not walkin_agg[key]['last_visit'] or sale['created_at'] > walkin_agg[key]['last_visit']:
+                        walkin_agg[key]['last_visit'] = sale['created_at']
+                # Prefer phone as name display if multiple names map to same phone
+                if phone and walkin_agg[key]['name'] == 'Walk-in Customer':
+                    walkin_agg[key]['name'] = name
+
+            walk_in_rows = list(walkin_agg.values())
+
+        all_rows = registered_rows + walk_in_rows
+
+        if search_query:
+            all_rows = [
+                r for r in all_rows 
+                if search_query in (r['name'] or '').lower() or search_query in (r['phone'] or '').lower()
+            ]
+
+        # --- Sorting ---
+        reverse = (sort_dir == 'desc')
+        if sort_by == 'count':
+            all_rows.sort(key=lambda x: x['tx_count'], reverse=reverse)
+        elif sort_by == 'value':
+            all_rows.sort(key=lambda x: float(x['total_value']), reverse=reverse)
+        elif sort_by == 'last_visit':
+            all_rows.sort(key=lambda x: x['last_visit'] or '', reverse=reverse)
+        else:
+            all_rows.sort(key=lambda x: (x['name'] or '').lower(), reverse=reverse)
+
+        # Pagination
+        from django.core.paginator import Paginator
+        paginator = Paginator(all_rows, 50)
+        page_obj = paginator.get_page(request.GET.get('page'))
+
+        # Shops for filter dropdown
+        if role_name == 'SHOP_MANAGER':
+            shops = Location.objects.filter(id=user.location_id)
+        else:
+            shops = Location.objects.filter(tenant=tenant, location_type='SHOP')
+
+        context = {
+            'page_obj': page_obj,
+            'date_from': date_from,
+            'date_to': date_to,
+            'shop_id': shop_id,
+            'customer_type': customer_type,
+            'sort_by': sort_by,
+            'sort_dir': sort_dir,
+            'shops': shops,
+            'total_rows': len(all_rows),
+            'total_value': sum(float(r['total_value']) for r in all_rows),
+            'search_query': search_query,
+        }
+        return render(request, 'sales/customer_footprint.html', context)
+
+
+from django.http import JsonResponse
+from django.db.models import Sum, Q
+
+class FootprintAutoSuggestAPIView(LoginRequiredMixin, View):
+    def get(self, request):
+        user = request.user
+        tenant = user.tenant
+        role_name = user.role.name if user.role else None
+        
+        if role_name not in CustomerFootprintView.ALLOWED_ROLES:
+            return JsonResponse({'error': 'Unauthorized'}, status=403)
+            
+        search_query = request.GET.get('q', '').strip()
+        if not search_query:
+            return JsonResponse([], safe=False)
+
+        from apps.customers.models import Customer
+        from .models import Sale
+        
+        customers = Customer.objects.filter(tenant=tenant)
+        if role_name == 'SHOP_MANAGER':
+            customers = customers.filter(shop=user.location)
+            
+        customers = customers.filter(
+            Q(name__icontains=search_query) | Q(phone__icontains=search_query)
+        )[:10]
+        
+        results = set()
+        for c in customers:
+            results.add(f"{c.name} - {c.phone}" if c.phone else c.name)
+            
+        sales = Sale.objects.filter(tenant=tenant, customer__isnull=True)
+        if role_name == 'SHOP_MANAGER':
+            sales = sales.filter(shop=user.location)
+            
+        sales = sales.filter(
+            Q(customer_name__icontains=search_query) | Q(customer_phone__icontains=search_query)
+        ).values('customer_name', 'customer_phone').distinct()[:10]
+        
+        for s in sales:
+            name = s.get('customer_name') or 'Walk-in Customer'
+            phone = s.get('customer_phone') or ''
+            results.add(f"{name} - {phone}" if phone else name)
+            
+        return JsonResponse([{'text': r} for r in list(results)[:10]], safe=False)
+
+class FootprintItemAggregationAPIView(LoginRequiredMixin, View):
+    def get(self, request):
+        user = request.user
+        tenant = user.tenant
+        role_name = user.role.name if user.role else None
+        
+        if role_name not in CustomerFootprintView.ALLOWED_ROLES:
+            return JsonResponse({'error': 'Unauthorized'}, status=403)
+            
+        customer_id = request.GET.get('customer_id')
+        name = request.GET.get('name')
+        phone = request.GET.get('phone')
+        
+        from .models import SaleItem, Sale
+        from django.db.models import F
+        
+        sales = Sale.objects.filter(
+            tenant=tenant, 
+            status__in=['COMPLETED', 'PENDING_DISPATCH']
+        )
+        if role_name == 'SHOP_MANAGER':
+            sales = sales.filter(shop=user.location)
+            
+        if customer_id and customer_id != 'None':
+            sales = sales.filter(customer_id=customer_id)
+        elif phone and phone != '-':
+            sales = sales.filter(customer_phone=phone, customer__isnull=True)
+        elif name:
+            sales = sales.filter(customer_name=name, customer__isnull=True)
+        else:
+            return JsonResponse({'items': []})
+            
+        items = SaleItem.objects.filter(sale__in=sales).values('product__name').annotate(
+            total_qty=Sum('quantity'),
+            total_value=Sum(F('quantity') * F('unit_price'))
+        ).order_by('-total_value')
+        
+        result = []
+        for item in items:
+            result.append({
+                'product_name': item['product__name'],
+                'total_qty': float(item['total_qty'] or 0),
+                'total_value': float(item['total_value'] or 0)
+            })
+            
+        return JsonResponse({'items': result})

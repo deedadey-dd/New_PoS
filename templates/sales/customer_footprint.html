@@ -1,0 +1,351 @@
+{% extends 'base.html' %}
+
+{% block title %}Customer Footprint{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1">Customer Footprint</h2>
+        <p class="text-muted mb-0">All customers — registered and walk-in — who have transacted through your shops.</p>
+    </div>
+</div>
+
+<!-- Filter Bar -->
+<div class="card border-0 shadow-sm rounded-4 mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3 align-items-end">
+            <div class="col-md-2 position-relative">
+                <label class="form-label fw-semibold small">Search</label>
+                <input type="text" name="search" id="footprintSearch" class="form-control rounded-3" value="{{ search_query }}" placeholder="Name or Phone" autocomplete="off" list="footprintSuggestList">
+                <datalist id="footprintSuggestList"></datalist>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label fw-semibold small">From</label>
+                <input type="date" name="date_from" class="form-control rounded-3" value="{{ date_from }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label fw-semibold small">To</label>
+                <input type="date" name="date_to" class="form-control rounded-3" value="{{ date_to }}">
+            </div>
+            {% if shops.count > 1 %}
+            <div class="col-md-2">
+                <label class="form-label fw-semibold small">Shop</label>
+                <select name="shop" class="form-select rounded-3">
+                    <option value="">All Shops</option>
+                    {% for shop in shops %}
+                    <option value="{{ shop.id }}" {% if shop_id == shop.id|stringformat:"s" %}selected{% endif %}>{{ shop.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+            <div class="col-md-2">
+                <label class="form-label fw-semibold small">Customer Type</label>
+                <select name="customer_type" class="form-select rounded-3">
+                    <option value="" {% if not customer_type %}selected{% endif %}>All</option>
+                    <option value="registered" {% if customer_type == 'registered' %}selected{% endif %}>Registered</option>
+                    <option value="walk_in" {% if customer_type == 'walk_in' %}selected{% endif %}>Walk-in</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label fw-semibold small">Sort By</label>
+                <select name="sort" class="form-select rounded-3">
+                    <option value="name" {% if sort_by == 'name' %}selected{% endif %}>Name</option>
+                    <option value="count" {% if sort_by == 'count' %}selected{% endif %}>No. of Transactions</option>
+                    <option value="value" {% if sort_by == 'value' %}selected{% endif %}>Total Value</option>
+                    <option value="last_visit" {% if sort_by == 'last_visit' %}selected{% endif %}>Last Visit</option>
+                </select>
+            </div>
+            <div class="col-md-1">
+                <label class="form-label fw-semibold small">Order</label>
+                <select name="dir" class="form-select rounded-3">
+                    <option value="asc" {% if sort_dir == 'asc' %}selected{% endif %}>↑ Asc</option>
+                    <option value="desc" {% if sort_dir == 'desc' %}selected{% endif %}>↓ Desc</option>
+                </select>
+            </div>
+            <div class="col-md-1 d-flex gap-2">
+                <button type="submit" class="btn btn-primary rounded-3 w-100"><i class="bi bi-filter me-1"></i>Filter</button>
+            </div>
+            <div class="col-md-1">
+                <a href="{% url 'sales:customer_footprint' %}" class="btn btn-outline-secondary rounded-3 w-100">Clear</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Summary Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="card border-0 shadow-sm rounded-4 h-100">
+            <div class="card-body d-flex align-items-center gap-3">
+                <div class="rounded-circle bg-primary bg-opacity-10 d-flex align-items-center justify-content-center" style="width:52px;height:52px;">
+                    <i class="bi bi-people-fill text-primary fs-4"></i>
+                </div>
+                <div>
+                    <div class="text-muted small">Unique Customers</div>
+                    <div class="fw-bold fs-4">{{ total_rows }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card border-0 shadow-sm rounded-4 h-100">
+            <div class="card-body d-flex align-items-center gap-3">
+                <div class="rounded-circle bg-success bg-opacity-10 d-flex align-items-center justify-content-center" style="width:52px;height:52px;">
+                    <i class="bi bi-cash-stack text-success fs-4"></i>
+                </div>
+                <div>
+                    <div class="text-muted small">Total Revenue (Filtered)</div>
+                    <div class="fw-bold fs-4">{{ current_tenant.currency_symbol|default:"$" }}{{ total_value|floatformat:2 }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card border-0 shadow-sm rounded-4 h-100">
+            <div class="card-body d-flex align-items-center gap-3">
+                <div class="rounded-circle bg-warning bg-opacity-10 d-flex align-items-center justify-content-center" style="width:52px;height:52px;">
+                    <i class="bi bi-person-walking text-warning fs-4"></i>
+                </div>
+                <div>
+                    <div class="text-muted small">Customer Types</div>
+                    <div class="fw-bold fs-5">
+                        {% if customer_type == 'registered' %}Registered Only
+                        {% elif customer_type == 'walk_in' %}Walk-in Only
+                        {% else %}All Types{% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Results Table -->
+<div class="card border-0 shadow-sm rounded-4">
+    <div class="card-body p-0">
+        {% if page_obj.object_list %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-4">Customer</th>
+                        <th>Phone</th>
+                        <th class="text-center">Type</th>
+                        <th class="text-center">
+                            <a href="?date_from={{ date_from }}&date_to={{ date_to }}&shop={{ shop_id }}&customer_type={{ customer_type }}&sort=count&dir={% if sort_by == 'count' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}"
+                               class="text-decoration-none text-dark">
+                                Transactions
+                                {% if sort_by == 'count' %}<i class="bi bi-caret-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}-fill ms-1 text-primary"></i>{% endif %}
+                            </a>
+                        </th>
+                        <th class="text-end">
+                            <a href="?date_from={{ date_from }}&date_to={{ date_to }}&shop={{ shop_id }}&customer_type={{ customer_type }}&sort=value&dir={% if sort_by == 'value' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}"
+                               class="text-decoration-none text-dark">
+                                Total Value
+                                {% if sort_by == 'value' %}<i class="bi bi-caret-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}-fill ms-1 text-primary"></i>{% endif %}
+                            </a>
+                        </th>
+                        <th class="text-end pe-4">
+                            <a href="?date_from={{ date_from }}&date_to={{ date_to }}&shop={{ shop_id }}&customer_type={{ customer_type }}&sort=last_visit&dir={% if sort_by == 'last_visit' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}"
+                               class="text-decoration-none text-dark">
+                                Last Visit
+                                {% if sort_by == 'last_visit' %}<i class="bi bi-caret-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}-fill ms-1 text-primary"></i>{% endif %}
+                            </a>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in page_obj %}
+                    <tr class="footprint-row" style="cursor: pointer;" 
+                        data-customer-id="{{ row.customer_id|default:'' }}" 
+                        data-phone="{{ row.phone }}" 
+                        data-name="{{ row.name }}"
+                        data-type="{{ row.type }}"
+                        data-bs-toggle="modal" data-bs-target="#itemsModal">
+                        <td class="ps-4">
+                            {% if row.customer_id %}
+                            <a href="{% url 'customers:customer_detail' row.customer_id %}" class="fw-semibold text-decoration-none">
+                                <i class="bi bi-person-circle me-1 text-primary"></i>{{ row.name }}
+                            </a>
+                            {% else %}
+                            <span class="fw-semibold">
+                                <i class="bi bi-person me-1 text-secondary"></i>{{ row.name }}
+                            </span>
+                            {% endif %}
+                        </td>
+                        <td class="text-muted">{{ row.phone }}</td>
+                        <td class="text-center">
+                            {% if row.type == 'registered' %}
+                            <span class="badge bg-primary bg-opacity-10 text-primary rounded-pill">Registered</span>
+                            {% else %}
+                            <span class="badge bg-secondary bg-opacity-10 text-secondary rounded-pill">Walk-in</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center fw-semibold">{{ row.tx_count }}</td>
+                        <td class="text-end fw-semibold text-success">{{ current_tenant.currency_symbol|default:"$" }}{{ row.total_value|floatformat:2 }}</td>
+                        <td class="text-end pe-4 text-muted small">
+                            {% if row.last_visit %}{{ row.last_visit|date:"M d, Y H:i" }}{% else %}-{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if page_obj.has_other_pages %}
+        <div class="d-flex justify-content-center py-3 border-top">
+            <nav>
+                <ul class="pagination pagination-sm mb-0">
+                    {% if page_obj.has_previous %}
+                    <li class="page-item"><a class="page-link rounded-start-3" href="?page={{ page_obj.previous_page_number }}&date_from={{ date_from }}&date_to={{ date_to }}&shop={{ shop_id }}&customer_type={{ customer_type }}&sort={{ sort_by }}&dir={{ sort_dir }}">‹</a></li>
+                    {% endif %}
+                    <li class="page-item active"><span class="page-link">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span></li>
+                    {% if page_obj.has_next %}
+                    <li class="page-item"><a class="page-link rounded-end-3" href="?page={{ page_obj.next_page_number }}&date_from={{ date_from }}&date_to={{ date_to }}&shop={{ shop_id }}&customer_type={{ customer_type }}&sort={{ sort_by }}&dir={{ sort_dir }}">›</a></li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
+
+        {% else %}
+        <div class="text-center py-5">
+            <i class="bi bi-people display-4 text-muted opacity-50"></i>
+            <p class="text-muted mt-3">No customer records found for the selected filters.</p>
+            <a href="{% url 'sales:customer_footprint' %}" class="btn btn-outline-secondary btn-sm">Clear Filters</a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Items Modal -->
+<div class="modal fade" id="itemsModal" tabindex="-1" aria-labelledby="itemsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title" id="itemsModalLabel">Purchased Items</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex align-items-center mb-3">
+                    <i class="bi bi-person-circle fs-4 me-2 text-primary"></i>
+                    <div>
+                        <div class="fw-bold" id="modalCustomerName"></div>
+                        <div class="small text-muted" id="modalCustomerPhone"></div>
+                    </div>
+                </div>
+                
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Product Name</th>
+                                <th class="text-center">Total Quantity</th>
+                                <th class="text-end pe-3">Total Value ({{ current_tenant.currency_symbol|default:"$" }})</th>
+                            </tr>
+                        </thead>
+                        <tbody id="modalItemsBody">
+                            <!-- Populated via JS -->
+                        </tbody>
+                    </table>
+                </div>
+                <div id="modalLoading" class="text-center py-4 d-none">
+                    <div class="spinner-border text-primary" role="status"></div>
+                </div>
+                <div id="modalEmpty" class="text-center py-4 text-muted d-none">
+                    No items found.
+                </div>
+            </div>
+            <div class="modal-footer border-0">
+                <button type="button" class="btn btn-secondary rounded-3" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // --- Auto Suggest Logic ---
+    const searchInput = document.getElementById('footprintSearch');
+    const suggestList = document.getElementById('footprintSuggestList');
+    let debounceTimer;
+
+    if (searchInput && suggestList) {
+        searchInput.addEventListener('input', function() {
+            clearTimeout(debounceTimer);
+            const query = this.value.trim();
+            if (query.length < 2) return;
+            
+            debounceTimer = setTimeout(() => {
+                fetch(`/sales/api/footprint/suggest/?q=${encodeURIComponent(query)}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        suggestList.innerHTML = '';
+                        data.forEach(item => {
+                            const option = document.createElement('option');
+                            option.value = item.text;
+                            suggestList.appendChild(option);
+                        });
+                    })
+                    .catch(err => console.error(err));
+            }, 300);
+        });
+    }
+
+    // --- Modal Item Aggregation Logic ---
+    const rows = document.querySelectorAll('.footprint-row');
+    const modalItemsBody = document.getElementById('modalItemsBody');
+    const modalLoading = document.getElementById('modalLoading');
+    const modalEmpty = document.getElementById('modalEmpty');
+    const modalCustomerName = document.getElementById('modalCustomerName');
+    const modalCustomerPhone = document.getElementById('modalCustomerPhone');
+
+    rows.forEach(row => {
+        row.addEventListener('click', function() {
+            const customerId = this.dataset.customerId;
+            const phone = this.dataset.phone;
+            const name = this.dataset.name;
+            const type = this.dataset.type;
+
+            modalCustomerName.textContent = name;
+            modalCustomerPhone.textContent = phone !== '-' ? phone : (type === 'registered' ? 'Registered' : 'Walk-in');
+            
+            modalItemsBody.innerHTML = '';
+            modalLoading.classList.remove('d-none');
+            modalEmpty.classList.add('d-none');
+
+            const params = new URLSearchParams();
+            if (customerId) params.append('customer_id', customerId);
+            if (name) params.append('name', name);
+            if (phone) params.append('phone', phone);
+
+            fetch(`/sales/api/footprint/items/?${params.toString()}`)
+                .then(res => res.json())
+                .then(data => {
+                    modalLoading.classList.add('d-none');
+                    if (!data.items || data.items.length === 0) {
+                        modalEmpty.classList.remove('d-none');
+                        return;
+                    }
+                    
+                    data.items.forEach(item => {
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td class="fw-medium">${item.product_name}</td>
+                            <td class="text-center fw-semibold">${item.total_qty}</td>
+                            <td class="text-end pe-3 fw-bold text-success">${item.total_value.toFixed(2)}</td>
+                        `;
+                        modalItemsBody.appendChild(tr);
+                    });
+                })
+                .catch(err => {
+                    console.error(err);
+                    modalLoading.classList.add('d-none');
+                    modalEmpty.classList.remove('d-none');
+                    modalEmpty.textContent = 'Failed to load items.';
+                });
+        });
+    });
+});
+</script>
+{% endblock %}

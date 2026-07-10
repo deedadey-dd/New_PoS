@@ -426,7 +426,15 @@ class Sale(TenantModel):
         )['total'] or Decimal('0')
         self.total = self.subtotal - self.discount_amount + self.tax_amount
         self.save()
-    
+
+    @property
+    def all_items_dispatched(self):
+        """True when every item in this sale has been fully dispatched."""
+        return not self.items.filter(
+            dispatched_quantity__lt=models.F('quantity')
+        ).exists()
+
+
     def complete(self, amount_paid, payment_method='CASH', paystack_ref='', cashier=None):
         """Process payment and conditionally complete/dispatch the sale based on workflow."""
         if self.status != 'PENDING':
@@ -670,6 +678,12 @@ class SaleItem(TenantModel):
         decimal_places=2,
         validators=[MinValueValidator(Decimal('0.01'))]
     )
+    dispatched_quantity = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0'),
+        help_text="Quantity that has already been dispatched to the customer (for partial dispatch)."
+    )
     unit_price = models.DecimalField(
         max_digits=12,
         decimal_places=2,
@@ -691,6 +705,16 @@ class SaleItem(TenantModel):
         decimal_places=2,
         default=Decimal('0')
     )
+
+    @property
+    def remaining_quantity(self):
+        """Quantity not yet dispatched to the customer."""
+        return self.quantity - self.dispatched_quantity
+
+    @property
+    def is_fully_dispatched(self):
+        """True when all units of this item have been dispatched."""
+        return self.dispatched_quantity >= self.quantity
     
     class Meta:
         ordering = ['id']

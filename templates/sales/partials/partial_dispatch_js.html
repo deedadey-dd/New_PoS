@@ -1,0 +1,226 @@
+﻿// ── Partial Dispatch Modal Logic ──
+let _dispatchSaleItems = [];
+let _dispatchSaleId = null;
+
+const partialDispatchModalEl = document.getElementById('partialDispatchModal');
+
+// ── Unified open-modal trigger ──
+document.querySelectorAll('.open-dispatch-modal').forEach(function(btn) {
+    btn.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        const saleId = this.dataset.saleId;
+        const saleNumber = this.dataset.saleNumber;
+
+        fetch('/sales/api/' + saleId + '/detail/')
+            .then(res => {
+                if (!res.ok) throw new Error('Failed to load sale details');
+                return res.json();
+            })
+            .then(data => {
+                _dispatchSaleId = saleId;
+                document.getElementById('dispatchModalSaleNumber').textContent = '#' + (saleNumber || '');
+                populateDispatchModal(data.items);
+                populateDispatchHistory(data.dispatch_history || []);
+                if (partialDispatchModalEl) {
+                    const modalInstance = bootstrap.Modal.getInstance(partialDispatchModalEl) || new bootstrap.Modal(partialDispatchModalEl);
+                    modalInstance.show();
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                alert('Failed to load items for dispatch.');
+            });
+    });
+});
+
+// ── Sale Detail modal dispatch button ──
+const saleDetailDispatchBtn = document.getElementById('saleDetailDispatchBtn');
+if (saleDetailDispatchBtn && partialDispatchModalEl) {
+    saleDetailDispatchBtn.addEventListener('click', function() {
+        _dispatchSaleId = this.dataset.saleId;
+        document.getElementById('dispatchModalSaleNumber').textContent = '#' + (this.dataset.saleNumber || '');
+        populateDispatchModal(_dispatchSaleItems);
+        populateDispatchHistory(window._dispatchHistory || []);
+        const saleDetailModal = document.getElementById('saleDetailModal');
+        if (saleDetailModal) {
+            const sdInstance = bootstrap.Modal.getInstance(saleDetailModal);
+            if (sdInstance) sdInstance.hide();
+        }
+        const modalInstance = bootstrap.Modal.getInstance(partialDispatchModalEl) || new bootstrap.Modal(partialDispatchModalEl);
+        modalInstance.show();
+    });
+}
+
+function populateDispatchModal(items) {
+    const tbody = document.getElementById('dispatchItemsBody');
+    const toggleContainer = document.getElementById('showDispatchedToggleContainer');
+    const toggle = document.getElementById('showDispatchedToggle');
+    if (!tbody) return;
+
+    const hasFullyDispatched = items.some(i => i.is_fully_dispatched);
+    if (hasFullyDispatched) {
+        toggleContainer.style.removeProperty('display');
+    } else {
+        toggleContainer.style.setProperty('display', 'none', 'important');
+        if (toggle) toggle.checked = false;
+    }
+
+    function renderRows(showDispatched) {
+        tbody.innerHTML = '';
+        items.forEach(function(item) {
+            const remaining = parseFloat(item.remaining_quantity);
+            const ordered = parseFloat(item.quantity);
+            const dispatched = parseFloat(item.dispatched_quantity);
+            const done = item.is_fully_dispatched;
+
+            if (done && !showDispatched) return;
+
+            const tr = document.createElement('tr');
+            if (done) tr.classList.add('table-secondary', 'text-muted');
+
+            tr.innerHTML = `
+                <td class="fw-medium">${item.product_name}<br><small class="text-muted">${item.sku}</small></td>
+                <td class="text-center">${ordered}</td>
+                <td class="text-center">${dispatched}</td>
+                <td class="text-center">${done ? '<span class="badge bg-success">Done</span>' : remaining}</td>
+                <td class="text-center">
+                    ${done
+                        ? '<span class="text-muted small"><i class="bi bi-check-circle-fill text-success me-1"></i>Dispatched</span>'
+                        : `<input type="number" class="form-control form-control-sm text-center dispatch-qty-input"
+                                data-item-id="${item.id}" data-max="${remaining}"
+                                min="0" max="${remaining}" step="1" value="0"
+                                style="width:90px; margin: 0 auto;">`
+                    }
+                </td>`;
+            tbody.appendChild(tr);
+        });
+    }
+
+    renderRows(toggle ? toggle.checked : false);
+    if (toggle) {
+        toggle.onchange = () => renderRows(toggle.checked);
+    }
+}
+
+function populateDispatchHistory(history) {
+    const section = document.getElementById('dispatchHistorySection');
+    const body = document.getElementById('dispatchHistoryBody');
+    if (!section || !body) return;
+
+    if (!history || history.length === 0) {
+        section.style.display = 'none';
+        body.innerHTML = '';
+        return;
+    }
+
+    section.style.display = '';
+    body.innerHTML = '';
+
+    history.forEach(function(event, idx) {
+        const itemRows = event.items.map(i =>
+            `<tr>
+                <td class="ps-3 text-muted small">${i.product_name}</td>
+                <td class="text-center small fw-medium">${i.qty}</td>
+            </tr>`
+        ).join('');
+
+        const card = document.createElement('div');
+        card.className = 'border rounded-3 mb-2 overflow-hidden';
+        card.innerHTML = `
+            <div class="d-flex align-items-center justify-content-between px-3 py-2 bg-light">
+                <div>
+                    <i class="bi bi-send-check text-success me-2"></i>
+                    <span class="fw-semibold small">Dispatch ${idx + 1}</span>
+                    <span class="text-muted small ms-2">— ${event.dispatched_by}</span>
+                </div>
+                <span class="badge bg-success-subtle text-success rounded-pill small">
+                    <i class="bi bi-clock me-1"></i>${event.dispatched_at}
+                </span>
+            </div>
+            <table class="table table-sm mb-0">
+                <thead class="table-light border-top">
+                    <tr>
+                        <th class="ps-3 small">Product</th>
+                        <th class="text-center small">Qty Released</th>
+                    </tr>
+                </thead>
+                <tbody>${itemRows}</tbody>
+            </table>`;
+        body.appendChild(card);
+    });
+}
+
+// ── Dispatch helper ──
+function submitDispatch(fillAll) {
+    const inputs = document.querySelectorAll('#dispatchItemsBody .dispatch-qty-input');
+    const dispatchItems = [];
+    let hasQty = false;
+
+    inputs.forEach(function(inp) {
+        const max = parseFloat(inp.dataset.max);
+        const qty = fillAll ? max : (parseFloat(inp.value) || 0);
+        if (qty > 0) {
+            hasQty = true;
+            dispatchItems.push({ sale_item_id: parseInt(inp.dataset.itemId), qty: qty });
+        }
+    });
+
+    if (!hasQty) {
+        alert('No remaining quantities to dispatch.');
+        return;
+    }
+
+    const activeId = fillAll ? 'fullDispatchBtn' : 'partialDispatchSubmitBtn';
+    const otherId  = fillAll ? 'partialDispatchSubmitBtn' : 'fullDispatchBtn';
+    const activeBtn = document.getElementById(activeId);
+    const otherBtn  = document.getElementById(otherId);
+    const originalHtml = activeBtn ? activeBtn.innerHTML : '';
+
+    if (activeBtn) {
+        activeBtn.disabled = true;
+        activeBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Dispatching...';
+    }
+    if (otherBtn) otherBtn.disabled = true;
+
+    const csrfEl = document.querySelector('[name=csrfmiddlewaretoken]');
+    const csrfToken = csrfEl ? csrfEl.value : '';
+
+    fetch('/sales/api/sales/' + _dispatchSaleId + '/dispatch/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+        body: JSON.stringify({ items: dispatchItems })
+    })
+    .then(r => r.ok ? r.json() : r.json().then(e => { throw new Error(e.error || 'Dispatch failed'); }))
+    .then(function(res) {
+        if (partialDispatchModalEl) {
+            const modalInstance = bootstrap.Modal.getInstance(partialDispatchModalEl);
+            if (modalInstance) modalInstance.hide();
+        }
+        if (res.fully_dispatched && res.waybill_url) {
+            window.open(res.waybill_url, '_blank');
+        }
+        alert(res.message || 'Dispatch recorded.');
+        location.reload();
+    })
+    .catch(function(err) {
+        alert(err.message);
+        if (activeBtn) {
+            activeBtn.disabled = false;
+            activeBtn.innerHTML = originalHtml;
+        }
+        if (otherBtn) otherBtn.disabled = false;
+    });
+}
+
+// ── Full Dispatch: fills all remaining quantities, then submits ──
+const fullDispatchBtn = document.getElementById('fullDispatchBtn');
+if (fullDispatchBtn) {
+    fullDispatchBtn.addEventListener('click', function() { submitDispatch(true); });
+}
+
+// ── Partial Dispatch: submits only entered quantities ──
+const partialDispatchSubmitBtn = document.getElementById('partialDispatchSubmitBtn');
+if (partialDispatchSubmitBtn) {
+    partialDispatchSubmitBtn.addEventListener('click', function() { submitDispatch(false); });
+}

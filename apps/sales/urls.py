@@ -23,6 +23,7 @@ urlpatterns = [
     
     # Sales History
     path('', views.SaleListView.as_view(), name='sale_list'),
+    path('dispatches/', views.DispatchListView.as_view(), name='dispatch_list'),
     path('<int:pk>/receipt/', views.SaleDetailView.as_view(), name='sale_receipt'),
     path('<int:pk>/waybill/', views.SaleWaybillView.as_view(), name='sale_waybill'),
     path('api/<str:pk_or_number>/detail/', views.api_sale_detail, name='api_sale_detail'),
@@ -52,4 +53,9 @@ urlpatterns = [
     # Excel Exports
     path('export/', views.SaleListExportView.as_view(), name='sale_list_export'),
     path('report/export/', views.ShopSalesReportExportView.as_view(), name='shop_sales_report_export'),
+
+    # Customer Footprint Report
+    path('customer-footprint/', views.CustomerFootprintView.as_view(), name='customer_footprint'),
+    path('api/footprint/suggest/', views.FootprintAutoSuggestAPIView.as_view(), name='footprint_suggest'),
+    path('api/footprint/items/', views.FootprintItemAggregationAPIView.as_view(), name='footprint_items'),
 ]
