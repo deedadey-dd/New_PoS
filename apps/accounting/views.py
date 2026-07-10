@@ -1149,11 +1149,11 @@ class DigitalPaymentConfirmationView(LoginRequiredMixin, View):
         tenant = request.user.tenant
         
         # Unconfirmed E-Cash
-        ecash_sales = Sale.objects.filter(tenant=tenant, status='COMPLETED', payment_method='ECASH', is_accountant_confirmed=False).select_related('shop', 'attendant')
+        ecash_sales = Sale.objects.filter(tenant=tenant, status__in=['COMPLETED', 'PENDING_DISPATCH'], payment_method='ECASH', is_accountant_confirmed=False).select_related('shop', 'attendant')
         ecash_cts = CustomerTransaction.objects.filter(tenant=tenant, transaction_type='CREDIT', description__icontains='ECASH', is_accountant_confirmed=False).select_related('customer', 'performed_by')
         
         # Unconfirmed Momo
-        momo_sales = Sale.objects.filter(tenant=tenant, status='COMPLETED', payment_method='MOMO', is_accountant_confirmed=False).select_related('shop', 'attendant')
+        momo_sales = Sale.objects.filter(tenant=tenant, status__in=['COMPLETED', 'PENDING_DISPATCH'], payment_method='MOMO', is_accountant_confirmed=False).select_related('shop', 'attendant')
         momo_cts = CustomerTransaction.objects.filter(tenant=tenant, transaction_type='CREDIT', description__icontains='MOMO', is_accountant_confirmed=False).select_related('customer', 'performed_by')
         
         # Filters
