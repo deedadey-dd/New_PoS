@@ -83,7 +83,7 @@ class EndOfDaySummaryView(LoginRequiredMixin, View):
             # ATTENDANT SUMMARY
             # ---------------------------------------------------------
             if role_name == 'SHOP_ATTENDANT':
-                sales = Sale.objects.filter(**date_filter, attendant=user).exclude(status='PENDING')
+                sales = Sale.objects.filter(**date_filter, attendant=user, status__in=['COMPLETED', 'PENDING_DISPATCH'])
                 summary_context['total_sales_value'] = sales.aggregate(t=Sum('total'))['t'] or Decimal('0.00')
                 summary_context['invoice_count'] = sales.count()
                 
@@ -101,7 +101,7 @@ class EndOfDaySummaryView(LoginRequiredMixin, View):
             # CASHIER SUMMARY
             # ---------------------------------------------------------
             elif role_name == 'SHOP_CASHIER':
-                sales = Sale.objects.filter(**date_filter, cashier=user).exclude(status='PENDING')
+                sales = Sale.objects.filter(**date_filter, cashier=user, status__in=['COMPLETED', 'PENDING_DISPATCH'])
                 summary_context['invoice_count'] = sales.count()
                 
                 methods = sales.values('payment_method').annotate(total=Sum('amount_paid'))
@@ -126,7 +126,7 @@ class EndOfDaySummaryView(LoginRequiredMixin, View):
             elif role_name == 'SHOP_MANAGER' or viewing_shop:
                 shop = viewing_shop if viewing_shop else user.location
                 if shop:
-                    sales = Sale.objects.filter(**date_filter, shop=shop).exclude(status='PENDING')
+                    sales = Sale.objects.filter(**date_filter, shop=shop, status__in=['COMPLETED', 'PENDING_DISPATCH'])
                     summary_context['shop_total_sales_value'] = sales.aggregate(t=Sum('total'))['t'] or Decimal('0.00')
                     summary_context['shop_invoice_count'] = sales.count()
                     
@@ -192,7 +192,7 @@ class EndOfDaySummaryView(LoginRequiredMixin, View):
             # OVERALL VIEW FOR ACCOUNTANT, ADMIN, AUDITOR
             # ---------------------------------------------------------
             elif role_name in ['ACCOUNTANT', 'ADMIN', 'AUDITOR']:
-                sales = Sale.objects.filter(**date_filter).exclude(status='PENDING')
+                sales = Sale.objects.filter(**date_filter, status__in=['COMPLETED', 'PENDING_DISPATCH'])
                 methods = sales.values('payment_method').annotate(total=Sum('amount_paid'))
                 payments_breakdown = {m['payment_method']: m['total'] for m in methods if m['total'] and m['total'] > 0}
                 

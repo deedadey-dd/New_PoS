@@ -1584,7 +1584,7 @@ class ShopSalesReportView(LoginRequiredMixin, View):
         sales_filter = Q(
             tenant=user.tenant,
             shop=shop,
-            status='COMPLETED',
+            status__in=['COMPLETED', 'PENDING_DISPATCH'],
             created_at__date__gte=date_from,
             created_at__date__lte=date_to
         )
@@ -1601,7 +1601,7 @@ class ShopSalesReportView(LoginRequiredMixin, View):
         items_filter = {
             'sale__tenant': user.tenant,
             'sale__shop': shop,
-            'sale__status': 'COMPLETED',
+            'sale__status__in': ['COMPLETED', 'PENDING_DISPATCH'],
             'sale__created_at__date__gte': date_from,
             'sale__created_at__date__lte': date_to,
         }
@@ -2513,7 +2513,7 @@ class ShopSalesReportExportView(LoginRequiredMixin, View):
 
         # Build sales filter
         sales_filter = Q(
-            tenant=user.tenant, shop=shop, status='COMPLETED',
+            tenant=user.tenant, shop=shop, status__in=['COMPLETED', 'PENDING_DISPATCH'],
             created_at__date__gte=date_from, created_at__date__lte=date_to
         )
         if attendant_id:
@@ -2546,7 +2546,7 @@ class ShopSalesReportExportView(LoginRequiredMixin, View):
         items_filter = {
             'sale__tenant': user.tenant,
             'sale__shop': shop,
-            'sale__status': 'COMPLETED',
+            'sale__status__in': ['COMPLETED', 'PENDING_DISPATCH'],
             'sale__created_at__date__gte': date_from,
             'sale__created_at__date__lte': date_to,
         }
