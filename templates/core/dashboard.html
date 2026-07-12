@@ -608,6 +608,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             modalDispatchBtn.style.display = 'inline-block';
                             _dispatchSaleItems = data.items;
                             window._dispatchHistory = data.dispatch_history;
+                            window._allowPartialDispatch = data.allow_partial_dispatch !== false;
                         } else {
                             modalDispatchBtn.style.display = 'none';
                         }

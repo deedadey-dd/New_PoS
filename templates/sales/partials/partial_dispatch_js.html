@@ -1,4 +1,4 @@
-﻿// ── Partial Dispatch Modal Logic ──
+// ── Partial Dispatch Modal Logic ──
 let _dispatchSaleItems = [];
 let _dispatchSaleId = null;
 
@@ -20,7 +20,7 @@ document.querySelectorAll('.open-dispatch-modal').forEach(function(btn) {
             .then(data => {
                 _dispatchSaleId = saleId;
                 document.getElementById('dispatchModalSaleNumber').textContent = '#' + (saleNumber || '');
-                populateDispatchModal(data.items);
+                populateDispatchModal(data.items, data.allow_partial_dispatch !== false);
                 populateDispatchHistory(data.dispatch_history || []);
                 if (partialDispatchModalEl) {
                     const modalInstance = bootstrap.Modal.getInstance(partialDispatchModalEl) || new bootstrap.Modal(partialDispatchModalEl);
@@ -40,7 +40,8 @@ if (saleDetailDispatchBtn && partialDispatchModalEl) {
     saleDetailDispatchBtn.addEventListener('click', function() {
         _dispatchSaleId = this.dataset.saleId;
         document.getElementById('dispatchModalSaleNumber').textContent = '#' + (this.dataset.saleNumber || '');
-        populateDispatchModal(_dispatchSaleItems);
+        const allowPartial = window._allowPartialDispatch !== false;
+        populateDispatchModal(_dispatchSaleItems, allowPartial);
         populateDispatchHistory(window._dispatchHistory || []);
         const saleDetailModal = document.getElementById('saleDetailModal');
         if (saleDetailModal) {
@@ -52,11 +53,26 @@ if (saleDetailDispatchBtn && partialDispatchModalEl) {
     });
 }
 
-function populateDispatchModal(items) {
+function populateDispatchModal(items, allowPartial) {
+    // allowPartial defaults to true if not explicitly false
+    if (allowPartial === undefined) allowPartial = true;
+
     const tbody = document.getElementById('dispatchItemsBody');
     const toggleContainer = document.getElementById('showDispatchedToggleContainer');
     const toggle = document.getElementById('showDispatchedToggle');
+    const partialBtn = document.getElementById('partialDispatchSubmitBtn');
+    const dispatchNowHeader = document.getElementById('dispatchNowColHeader');
+    const infoText = document.getElementById('dispatchInfoText');
     if (!tbody) return;
+
+    // ── Adapt UI based on shop setting ──
+    if (partialBtn) partialBtn.style.display = allowPartial ? '' : 'none';
+    if (dispatchNowHeader) dispatchNowHeader.style.display = allowPartial ? '' : 'none';
+    if (infoText) {
+        infoText.innerHTML = allowPartial
+            ? 'Review the items below. Click <strong>Full Dispatch</strong> to release all remaining items, or adjust quantities and click <strong>Partial Dispatch</strong> to release only some items now.'
+            : 'This shop requires <strong>full dispatch only</strong>. Click <strong>Full Dispatch</strong> to release all remaining items at once.';
+    }
 
     const hasFullyDispatched = items.some(i => i.is_fully_dispatched);
     if (hasFullyDispatched) {
@@ -79,20 +95,27 @@ function populateDispatchModal(items) {
             const tr = document.createElement('tr');
             if (done) tr.classList.add('table-secondary', 'text-muted');
 
+            // Dispatch Now cell: only show input if partial dispatch is allowed AND item not done
+            let dispatchNowCell;
+            if (done) {
+                dispatchNowCell = '<span class="text-muted small"><i class="bi bi-check-circle-fill text-success me-1"></i>Dispatched</span>';
+            } else if (allowPartial) {
+                dispatchNowCell = `<input type="number" class="form-control form-control-sm text-center dispatch-qty-input"
+                                data-item-id="${item.id}" data-max="${remaining}"
+                                min="0" max="${remaining}" step="1" value="0"
+                                style="width:90px; margin: 0 auto;">`;
+            } else {
+                // Full dispatch only — show remaining as static text, hidden input carries the value
+                dispatchNowCell = `<span class="fw-bold text-success">${remaining}</span>
+                    <input type="hidden" class="dispatch-qty-input" data-item-id="${item.id}" data-max="${remaining}" value="${remaining}">`;
+            }
+
             tr.innerHTML = `
                 <td class="fw-medium">${item.product_name}<br><small class="text-muted">${item.sku}</small></td>
                 <td class="text-center">${ordered}</td>
                 <td class="text-center">${dispatched}</td>
                 <td class="text-center">${done ? '<span class="badge bg-success">Done</span>' : remaining}</td>
-                <td class="text-center">
-                    ${done
-                        ? '<span class="text-muted small"><i class="bi bi-check-circle-fill text-success me-1"></i>Dispatched</span>'
-                        : `<input type="number" class="form-control form-control-sm text-center dispatch-qty-input"
-                                data-item-id="${item.id}" data-max="${remaining}"
-                                min="0" max="${remaining}" step="1" value="0"
-                                style="width:90px; margin: 0 auto;">`
-                    }
-                </td>`;
+                <td class="text-center" ${!allowPartial ? 'style="display:none"' : ''}>${dispatchNowCell}</td>`;
             tbody.appendChild(tr);
         });
     }

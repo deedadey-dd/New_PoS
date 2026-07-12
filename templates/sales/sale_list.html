@@ -478,6 +478,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             dispatchBtn.dataset.saleNumber = data.sale_number;
                             _dispatchSaleItems = data.items;  // store for modal
                             window._dispatchHistory = data.dispatch_history;
+                            window._allowPartialDispatch = data.allow_partial_dispatch !== false;
                         } else {
                             dispatchBtn.style.display = 'none';
                         }

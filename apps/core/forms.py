@@ -78,7 +78,7 @@ class LocationForm(forms.ModelForm):
     
     class Meta:
         model = Location
-        fields = ['name', 'location_type', 'address', 'phone', 'email', 'receipt_copies']
+        fields = ['name', 'location_type', 'address', 'phone', 'email', 'receipt_copies', 'allow_partial_dispatch']
         widgets = {
             'name': forms.TextInput(attrs={
                 'class': 'form-control',
@@ -104,6 +104,9 @@ class LocationForm(forms.ModelForm):
                 'class': 'form-control',
                 'min': 1,
                 'max': 5,
+            }),
+            'allow_partial_dispatch': forms.CheckboxInput(attrs={
+                'class': 'form-check-input',
             }),
         }
 

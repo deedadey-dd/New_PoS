@@ -1001,6 +1001,34 @@ class AdminPasswordResetView(LoginRequiredMixin, View):
         return render(request, self.template_name, {'form': form, 'target_user': user})
 
 
+class UserProfileView(LoginRequiredMixin, View):
+    """View for users to see their profile and change their password."""
+    template_name = 'core/profile.html'
+    
+    def get(self, request):
+        from django.contrib.auth.forms import PasswordChangeForm
+        form = PasswordChangeForm(request.user)
+        return render(request, self.template_name, {
+            'form': form,
+        })
+        
+    def post(self, request):
+        from django.contrib.auth.forms import PasswordChangeForm
+        from django.contrib.auth import update_session_auth_hash
+        
+        form = PasswordChangeForm(request.user, request.POST)
+        if form.is_valid():
+            user = form.save()
+            update_session_auth_hash(request, user)  # Important, to update the session with the new password
+            messages.success(request, 'Your password was successfully updated!')
+            return redirect('core:profile')
+        else:
+            messages.error(request, 'Please correct the error below.')
+            
+        return render(request, self.template_name, {
+            'form': form,
+        })
+
 class ForcedPasswordChangeView(LoginRequiredMixin, View):
     """View for users to change password on first login after admin reset."""
     template_name = 'core/forced_password_change.html'

@@ -399,6 +399,10 @@ class Location(TenantModel):
         default=1,
         help_text="Number of receipt copies to print per sale (for shops)"
     )
+    allow_partial_dispatch = models.BooleanField(
+        default=True,
+        help_text="Allow partial dispatch in this shop"
+    )
     
     # Status fields
     is_active = models.BooleanField(default=True)

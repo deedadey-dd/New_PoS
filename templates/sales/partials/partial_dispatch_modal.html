@@ -9,9 +9,9 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <div class="alert alert-info py-2 mb-3 d-flex align-items-center gap-2">
+                <div class="alert alert-info py-2 mb-3 d-flex align-items-center gap-2" id="dispatchInfoBanner">
                     <i class="bi bi-info-circle-fill"></i>
-                    <span>Review the items below. Click <strong>Complete Dispatch</strong> to release all remaining items, or adjust quantities and click <strong>Partial Dispatch</strong> to release only some items now.</span>
+                    <span id="dispatchInfoText">Review the items below. Click <strong>Full Dispatch</strong> to release all remaining items, or adjust quantities and click <strong>Partial Dispatch</strong> to release only some items now.</span>
                 </div>
                 <div class="d-flex justify-content-between align-items-center mb-2">
                     <h6 class="mb-0 fw-bold">Items</h6>
@@ -28,7 +28,7 @@
                                 <th class="text-center">Ordered</th>
                                 <th class="text-center">Dispatched</th>
                                 <th class="text-center">Remaining</th>
-                                <th class="text-center" style="min-width:120px;">Dispatch Now</th>
+                                <th class="text-center" style="min-width:120px;" id="dispatchNowColHeader">Dispatch Now</th>
                             </tr>
                         </thead>
                         <tbody id="dispatchItemsBody"></tbody>

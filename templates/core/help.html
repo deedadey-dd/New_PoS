@@ -131,6 +131,22 @@
                 </div>
             </a>
         </div>
+        <div class="col-md-3 mb-3">
+            <a href="#dispatch" class="card shadow-sm text-decoration-none h-100">
+                <div class="card-body text-center">
+                    <i class="bi bi-truck fs-1 mb-2" style="color: #198754;"></i>
+                    <h5 class="text-dark">Dispatch</h5>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-3 mb-3">
+            <a href="#discounts" class="card shadow-sm text-decoration-none h-100">
+                <div class="card-body text-center">
+                    <i class="bi bi-percent fs-1 mb-2" style="color: #7c3aed;"></i>
+                    <h5 class="text-dark">Discounts</h5>
+                </div>
+            </a>
+        </div>
     </div>
 
     <!-- Getting Started -->
@@ -855,6 +871,91 @@
                                 Duplicate syncs are prevented automatically &mdash; even if you refresh the page during sync.
                             </div>
                         </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dispatch Management -->
+    <div class="card shadow-sm mb-4" id="dispatch">
+        <div class="card-header text-white" style="background-color: #198754;">
+            <h4 class="mb-0"><i class="bi bi-truck me-2"></i>Dispatch Management</h4>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <h5><i class="bi bi-send-check me-2 text-success"></i>Dispatching Goods</h5>
+                    <p>After payment is collected (Cashier Workflow), the Shop Manager releases goods to the customer:</p>
+                    <ol>
+                        <li>Go to the <strong>Dashboard → Pending Dispatch</strong> table <em>or</em> <strong>Sales → Sales History</strong></li>
+                        <li>Click the <strong>Dispatch</strong> button on the relevant invoice row</li>
+                        <li>The <strong>Dispatch Goods</strong> modal opens showing all items on the invoice</li>
+                        <li>Choose an action:
+                            <ul>
+                                <li><strong>Full Dispatch</strong> — releases all remaining items at once and marks the invoice complete</li>
+                                <li><strong>Partial Dispatch</strong> — enter quantities per item to release a portion now; the invoice stays open for future dispatch batches</li>
+                            </ul>
+                        </li>
+                        <li>A waybill PDF is automatically generated after a full dispatch</li>
+                    </ol>
+                </div>
+                <div class="col-md-6">
+                    <h5><i class="bi bi-clock-history me-2 text-secondary"></i>Dispatch History</h5>
+                    <p>Track every release event on an invoice:</p>
+                    <ul>
+                        <li>Inside the <strong>Dispatch Goods modal</strong>, scroll down to see the <strong>Dispatch Log</strong> — a timeline of each dispatch event, including the date, time, staff member, and quantities released per item</li>
+                        <li>Go to <strong>Sales → Dispatch History</strong> in the sidebar for a full, searchable and sortable list of all dispatched sales across your shop</li>
+                        <li>Search by invoice number, customer name, or phone; filter by date range</li>
+                    </ul>
+
+                    <div class="alert alert-info py-2 mb-0">
+                        <h6><i class="bi bi-gear me-1"></i>Shop-Level Partial Dispatch Setting</h6>
+                        <p class="small mb-0">Admins can disable partial dispatch on a per-shop basis. Go to <strong>Settings → Locations → Edit Shop</strong> and toggle <strong>"Allow Partial Dispatch"</strong>. When disabled, the Dispatch Goods modal will only show the <strong>Full Dispatch</strong> button, enforcing a single complete release of all items.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Discounts -->
+    <div class="card shadow-sm mb-4" id="discounts">
+        <div class="card-header text-white" style="background-color: #7c3aed;">
+            <h4 class="mb-0"><i class="bi bi-percent me-2"></i>Discounts</h4>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <h5><i class="bi bi-tag me-2" style="color:#7c3aed;"></i>Applying a Discount at the POS</h5>
+                    <p>Discounts can be applied to an entire cart before checkout. In the POS cart panel:</p>
+                    <ol>
+                        <li>Click the <strong>% Discount</strong> button in the cart action bar</li>
+                        <li>The <strong>Apply Discount</strong> modal opens</li>
+                        <li>Choose a discount type:
+                            <ul>
+                                <li><strong>Amount</strong> &mdash; enter a fixed currency value to deduct (e.g. GHS 10.00)</li>
+                                <li><strong>Percentage (%)</strong> &mdash; enter a percentage to deduct from the cart subtotal (e.g. 15%)</li>
+                            </ul>
+                        </li>
+                        <li>Click <strong>Apply</strong></li>
+                        <li>The cart totals update instantly, showing the discount on the receipt line</li>
+                    </ol>
+                    <div class="alert alert-warning py-2 mb-0">
+                        <i class="bi bi-info-circle me-1"></i>
+                        Discounts apply to the <strong>entire cart subtotal</strong>, not to individual items. To remove a discount, click the Discount button again and clear the value.
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <h5><i class="bi bi-receipt me-2 text-secondary"></i>How Discounts Appear</h5>
+                    <ul>
+                        <li>A <strong>Discount</strong> line is shown on the cart summary and on the printed receipt/invoice</li>
+                        <li>For percentage discounts the display shows both the deducted amount and the rate (e.g. <em>-GHS 25.00 (15%)</em>)</li>
+                        <li>The discount and reason are stored on the sale record and visible in <strong>Sales History</strong></li>
+                        <li>Percentage discounts are capped at <strong>100%</strong> and fixed discounts cannot exceed the cart subtotal</li>
+                    </ul>
+                    <div class="alert alert-info py-2 mb-0">
+                        <h6><i class="bi bi-shield-check me-1"></i>Discount Permissions</h6>
+                        <p class="small mb-0">Only users with appropriate roles (typically <strong>Attendants, Shop Managers, Cashiers</strong>) can apply discounts during checkout. If the Discount button is not visible, your role may not have this permission &mdash; contact your administrator.</p>
                     </div>
                 </div>
             </div>

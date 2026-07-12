@@ -168,6 +168,14 @@
                             <a class="nav-link" href="#cash">Cash Management</a>
                             <a class="nav-link" href="#reports">Reports & Analytics</a>
                             <a class="nav-link" href="#tracking">Tracking & Audit</a>
+                            <a class="nav-link" href="#dispatch">Dispatch Management</a>
+                            <a class="nav-link sub-link" href="#dispatch-how">How to Dispatch</a>
+                            <a class="nav-link sub-link" href="#dispatch-partial">Partial Dispatch</a>
+                            <a class="nav-link sub-link" href="#dispatch-history">Dispatch History</a>
+                            <a class="nav-link sub-link" href="#dispatch-setting">Shop Setting</a>
+                            <a class="nav-link" href="#discounts">Discounts</a>
+                            <a class="nav-link sub-link" href="#discount-types">Discount Types</a>
+                            <a class="nav-link sub-link" href="#discount-usage">How to Apply</a>
                             <a class="nav-link" href="#notifications-section">Notifications</a>
                             <a class="nav-link" href="#settings">Settings & Admin</a>
                             <a class="nav-link sub-link" href="#shop-settings">Shop Settings</a>
@@ -581,6 +589,160 @@
                         </table>
                     </div>
                     <p class="small text-muted">Stock is deducted only when the Cashier completes payment &mdash; not at invoice creation time.</p>
+                </section>
+
+                <!-- Dispatch Management -->
+                <section id="dispatch">
+                    <h2><i class="bi bi-truck me-2"></i>Dispatch Management</h2>
+
+                    <p class="lead">After payment is collected through the Cashier Workflow, the Shop Manager physically hands over goods to the customer and records each release in the system. This can happen in one go (Full Dispatch) or in stages (Partial Dispatch).</p>
+
+                    <h3 id="dispatch-how">How to Dispatch Goods</h3>
+                    <div class="card border-success mb-4">
+                        <div class="card-body">
+                            <ol class="mb-0">
+                                <li>Navigate to <strong>Dashboard → Pending Dispatch</strong> or <strong>Sales → Sales History</strong></li>
+                                <li>Find an invoice with a <strong>Dispatch</strong> button — these are sales that have been paid but goods have not yet been fully released</li>
+                                <li>Click <strong>Dispatch</strong> to open the <strong>Dispatch Goods</strong> modal</li>
+                                <li>The modal displays all items on the invoice with columns for: <em>Ordered</em>, <em>Already Dispatched</em>, <em>Remaining</em>, and <em>Dispatch Now</em></li>
+                                <li>Click <strong>Full Dispatch</strong> to release all remaining items at once — the invoice is marked <span class="badge bg-success">Dispatched</span> and a waybill PDF is generated automatically</li>
+                            </ol>
+                        </div>
+                    </div>
+
+                    <h3 id="dispatch-partial">Partial Dispatch</h3>
+                    <p>When a shop cannot release all items at once (e.g., some stock will arrive later), partial dispatch allows the manager to release available goods now and record future releases later.</p>
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        <strong>Partial Dispatch must be enabled</strong> for the shop. If it is disabled, only the <strong>Full Dispatch</strong> button will appear in the modal. See the <a href="#dispatch-setting">Shop Setting</a> section below.
+                    </div>
+                    <ol>
+                        <li>Open the Dispatch Goods modal as normal</li>
+                        <li>In the <em>Dispatch Now</em> column, enter the quantity to release for each item (leaving others at 0)</li>
+                        <li>Click <strong>Partial Dispatch</strong> — the entered quantities are recorded</li>
+                        <li>The invoice remains open; the <em>Remaining</em> column updates to reflect what is still outstanding</li>
+                        <li>Repeat whenever more goods become available</li>
+                        <li>Once all items are dispatched (Remaining = 0), the invoice closes automatically</li>
+                    </ol>
+
+                    <h3 id="dispatch-history">Dispatch History</h3>
+                    <p>Every dispatch event is permanently recorded for auditing purposes.</p>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="card h-100">
+                                <div class="card-header"><i class="bi bi-clock-history me-1"></i>In-Modal Dispatch Log</div>
+                                <div class="card-body">
+                                    <p class="small mb-0">Inside the Dispatch Goods modal, scroll down to see the <strong>Dispatch Log</strong> — a chronological timeline showing each dispatch event, the staff member who performed it, and the quantities released per product.</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card h-100">
+                                <div class="card-header"><i class="bi bi-list-ul me-1"></i>Dispatch History Page</div>
+                                <div class="card-body">
+                                    <p class="small mb-0">Go to <strong>Sales → Dispatch History</strong> in the sidebar for a full list of all dispatched sales. The page is <strong>searchable</strong> (by invoice number, customer name, or phone) and <strong>sortable</strong> by date. Each entry shows Full or Partial dispatch status and links to the Invoice Details modal.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <h3 id="dispatch-setting" class="mt-4">Shop-Level Partial Dispatch Setting</h3>
+                    <div class="card border-primary">
+                        <div class="card-body">
+                            <h5><i class="bi bi-toggles me-2 text-primary"></i>Allow Partial Dispatch</h5>
+                            <p>This is a per-shop setting that controls whether goods can be released in stages.</p>
+                            <div class="table-responsive">
+                                <table class="table table-bordered table-sm">
+                                    <thead class="table-light">
+                                        <tr><th>Setting</th><th>Dispatch Modal Behaviour</th></tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td><span class="badge bg-success">Enabled (default)</span></td>
+                                            <td>Both <strong>Full Dispatch</strong> and <strong>Partial Dispatch</strong> buttons are shown; quantity inputs allow entering any amount per item</td>
+                                        </tr>
+                                        <tr>
+                                            <td><span class="badge bg-secondary">Disabled</span></td>
+                                            <td>Only the <strong>Full Dispatch</strong> button is shown; quantity inputs are hidden and all remaining items are dispatched at once</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <h6 class="mt-3">How to configure:</h6>
+                            <ol class="mb-0">
+                                <li>Go to <strong>Settings → Locations</strong> (Admin only)</li>
+                                <li>Find the shop and click <strong>Edit</strong></li>
+                                <li>Toggle the <strong>"Allow Partial Dispatch"</strong> switch</li>
+                                <li>Click <strong>Update Location</strong></li>
+                            </ol>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Discounts -->
+                <section id="discounts">
+                    <h2><i class="bi bi-percent me-2" style="color:#7c3aed;"></i>Discounts</h2>
+
+                    <p class="lead">HendAxis PoS supports flexible discount application at the point of sale. Cashiers and attendants can apply a fixed-amount or percentage-based discount to an entire cart before checkout, giving the business the flexibility to reward loyal customers, run promotions, or correct pricing on the fly.</p>
+
+                    <h3 id="discount-types">Discount Types</h3>
+                    <div class="table-responsive mb-4">
+                        <table class="table table-bordered">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Type</th>
+                                    <th>How It Works</th>
+                                    <th>Example</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><strong><i class="bi bi-currency-dollar me-1 text-success"></i>Amount (Fixed)</strong></td>
+                                    <td>A fixed monetary value is deducted from the cart subtotal regardless of order size</td>
+                                    <td>GHS 10 off a GHS 85 order &rarr; total = GHS 75</td>
+                                </tr>
+                                <tr>
+                                    <td><strong><i class="bi bi-percent me-1" style="color:#7c3aed;"></i>Percentage (%)</strong></td>
+                                    <td>A percentage of the cart subtotal is calculated and deducted; the deduction scales with the order value</td>
+                                    <td>15% off a GHS 200 order &rarr; deduct GHS 30 &rarr; total = GHS 170</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        Discounts apply to the <strong>entire cart subtotal</strong>, not to individual line items. Percentage discounts are capped at <strong>100%</strong> and fixed discounts cannot exceed the cart subtotal.
+                    </div>
+
+                    <h3 id="discount-usage">How to Apply a Discount</h3>
+                    <div class="card border-primary mb-4">
+                        <div class="card-body">
+                            <ol class="mb-0">
+                                <li>Build the cart in the POS as normal</li>
+                                <li>Click the <strong>% Discount</strong> button in the cart action bar (beside Pay Cash / Credit)</li>
+                                <li>The <strong>Apply Discount</strong> modal appears</li>
+                                <li>Select the discount type — <strong>Amount</strong> or <strong>Percentage</strong></li>
+                                <li>Enter the discount value</li>
+                                <li>Click <strong>Apply</strong></li>
+                                <li>The <strong>Discount</strong> line in the cart summary updates immediately, showing the deducted amount (and percentage rate for % discounts)</li>
+                                <li>Proceed to checkout as normal — the discounted total is what the customer pays</li>
+                            </ol>
+                        </div>
+                    </div>
+
+                    <h4>How Discounts Appear on Records</h4>
+                    <ul>
+                        <li>The <strong>printed receipt / invoice</strong> shows a dedicated Discount line with the amount deducted</li>
+                        <li>For percentage discounts, both the monetary amount and the rate are displayed (e.g. <em>-GHS 30.00 (15%)</em>)</li>
+                        <li>The discount amount is stored on the Sale record and visible in <strong>Sales History</strong> and any exported reports</li>
+                        <li>The <strong>Sales &rarr; Dispatch History</strong> and export views also include the discount column for full traceability</li>
+                    </ul>
+
+                    <div class="alert alert-warning">
+                        <h6><i class="bi bi-exclamation-triangle me-1"></i>Removing a Discount</h6>
+                        <p class="mb-0">To remove a discount already applied to the cart, click the <strong>% Discount</strong> button again and clear the input field, then click <strong>Apply</strong>. The discount is reset to zero without affecting the cart items.</p>
+                    </div>
                 </section>
 
                 <!-- Offline Mode & Sync -->

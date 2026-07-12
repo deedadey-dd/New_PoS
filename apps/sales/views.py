@@ -868,6 +868,7 @@ def api_sale_detail(request, pk_or_number):
         'customer_phone': sale.customer_phone,
         'is_dispatched': sale.is_dispatched,
         'all_items_dispatched': sale.all_items_dispatched,
+        'allow_partial_dispatch': sale.shop.allow_partial_dispatch if sale.shop else True,
         'items': items,
         'dispatch_history': dispatch_history,
     }

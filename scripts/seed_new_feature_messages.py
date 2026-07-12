@@ -1,9 +1,11 @@
 import os
 import django
 import sys
+from pathlib import Path
 
 # Setup Django environment
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "core.settings")
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "pos_system.settings")
 django.setup()
 
 from apps.core.models import FeatureMessage

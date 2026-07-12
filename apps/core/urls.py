@@ -43,7 +43,8 @@ urlpatterns = [
     path('api/locations/<int:pk>/summary/', views.LocationSummaryModalView.as_view(), name='location_summary'),
     path('api/users/<int:pk>/summary/', views.UserSummaryModalView.as_view(), name='user_summary'),
     
-    # Password change
+    # Password change & Profile
+    path('profile/', views.UserProfileView.as_view(), name='profile'),
     path('change-password/', views.ForcedPasswordChangeView.as_view(), name='forced_password_change'),
     
     # Help

@@ -563,6 +563,52 @@ class Command(BaseCommand):
     <li><strong>Future Purchases:</strong> They can use that stored balance to pay for items the next time they visit any of your branches.</li>
 </ul>
 <p>Build trust and ensure your cash drawer stays perfectly balanced!</p>'''
+            },
+            {
+                'feature_key': 'smart_dispatch_workflow',
+                'title': 'Smart Dispatch: Release Goods at Your Own Pace',
+                'content': '''<h2>From Invoice to Delivery — Every Step Tracked</h2>
+<p>HendAxis PoS now includes a powerful <strong>Dispatch Workflow</strong> that gives your shop complete control over the physical release of goods after payment.</p>
+<ul>
+    <li><strong>Full Dispatch:</strong> One click releases all items, closes the invoice, and automatically generates a <strong>Waybill PDF</strong> as proof of delivery.</li>
+    <li><strong>Partial Dispatch:</strong> Can't release everything at once? No problem. Dispatch what's available today and the system tracks exactly what's still outstanding per item.</li>
+    <li><strong>Dispatch Log:</strong> Every release is permanently recorded — who did it, when, and how many units of each product were released. Full accountability at every step.</li>
+</ul>
+<p>Find all dispatched sales under <strong>Sales &rarr; Dispatch History</strong> — searchable by customer name, invoice number, or phone, and sortable by date.</p>'''
+            },
+            {
+                'feature_key': 'per_shop_dispatch_control',
+                'title': 'Per-Shop Dispatch Control: Enforce Full Release Where It Matters',
+                'content': '''<h2>Tailor Dispatch Rules to Each Shop</h2>
+<p>Not every shop operates the same way. HendAxis PoS now lets administrators choose whether each individual shop allows partial releases of goods.</p>
+<ul>
+    <li><strong>Allow Partial Dispatch (default ON):</strong> Staff can release goods in multiple batches, entering specific quantities per item. Great for shops handling large or multi-item orders.</li>
+    <li><strong>Full Dispatch Only:</strong> When disabled, the dispatch modal only shows the <strong>Full Dispatch</strong> button. All remaining items must be released at once — ideal for shops with simpler workflows or strict handover policies.</li>
+</ul>
+<p>Configure this under <strong>Settings &rarr; Locations &rarr; Edit Shop</strong> and toggle <em>"Allow Partial Dispatch"</em>. Zero downtime, zero confusion.</p>'''
+            },
+            {
+                'feature_key': 'flexible_discounts',
+                'title': 'Flexible Discounts: Fixed Amount or Percentage — Your Choice',
+                'content': '''<h2>Give Customers a Better Deal in Seconds</h2>
+<p>HendAxis PoS lets your team apply instant discounts right from the checkout screen — no workarounds, no manual math, no errors.</p>
+<ul>
+    <li><strong>Fixed Amount Discount:</strong> Enter a specific amount to knock off the cart total (e.g. GHS 10 off). Perfect for loyalty rewards, manager overrides, or bulk-buy deals.</li>
+    <li><strong>Percentage (%) Discount:</strong> Enter a percentage and the system calculates the deduction automatically based on the cart value (e.g. 15% off). Ideal for storewide promotions.</li>
+</ul>
+<p>The discount is shown on the cart summary, the customer receipt, and the sale record — fully traceable for your accountant. Click <strong>% Discount</strong> in the POS cart to get started!</p>'''
+            },
+            {
+                'feature_key': 'discount_traceability',
+                'title': 'Discount Accountability: Every Deduction is Recorded',
+                'content': '''<h2>Discounts You Can Trust and Audit</h2>
+<p>Worried about unauthorized discounts cutting into your margins? HendAxis PoS has you covered with full traceability on every price reduction applied at checkout.</p>
+<ul>
+    <li><strong>Stored on the Sale Record:</strong> Every discount — whether a fixed amount or a percentage — is permanently attached to the invoice and visible in Sales History.</li>
+    <li><strong>Receipt Transparency:</strong> Customers see the exact discount deducted on their printed or digital receipt, building trust in your pricing.</li>
+    <li><strong>Export-Ready:</strong> Discount amounts are included in sales exports and reports, giving your accountant a complete picture of revenue adjustments.</li>
+</ul>
+<p>Run promotions confidently knowing every deal is documented.</p>'''
             }
         ]
 

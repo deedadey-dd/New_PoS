@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block title %}My Profile{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h2 class="fw-bold mb-0"><i class="bi bi-person-badge text-primary me-2"></i>My Profile</h2>
+            <p class="text-muted">View your information and update your password</p>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- User Information Card -->
+        <div class="col-md-5 mb-4">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white border-bottom-0 pt-4 pb-0">
+                    <h5 class="fw-bold"><i class="bi bi-info-circle text-info me-2"></i>Account Information</h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex align-items-center mb-4">
+                        <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center" style="width: 64px; height: 64px; font-size: 24px;">
+                            {{ user.get_full_name|default:user.email|make_list|first|upper }}
+                        </div>
+                        <div class="ms-3">
+                            <h4 class="mb-0 fw-bold">{{ user.get_full_name|default:"Not provided" }}</h4>
+                            <p class="text-muted mb-0">{{ user.email }}</p>
+                        </div>
+                    </div>
+
+                    <ul class="list-group list-group-flush">
+                        <li class="list-group-item px-0 d-flex justify-content-between align-items-center">
+                            <span class="text-muted"><i class="bi bi-shield-lock me-2"></i>Role</span>
+                            <span class="badge bg-secondary">{{ user.role.name|default:"No Role"|title }}</span>
+                        </li>
+                        {% if user.role.name != 'ADMIN' %}
+                        <li class="list-group-item px-0 d-flex justify-content-between align-items-center">
+                            <span class="text-muted"><i class="bi bi-shop me-2"></i>Location</span>
+                            <span class="fw-medium">{{ user.location.name|default:"N/A" }}</span>
+                        </li>
+                        {% endif %}
+                        <li class="list-group-item px-0 d-flex justify-content-between align-items-center">
+                            <span class="text-muted"><i class="bi bi-building me-2"></i>Company</span>
+                            <span class="fw-medium">{{ user.tenant.name|default:"N/A" }}</span>
+                        </li>
+                        <li class="list-group-item px-0 d-flex justify-content-between align-items-center">
+                            <span class="text-muted"><i class="bi bi-calendar3 me-2"></i>Joined</span>
+                            <span class="fw-medium">{{ user.date_joined|date:"M d, Y" }}</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Change Password Card -->
+        <div class="col-md-7 mb-4">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white border-bottom-0 pt-4 pb-0">
+                    <h5 class="fw-bold"><i class="bi bi-key text-warning me-2"></i>Change Password</h5>
+                </div>
+                <div class="card-body">
+                    {% if form.errors %}
+                    <div class="alert alert-danger">
+                        Please correct the errors below.
+                    </div>
+                    {% endif %}
+
+                    <form method="post" action="{% url 'core:profile' %}">
+                        {% csrf_token %}
+                        
+                        {% for field in form %}
+                        <div class="mb-3">
+                            <label for="{{ field.id_for_label }}" class="form-label fw-medium">{{ field.label }}</label>
+                            {% if field.name == 'old_password' or field.name == 'new_password1' or field.name == 'new_password2' %}
+                                <input type="password" name="{{ field.html_name }}" id="{{ field.auto_id }}" class="form-control {% if field.errors %}is-invalid{% endif %}" {% if field.field.required %}required{% endif %}>
+                            {% else %}
+                                {{ field }}
+                            {% endif %}
+                            
+                            {% if field.help_text %}
+                            <div class="form-text text-muted small">{{ field.help_text|safe }}</div>
+                            {% endif %}
+                            
+                            {% if field.errors %}
+                            <div class="invalid-feedback d-block">
+                                {% for error in field.errors %}
+                                {{ error }}
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+
+                        <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4">
+                            <button type="submit" class="btn btn-primary px-4">
+                                <i class="bi bi-check2-circle me-1"></i> Update Password
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
