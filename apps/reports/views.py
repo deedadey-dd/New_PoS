@@ -335,8 +335,37 @@ class EndOfDayDetailsView(LoginRequiredMixin, View):
                     'name': item['product__name'],
                     'qty_sold': item['total_qty'],
                     'revenue': item['total_revenue'],
+                    'qty_dispatched': Decimal('0'),
                     'stock_left': 'N/A'
                 }
+                
+            dispatch_filter = {
+                'tenant': tenant,
+                'transaction_type': 'SALE',
+                'created_at__date__gte': start_date,
+                'created_at__date__lte': end_date
+            }
+            if role_name == 'SHOP_ATTENDANT':
+                dispatch_filter['created_by'] = user
+            elif shop_filter_for_inventory:
+                dispatch_filter['location'] = shop_filter_for_inventory
+                
+            dispatched_agg = InventoryLedger.objects.filter(**dispatch_filter).values('product_id', 'product__name').annotate(
+                dispatched_qty=Sum('quantity')
+            )
+            for row in dispatched_agg:
+                pid = row['product_id']
+                dq = abs(row['dispatched_qty'] or Decimal('0'))
+                if pid in product_stats:
+                    product_stats[pid]['qty_dispatched'] = dq
+                elif not exclude_inactive:
+                    product_stats[pid] = {
+                        'name': row['product__name'],
+                        'qty_sold': Decimal('0'),
+                        'revenue': Decimal('0.00'),
+                        'qty_dispatched': dq,
+                        'stock_left': 'N/A'
+                    }
                 
             if shop_filter_for_inventory:
                 if not exclude_inactive:
@@ -354,12 +383,13 @@ class EndOfDayDetailsView(LoginRequiredMixin, View):
                                 'name': row['product__name'],
                                 'qty_sold': Decimal('0'),
                                 'revenue': Decimal('0.00'),
+                                'qty_dispatched': Decimal('0'),
                                 'stock_left': stock
                             }
                         else:
                             product_stats[pid]['stock_left'] = stock
                 else:
-                    # Only look up stock for products that had sales
+                    # Only look up stock for products that had sales or dispatches
                     if product_stats:
                         ledger_agg = InventoryLedger.objects.filter(
                             tenant=tenant,
@@ -373,6 +403,7 @@ class EndOfDayDetailsView(LoginRequiredMixin, View):
             
             others_qty = Decimal('0')
             others_rev = Decimal('0.00')
+            others_disp = Decimal('0')
             
             if top_n_str in ['10', '20']:
                 n = int(top_n_str)
@@ -382,12 +413,14 @@ class EndOfDayDetailsView(LoginRequiredMixin, View):
                     for o in others:
                         others_qty += o['qty_sold']
                         others_rev += o['revenue']
+                        others_disp += o.get('qty_dispatched', Decimal('0'))
                         
-                    if others_qty > 0 or others_rev > 0:
+                    if others_qty > 0 or others_rev > 0 or others_disp > 0:
                         top_items.append({
                             'name': 'Others',
                             'qty_sold': others_qty,
                             'revenue': others_rev,
+                            'qty_dispatched': others_disp,
                             'stock_left': '-'
                         })
                     sorted_stats = top_items
@@ -403,6 +436,11 @@ class EndOfDayDetailsView(LoginRequiredMixin, View):
                 summary['total_sales_value'] = summ_sales.aggregate(t=Sum('total'))['t'] or Decimal('0.00')
                 summary['invoice_count'] = summ_sales.count()
                 summary['items_sold_qty'] = SaleItem.objects.filter(sale__in=summ_sales).aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+                dispatched_raw = InventoryLedger.objects.filter(
+                    tenant=tenant, created_by=user, transaction_type='SALE',
+                    created_at__date__gte=start_date, created_at__date__lte=end_date
+                ).aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+                summary['items_dispatched_qty'] = abs(dispatched_raw)
                 summary['customer_payments_received'] = CustomerTransaction.objects.filter(
                     **date_filter, performed_by=user, transaction_type='CREDIT'
                 ).aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
@@ -428,6 +466,11 @@ class EndOfDayDetailsView(LoginRequiredMixin, View):
                     summary['shop_total_sales_value'] = summ_sales.aggregate(t=Sum('total'))['t'] or Decimal('0.00')
                     summary['shop_invoice_count'] = summ_sales.count()
                     summary['shop_items_sold_qty'] = SaleItem.objects.filter(sale__in=summ_sales).aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+                    dispatched_raw = InventoryLedger.objects.filter(
+                        tenant=tenant, location=shop, transaction_type='SALE',
+                        created_at__date__gte=start_date, created_at__date__lte=end_date
+                    ).aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+                    summary['shop_items_dispatched_qty'] = abs(dispatched_raw)
                     summary['shop_customer_payments_received'] = CustomerTransaction.objects.filter(
                         **date_filter, customer__shop=shop, transaction_type='CREDIT'
                     ).aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
@@ -490,6 +533,7 @@ class EndOfDayDetailsView(LoginRequiredMixin, View):
             'start_date': start_date,
             'end_date': end_date,
             'role_name': role_name,
+            'role_display_name': role_name.replace('_', ' ').title() if role_name else 'Unknown',
             'viewing_shop': viewing_shop,
             'stats': sorted_stats,
             'exclude_inactive': exclude_inactive,
@@ -497,6 +541,10 @@ class EndOfDayDetailsView(LoginRequiredMixin, View):
             'shop_id': viewing_shop_id or '',
             **summary,
         }
+
+        if role_name in ['ACCOUNTANT', 'ADMIN', 'AUDITOR']:
+            from apps.core.models import Location
+            context['available_shops'] = Location.objects.filter(tenant=tenant, location_type='SHOP', is_active=True)
 
         if request.GET.get('pdf') == 'true':
             from django.template.loader import get_template

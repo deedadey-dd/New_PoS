@@ -4,6 +4,5 @@ from . import views
 app_name = 'reports'
 
 urlpatterns = [
-    path('end-of-day/', views.EndOfDaySummaryView.as_view(), name='end_of_day_summary'),
-    path('end-of-day/details/', views.EndOfDayDetailsView.as_view(), name='end_of_day_details'),
+    path('end-of-day/', views.EndOfDayDetailsView.as_view(), name='end_of_day_summary'),
 ]

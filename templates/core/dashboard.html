@@ -134,16 +134,29 @@
     </div>
 
     <div class="col-md-6 col-lg-3">
-        <div class="card stat-card">
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <div class="stat-value text-warning">
-                        {{ currency_symbol }}{{ today_sales|floatformat:"2g"|default:"0.00" }}</div>
-                    <div class="stat-label">Today's Sales</div>
+        <div class="card stat-card h-100">
+            <div class="d-flex flex-column h-100 justify-content-center">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="stat-value text-warning">
+                            {{ currency_symbol }}{{ today_sales|floatformat:"2g"|default:"0.00" }}</div>
+                        <div class="stat-label">Today's Sales</div>
+                    </div>
+                    <div class="stat-icon bg-warning bg-opacity-10 text-warning">
+                        <i class="bi bi-cash-stack"></i>
+                    </div>
                 </div>
-                <div class="stat-icon bg-warning bg-opacity-10 text-warning">
-                    <i class="bi bi-cash-stack"></i>
+                {% if user.tenant.use_strict_sales_workflow and items_dispatched_today is not None %}
+                <div class="mt-3 pt-2 border-top">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <span class="small text-muted fw-medium">Items Dispatched Today:</span>
+                        <span class="badge bg-secondary rounded-pill">{{ items_dispatched_today|floatformat:"0" }}</span>
+                    </div>
+                    <div class="text-muted" style="font-size: 0.65rem; line-height: 1.2;">
+                        *Sales on the day may differ from items dispatched since some items will be paid for without being dispatched.
+                    </div>
                 </div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -152,16 +165,29 @@
 <!-- Simplified stats for Shop Attendants -->
 <div class="row g-4 mb-4">
     <div class="col-md-6 col-lg-4">
-        <div class="card stat-card">
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <div class="stat-value text-warning">
-                        {{ currency_symbol }}{{ today_sales|floatformat:"2g"|default:"0.00" }}</div>
-                    <div class="stat-label">Today's Sales</div>
+        <div class="card stat-card h-100">
+            <div class="d-flex flex-column h-100 justify-content-center">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="stat-value text-warning">
+                            {{ currency_symbol }}{{ today_sales|floatformat:"2g"|default:"0.00" }}</div>
+                        <div class="stat-label">Today's Sales</div>
+                    </div>
+                    <div class="stat-icon bg-warning bg-opacity-10 text-warning">
+                        <i class="bi bi-cash-stack"></i>
+                    </div>
                 </div>
-                <div class="stat-icon bg-warning bg-opacity-10 text-warning">
-                    <i class="bi bi-cash-stack"></i>
+                {% if user.tenant.use_strict_sales_workflow and items_dispatched_today is not None %}
+                <div class="mt-3 pt-2 border-top">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <span class="small text-muted fw-medium">Items Dispatched Today:</span>
+                        <span class="badge bg-secondary rounded-pill">{{ items_dispatched_today|floatformat:"0" }}</span>
+                    </div>
+                    <div class="text-muted" style="font-size: 0.65rem; line-height: 1.2;">
+                        *Sales on the day may differ from items dispatched since some items will be paid for without being dispatched.
+                    </div>
                 </div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -817,5 +843,4 @@ document.addEventListener('DOMContentLoaded', function () {
 {% endif %}
 
 {% include 'sales/partials/partial_dispatch_modal.html' %}
-{% include 'sales/partials/partial_dispatch_js.html' %}
 {% endblock %}

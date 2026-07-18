@@ -324,13 +324,14 @@ class DashboardView(LoginRequiredMixin, View):
             
             # Today's sales calculation for dashboard
             from apps.sales.models import Sale
+            from apps.inventory.models import InventoryLedger
             from django.utils import timezone
             from django.db.models import Sum
             
             today = timezone.now().date()
             sales_filter = {
                 'tenant': user.tenant,
-                'status': 'COMPLETED',
+                'status__in': ['COMPLETED', 'PENDING_DISPATCH'],
                 'created_at__date': today
             }
             
@@ -351,6 +352,28 @@ class DashboardView(LoginRequiredMixin, View):
                 cache.set(today_sales_cache_key, today_sales, 300)
             
             context['today_sales'] = today_sales
+
+            # Calculate items dispatched today
+            items_dispatched_cache_key = f'items_dispatched_{user.id}_{today}'
+            items_dispatched_today = cache.get(items_dispatched_cache_key)
+            if items_dispatched_today is None:
+                dispatch_filter = {
+                    'tenant': user.tenant,
+                    'transaction_type': 'SALE',
+                    'created_at__date': today
+                }
+                if is_attendant:
+                    dispatch_filter['created_by'] = user
+                elif role_name == 'SHOP_MANAGER' and user.location:
+                    dispatch_filter['location'] = user.location
+                    
+                items_dispatched_raw = InventoryLedger.objects.filter(**dispatch_filter).aggregate(
+                    total=Sum('quantity')
+                )['total'] or 0
+                items_dispatched_today = abs(items_dispatched_raw)
+                cache.set(items_dispatched_cache_key, items_dispatched_today, 300)
+                
+            context['items_dispatched_today'] = items_dispatched_today
 
             # --- Strict Sales Workflow Data for Shop Managers ---
             if role_name == 'SHOP_MANAGER' and user.tenant.use_strict_sales_workflow and user.location:
