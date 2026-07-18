@@ -140,6 +140,18 @@
     </div>
 </div>
 
+<!-- Chart Section -->
+{% if sales_by_day %}
+<div class="card mb-4 border-0 shadow-sm rounded-4">
+    <div class="card-body">
+        <h5 class="card-title mb-3 text-muted"><i class="bi bi-graph-up text-primary me-2"></i>Sales Trend</h5>
+        <div style="position: relative; height: 250px; width: 100%;">
+            <canvas id="salesTrendChart"></canvas>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <!-- Collapsible Report Sections -->
 <div class="accordion" id="shopReportAccordion">
 
@@ -371,4 +383,68 @@
 
 </div>
 {% endif %}
+{% block extra_js %}
+{% if sales_by_day %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    var ctx = document.getElementById('salesTrendChart').getContext('2d');
+    
+    var rawData = [
+        {% for day in sales_by_day %}
+        { date: "{{ day.created_at__date|date:'M d' }}", revenue: {{ day.revenue|stringformat:"f" }} },
+        {% endfor %}
+    ];
+    rawData.reverse();
+    
+    var labels = rawData.map(function(item) { return item.date; });
+    var data = rawData.map(function(item) { return item.revenue; });
+    
+    var salesChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Revenue',
+                data: data,
+                backgroundColor: 'rgba(54, 162, 235, 0.1)',
+                borderColor: 'rgba(54, 162, 235, 1)',
+                borderWidth: 2,
+                pointBackgroundColor: 'rgba(54, 162, 235, 1)',
+                fill: true,
+                tension: 0.3
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return '{{ currency_symbol }}' + value.toLocaleString();
+                        }
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return '{{ currency_symbol }}' + context.parsed.y.toLocaleString();
+                        }
+                    }
+                }
+            }
+        }
+    });
+});
+</script>
+{% endif %}
+{% endblock %}
+
 {% endblock %}

@@ -72,7 +72,12 @@
         <tr>
             <td><div class="card-label">Total Sales</div><div class="card-value">{{ currency_symbol }}{{ total_sales_value|default:"0.00" }}</div></td>
             <td><div class="card-label">Invoices Created</div><div class="card-value">{{ invoice_count|default:"0" }}</div></td>
-            <td><div class="card-label">Items Sold</div><div class="card-value">{{ items_sold_qty|default:"0" }}</div></td>
+            <td>
+                <div class="card-label">Items Sold</div><div class="card-value">{{ items_sold_qty|default:"0" }}</div>
+                {% if user.tenant.use_strict_sales_workflow %}
+                <div class="card-label" style="margin-top: 5px;">Items Dispatched</div><div class="card-value" style="font-size: 11pt;">{{ items_dispatched_qty|default:"0" }}</div>
+                {% endif %}
+            </td>
         </tr>
         <tr>
             <td colspan="3"><div class="card-label">Customer Payments Received</div><div class="card-value">{{ currency_symbol }}{{ customer_payments_received|default:"0.00" }}</div></td>
@@ -92,7 +97,12 @@
         <tr>
             <td><div class="card-label">Shop Total Sales</div><div class="card-value">{{ currency_symbol }}{{ shop_total_sales_value|default:"0.00" }}</div></td>
             <td><div class="card-label">Invoices Created</div><div class="card-value">{{ shop_invoice_count|default:"0" }}</div></td>
-            <td><div class="card-label">Items Sold</div><div class="card-value">{{ shop_items_sold_qty|default:"0" }}</div></td>
+            <td>
+                <div class="card-label">Items Sold</div><div class="card-value">{{ shop_items_sold_qty|default:"0" }}</div>
+                {% if user.tenant.use_strict_sales_workflow %}
+                <div class="card-label" style="margin-top: 5px;">Items Dispatched</div><div class="card-value" style="font-size: 11pt;">{{ shop_items_dispatched_qty|default:"0" }}</div>
+                {% endif %}
+            </td>
         </tr>
         <tr>
             <td><div class="card-label">Customer Payments Received</div><div class="card-value">{{ currency_symbol }}{{ shop_customer_payments_received|default:"0.00" }}</div></td>
@@ -145,6 +155,7 @@
                 <th>Product Name</th>
                 <th class="text-center">Qty Sold</th>
                 <th class="text-right">Total Revenue</th>
+                <th class="text-center">Qty Dispatched</th>
                 <th class="text-center">Stock Left</th>
             </tr>
         </thead>
@@ -160,6 +171,9 @@
                     {% if item.revenue > 0 %}{{ currency_symbol }}{{ item.revenue }}{% else %}&mdash;{% endif %}
                 </td>
                 <td class="text-center">
+                    {% if item.qty_dispatched > 0 %}{{ item.qty_dispatched|floatformat:"0" }}{% else %}&mdash;{% endif %}
+                </td>
+                <td class="text-center">
                     {% if item.stock_left == '-' %}&mdash;
                     {% elif item.stock_left > 10 %}<span class="badge-ok">{{ item.stock_left|floatformat:"0" }}</span>
                     {% elif item.stock_left > 0 %}<span class="badge-low">{{ item.stock_left|floatformat:"0" }}</span>
@@ -168,7 +182,7 @@
                 </td>
             </tr>
             {% empty %}
-            <tr><td colspan="5" class="text-center">No data for this period.</td></tr>
+            <tr><td colspan="6" class="text-center">No data for this period.</td></tr>
             {% endfor %}
         </tbody>
     </table>
