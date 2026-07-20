@@ -398,12 +398,28 @@ document.addEventListener("DOMContentLoaded", function() {
     
     var rawData = [
         {% for day in sales_by_day %}
-        { date: "{{ day.created_at__date|date:'M d' }}", revenue: {{ day.revenue|stringformat:"f" }} },
+        { isoDate: "{{ day.created_at__date|date:'Y-m-d' }}", revenue: {{ day.revenue|stringformat:"f" }} },
         {% endfor %}
     ];
     rawData.reverse();
-    
-    var labels = rawData.map(function(item) { return item.date; });
+
+    var DAY_ABBR = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+    var MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+    // Build labels: Chart.js supports array labels for multi-line ticks
+    var labels = rawData.map(function(item, i) {
+        var d = new Date(item.isoDate + 'T00:00:00');
+        var dayAbbr = DAY_ABBR[d.getDay()];
+        var dayNum  = d.getDate();
+        var isMonthStart = dayNum === 1;
+
+        // First line: day abbr  |  Second line: day number or "MMM 1" on month-start
+        if (isMonthStart) {
+            return [dayAbbr, MONTH_ABBR[d.getMonth()]];
+        }
+        return [dayAbbr, String(dayNum)];
+    });
+
     var data = rawData.map(function(item) { return item.revenue; });
     
     var salesChart = new Chart(ctx, {
@@ -416,7 +432,14 @@ document.addEventListener("DOMContentLoaded", function() {
                 backgroundColor: 'rgba(54, 162, 235, 0.1)',
                 borderColor: 'rgba(54, 162, 235, 1)',
                 borderWidth: 2,
-                pointBackgroundColor: 'rgba(54, 162, 235, 1)',
+                pointBackgroundColor: rawData.map(function(item) {
+                    var d = new Date(item.isoDate + 'T00:00:00');
+                    return d.getDate() === 1 ? 'rgba(255, 99, 132, 1)' : 'rgba(54, 162, 235, 1)';
+                }),
+                pointRadius: rawData.map(function(item) {
+                    var d = new Date(item.isoDate + 'T00:00:00');
+                    return d.getDate() === 1 ? 5 : 3;
+                }),
                 fill: true,
                 tension: 0.3
             }]
@@ -425,6 +448,30 @@ document.addEventListener("DOMContentLoaded", function() {
             responsive: true,
             maintainAspectRatio: false,
             scales: {
+                x: {
+                    ticks: {
+                        font: function(ctx) {
+                            // Bold the month label (second line when day==1)
+                            return { size: 11 };
+                        },
+                        color: function(ctx) {
+                            // Make month-start labels stand out
+                            if (!rawData[ctx.index]) return '#666';
+                            var d = new Date(rawData[ctx.index].isoDate + 'T00:00:00');
+                            return d.getDate() === 1 ? '#e74c3c' : '#555';
+                        },
+                        maxRotation: 0,
+                        minRotation: 0,
+                        autoSkip: false
+                    },
+                    grid: {
+                        color: function(ctx) {
+                            if (!rawData[ctx.index]) return 'rgba(0,0,0,0.05)';
+                            var d = new Date(rawData[ctx.index].isoDate + 'T00:00:00');
+                            return d.getDate() === 1 ? 'rgba(231, 76, 60, 0.3)' : 'rgba(0,0,0,0.05)';
+                        }
+                    }
+                },
                 y: {
                     beginAtZero: true,
                     ticks: {
@@ -440,8 +487,15 @@ document.addEventListener("DOMContentLoaded", function() {
                 },
                 tooltip: {
                     callbacks: {
+                        title: function(items) {
+                            var idx = items[0].dataIndex;
+                            if (!rawData[idx]) return '';
+                            var d = new Date(rawData[idx].isoDate + 'T00:00:00');
+                            var days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+                            return days[d.getDay()] + ', ' + MONTH_ABBR[d.getMonth()] + ' ' + d.getDate() + ' ' + d.getFullYear();
+                        },
                         label: function(context) {
-                            return '{{ currency_symbol }}' + context.parsed.y.toLocaleString();
+                            return ' Revenue: {{ currency_symbol }}' + context.parsed.y.toLocaleString();
                         }
                     }
                 }
