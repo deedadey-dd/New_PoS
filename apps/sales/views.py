@@ -1811,13 +1811,41 @@ class ShopSalesReportView(LoginRequiredMixin, View):
         context['all_products_total_qty'] = sum(p['qty_sold'] or 0 for p in all_products)
         context['all_products_total_revenue'] = sum(p['revenue'] or 0 for p in all_products)
         
-        # Sales by day - always show
-        context['sales_by_day'] = Sale.objects.filter(sales_filter).values(
+        hide_zero_sales = request.GET.get('hide_zero_sales') == 'true'
+        context['hide_zero_sales'] = hide_zero_sales
+
+        from decimal import Decimal
+        # Get raw sales by day from DB
+        raw_sales_by_day = Sale.objects.filter(sales_filter).values(
             'created_at__date'
         ).annotate(
             revenue=Sum('total'),
             count=Count('id')
-        ).order_by('-created_at__date')[:30]
+        ).order_by('created_at__date')
+        
+        if hide_zero_sales:
+            sales_by_day = list(raw_sales_by_day)
+        else:
+            # Build dictionary for quick lookup
+            sales_dict = {item['created_at__date']: item for item in raw_sales_by_day}
+            
+            # Generate continuous days for the selected range
+            sales_by_day = []
+            current_date = date_from
+            while current_date <= date_to:
+                if current_date in sales_dict:
+                    sales_by_day.append(sales_dict[current_date])
+                else:
+                    sales_by_day.append({
+                        'created_at__date': current_date,
+                        'revenue': Decimal('0'),
+                        'count': 0
+                    })
+                current_date += timedelta(days=1)
+            
+        # Reverse so newest is first for the table (chart in JS will reverse it back)
+        sales_by_day.reverse()
+        context['sales_by_day'] = sales_by_day
         
         # Price history for this shop
         from apps.inventory.models import ShopPrice
