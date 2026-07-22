@@ -404,6 +404,27 @@ class ECashLedgerView(LoginRequiredMixin, SortableMixin, ListView):
         context['max_amount'] = self.request.GET.get('max_amount', '')
         context['selected_shop'] = self.request.GET.get('shop', '')
         context['selected_provider'] = self.request.GET.get('provider_config', '')
+        
+        # Build a map of Sale PK -> sale_number for all Sale-type ledger entries on this page
+        from apps.sales.models import Sale
+        page_transactions = context.get('transactions', context.get('object_list', []))
+        sale_pks = [
+            tx.reference_id for tx in page_transactions
+            if tx.reference_type == 'Sale' and tx.reference_id
+        ]
+        sale_number_map = {}
+        if sale_pks:
+            for sale in Sale.objects.filter(
+                tenant=self.request.user.tenant,
+                pk__in=sale_pks
+            ).only('pk', 'sale_number'):
+                sale_number_map[sale.pk] = sale.sale_number
+        context['sale_number_map'] = sale_number_map
+        
+        # Attach raw metadata dict to each transaction for json_script use in the template
+        for tx in page_transactions:
+            tx.metadata_for_template = tx.metadata if tx.metadata else None
+        
         return context
 
 

@@ -75,7 +75,8 @@ class ProductForm(forms.ModelForm):
             return image
         
         # If it's False (clear checkbox), or an existing unchanged file, skip
-        if image is False or not hasattr(image, 'read'):
+        from django.core.files.uploadedfile import UploadedFile
+        if image is False or not isinstance(image, UploadedFile):
             return image
         
         try:

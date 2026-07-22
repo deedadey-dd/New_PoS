@@ -240,7 +240,6 @@ class ECashLedger(TenantModel):
         help_text="Payment provider used"
     )
     
-    # Shop-level tracking (added for shop-specific e-cash withdrawals)
     shop = models.ForeignKey(
         Location,
         on_delete=models.SET_NULL,
@@ -248,6 +247,11 @@ class ECashLedger(TenantModel):
         blank=True,
         related_name='ecash_transactions',
         help_text="Shop where this e-cash transaction occurred"
+    )
+    metadata = models.JSONField(
+        blank=True, 
+        null=True, 
+        help_text="Raw response data from the payment provider"
     )
     
     # Audit
@@ -306,7 +310,7 @@ class ECashLedger(TenantModel):
         return result['total'] or Decimal('0')
     
     @classmethod
-    def record_payment(cls, tenant, amount, sale=None, paystack_ref='', user=None, notes='', shop=None, provider_config=None):
+    def record_payment(cls, tenant, amount, sale=None, paystack_ref='', user=None, notes='', shop=None, provider_config=None, metadata=None):
         """Record an e-cash payment from a sale or payment on account."""
         # Determine reference info based on sale presence
         if sale:
@@ -334,7 +338,8 @@ class ECashLedger(TenantModel):
             provider=provider,
             created_by=user,
             notes=notes if notes else auto_notes,
-            shop=shop
+            shop=shop,
+            metadata=metadata
         )
     
     @classmethod

@@ -845,6 +845,18 @@ def api_sale_detail(request, pk_or_number):
 
     dispatch_history = list(dispatch_events.values())
 
+    ecash_metadata = None
+    if sale.payment_method == 'ECASH':
+        from apps.payments.models import ECashLedger
+        ecash_tx = ECashLedger.objects.filter(
+            tenant=sale.tenant,
+            reference_type='Sale',
+            reference_id=sale.pk,
+            transaction_type='PAYMENT'
+        ).first()
+        if ecash_tx and ecash_tx.metadata:
+            ecash_metadata = ecash_tx.metadata
+
     data = {
         'sale_number': sale.sale_number,
         'created_at': sale.created_at.strftime('%b %d, %Y %H:%M'),
@@ -871,6 +883,7 @@ def api_sale_detail(request, pk_or_number):
         'allow_partial_dispatch': sale.shop.allow_partial_dispatch if sale.shop else True,
         'items': items,
         'dispatch_history': dispatch_history,
+        'ecash_metadata': ecash_metadata,
     }
     return JsonResponse(data)
 
@@ -2169,7 +2182,8 @@ def verify_ecash_payment(request):
                     paystack_ref=reference,
                     user=user,
                     notes=f"Payment on account for {customer.name} via {provider.provider_name}",
-                    provider_config=provider.settings if hasattr(provider, 'settings') else None
+                    provider_config=provider.settings if hasattr(provider, 'settings') else None,
+                    metadata=result.data
                 )
             
             return JsonResponse({
@@ -2216,7 +2230,8 @@ def verify_ecash_payment(request):
                 paystack_ref=reference,
                 user=user,
                 notes=f"Sale payment via {provider.provider_name}",
-                provider_config=provider.settings if hasattr(provider, 'settings') else None
+                provider_config=provider.settings if hasattr(provider, 'settings') else None,
+                metadata=result.data
             )
 
             # Notify Shop Manager if using strict sales workflow

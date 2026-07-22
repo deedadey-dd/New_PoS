@@ -1711,14 +1711,14 @@ class ShopEcashHistoryView(LoginRequiredMixin, TemplateView):
                 shop=shop,
                 status='COMPLETED',
                 payment_method='ECASH'
-            )
+            ).select_related('shop', 'customer')
 
             cts = CustomerTransaction.objects.filter(
                 tenant=tenant,
                 performed_by__location=shop,
                 transaction_type='CREDIT',
                 description__icontains='ECASH'
-            )
+            ).select_related('performed_by__location', 'customer')
 
             # Apply filters
             date_from = self.request.GET.get('date_from')
@@ -1949,8 +1949,8 @@ class ShopMomoHistoryView(LoginRequiredMixin, TemplateView):
         from decimal import Decimal
         from apps.accounting.models import DigitalFundWithdrawal
 
-        sales = Sale.objects.filter(tenant=tenant, status='COMPLETED', payment_method='MOMO')
-        cts = CustomerTransaction.objects.filter(tenant=tenant, transaction_type='CREDIT', description__icontains='MOMO')
+        sales = Sale.objects.filter(tenant=tenant, status='COMPLETED', payment_method='MOMO').select_related('shop', 'customer')
+        cts = CustomerTransaction.objects.filter(tenant=tenant, transaction_type='CREDIT', description__icontains='MOMO').select_related('performed_by__location', 'customer')
         
         if shop:
             sales = sales.filter(shop=shop)

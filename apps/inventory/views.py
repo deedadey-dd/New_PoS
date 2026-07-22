@@ -1105,10 +1105,23 @@ class StockOverviewView(LoginRequiredMixin, View):
             ).values_list('product_id', flat=True))
         
         # Low stock alerts
+        from django.db.models import Subquery, OuterRef, Sum
+        from django.db.models.functions import Coalesce
+        from decimal import Decimal
+
+        stock_subquery = InventoryLedger.objects.filter(
+            product=OuterRef('pk'),
+            tenant=tenant
+        ).order_by().values('product').annotate(
+            total=Sum('quantity')
+        ).values('total')
+
         low_stock_list = []
-        products = Product.objects.filter(tenant=tenant, is_active=True)
+        products = Product.objects.filter(tenant=tenant, is_active=True).annotate(
+            annotated_total_stock=Coalesce(Subquery(stock_subquery), Decimal('0.00'))
+        )
         for product in products:
-            total = product.get_total_stock()
+            total = product.annotated_total_stock
             if total <= product.reorder_level:
                 low_stock_list.append({
                     'product': product,
@@ -1619,9 +1632,10 @@ class ShopPriceListView(LoginRequiredMixin, View):
         # Build product list with price status
         products_with_status = []
         for product in products:
-            shop_price = product.shop_prices.filter(
-                location=shop, is_active=True
-            ).first()
+            shop_price = next(
+                (sp for sp in product.shop_prices.all() if sp.location_id == shop.id and sp.is_active), 
+                None
+            )
             
             products_with_status.append({
                 'product': product,
