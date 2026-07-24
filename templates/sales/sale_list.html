@@ -82,7 +82,7 @@
                     {% for att in attendants %}
                     <option value="{{ att.pk }}"
                         {% if selected_attendant == att.pk|stringformat:"i" %}selected{% endif %}>
-                        {{ att.get_full_name|default:att.email|truncatechars:20 }}
+                        {% if att %}{{ att.get_full_name|default:att.email|truncatechars:20 }}{% else %}-{% endif %}
                     </option>
                     {% endfor %}
                 </select>
@@ -154,7 +154,7 @@
                                 </span>
                             {% endif %}
                         </td>
-                        <td>{{ sale.attendant.get_full_name|default:sale.attendant.email }}</td>
+                        <td>{% if sale.attendant %}{{ sale.attendant.get_full_name|default:sale.attendant.email }}{% else %}-{% endif %}</td>
                         <td>
                             {% if sale.payment_method == 'CASH' %}
                             <span class="badge bg-success">Cash</span>

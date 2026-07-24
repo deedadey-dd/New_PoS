@@ -30,7 +30,7 @@ class Command(BaseCommand):
 
         # Find all completed SaleItems with unit_cost = 0
         qs = SaleItem.objects.filter(
-            sale__status='COMPLETED',
+            sale__status__in=['COMPLETED', 'PENDING_DISPATCH'],
             unit_cost=Decimal('0'),
         ).select_related('sale__shop', 'product', 'batch')
 

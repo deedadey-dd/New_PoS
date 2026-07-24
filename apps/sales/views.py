@@ -290,7 +290,7 @@ class ShiftCloseView(LoginRequiredMixin, View):
         
         # Calculate sales breakdown
         from django.db.models import Sum, Q
-        sales_qs = shift.sales.filter(status='COMPLETED')
+        sales_qs = shift.sales.filter(status__in=['COMPLETED', 'PENDING_DISPATCH'])
         
         cash_sales = sales_qs.filter(payment_method='CASH').aggregate(
             total=Sum('total'))['total'] or Decimal('0')
@@ -501,7 +501,7 @@ def api_shift_detail(request, pk):
         # Calculate sales breakdown
         from django.db.models import Sum
         from decimal import Decimal
-        sales_qs = shift.sales.filter(status='COMPLETED')
+        sales_qs = shift.sales.filter(status__in=['COMPLETED', 'PENDING_DISPATCH'])
         ecash_sales = sales_qs.filter(payment_method='ECASH').aggregate(total=Sum('total'))['total'] or Decimal('0')
         momo_sales = sales_qs.filter(payment_method='MOMO').aggregate(total=Sum('total'))['total'] or Decimal('0')
         credit_sales = sales_qs.filter(payment_method='CREDIT').aggregate(total=Sum('total'))['total'] or Decimal('0')
@@ -615,10 +615,10 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
         if dispatch_status == 'pending':
             from django.db.models import Q
             queryset = queryset.filter(
-                Q(status='PENDING_DISPATCH') | Q(status='COMPLETED', is_dispatched=False)
+                Q(status='PENDING_DISPATCH') | Q(status__in=['COMPLETED', 'PENDING_DISPATCH'], is_dispatched=False)
             )
         elif dispatch_status in ['dispatched', 'completed']:
-            queryset = queryset.filter(status='COMPLETED', is_dispatched=True)
+            queryset = queryset.filter(status__in=['COMPLETED', 'PENDING_DISPATCH'], is_dispatched=True)
             
         # Text search (Invoice Number, Customer Name, Customer Phone)
         q = self.request.GET.get('q', '').strip()

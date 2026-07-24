@@ -55,7 +55,7 @@
                             <div style="min-width: 0; flex: 1;">
                                 <h5 class="mb-0 fw-bold text-white text-break">{{ post.title }}</h5>
                                 <div class="small mt-1 text-truncate-multiline" style="color: rgba(255,255,255,0.5); word-wrap: break-word;">
-                                    <i class="bi bi-person me-1"></i>{{ post.created_by.get_full_name|default:post.created_by.email }}
+                                    <i class="bi bi-person me-1"></i>{% if post.created_by %}{{ post.created_by.get_full_name|default:post.created_by.email }}{% else %}-{% endif %}
                                     <span class="mx-1">&bull;</span>
                                     <i class="bi bi-clock me-1"></i>{{ post.created_at|date:"M d, Y h:i A" }}
                                     {% if post.post_type == 'SYSTEM_UPDATE' %}

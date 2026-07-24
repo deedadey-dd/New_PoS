@@ -185,7 +185,7 @@ class ProductProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
                 date_label = 'Last 30 Days'
         
         # Build query
-        filters = Q(sale__tenant=tenant, sale__status='COMPLETED')
+        filters = Q(sale__tenant=tenant, sale__status__in=['COMPLETED', 'PENDING_DISPATCH'])
         if date_from:
             filters &= Q(sale__created_at__date__gte=date_from)
         if date_to:
@@ -353,7 +353,7 @@ class LocationProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
         
         for shop in shops:
             shop_sales = Sale.objects.filter(
-                tenant=tenant, shop=shop, status='COMPLETED'
+                tenant=tenant, shop=shop, status__in=['COMPLETED', 'PENDING_DISPATCH']
             )
             if date_from:
                 shop_sales = shop_sales.filter(created_at__date__gte=date_from)
@@ -519,7 +519,7 @@ class ManagerProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
         category_id = request.GET.get('category')
         
         # Get all users who have made sales in the period
-        base_sales_filter = Q(tenant=tenant, status='COMPLETED')
+        base_sales_filter = Q(tenant=tenant, status__in=['COMPLETED', 'PENDING_DISPATCH'])
         if date_from:
             base_sales_filter &= Q(created_at__date__gte=date_from)
         if date_to:
@@ -733,7 +733,7 @@ class ProductProfitLossExportView(LoginRequiredMixin, AuditAccessMixin, View):
             else:
                 date_from = today - timedelta(days=30)
 
-        filters = Q(sale__tenant=tenant, sale__status='COMPLETED')
+        filters = Q(sale__tenant=tenant, sale__status__in=['COMPLETED', 'PENDING_DISPATCH'])
         if date_from:
             filters &= Q(sale__created_at__date__gte=date_from)
         if date_to:
@@ -841,7 +841,7 @@ class LocationProfitLossExportView(LoginRequiredMixin, AuditAccessMixin, View):
         category_id = request.GET.get('category')
 
         for shop in shops:
-            shop_sales = Sale.objects.filter(tenant=tenant, shop=shop, status='COMPLETED')
+            shop_sales = Sale.objects.filter(tenant=tenant, shop=shop, status__in=['COMPLETED', 'PENDING_DISPATCH'])
             if date_from:
                 shop_sales = shop_sales.filter(created_at__date__gte=date_from)
             if date_to:
@@ -940,7 +940,7 @@ class ManagerProfitLossExportView(LoginRequiredMixin, AuditAccessMixin, View):
         q = request.GET.get('q')
         category_id = request.GET.get('category')
 
-        base_sales_filter = Q(tenant=tenant, status='COMPLETED')
+        base_sales_filter = Q(tenant=tenant, status__in=['COMPLETED', 'PENDING_DISPATCH'])
         if date_from:
             base_sales_filter &= Q(created_at__date__gte=date_from)
         if date_to:

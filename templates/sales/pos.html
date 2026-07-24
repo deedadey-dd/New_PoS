@@ -896,7 +896,7 @@
             <button class="btn btn-outline-warning btn-sm" id="btn-pending-ecash" style="display: none;" onclick="showPendingEcashModal()" title="Pending Digital Payments">
                 <i class="bi bi-hourglass-split"></i> Pending <span id="pending-ecash-badge" class="badge bg-danger ms-1">0</span>
             </button>
-            <span class="text-light">{{ user.get_full_name|default:user.email }}</span>
+            <span class="text-light">{% if user %}{{ user.get_full_name|default:user.email }}{% else %}-{% endif %}</span>
             <a href="{% url 'core:logout' %}" class="btn btn-outline-light btn-sm">
                 <i class="bi bi-box-arrow-right"></i>
             </a>

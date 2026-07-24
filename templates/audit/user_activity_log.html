@@ -32,7 +32,7 @@
                 <select name="user" class="form-select form-select-sm" onchange="this.form.submit()">
                     <option value="">All Users</option>
                     {% for u in users %}
-                    <option value="{{ u.id }}" {% if filters.user == u.id|stringformat:"i" %}selected{% endif %}>{{ u.get_full_name|default:u.email }}</option>
+                    <option value="{{ u.id }}" {% if filters.user == u.id|stringformat:"i" %}selected{% endif %}>{% if u %}{{ u.get_full_name|default:u.email }}{% else %}-{% endif %}</option>
                     {% endfor %}
                 </select>
             </div>

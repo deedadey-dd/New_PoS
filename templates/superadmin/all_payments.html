@@ -114,7 +114,7 @@
                             {% for m in managers %}
                             <option value="{{ m.pk }}"
                                 {% if request.GET.recorded_by == m.pk|stringformat:"i" %}selected{% endif %}>
-                                {{ m.get_full_name|default:m.email }}</option>
+                                {% if m %}{{ m.get_full_name|default:m.email }}{% else %}-{% endif %}</option>
                             {% endfor %}
                         </select>
                     </div>

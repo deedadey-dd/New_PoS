@@ -260,7 +260,7 @@
                                     </div>
                                     <div>
                                         <a href="javascript:void(0)" class="text-decoration-none summary-link" data-url="{% url 'core:user_summary' mgr.user.pk %}">
-                                            <strong>{{ mgr.user.get_full_name|default:mgr.user.email }}</strong>
+                                            <strong>{% if mgr.user %}{{ mgr.user.get_full_name|default:mgr.user.email }}{% else %}-{% endif %}</strong>
                                         </a>
                                         <br><small class="text-muted">{{ mgr.user.email }}</small>
                                     </div>

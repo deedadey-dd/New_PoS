@@ -56,14 +56,14 @@ class CashTransferForm(forms.ModelForm):
                     cash_sales = Sale.objects.filter(
                         tenant=user.tenant,
                         shift=open_shift,
-                        status='COMPLETED',
+                        status__in=['COMPLETED', 'PENDING_DISPATCH'],
                         payment_method='CASH'
                     ).aggregate(total=Sum('total'))['total'] or Decimal('0')
                     # Cash portion from mixed payments (partial cash + credit)
                     mixed_cash = Sale.objects.filter(
                         tenant=user.tenant,
                         shift=open_shift,
-                        status='COMPLETED',
+                        status__in=['COMPLETED', 'PENDING_DISPATCH'],
                         payment_method='MIXED'
                     ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
                     shift_cash = cash_sales + mixed_cash
@@ -74,14 +74,14 @@ class CashTransferForm(forms.ModelForm):
                     tenant=user.tenant,
                     attendant=user,
                     shift__isnull=True,
-                    status='COMPLETED',
+                    status__in=['COMPLETED', 'PENDING_DISPATCH'],
                     payment_method='CASH'
                 ).aggregate(total=Sum('total'))['total'] or Decimal('0')
                 shiftless_mixed = Sale.objects.filter(
                     tenant=user.tenant,
                     attendant=user,
                     shift__isnull=True,
-                    status='COMPLETED',
+                    status__in=['COMPLETED', 'PENDING_DISPATCH'],
                     payment_method='MIXED'
                 ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
                 shiftless_cash = shiftless_cash_sales + shiftless_mixed
@@ -344,7 +344,7 @@ class BankTransferForm(forms.ModelForm):
                 withdrawn = ECashWithdrawal.objects.filter(
                     tenant=self.user.tenant, 
                     provider_config=p, 
-                    status='COMPLETED'
+                    status__in=['COMPLETED', 'PENDING_DISPATCH']
                 ).aggregate(Sum('amount'))['amount__sum'] or Decimal('0')
                 
                 # Subtract bank transfers for this platform

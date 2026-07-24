@@ -105,7 +105,7 @@
                         {% if adj.quantity > 0 %}+{% endif %}{{ adj.quantity|floatformat:"0g" }}
                     </td>
                     <td><small class="text-muted" title="{{ adj.reason }}">{{ adj.reason|truncatechars:30 }}</small></td>
-                    <td><small>{% if adj.requested_by %}{{ adj.requested_by.get_full_name|default:adj.requested_by.email }}{% else %}-{% endif %}</small></td>
+                    <td><small>{% if adj.requested_by %}{% if adj.requested_by %}{{ adj.requested_by.get_full_name|default:adj.requested_by.email }}{% else %}-{% endif %}{% else %}-{% endif %}</small></td>
                     <td>
                         {% if adj.status == 'PENDING' %}
                         <span class="badge bg-warning text-dark"><i class="bi bi-clock me-1"></i>Pending</span>
@@ -118,7 +118,7 @@
                     <td>
                         <small>
                             {% if adj.reviewed_by %}
-                            {{ adj.reviewed_by.get_full_name|default:adj.reviewed_by.email }}
+                            {% if adj.reviewed_by %}{{ adj.reviewed_by.get_full_name|default:adj.reviewed_by.email }}{% else %}-{% endif %}
                             <br><span class="text-muted">{{ adj.reviewed_at|date:"M d, H:i" }}</span>
                             {% else %}-{% endif %}
                         </small>
@@ -179,7 +179,7 @@
                     <strong>Type:</strong> {{ adj.get_adjustment_type_display }}<br>
                     <strong>Quantity:</strong> <span class="{% if adj.quantity > 0 %}text-success{% else %}text-danger{% endif %}">{% if adj.quantity > 0 %}+{% endif %}{{ adj.quantity|floatformat:"0g" }}</span><br>
                     <strong>Reason:</strong> {{ adj.reason }}<br>
-                    <strong>Requested by:</strong> {% if adj.requested_by %}{{ adj.requested_by.get_full_name|default:adj.requested_by.email }}{% endif %}<br>
+                    <strong>Requested by:</strong> {% if adj.requested_by %}{% if adj.requested_by %}{{ adj.requested_by.get_full_name|default:adj.requested_by.email }}{% else %}-{% endif %}{% endif %}<br>
                     <strong>Date:</strong> {{ adj.created_at|date:"M d, Y H:i" }}
                 </div>
                 <form method="post" action="{% url 'inventory:review_adjustment' adj.pk %}">

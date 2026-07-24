@@ -103,10 +103,10 @@
     </div>
 
     <div class="receipt-info" style="border-top: 1px dashed #000; padding-top: 10px;">
-        <p><strong>From:</strong> {{ transfer.from_user.get_full_name|default:transfer.from_user.email }}</p>
+        <p><strong>From:</strong> {% if transfer.from_user %}{{ transfer.from_user.get_full_name|default:transfer.from_user.email }}{% else %}-{% endif %}</p>
         {% if transfer.from_location %}<p><small>Loc: {{ transfer.from_location.name }}</small></p>{% endif %}
         
-        <p style="margin-top: 8px;"><strong>To:</strong> {{ transfer.to_user.get_full_name|default:transfer.to_user.email }}</p>
+        <p style="margin-top: 8px;"><strong>To:</strong> {% if transfer.to_user %}{{ transfer.to_user.get_full_name|default:transfer.to_user.email }}{% else %}-{% endif %}</p>
         {% if transfer.to_location %}<p><small>Loc: {{ transfer.to_location.name }}</small></p>{% endif %}
     </div>
 
@@ -135,12 +135,12 @@
         <div class="signature-box">
             <div class="signature-line"></div>
             Sender Signature<br>
-            <small>{{ transfer.from_user.get_full_name|default:transfer.from_user.email }}</small>
+            <small>{% if transfer.from_user %}{{ transfer.from_user.get_full_name|default:transfer.from_user.email }}{% else %}-{% endif %}</small>
         </div>
         <div class="signature-box">
             <div class="signature-line"></div>
             Receiver Signature<br>
-            <small>{{ transfer.to_user.get_full_name|default:transfer.to_user.email }}</small>
+            <small>{% if transfer.to_user %}{{ transfer.to_user.get_full_name|default:transfer.to_user.email }}{% else %}-{% endif %}</small>
         </div>
     </div>
 

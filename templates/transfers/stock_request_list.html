@@ -63,7 +63,7 @@
                     <select name="requested_by" class="form-select form-select-sm">
                         <option value="">All Users</option>
                         {% for u in all_requestors %}
-                        <option value="{{ u.pk }}" {% if filter_requested_by == u.pk|stringformat:"i" %}selected{% endif %}>{{ u.get_full_name|default:u.email }}</option>
+                        <option value="{{ u.pk }}" {% if filter_requested_by == u.pk|stringformat:"i" %}selected{% endif %}>{% if u %}{{ u.get_full_name|default:u.email }}{% else %}-{% endif %}</option>
                         {% endfor %}
                     </select>
                 </div>

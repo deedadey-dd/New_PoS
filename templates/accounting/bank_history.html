@@ -75,7 +75,7 @@
                     <option value="">All Users</option>
                     {% for u in users %}
                     <option value="{{ u.pk }}" {% if selected_user == u.pk|stringformat:"i" %}selected{% endif %}>
-                        {{ u.get_full_name|default:u.email }}
+                        {% if u %}{{ u.get_full_name|default:u.email }}{% else %}-{% endif %}
                     </option>
                     {% endfor %}
                 </select>
@@ -136,7 +136,7 @@
                             <div class="fw-medium">{{ transfer.created_at|date:"M d, Y" }}</div>
                             <div class="text-muted small">{{ transfer.created_at|date:"H:i" }}</div>
                         </td>
-                        <td>{{ transfer.accountant.get_full_name|default:transfer.accountant.email }}</td>
+                        <td>{% if transfer.accountant %}{{ transfer.accountant.get_full_name|default:transfer.accountant.email }}{% else %}-{% endif %}</td>
                         <td>
                             {% if transfer.fund_source == 'CASH' %}
                                 <span class="badge bg-success"><i class="bi bi-cash me-1"></i>Cash</span>

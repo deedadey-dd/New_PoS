@@ -80,7 +80,7 @@
             </tr>
             <tr>
                 <td>Attendant:</td>
-                <td class="text-right">{{ shift.attendant.get_full_name|default:shift.attendant.email }}</td>
+                <td class="text-right">{% if shift.attendant %}{{ shift.attendant.get_full_name|default:shift.attendant.email }}{% else %}-{% endif %}</td>
             </tr>
             <tr>
                 <td>Opened:</td>
@@ -140,7 +140,7 @@
         <div style="width: 45%; text-align: center; font-size: 12px;">
             <div style="border-bottom: 1px solid #000; height: 40px; margin-bottom: 5px;"></div>
             Attendant Signature<br>
-            <small>{{ shift.attendant.get_full_name|default:shift.attendant.email }}</small>
+            <small>{% if shift.attendant %}{{ shift.attendant.get_full_name|default:shift.attendant.email }}{% else %}-{% endif %}</small>
         </div>
         <div style="width: 45%; text-align: center; font-size: 12px;">
             <div style="border-bottom: 1px solid #000; height: 40px; margin-bottom: 5px;"></div>

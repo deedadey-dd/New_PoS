@@ -407,7 +407,7 @@ class DashboardView(LoginRequiredMixin, View):
                 context['recent_dispatches'] = Sale.objects.filter(
                     tenant=user.tenant,
                     shop=user.location,
-                    status='COMPLETED'
+                    status__in=['COMPLETED', 'PENDING_DISPATCH']
                 ).select_related('customer', 'attendant', 'dispatched_by').order_by('-created_at')[:10]
 
                 # Recent Sales (Any status except pending)
@@ -638,7 +638,7 @@ class AuditorDashboardView(LoginRequiredMixin, View):
             return q
         
         # ============ FINANCIAL SUMMARY ============
-        sales_filter = Q(tenant=tenant, status='COMPLETED') & get_date_filter()
+        sales_filter = Q(tenant=tenant, status__in=['COMPLETED', 'PENDING_DISPATCH']) & get_date_filter()
         
         sales_data = Sale.objects.filter(sales_filter).aggregate(
             total_revenue=Sum('total'),
@@ -770,7 +770,7 @@ class AuditorDashboardView(LoginRequiredMixin, View):
         ).order_by('-revenue')
         
         # ============ TOP PRODUCTS ============
-        product_sales_filter = Q(sale__tenant=tenant, sale__status='COMPLETED') & get_date_filter('sale__created_at__date')
+        product_sales_filter = Q(sale__tenant=tenant, sale__status__in=['COMPLETED', 'PENDING_DISPATCH']) & get_date_filter('sale__created_at__date')
         context['top_products'] = SaleItem.objects.filter(
             product_sales_filter
         ).values('product__name').annotate(
@@ -806,7 +806,7 @@ class AuditorDashboardView(LoginRequiredMixin, View):
         location_summary = []
         for shop in shops:
             shop_sales = Sale.objects.filter(
-                Q(tenant=tenant, shop=shop, status='COMPLETED') & get_date_filter()
+                Q(tenant=tenant, shop=shop, status__in=['COMPLETED', 'PENDING_DISPATCH']) & get_date_filter()
             )
             
             sales_agg = shop_sales.aggregate(
@@ -875,7 +875,7 @@ class AuditorDashboardView(LoginRequiredMixin, View):
         sales_by_user = []
         for u in shop_users:
             user_sales = Sale.objects.filter(
-                Q(tenant=tenant, attendant=u, status='COMPLETED') & get_date_filter()
+                Q(tenant=tenant, attendant=u, status__in=['COMPLETED', 'PENDING_DISPATCH']) & get_date_filter()
             )
             
             user_agg = user_sales.aggregate(
@@ -1195,7 +1195,7 @@ class LocationSummaryModalView(LoginRequiredMixin, View):
             monthly_sales = Sale.objects.filter(
                 tenant=request.user.tenant,
                 shop=location,
-                status='COMPLETED',
+                status__in=['COMPLETED', 'PENDING_DISPATCH'],
                 created_at__year=current_year,
                 created_at__month=current_month
             )
@@ -1207,7 +1207,7 @@ class LocationSummaryModalView(LoginRequiredMixin, View):
             context['top_products'] = SaleItem.objects.filter(
                 sale__tenant=request.user.tenant,
                 sale__shop=location,
-                sale__status='COMPLETED',
+                sale__status__in=['COMPLETED', 'PENDING_DISPATCH'],
                 sale__created_at__year=current_year,
                 sale__created_at__month=current_month
             ).values('product__name').annotate(
@@ -1217,7 +1217,7 @@ class LocationSummaryModalView(LoginRequiredMixin, View):
 
             # --- Financial Balances (All Time) ---
             # 1. Cash on Hand
-            all_time_sales = Sale.objects.filter(tenant=request.user.tenant, shop=location, status='COMPLETED')
+            all_time_sales = Sale.objects.filter(tenant=request.user.tenant, shop=location, status__in=['COMPLETED', 'PENDING_DISPATCH'])
             all_sales_agg = all_time_sales.aggregate(
                 cash_sales=Sum('total', filter=Q(payment_method='CASH')),
                 mixed_paid=Sum('amount_paid', filter=Q(payment_method='MIXED')),
@@ -1316,7 +1316,7 @@ class UserSummaryModalView(LoginRequiredMixin, View):
         monthly_sales = Sale.objects.filter(
             tenant=request.user.tenant,
             attendant=user_obj,
-            status='COMPLETED',
+            status__in=['COMPLETED', 'PENDING_DISPATCH'],
             created_at__year=current_year,
             created_at__month=current_month
         ).aggregate(total=Sum('total'))['total'] or Decimal('0')

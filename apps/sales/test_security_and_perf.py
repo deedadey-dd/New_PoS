@@ -80,7 +80,7 @@ class AnonymousUserGuardTests(TestCase):
         self.assertIn("login", response["Location"].lower())
 
     def test_reports_eod_details_anonymous_redirects(self):
-        response = self.client.get(reverse("reports:end_of_day_details"))
+        response = self.client.get(reverse("reports:end_of_day_summary"))
         self.assertEqual(response.status_code, 302)
         self.assertIn("login", response["Location"].lower())
 

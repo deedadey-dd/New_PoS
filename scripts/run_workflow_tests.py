@@ -27,6 +27,7 @@ from apps.payments.test_ecash_ledger import AccountantECashPaymentTests
 from apps.accounting.tests.test_cashier_bank_transfer import CashierBankTransferTests
 from apps.accounting.tests.test_digital_confirmation import DigitalConfirmationPendingDispatchTests
 from apps.sales.test_partial_dispatch import PartialDispatchTests
+from apps.accounting.tests.test_digital_withdrawal_guard import DigitalWithdrawalGuardTests
 
 # New security & regression test suites
 from apps.sales.test_security_and_perf import (
@@ -131,8 +132,12 @@ def main():
     suite13 = unittest.TestLoader().loadTestsFromTestCase(DigitalConfirmationPendingDispatchTests)
 
     # --- Suite 14: Partial Dispatch Tests ---
-    print("[14/14] Partial Dispatch Tests (strict workflow, per-item quantities, atomic rollback)")
+    print("[14/15] Partial Dispatch Tests (strict workflow, per-item quantities, atomic rollback)")
     suite14 = unittest.TestLoader().loadTestsFromTestCase(PartialDispatchTests)
+
+    # --- Suite 15: Digital Withdrawal Guard Tests ---
+    print("[15/15] Digital Withdrawal Guard Tests (Momo & E-Cash limits)")
+    suite15 = unittest.TestLoader().loadTestsFromTestCase(DigitalWithdrawalGuardTests)
 
     suite = unittest.TestSuite([
         suite1, suite2, suite3,
@@ -140,7 +145,7 @@ def main():
         suite5, suite6, suite7,
         suite8, suite9,
         suite10a, suite10b, suite10c, suite10d,
-        suite11, suite12, suite13, suite14,
+        suite11, suite12, suite13, suite14, suite15,
     ])
 
     runner = RollbackTestRunner(verbosity=2)

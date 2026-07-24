@@ -49,7 +49,7 @@
                 <select name="attendant" class="form-select form-select-sm">
                     <option value="">All Attendants</option>
                     {% for att in attendants %}
-                    <option value="{{ att.pk }}" {% if current_attendant == att.pk|stringformat:"i" %}selected{% endif %}>{{ att.get_full_name|default:att.email }}</option>
+                    <option value="{{ att.pk }}" {% if current_attendant == att.pk|stringformat:"i" %}selected{% endif %}>{% if att %}{{ att.get_full_name|default:att.email }}{% else %}-{% endif %}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -110,7 +110,7 @@
                             {% endif %}
                         </td>
                         <td>{{ shift.shop.name }}</td>
-                        <td>{{ shift.attendant.get_full_name|default:shift.attendant.email }}</td>
+                        <td>{% if shift.attendant %}{{ shift.attendant.get_full_name|default:shift.attendant.email }}{% else %}-{% endif %}</td>
                         <td class="text-end">
                             {% if shift.status == 'CLOSED' %}
                                 {{ current_tenant.currency_symbol|default:'$' }}{{ shift.closing_cash|floatformat:"2g" }}

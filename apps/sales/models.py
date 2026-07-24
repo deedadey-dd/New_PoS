@@ -127,10 +127,10 @@ class Shift(TenantModel):
     def total_sales(self):
         """Total cash sales during this shift."""
         cash_total = self.sales.filter(
-            status='COMPLETED', payment_method='CASH'
+            status__in=['COMPLETED', 'PENDING_DISPATCH'], payment_method='CASH'
         ).aggregate(t=Sum('total'))['t'] or Decimal('0')
         mixed_total = self.sales.filter(
-            status='COMPLETED', payment_method='MIXED'
+            status__in=['COMPLETED', 'PENDING_DISPATCH'], payment_method='MIXED'
         ).aggregate(t=Sum('amount_paid'))['t'] or Decimal('0')
         return cash_total + mixed_total
         
@@ -570,8 +570,8 @@ class Sale(TenantModel):
         if self.status == 'VOIDED':
             raise ValidationError("Sale is already voided.")
         
-        # If completed, reverse inventory
-        if self.status == 'COMPLETED':
+        # If completed or pending dispatch, reverse inventory
+        if self.status in ['COMPLETED', 'PENDING_DISPATCH']:
             for item in self.items.all():
                 InventoryLedger.objects.create(
                     tenant=self.tenant,

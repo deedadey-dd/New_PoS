@@ -13,8 +13,11 @@
             <p class="text-muted mb-0">Withdraw E-Cash collected at each shop</p>
         </div>
         <div class="d-flex align-items-center gap-3">
+            <span class="badge fs-6 text-white" style="background-color: #20c997;">
+                <i class="bi bi-wallet2 me-1"></i>Total Unconfirmed: {{ currency_symbol }}{{ total_ecash_unconfirmed|floatformat:"2g" }}
+            </span>
             <span class="badge fs-6 bg-success text-white">
-                <i class="bi bi-wallet2 me-1"></i>Total Unconfirmed: {{ currency_symbol }}{{ total_ecash|floatformat:"2g" }}
+                <i class="bi bi-bank me-1"></i>Total Available: {{ currency_symbol }}{{ total_ecash_available|floatformat:"2g" }}
             </span>
             <a href="{% url 'accounting:shop_ecash_history' %}" class="btn btn-outline-success btn-sm">
                 <i class="bi bi-clock-history me-1"></i>View History
@@ -35,37 +38,55 @@
                             </h5>
                             <p class="text-muted small mb-3">{{ item.shop.address|default:"No address" }}</p>
                         </div>
-                        {% if item.balance > 0 %}
+                        {% if item.available_balance > 0 or item.unconfirmed_balance > 0 %}
                         <span class="badge bg-success">Active</span>
                         {% endif %}
                     </div>
 
-                    <div class="mb-3">
-                        <small class="text-muted">Total E-Cash Balance</small>
-                        <h3 class="mb-2 {% if item.balance > 0 %}text-success{% else %}text-muted{% endif %}">
-                            {{ currency_symbol }}{{ item.balance|floatformat:"2g" }}
-                        </h3>
+                    <div class="row mb-2">
+                        <div class="col-6 border-end">
+                            <small class="text-muted d-block">Unconfirmed</small>
+                            <h4 class="mb-0 {% if item.unconfirmed_balance > 0 %}text-info{% else %}text-muted{% endif %}">
+                                {{ currency_symbol }}{{ item.unconfirmed_balance|floatformat:"2g" }}
+                            </h4>
+                        </div>
+                        <div class="col-6 ps-3">
+                            <small class="text-muted d-block">Available to Withdraw</small>
+                            <h4 class="mb-0 {% if item.available_balance > 0 %}text-success{% else %}text-muted{% endif %}">
+                                {{ currency_symbol }}{{ item.available_balance|floatformat:"2g" }}
+                            </h4>
+                        </div>
+                    </div>
                         {% if item.provider_balances|length > 0 %}
-                        <div class="small">
-                            {% for pb in item.provider_balances %}
-                            <div class="d-flex justify-content-between mb-1">
-                                <span class="text-muted">{{ pb.nickname }}</span>
-                                <span class="fw-bold">{{ currency_symbol }}{{ pb.balance|floatformat:"2g" }}</span>
+                        <div class="small mt-2">
+                            <div class="d-flex justify-content-between text-muted mb-1" style="font-size:0.7rem;">
+                                <span>Provider</span>
+                                <span class="d-flex gap-3"><span style="min-width:60px;text-align:right;">Unconfirmed</span><span style="min-width:60px;text-align:right;">Available</span></span>
                             </div>
+                            {% for pb in item.provider_balances %}
+                            {% if pb.balance > 0 %}
+                            <div class="d-flex justify-content-between mb-1 py-1 border-bottom">
+                                <span class="text-muted">{{ pb.nickname }}</span>
+                                <span class="d-flex gap-3">
+                                    <span class="{% if pb.unconfirmed > 0 %}text-warning fw-semibold{% else %}text-muted{% endif %}" style="min-width:60px;text-align:right;">{{ currency_symbol }}{{ pb.unconfirmed|floatformat:"2g" }}</span>
+                                    <span class="{% if pb.available > 0 %}text-success fw-bold{% else %}text-muted{% endif %}" style="min-width:60px;text-align:right;">{{ currency_symbol }}{{ pb.available|floatformat:"2g" }}</span>
+                                </span>
+                            </div>
+                            {% endif %}
                             {% endfor %}
                         </div>
                         {% endif %}
                     </div>
 
-                    {% if item.balance > 0 %}
+                    {% if item.available_balance > 0 %}
                     <form action="{% url 'accounting:shop_ecash_withdraw' item.shop.pk %}" method="post"
                         onsubmit="return confirm('Confirm withdrawal?');">
                         {% csrf_token %}
                         <div class="mb-2">
                             <select name="provider_config" id="provider_{{ item.shop.pk }}" class="form-select form-select-sm" onchange="updateMaxAmount_{{ item.shop.pk }}(this)">
                                 {% for pb in item.provider_balances %}
-                                    {% if pb.balance > 0 %}
-                                    <option value="{{ pb.id }}" data-balance="{{ pb.balance|stringformat:'f' }}">{{ pb.nickname }}</option>
+                                    {% if pb.available > 0 %}
+                                    <option value="{{ pb.id }}" data-balance="{{ pb.available|stringformat:'f' }}">{{ pb.nickname }} (Available: {{ currency_symbol }}{{ pb.available|floatformat:"2g" }})</option>
                                     {% endif %}
                                 {% endfor %}
                             </select>
@@ -81,7 +102,7 @@
                     </form>
                     <script>
                         function updateMaxAmount_{{ item.shop.pk }}(selectEl) {
-                            const maxAmt = selectEl.options[selectEl.selectedIndex].dataset.balance;
+                            const maxAmt = Math.min(parseFloat(selectEl.options[selectEl.selectedIndex].dataset.balance), parseFloat('{{ item.available_balance|stringformat:"f" }}'));
                             const amtInput = document.getElementById('amount_{{ item.shop.pk }}');
                             amtInput.max = maxAmt;
                             amtInput.value = maxAmt;

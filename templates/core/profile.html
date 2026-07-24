@@ -21,7 +21,7 @@
                 <div class="card-body">
                     <div class="d-flex align-items-center mb-4">
                         <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center" style="width: 64px; height: 64px; font-size: 24px;">
-                            {{ user.get_full_name|default:user.email|make_list|first|upper }}
+                            {% if user %}{{ user.get_full_name|default:user.email|make_list|first|upper }}{% else %}-{% endif %}
                         </div>
                         <div class="ms-3">
                             <h4 class="mb-0 fw-bold">{{ user.get_full_name|default:"Not provided" }}</h4>

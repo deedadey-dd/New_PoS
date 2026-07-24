@@ -13,7 +13,7 @@
                 <div class="text-center mb-4">
                     <i class="bi bi-shop display-4 text-primary"></i>
                     <h5 class="mt-2">{{ shop.name }}</h5>
-                    <p class="text-muted">{{ user.get_full_name|default:user.email }}</p>
+                    <p class="text-muted">{% if user %}{{ user.get_full_name|default:user.email }}{% else %}-{% endif %}</p>
                 </div>
 
                 <form method="post">

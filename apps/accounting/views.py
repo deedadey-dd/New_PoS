@@ -995,7 +995,7 @@ class SalesReportExportView(LoginRequiredMixin, View):
 
         sales = Sale.objects.filter(
             tenant=tenant,
-            status='COMPLETED',
+            status__in=['COMPLETED', 'PENDING_DISPATCH'],
             created_at__date__gte=date_from,
             created_at__date__lte=date_to
         ).select_related('shop', 'attendant')
@@ -1146,15 +1146,31 @@ class DigitalPaymentConfirmationView(LoginRequiredMixin, View):
         from apps.customers.models import CustomerTransaction
         from django.db.models import Q
         
+        from django.urls import reverse
+        from decimal import Decimal
+        
         tenant = request.user.tenant
         
-        # Unconfirmed E-Cash
-        ecash_sales = Sale.objects.filter(tenant=tenant, status__in=['COMPLETED', 'PENDING_DISPATCH'], payment_method='ECASH', is_accountant_confirmed=False).select_related('shop', 'attendant')
-        ecash_cts = CustomerTransaction.objects.filter(tenant=tenant, transaction_type='CREDIT', description__icontains='ECASH', is_accountant_confirmed=False).select_related('customer', 'performed_by')
+        status_filter = request.GET.get('status', 'unconfirmed')
         
-        # Unconfirmed Momo
-        momo_sales = Sale.objects.filter(tenant=tenant, status__in=['COMPLETED', 'PENDING_DISPATCH'], payment_method='MOMO', is_accountant_confirmed=False).select_related('shop', 'attendant')
-        momo_cts = CustomerTransaction.objects.filter(tenant=tenant, transaction_type='CREDIT', description__icontains='MOMO', is_accountant_confirmed=False).select_related('customer', 'performed_by')
+        # E-Cash
+        ecash_sales = Sale.objects.filter(tenant=tenant, status__in=['COMPLETED', 'PENDING_DISPATCH'], payment_method='ECASH').select_related('shop', 'attendant')
+        ecash_cts = CustomerTransaction.objects.filter(tenant=tenant, transaction_type='CREDIT', description__icontains='ECASH').select_related('customer', 'performed_by')
+        
+        # Momo
+        momo_sales = Sale.objects.filter(tenant=tenant, status__in=['COMPLETED', 'PENDING_DISPATCH'], payment_method='MOMO').select_related('shop', 'attendant')
+        momo_cts = CustomerTransaction.objects.filter(tenant=tenant, transaction_type='CREDIT', description__icontains='MOMO').select_related('customer', 'performed_by')
+        
+        if status_filter == 'unconfirmed':
+            ecash_sales = ecash_sales.filter(is_accountant_confirmed=False)
+            ecash_cts = ecash_cts.filter(is_accountant_confirmed=False)
+            momo_sales = momo_sales.filter(is_accountant_confirmed=False)
+            momo_cts = momo_cts.filter(is_accountant_confirmed=False)
+        elif status_filter == 'confirmed':
+            ecash_sales = ecash_sales.filter(is_accountant_confirmed=True)
+            ecash_cts = ecash_cts.filter(is_accountant_confirmed=True)
+            momo_sales = momo_sales.filter(is_accountant_confirmed=True)
+            momo_cts = momo_cts.filter(is_accountant_confirmed=True)
         
         # Filters
         date_from = request.GET.get('date_from', '')
@@ -1230,6 +1246,7 @@ class DigitalPaymentConfirmationView(LoginRequiredMixin, View):
                 'reference_number': sale.sale_number,
                 'reference_id': sale.id,
                 'amount': sale.amount_paid,
+                'is_accountant_confirmed': sale.is_accountant_confirmed,
             })
             
         for ct in ecash_cts:
@@ -1245,6 +1262,7 @@ class DigitalPaymentConfirmationView(LoginRequiredMixin, View):
                 'reference_id': ct.customer.id,
                 'customer': ct.customer,
                 'amount': ct.amount,
+                'is_accountant_confirmed': ct.is_accountant_confirmed,
             })
             
         for sale in momo_sales:
@@ -1259,6 +1277,7 @@ class DigitalPaymentConfirmationView(LoginRequiredMixin, View):
                 'reference_number': sale.sale_number,
                 'reference_id': sale.id,
                 'amount': sale.amount_paid,
+                'is_accountant_confirmed': sale.is_accountant_confirmed,
             })
             
         for ct in momo_cts:
@@ -1274,6 +1293,7 @@ class DigitalPaymentConfirmationView(LoginRequiredMixin, View):
                 'reference_id': ct.customer.id,
                 'customer': ct.customer,
                 'amount': ct.amount,
+                'is_accountant_confirmed': ct.is_accountant_confirmed,
             })
             
         transactions.sort(key=lambda x: x['created_at'], reverse=True)
@@ -1291,6 +1311,7 @@ class DigitalPaymentConfirmationView(LoginRequiredMixin, View):
             'tx_type': tx_type,
             'providers': providers,
             'selected_provider': provider_config_id,
+            'status_filter': status_filter,
         }
         
         return render(request, 'accounting/digital_confirmations.html', context)
@@ -1298,7 +1319,10 @@ class DigitalPaymentConfirmationView(LoginRequiredMixin, View):
     def post(self, request):
         from apps.sales.models import Sale
         from apps.customers.models import CustomerTransaction
+        from apps.accounting.models import DigitalFundWithdrawal
         from django.utils import timezone
+        from django.urls import reverse
+        from decimal import Decimal
         
         tenant = request.user.tenant
         sale_ids = request.POST.getlist('sale_ids')
@@ -1314,15 +1338,21 @@ class DigitalPaymentConfirmationView(LoginRequiredMixin, View):
             ct_ids = [single_ct_id]
             sale_ids = []
             
+        redirect_url = reverse('accounting:digital_confirmations')
+        query_string = request.GET.urlencode()
+        if query_string:
+            redirect_url = f"{redirect_url}?{query_string}"
+            
         if not sale_ids and not ct_ids:
             messages.error(request, 'No transactions selected.')
-            return redirect('accounting:digital_confirmations')
+            return redirect(redirect_url)
             
         now = timezone.now()
         
         # Update Sales
         if sale_ids:
-            Sale.objects.filter(tenant=tenant, id__in=sale_ids, is_accountant_confirmed=False).update(
+            unconfirmed_sales = Sale.objects.filter(tenant=tenant, id__in=sale_ids, is_accountant_confirmed=False).select_related('shop')
+            unconfirmed_sales.update(
                 is_accountant_confirmed=True,
                 accountant_confirmed_at=now,
                 accountant_confirmed_by=request.user
@@ -1330,14 +1360,15 @@ class DigitalPaymentConfirmationView(LoginRequiredMixin, View):
             
         # Update Customer Transactions
         if ct_ids:
-            CustomerTransaction.objects.filter(tenant=tenant, id__in=ct_ids, is_accountant_confirmed=False).update(
+            unconfirmed_cts = CustomerTransaction.objects.filter(tenant=tenant, id__in=ct_ids, is_accountant_confirmed=False).select_related('performed_by', 'performed_by__location')
+            unconfirmed_cts.update(
                 is_accountant_confirmed=True,
                 accountant_confirmed_at=now,
                 accountant_confirmed_by=request.user
             )
             
         messages.success(request, f'Successfully confirmed {len(sale_ids) + len(ct_ids)} transactions.')
-        return redirect('accounting:digital_confirmations')
+        return redirect(redirect_url)
 
 class BankTransferCreateView(LoginRequiredMixin, View):
     """Create a new bank transfer."""
@@ -1429,14 +1460,15 @@ class ShopMomoListView(LoginRequiredMixin, TemplateView):
         
         # Calculate momo balance for each shop
         shop_balances = []
-        total_momo = Decimal('0')
+        total_available = Decimal('0')
+        total_unconfirmed = Decimal('0')
         
         for shop in shops:
             # Sales Momo
             sales_momo = Sale.objects.filter(
                 tenant=tenant, 
                 shop=shop, 
-                status='COMPLETED', 
+                status__in=['COMPLETED', 'PENDING_DISPATCH'], 
                 payment_method='MOMO'
             ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
             
@@ -1448,6 +1480,24 @@ class ShopMomoListView(LoginRequiredMixin, TemplateView):
                 description__icontains='MOMO'
             ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
             
+            # Unconfirmed Momo Sales
+            unconfirmed_sales_momo = Sale.objects.filter(
+                tenant=tenant, 
+                shop=shop, 
+                status__in=['COMPLETED', 'PENDING_DISPATCH'], 
+                payment_method='MOMO',
+                is_accountant_confirmed=False
+            ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+            
+            # Unconfirmed Customer Debt Payments Momo
+            unconfirmed_ct_momo = CustomerTransaction.objects.filter(
+                tenant=tenant,
+                performed_by__location=shop,
+                transaction_type='CREDIT',
+                description__icontains='MOMO',
+                is_accountant_confirmed=False
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+            
             # Withdrawn Momo
             withdrawn_momo = DigitalFundWithdrawal.objects.filter(
                 tenant=tenant,
@@ -1455,16 +1505,20 @@ class ShopMomoListView(LoginRequiredMixin, TemplateView):
                 fund_source='MOMO'
             ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
             
-            balance = (sales_momo + ct_momo) - withdrawn_momo
+            available_balance = (sales_momo + ct_momo) - unconfirmed_sales_momo - unconfirmed_ct_momo - withdrawn_momo
+            unconfirmed_balance = unconfirmed_sales_momo + unconfirmed_ct_momo
             
             shop_balances.append({
                 'shop': shop,
-                'balance': balance
+                'available_balance': available_balance,
+                'unconfirmed_balance': unconfirmed_balance
             })
-            total_momo += balance
+            total_available += available_balance
+            total_unconfirmed += unconfirmed_balance
         
         context['shop_balances'] = shop_balances
-        context['total_momo'] = total_momo
+        context['total_available'] = total_available
+        context['total_unconfirmed'] = total_unconfirmed
         return context
 
 class ShopMomoWithdrawView(LoginRequiredMixin, View):
@@ -1499,6 +1553,35 @@ class ShopMomoWithdrawView(LoginRequiredMixin, View):
         except Exception:
             messages.error(request, "Invalid amount.")
             return redirect('accounting:shop_momo_list')
+        
+        # Validate against confirmed/available Momo balance
+        from apps.sales.models import Sale as _Sale
+        from apps.customers.models import CustomerTransaction as _CT
+        from apps.accounting.models import DigitalFundWithdrawal as _DFW
+        from django.db.models import Sum as _Sum
+        
+        sales_momo = _Sale.objects.filter(
+            tenant=tenant, shop=shop, status__in=['COMPLETED', 'PENDING_DISPATCH'], payment_method='MOMO'
+        ).aggregate(total=_Sum('amount_paid'))['total'] or Decimal('0')
+        ct_momo = _CT.objects.filter(
+            tenant=tenant, performed_by__location=shop,
+            transaction_type='CREDIT', description__icontains='MOMO'
+        ).aggregate(total=_Sum('amount'))['total'] or Decimal('0')
+        unconfirmed_momo = _Sale.objects.filter(
+            tenant=tenant, shop=shop, status__in=['COMPLETED', 'PENDING_DISPATCH'], payment_method='MOMO', is_accountant_confirmed=False
+        ).aggregate(total=_Sum('amount_paid'))['total'] or Decimal('0')
+        unconfirmed_ct_momo = _CT.objects.filter(
+            tenant=tenant, performed_by__location=shop,
+            transaction_type='CREDIT', description__icontains='MOMO', is_accountant_confirmed=False
+        ).aggregate(total=_Sum('amount'))['total'] or Decimal('0')
+        withdrawn_momo = _DFW.objects.filter(
+            tenant=tenant, shop=shop, fund_source='MOMO'
+        ).aggregate(total=_Sum('amount'))['total'] or Decimal('0')
+        
+        available_balance = (sales_momo + ct_momo) - unconfirmed_momo - unconfirmed_ct_momo - withdrawn_momo
+        if amount > available_balance:
+            messages.error(request, f"Cannot withdraw {tenant.currency_symbol}{amount}. Only {tenant.currency_symbol}{available_balance:.2f} is available (confirmed Momo).")
+            return redirect('accounting:shop_momo_list')
             
         DigitalFundWithdrawal.objects.create(
             tenant=tenant,
@@ -1531,6 +1614,8 @@ class ShopEcashListView(LoginRequiredMixin, TemplateView):
         
         from apps.core.models import Location
         from apps.payments.models import ECashLedger, PaymentProviderConfig
+        from apps.sales.models import Sale
+        from apps.customers.models import CustomerTransaction
         from django.db.models import Sum
         
         shops = Location.objects.filter(tenant=tenant, location_type='SHOP', is_active=True).order_by('name')
@@ -1540,6 +1625,8 @@ class ShopEcashListView(LoginRequiredMixin, TemplateView):
         total_ecash_by_provider = {p.id: Decimal('0') for p in providers}
         total_ecash_by_provider['legacy'] = Decimal('0')
         total_ecash = Decimal('0')
+        total_ecash_unconfirmed = Decimal('0')
+        total_ecash_available = Decimal('0')
         
         for shop in shops:
             shop_data = {'shop': shop, 'providers': {}}
@@ -1562,33 +1649,80 @@ class ShopEcashListView(LoginRequiredMixin, TemplateView):
                     total_ecash_by_provider['legacy'] += amt
                 shop_total += amt
             
-            provider_balances = []
+            # Per-provider unconfirmed amounts via ECashLedger
+            unconfirmed_sale_ids = list(Sale.objects.filter(
+                tenant=tenant,
+                shop=shop,
+                status__in=['COMPLETED', 'PENDING_DISPATCH'],
+                payment_method='ECASH',
+                is_accountant_confirmed=False
+            ).values_list('id', flat=True))
             
+            unconfirmed_ct_ecash = CustomerTransaction.objects.filter(
+                tenant=tenant,
+                performed_by__location=shop,
+                transaction_type='CREDIT',
+                description__icontains='ECASH',
+                is_accountant_confirmed=False
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+            
+            # Unconfirmed per provider via ledger lookups
+            unconfirmed_by_provider = {}
+            if unconfirmed_sale_ids:
+                ledger_unconfirmed = ECashLedger.objects.filter(
+                    tenant=tenant,
+                    reference_type='Sale',
+                    reference_id__in=unconfirmed_sale_ids
+                ).values('provider_config_id').annotate(total=Sum('amount'))
+                for lu in ledger_unconfirmed:
+                    pid = lu['provider_config_id']
+                    unconfirmed_by_provider[pid] = unconfirmed_by_provider.get(pid, Decimal('0')) + (lu['total'] or Decimal('0'))
+            
+            # Rebuild provider_balances with available breakdown
+            provider_balances = []
+            total_unconfirmed_for_shop = unconfirmed_ct_ecash  # CTs are not provider-specific
             for provider in providers:
                 pid = provider.id
-                amt = shop_data['providers'].get(pid, Decimal('0'))
+                total_amt = shop_data['providers'].get(pid, Decimal('0'))
+                unconfirmed_amt = unconfirmed_by_provider.get(pid, Decimal('0'))
+                available_amt = total_amt - unconfirmed_amt
                 provider_balances.append({
                     'id': pid,
                     'nickname': provider.nickname,
-                    'balance': amt
+                    'balance': total_amt,
+                    'unconfirmed': unconfirmed_amt,
+                    'available': available_amt,
                 })
+                total_unconfirmed_for_shop += unconfirmed_amt
                 
             legacy_amt = shop_data['providers'].get('legacy', Decimal('0'))
             if legacy_amt > 0:
                 provider_balances.append({
                     'id': '',
                     'nickname': 'Legacy/Unknown',
-                    'balance': legacy_amt
+                    'balance': legacy_amt,
+                    'unconfirmed': Decimal('0'),
+                    'available': legacy_amt,
                 })
+
+            unconfirmed_balance = total_unconfirmed_for_shop
+            available_balance = shop_total - unconfirmed_balance
                 
             shop_data['provider_balances'] = provider_balances
             shop_data['balance'] = shop_total
+            shop_data['unconfirmed_balance'] = unconfirmed_balance
+            shop_data['available_balance'] = available_balance
             shop_balances.append(shop_data)
+            
+            total_ecash_unconfirmed += unconfirmed_balance
+            total_ecash_available += available_balance
         
         context['providers'] = providers
         context['shop_balances'] = shop_balances
         context['total_ecash_by_provider'] = total_ecash_by_provider
         context['total_ecash'] = total_ecash
+        context['total_ecash_unconfirmed'] = total_ecash_unconfirmed
+        context['total_ecash_available'] = total_ecash_available
         return context
 
 class ShopEcashWithdrawView(LoginRequiredMixin, View):
@@ -1629,6 +1763,38 @@ class ShopEcashWithdrawView(LoginRequiredMixin, View):
                 raise ValueError("Amount must be positive.")
         except Exception:
             messages.error(request, "Invalid amount.")
+            return redirect('accounting:shop_ecash_list')
+        
+        # Validate against confirmed/available balance
+        from apps.payments.models import ECashLedger as _ECL
+        from apps.sales.models import Sale as _Sale
+        from apps.customers.models import CustomerTransaction as _CT
+        from django.db.models import Sum as _Sum
+        
+        # Total ledger balance for this shop/provider
+        ledger_q = _ECL.objects.filter(tenant=tenant, shop=shop)
+        if provider_config:
+            ledger_q = ledger_q.filter(provider_config=provider_config)
+        total_ledger = ledger_q.aggregate(total=_Sum('amount'))['total'] or Decimal('0')
+        
+        # Unconfirmed sales linked to this shop/provider
+        unconfirmed_sale_ids = list(_Sale.objects.filter(
+            tenant=tenant, shop=shop, status__in=['COMPLETED', 'PENDING_DISPATCH'],
+            payment_method='ECASH', is_accountant_confirmed=False
+        ).values_list('id', flat=True))
+        
+        unconfirmed_ledger = Decimal('0')
+        if unconfirmed_sale_ids:
+            ul_q = _ECL.objects.filter(
+                tenant=tenant, reference_type='Sale', reference_id__in=unconfirmed_sale_ids
+            )
+            if provider_config:
+                ul_q = ul_q.filter(provider_config=provider_config)
+            unconfirmed_ledger = ul_q.aggregate(total=_Sum('amount'))['total'] or Decimal('0')
+        
+        available_balance = total_ledger - unconfirmed_ledger
+        if amount > available_balance:
+            messages.error(request, f"Cannot withdraw {tenant.currency_symbol}{amount}. Only {tenant.currency_symbol}{available_balance:.2f} is available (confirmed E-Cash).")
             return redirect('accounting:shop_ecash_list')
             
         DigitalFundWithdrawal.objects.create(
@@ -1709,7 +1875,7 @@ class ShopEcashHistoryView(LoginRequiredMixin, TemplateView):
             sales = Sale.objects.filter(
                 tenant=tenant,
                 shop=shop,
-                status='COMPLETED',
+                status__in=['COMPLETED', 'PENDING_DISPATCH'],
                 payment_method='ECASH'
             ).select_related('shop', 'customer')
 
@@ -1760,7 +1926,7 @@ class ShopEcashHistoryView(LoginRequiredMixin, TemplateView):
 
             # Balance calc from all-time ledger (not filtered)
             total_sales = Sale.objects.filter(
-                tenant=tenant, shop=shop, status='COMPLETED', payment_method='ECASH'
+                tenant=tenant, shop=shop, status__in=['COMPLETED', 'PENDING_DISPATCH'], payment_method='ECASH'
             ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
 
             total_cts = CustomerTransaction.objects.filter(
@@ -1771,8 +1937,21 @@ class ShopEcashHistoryView(LoginRequiredMixin, TemplateView):
             total_withdrawn = DigitalFundWithdrawal.objects.filter(
                 tenant=tenant, shop=shop, fund_source='ECASH'
             ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+            
+            unconfirmed_sales = Sale.objects.filter(
+                tenant=tenant, shop=shop, status__in=['COMPLETED', 'PENDING_DISPATCH'], payment_method='ECASH', is_accountant_confirmed=False
+            ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+            
+            unconfirmed_cts = CustomerTransaction.objects.filter(
+                tenant=tenant, performed_by__location=shop,
+                transaction_type='CREDIT', description__icontains='ECASH', is_accountant_confirmed=False
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
 
-            context['shop_balance'] = (total_sales + total_cts) - total_withdrawn
+            unconfirmed_balance = unconfirmed_sales + unconfirmed_cts
+            available_balance = (total_sales + total_cts) - unconfirmed_balance - total_withdrawn
+
+            context['unconfirmed_balance'] = unconfirmed_balance
+            context['available_balance'] = available_balance
             context['shop'] = shop
 
             # Combine sales + customer transactions
@@ -1850,7 +2029,7 @@ class ShopEcashExportView(LoginRequiredMixin, View):
             messages.error(request, 'Shop not found.')
             return redirect('accounting:shop_ecash_history')
 
-        sales = Sale.objects.filter(tenant=tenant, shop=shop, status='COMPLETED', payment_method='ECASH')
+        sales = Sale.objects.filter(tenant=tenant, shop=shop, status__in=['COMPLETED', 'PENDING_DISPATCH'], payment_method='ECASH')
         cts = CustomerTransaction.objects.filter(
             tenant=tenant, performed_by__location=shop,
             transaction_type='CREDIT', description__icontains='ECASH'
@@ -1949,7 +2128,7 @@ class ShopMomoHistoryView(LoginRequiredMixin, TemplateView):
         from decimal import Decimal
         from apps.accounting.models import DigitalFundWithdrawal
 
-        sales = Sale.objects.filter(tenant=tenant, status='COMPLETED', payment_method='MOMO').select_related('shop', 'customer')
+        sales = Sale.objects.filter(tenant=tenant, status__in=['COMPLETED', 'PENDING_DISPATCH'], payment_method='MOMO').select_related('shop', 'customer')
         cts = CustomerTransaction.objects.filter(tenant=tenant, transaction_type='CREDIT', description__icontains='MOMO').select_related('performed_by__location', 'customer')
         
         if shop:
@@ -1996,15 +2175,25 @@ class ShopMomoHistoryView(LoginRequiredMixin, TemplateView):
         
         # Balance calc (from all time ledger)
         if shop:
-            total_sales = Sale.objects.filter(tenant=tenant, shop=shop, status='COMPLETED', payment_method='MOMO').aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+            total_sales = Sale.objects.filter(tenant=tenant, shop=shop, status__in=['COMPLETED', 'PENDING_DISPATCH'], payment_method='MOMO').aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
             total_cts = CustomerTransaction.objects.filter(tenant=tenant, performed_by__location=shop, transaction_type='CREDIT', description__icontains='MOMO').aggregate(total=Sum('amount'))['total'] or Decimal('0')
             total_withdrawn = DigitalFundWithdrawal.objects.filter(tenant=tenant, shop=shop, fund_source='MOMO').aggregate(total=Sum('amount'))['total'] or Decimal('0')
+            
+            unconfirmed_sales = Sale.objects.filter(tenant=tenant, shop=shop, status__in=['COMPLETED', 'PENDING_DISPATCH'], payment_method='MOMO', is_accountant_confirmed=False).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+            unconfirmed_cts = CustomerTransaction.objects.filter(tenant=tenant, performed_by__location=shop, transaction_type='CREDIT', description__icontains='MOMO', is_accountant_confirmed=False).aggregate(total=Sum('amount'))['total'] or Decimal('0')
         else:
-            total_sales = Sale.objects.filter(tenant=tenant, status='COMPLETED', payment_method='MOMO').aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+            total_sales = Sale.objects.filter(tenant=tenant, status__in=['COMPLETED', 'PENDING_DISPATCH'], payment_method='MOMO').aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
             total_cts = CustomerTransaction.objects.filter(tenant=tenant, transaction_type='CREDIT', description__icontains='MOMO').aggregate(total=Sum('amount'))['total'] or Decimal('0')
             total_withdrawn = DigitalFundWithdrawal.objects.filter(tenant=tenant, fund_source='MOMO').aggregate(total=Sum('amount'))['total'] or Decimal('0')
+            
+            unconfirmed_sales = Sale.objects.filter(tenant=tenant, status__in=['COMPLETED', 'PENDING_DISPATCH'], payment_method='MOMO', is_accountant_confirmed=False).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+            unconfirmed_cts = CustomerTransaction.objects.filter(tenant=tenant, transaction_type='CREDIT', description__icontains='MOMO', is_accountant_confirmed=False).aggregate(total=Sum('amount'))['total'] or Decimal('0')
         
-        context['shop_balance'] = (total_sales + total_cts) - total_withdrawn
+        unconfirmed_balance = unconfirmed_sales + unconfirmed_cts
+        available_balance = (total_sales + total_cts) - unconfirmed_balance - total_withdrawn
+        
+        context['unconfirmed_balance'] = unconfirmed_balance
+        context['available_balance'] = available_balance
         context['shop'] = shop
         
         # Combine manually
@@ -2079,7 +2268,7 @@ class ShopMomoExportView(LoginRequiredMixin, View):
             return redirect('accounting:shop_momo_history')
             
         # Build querysets
-        sales = Sale.objects.filter(tenant=tenant, shop=shop, status='COMPLETED', payment_method='MOMO')
+        sales = Sale.objects.filter(tenant=tenant, shop=shop, status__in=['COMPLETED', 'PENDING_DISPATCH'], payment_method='MOMO')
         cts = CustomerTransaction.objects.filter(tenant=tenant, performed_by__location=shop, transaction_type='CREDIT', description__icontains='MOMO')
         
         date_from = request.GET.get('date_from')
@@ -2619,7 +2808,7 @@ class CashHistoryView(LoginRequiredMixin, ListView):
         role_name = user.role.name if user.role else None
         qs = Sale.objects.filter(
             tenant=user.tenant,
-            status='COMPLETED',
+            status__in=['COMPLETED', 'PENDING_DISPATCH'],
             payment_method__in=['CASH', 'MIXED'],
         ).select_related('attendant', 'shop')
 
@@ -2765,7 +2954,7 @@ class CashHistoryExportView(LoginRequiredMixin, View):
         
         qs = Sale.objects.filter(
             tenant=user.tenant,
-            status='COMPLETED',
+            status__in=['COMPLETED', 'PENDING_DISPATCH'],
             payment_method__in=['CASH', 'MIXED'],
         ).select_related('attendant', 'shop')
 

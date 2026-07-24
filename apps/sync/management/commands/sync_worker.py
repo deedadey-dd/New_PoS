@@ -45,7 +45,7 @@ class Command(BaseCommand):
     def sync_process(self, base_url, headers):
         # 1. Push Pending Transactions
         # In a real scenario, we might query Sale objects that are pending, or check SyncQueue
-        pending_sales = Sale.objects.filter(sync_status='pending', status='COMPLETED')
+        pending_sales = Sale.objects.filter(sync_status='pending', status__in=['COMPLETED', 'PENDING_DISPATCH'])
         
         for sale in pending_sales:
             try:

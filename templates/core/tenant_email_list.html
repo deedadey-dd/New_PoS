@@ -39,7 +39,7 @@
                             <span class="badge bg-danger" title="{{ email.error_log }}">Failed</span>
                             {% endif %}
                         </td>
-                        <td>{{ email.created_by.get_full_name|default:email.created_by.email }}</td>
+                        <td>{% if email.created_by %}{{ email.created_by.get_full_name|default:email.created_by.email }}{% else %}-{% endif %}</td>
                         <td>
                             <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#viewEmailModal{{ email.id }}">
                                 <i class="bi bi-eye"></i> View

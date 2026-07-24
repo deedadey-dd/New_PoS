@@ -130,7 +130,7 @@
             <tr>
                 <td>Cashier:</td>
                 <td class="text-right">
-                    {{ transaction.performed_by.get_full_name|default:transaction.performed_by.email }}</td>
+                    {% if transaction.performed_by %}{{ transaction.performed_by.get_full_name|default:transaction.performed_by.email }}{% else %}-{% endif %}</td>
             </tr>
             <tr>
                 <td>Customer:</td>

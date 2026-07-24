@@ -71,7 +71,7 @@
                     {% for att in attendants %}
                     <option value="{{ att.pk }}"
                         {% if selected_attendant == att.pk|stringformat:"i" %}selected{% endif %}>
-                        {{ att.get_full_name|default:att.email }}</option>
+                        {% if att %}{{ att.get_full_name|default:att.email }}{% else %}-{% endif %}</option>
                     {% endfor %}
                 </select>
             </div>

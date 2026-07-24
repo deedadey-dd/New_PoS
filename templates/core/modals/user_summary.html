@@ -1,5 +1,5 @@
 <div class="modal-header d-flex justify-content-between align-items-center">
-    <h5 class="modal-title m-0">User Summary: {{ user_obj.get_full_name|default:user_obj.email }}</h5>
+    <h5 class="modal-title m-0">User Summary: {% if user_obj %}{{ user_obj.get_full_name|default:user_obj.email }}{% else %}-{% endif %}</h5>
     <button type="button" class="btn-close no-print" data-bs-dismiss="modal" aria-label="Close"></button>
 </div>
 <div class="modal-body" id="printArea">
@@ -15,7 +15,7 @@
             </div>
         </div>
         <div>
-            <h4 class="mb-0">{{ user_obj.get_full_name|default:user_obj.email }}</h4>
+            <h4 class="mb-0">{% if user_obj %}{{ user_obj.get_full_name|default:user_obj.email }}{% else %}-{% endif %}</h4>
             <div class="text-muted">
                 {{ user_obj.role.get_name_display|default:"No Role" }}
                 {% if user_obj.is_active %}

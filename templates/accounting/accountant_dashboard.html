@@ -249,7 +249,7 @@
                             <small>{{ d.confirmed_at|date:"M d, Y H:i" }}</small>
                         </td>
                         <td>{{ d.from_location.name|default:"-" }}</td>
-                        <td>{{ d.from_user.get_full_name|default:d.from_user.email }}</td>
+                        <td>{% if d.from_user %}{{ d.from_user.get_full_name|default:d.from_user.email }}{% else %}-{% endif %}</td>
                         <td class="text-end fw-bold text-success">{{ currency_symbol }}{{ d.amount|floatformat:"2g" }}</td>
                     </tr>
                     {% endfor %}

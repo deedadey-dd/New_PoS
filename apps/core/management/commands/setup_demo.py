@@ -661,6 +661,10 @@ class Command(BaseCommand):
                 closed_shift_1 if (shop == loc_shop1 and days_ago == 1) else None
             )
 
+            is_confirmed = False
+            if payment_method in ('ECASH', 'MOMO') and status in ('COMPLETED', 'PENDING_DISPATCH'):
+                is_confirmed = random.choice([True, True, False]) # 66% confirmed
+
             sale = Sale.objects.create(
                 tenant=tenant, shop=shop, attendant=attendant,
                 cashier=_cashier,
@@ -673,6 +677,7 @@ class Command(BaseCommand):
                 dispatched_by=attendant if status == 'COMPLETED' else None,
                 dispatched_at=sale_time if status == 'COMPLETED' else None,
                 is_dispatched=(status == 'COMPLETED'),
+                is_accountant_confirmed=is_confirmed,
             )
             Sale.objects.filter(pk=sale.pk).update(created_at=sale_time)
 

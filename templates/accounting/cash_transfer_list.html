@@ -82,7 +82,7 @@
                     <option value="">All Users</option>
                     {% for u in users %}
                     <option value="{{ u.pk }}" {% if selected_sender == u.pk|stringformat:"i" %}selected{% endif %}>
-                        {{ u.get_full_name|default:u.email }}
+                        {% if u %}{{ u.get_full_name|default:u.email }}{% else %}-{% endif %}
                     </option>
                     {% endfor %}
                 </select>
@@ -93,7 +93,7 @@
                     <option value="">All Users</option>
                     {% for u in users %}
                     <option value="{{ u.pk }}" {% if selected_receiver == u.pk|stringformat:"i" %}selected{% endif %}>
-                        {{ u.get_full_name|default:u.email }}
+                        {% if u %}{{ u.get_full_name|default:u.email }}{% else %}-{% endif %}
                     </option>
                     {% endfor %}
                 </select>
@@ -162,13 +162,13 @@
                             {% endif %}
                         </td>
                         <td>
-                            {{ transfer.from_user.get_full_name|default:transfer.from_user.email }}
+                            {% if transfer.from_user %}{{ transfer.from_user.get_full_name|default:transfer.from_user.email }}{% else %}-{% endif %}
                             {% if transfer.from_location %}
                             <br><small class="text-muted">{{ transfer.from_location.name }}</small>
                             {% endif %}
                         </td>
                         <td>
-                            {{ transfer.to_user.get_full_name|default:transfer.to_user.email }}
+                            {% if transfer.to_user %}{{ transfer.to_user.get_full_name|default:transfer.to_user.email }}{% else %}-{% endif %}
                             {% if transfer.to_location %}
                             <br><small class="text-muted">{{ transfer.to_location.name }}</small>
                             {% endif %}

@@ -139,7 +139,7 @@
                                     </a>
                                 </div>
                               </td>
-                              <td>{{ sale.attendant.get_full_name|default:sale.attendant.email }}</td>
+                              <td>{% if sale.attendant %}{{ sale.attendant.get_full_name|default:sale.attendant.email }}{% else %}-{% endif %}</td>
                               <td>{{ sale.shop.name|default:"-" }}</td>
                               <td>
                                 {% if sale.payment_method == 'MIXED' %}
@@ -203,7 +203,7 @@
                                 </div>
                               </td>
                               <td>{{ ct.description }}</td>
-                              <td>{{ ct.performed_by.get_full_name|default:ct.performed_by.email }}</td>
+                              <td>{% if ct.performed_by %}{{ ct.performed_by.get_full_name|default:ct.performed_by.email }}{% else %}-{% endif %}</td>
                               <td class="text-end pe-4 fw-bold text-success">
                                 +{{ ct.amount|floatformat:"2g" }}
                               </td>
@@ -262,10 +262,10 @@
                                   <span class="badge bg-info">Bank Transfer</span>
                                 {% endif %}
                               </td>
-                              <td>{{ transfer.from_user.get_full_name|default:transfer.from_user.email }}</td>
+                              <td>{% if transfer.from_user %}{{ transfer.from_user.get_full_name|default:transfer.from_user.email }}{% else %}-{% endif %}</td>
                               <td>
                                 {% if transfer.to_user %}
-                                  {{ transfer.to_user.get_full_name|default:transfer.to_user.email }}
+                                  {% if transfer.to_user %}{{ transfer.to_user.get_full_name|default:transfer.to_user.email }}{% else %}-{% endif %}
                                 {% else %}
                                   Bank Account
                                 {% endif %}

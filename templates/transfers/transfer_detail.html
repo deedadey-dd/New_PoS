@@ -116,7 +116,7 @@
                     <dd class="col-7">
                         {{ transfer.created_at|date:"M d, Y H:i" }}<br>
                         <small class="text-muted">by
-                            {{ transfer.created_by.get_full_name|default:transfer.created_by.email }}</small>
+                            {% if transfer.created_by %}{{ transfer.created_by.get_full_name|default:transfer.created_by.email }}{% else %}-{% endif %}</small>
                     </dd>
 
                     {% if transfer.sent_at %}
@@ -124,7 +124,7 @@
                     <dd class="col-7">
                         {{ transfer.sent_at|date:"M d, Y H:i" }}<br>
                         <small class="text-muted">by
-                            {{ transfer.sent_by.get_full_name|default:transfer.sent_by.email }}</small>
+                            {% if transfer.sent_by %}{{ transfer.sent_by.get_full_name|default:transfer.sent_by.email }}{% else %}-{% endif %}</small>
                     </dd>
                     {% endif %}
 
@@ -133,7 +133,7 @@
                     <dd class="col-7">
                         {{ transfer.received_at|date:"M d, Y H:i" }}<br>
                         <small class="text-muted">by
-                            {{ transfer.received_by.get_full_name|default:transfer.received_by.email }}</small>
+                            {% if transfer.received_by %}{{ transfer.received_by.get_full_name|default:transfer.received_by.email }}{% else %}-{% endif %}</small>
                     </dd>
                     {% endif %}
 
@@ -142,7 +142,7 @@
                     <dd class="col-7">
                         {{ transfer.disputed_at|date:"M d, Y H:i" }}<br>
                         <small class="text-muted">by
-                            {{ transfer.disputed_by.get_full_name|default:transfer.disputed_by.email }}</small>
+                            {% if transfer.disputed_by %}{{ transfer.disputed_by.get_full_name|default:transfer.disputed_by.email }}{% else %}-{% endif %}</small>
                     </dd>
                     {% endif %}
 
@@ -151,7 +151,7 @@
                     <dd class="col-7">
                         {{ transfer.closed_at|date:"M d, Y H:i" }}<br>
                         <small class="text-muted">by
-                            {{ transfer.closed_by.get_full_name|default:transfer.closed_by.email }}</small>
+                            {% if transfer.closed_by %}{{ transfer.closed_by.get_full_name|default:transfer.closed_by.email }}{% else %}-{% endif %}</small>
                     </dd>
                     {% endif %}
                 </dl>

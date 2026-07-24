@@ -6,7 +6,7 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
         <h2 class="mb-1">Dashboard</h2>
-        <p class="text-muted mb-0">Welcome back, {{ user.get_full_name|default:user.email }}</p>
+        <p class="text-muted mb-0">Welcome back, {% if user %}{{ user.get_full_name|default:user.email }}{% else %}-{% endif %}</p>
     </div>
 </div>
 
@@ -308,7 +308,7 @@
                                         </span>
                                     {% endif %}
                                 </td>
-                                <td>{{ sale.attendant.get_full_name|default:sale.attendant.email }}</td>
+                                <td>{% if sale.attendant %}{{ sale.attendant.get_full_name|default:sale.attendant.email }}{% else %}-{% endif %}</td>
                                 <td class="text-end fw-bold">{{ currency_symbol }}{{ sale.total|floatformat:"2g" }}</td>
                                 <td class="text-center">
                                     <button type="button" 
@@ -383,7 +383,7 @@
                                 </td>
                                   <td>
                                       {% if sale.dispatched_by %}
-                                          {{ sale.dispatched_by.get_full_name|default:sale.dispatched_by.email }}
+                                          {% if sale.dispatched_by %}{{ sale.dispatched_by.get_full_name|default:sale.dispatched_by.email }}{% else %}-{% endif %}
                                       {% else %}
                                           -
                                       {% endif %}
@@ -453,7 +453,7 @@
                                         </span>
                                     {% endif %}
                                 </td>
-                                <td>{{ sale.attendant.get_full_name|default:sale.attendant.email }}</td>
+                                <td>{% if sale.attendant %}{{ sale.attendant.get_full_name|default:sale.attendant.email }}{% else %}-{% endif %}</td>
                                 <td class="text-end fw-bold text-danger">{{ currency_symbol }}{{ sale.total|floatformat:"2g" }}</td>
                             </tr>
                             {% endfor %}
@@ -521,7 +521,7 @@
                                         </span>
                                     {% endif %}
                                 </td>
-                                <td>{{ sale.attendant.get_full_name|default:sale.attendant.email }}</td>
+                                <td>{% if sale.attendant %}{{ sale.attendant.get_full_name|default:sale.attendant.email }}{% else %}-{% endif %}</td>
                                 <td>
                                     {% if sale.payment_method == 'CASH' %}
                                         <span class="badge bg-success">Cash</span>

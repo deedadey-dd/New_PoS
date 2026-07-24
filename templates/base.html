@@ -886,7 +886,7 @@
 
                     <div class="dropdown">
                         <a href="#" class="text-dark text-decoration-none dropdown-toggle fw-medium" data-bs-toggle="dropdown" aria-expanded="false">
-                            <i class="bi bi-person-circle me-1 text-primary"></i> {{ user.get_full_name|default:user.email }}
+                            <i class="bi bi-person-circle me-1 text-primary"></i> {% if user %}{{ user.get_full_name|default:user.email }}{% else %}-{% endif %}
                         </a>
                         <ul class="dropdown-menu dropdown-menu-end shadow border-0 mt-2">
                             <li>

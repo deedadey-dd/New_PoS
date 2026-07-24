@@ -235,7 +235,7 @@
                         <td class="text-right"><strong>{{ sale.sale_number }}</strong></td>
                     </tr>
                     <tr>
-                        <td>By: {{ sale.attendant.first_name|default:sale.attendant.email }}</td>
+                        <td>By: {% if sale.attendant %}{{ sale.attendant.first_name|default:sale.attendant.email }}{% else %}-{% endif %}</td>
                         {% if sale.payment_method %}
                         <td class="text-right">| {{ sale.get_payment_method_display }} |</td>
                         {% endif %}
@@ -355,7 +355,7 @@
                         <td class="text-right"><strong>{{ sale.sale_number }}</strong></td>
                     </tr>
                     <tr>
-                        <td>By: {{ sale.attendant.first_name|default:sale.attendant.email }}</td>
+                        <td>By: {% if sale.attendant %}{{ sale.attendant.first_name|default:sale.attendant.email }}{% else %}-{% endif %}</td>
                         {% if sale.payment_method %}
                         <td class="text-right">| {{ sale.get_payment_method_display }} |</td>
                         {% endif %}
@@ -475,7 +475,7 @@
                         <td class="text-right"><strong>{{ sale.sale_number }}</strong></td>
                     </tr>
                     <tr>
-                        <td>By: {{ sale.attendant.first_name|default:sale.attendant.email }}</td>
+                        <td>By: {% if sale.attendant %}{{ sale.attendant.first_name|default:sale.attendant.email }}{% else %}-{% endif %}</td>
                         {% if sale.payment_method %}
                         <td class="text-right">| {{ sale.get_payment_method_display }} |</td>
                         {% endif %}
@@ -595,7 +595,7 @@
                     <td class="text-right"><strong>{{ sale.sale_number }}</strong></td>
                 </tr>
                 <tr>
-                    <td>By: {{ sale.attendant.first_name|default:sale.attendant.email }}</td>
+                    <td>By: {% if sale.attendant %}{{ sale.attendant.first_name|default:sale.attendant.email }}{% else %}-{% endif %}</td>
                     {% if sale.payment_method %}
                     <td class="text-right">| {{ sale.get_payment_method_display }} |</td>
                     {% endif %}

@@ -1244,13 +1244,15 @@ class WorkflowIntegrationTests(TestCase):
             unit_price=Decimal("100.00")
         )
 
-        # Call initialize_ecash_payment with existing_sale_id
+        # Call initialize_ecash_payment with existing_sale_id - mock provider so no real Paystack API call
+        import unittest.mock as mock
+        import json
+        from types import SimpleNamespace
         from django.test import RequestFactory
         from apps.sales.views import initialize_ecash_payment, verify_ecash_payment
         from apps.payments.models import PaymentProviderConfig, ShopPaymentAssignment
-        import json
-        
-        # Setup payment provider for shop
+
+        # Setup payment provider for shop (needed for verify step DB lookup)
         config = PaymentProviderConfig.objects.create(
             tenant=self.tenant,
             provider='PAYSTACK',
@@ -1264,6 +1266,12 @@ class WorkflowIntegrationTests(TestCase):
             priority=1
         )
         
+        mock_provider = SimpleNamespace(
+            provider_name='Paystack',
+            public_key='pk_test_mock',
+            get_checkout_type='inline',
+        )
+        
         factory = RequestFactory()
         request = factory.post('/sales/api/ecash/initialize/', 
             json.dumps({
@@ -1275,10 +1283,11 @@ class WorkflowIntegrationTests(TestCase):
         )
         request.user = self.cashier_user
         
-        # Test initialization
-        response = initialize_ecash_payment(request)
+        # Test initialization — mock get_payment_provider to avoid real Paystack credentials
+        with mock.patch('apps.payments.services.paystack.get_payment_provider', return_value=mock_provider):
+            response = initialize_ecash_payment(request)
         if response.status_code != 200:
-            print(f"DEBUG: {response.content}")
+            print(f"DEBUG init: {response.content}")
         self.assertEqual(response.status_code, 200)
         
         data = json.loads(response.content)
@@ -1301,13 +1310,18 @@ class WorkflowIntegrationTests(TestCase):
         )
         request.user = self.cashier_user
         
-        # Mock PaystackProvider verify_payment to return success
-        import unittest.mock as mock
-        with mock.patch('apps.payments.services.paystack.PaystackProvider.verify_payment') as mock_verify:
-            from types import SimpleNamespace
-            mock_verify.return_value = SimpleNamespace(success=True, amount=120.00, message='Success')
-            
+        # Mock both get_payment_provider and verify_payment to avoid real Paystack API calls
+        mock_verify_result = SimpleNamespace(success=True, amount=120.00, message='Success', data={})
+        mock_provider_verify = SimpleNamespace(
+            provider_name='Paystack',
+            public_key='pk_test_mock',
+            get_checkout_type='inline',
+            verify_payment=mock.MagicMock(return_value=mock_verify_result)
+        )
+        with mock.patch('apps.payments.services.paystack.get_payment_provider', return_value=mock_provider_verify):
             response = verify_ecash_payment(request)
+            if response.status_code != 200:
+                print(f"DEBUG verify: {response.content}")
             self.assertEqual(response.status_code, 200)
             data = json.loads(response.content)
             self.assertTrue(data.get('success'))

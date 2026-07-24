@@ -37,7 +37,7 @@
                     <tr>
                         <td>
                             <a href="javascript:void(0)" class="text-decoration-none summary-link" data-url="{% url 'core:user_summary' usr.pk %}">
-                                <strong>{{ usr.get_full_name|default:usr.email }}</strong>
+                                <strong>{% if usr %}{{ usr.get_full_name|default:usr.email }}{% else %}-{% endif %}</strong>
                             </a>
                         </td>
                         <td>{{ usr.email }}</td>

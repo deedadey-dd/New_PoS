@@ -169,7 +169,7 @@
                         {% for u in users|slice:":10" %}
                         <tr>
                             <td>
-                                <div>{{ u.get_full_name|default:u.email }}</div>
+                                <div>{% if u %}{{ u.get_full_name|default:u.email }}{% else %}-{% endif %}</div>
                                 <small class="text-muted">{{ u.email }}</small>
                             </td>
                             <td>{{ u.role.name|default:"-" }}</td>

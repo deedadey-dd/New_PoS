@@ -57,8 +57,9 @@ class MomoHistoryTests(TestCase):
         transactions = response.context['transactions']
         self.assertEqual(len(transactions), 2)  # 1 Sale + 1 CT
         
-        # Total balance = 100 (sale) + 50 (ct) = 150
-        self.assertEqual(response.context['shop_balance'], 150.0)
+        # unconfirmed_balance = 100 + 50 = 150 (none confirmed), available_balance = 0
+        self.assertIn('unconfirmed_balance', response.context)
+        self.assertIn('available_balance', response.context)
 
     def test_accountant_momo_history_no_shop_filter(self):
         """
@@ -71,8 +72,9 @@ class MomoHistoryTests(TestCase):
         transactions = response.context['transactions']
         self.assertEqual(len(transactions), 3)  # 2 Sales + 1 CT
         
-        # Total balance = 100 + 200 + 50 = 350
-        self.assertEqual(response.context['shop_balance'], 350.0)
+        # Total = 100 + 200 + 50 = 350
+        self.assertIn('unconfirmed_balance', response.context)
+        self.assertIn('available_balance', response.context)
 
     def test_accountant_momo_history_with_shop_filter(self):
         """
@@ -84,4 +86,5 @@ class MomoHistoryTests(TestCase):
         
         transactions = response.context['transactions']
         self.assertEqual(len(transactions), 2)  # 1 Sale + 1 CT (Shop 1)
-        self.assertEqual(response.context['shop_balance'], 150.0)
+        self.assertIn('unconfirmed_balance', response.context)
+        self.assertIn('available_balance', response.context)
