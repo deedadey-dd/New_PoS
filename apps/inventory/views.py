@@ -1105,7 +1105,7 @@ class StockOverviewView(LoginRequiredMixin, View):
             ).values_list('product_id', flat=True))
         
         # Low stock alerts
-        from django.db.models import Subquery, OuterRef, Sum
+        from django.db.models import Subquery, OuterRef
         from django.db.models.functions import Coalesce
         from decimal import Decimal
 

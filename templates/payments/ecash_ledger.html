@@ -454,6 +454,17 @@ document.addEventListener('DOMContentLoaded', function() {
                     html += '<ul class="list-unstyled mb-0">';
                     if (metadata.authorization.channel) html += '<li class="mb-1"><i class="bi bi-credit-card me-2 text-info"></i><span class="badge bg-secondary">' + metadata.authorization.channel.toUpperCase() + '</span></li>';
                     if (metadata.authorization.bank) html += '<li class="mb-1"><i class="bi bi-bank me-2 text-info"></i>' + metadata.authorization.bank + '</li>';
+                    
+                    // Display Mobile Money phone numbers if available
+                    let momoNumber = metadata.authorization.mobile_money_number || 
+                                     metadata.authorization.receiver_bank_account_number || 
+                                     metadata.authorization.sender_bank_account_number ||
+                                     metadata.authorization.sender_phone;
+                    
+                    if (momoNumber && metadata.authorization.channel === 'mobile_money') {
+                        html += '<li class="mb-1"><i class="bi bi-telephone-fill me-2 text-info"></i><strong>' + momoNumber + '</strong></li>';
+                    }
+                    
                     if (metadata.authorization.last4) html += '<li class="mb-1"><i class="bi bi-asterisk me-2 text-info"></i>•••• ' + metadata.authorization.last4 + '</li>';
                     html += '</ul>';
                 }
