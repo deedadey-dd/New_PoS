@@ -499,7 +499,9 @@ class ProductBulkUploadView(LoginRequiredMixin, View):
                     
                     # Auto-generate SKU if not provided
                     if not sku:
-                        sku = f"SKU-{request.user.tenant.id}-{index}"
+                        import uuid
+                        unique_id = uuid.uuid4().hex[:6].upper()
+                        sku = f"SKU-{request.user.tenant.id}-{unique_id}-{index}"
                     
                     # Validate and default unit
                     if not unit:

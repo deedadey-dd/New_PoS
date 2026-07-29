@@ -1,7 +1,7 @@
 from django.test import RequestFactory
 from apps.sales.views import api_sale_detail
 from apps.sales.models import Sale
-from apps.users.models import User
+from apps.core.models import User
 
 user = User.objects.filter(role__name='SHOP_MANAGER').first()
 sale = Sale.objects.filter(status='PENDING_DISPATCH', tenant=user.tenant).first()
