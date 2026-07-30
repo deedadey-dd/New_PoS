@@ -621,7 +621,17 @@ class Sale(TenantModel):
                     notes=f"Refund: {reason}" if reason else "Sale refunded",
                     created_by=user or self.attendant
                 )
-                
+
+            # Reset dispatch tracking on items so refunded quantities
+            # don't inflate dispatched-goods counts in end-of-day reports.
+            self.items.all().update(dispatched_quantity=Decimal('0'))
+
+        # Clear sale-level dispatch flags so the sale no longer appears
+        # as dispatched (goods have been returned).
+        if self.is_dispatched or self.dispatched_at:
+            self.is_dispatched = False
+            self.dispatched_at = None
+            self.dispatched_by = None
         # 2. Reverse Customer Transactions (if credit or partial payment)
         if self.customer:
             debt_amount = self.total - self.amount_paid

@@ -33,8 +33,7 @@
 
                     <dt class="col-5">Status</dt>
                     <dd class="col-7">
-                        <span
-                            class="badge bg-{% if batch.status == 'AVAILABLE' %}success{% elif batch.status == 'EXPIRED' %}danger{% else %}secondary{% endif %}">
+                        <span class="badge bg-{% if batch.status == 'AVAILABLE' %}success{% elif batch.status == 'EXPIRED' %}danger{% else %}secondary{% endif %}">
                             {{ batch.status }}
                         </span>
                     </dd>
@@ -71,14 +70,15 @@
                     <dt class="col-5">Expiry</dt>
                     <dd class="col-7">
                         {% if batch.expiry_date %}
-                        {{ batch.expiry_date }}
-                        {% if batch.is_expired %}
-                        <span class="badge bg-danger">Expired</span>
-                        {% elif batch.days_until_expiry < 30 %} <span class="badge bg-warning">{{ batch.days_until_expiry }} days left</span>
+                            {{ batch.expiry_date }}
+                            {% if batch.is_expired %}
+                                <span class="badge bg-danger">Expired</span>
+                            {% elif batch.days_until_expiry < 30 %}
+                                <span class="badge bg-warning">{{ batch.days_until_expiry }} days left</span>
                             {% endif %}
-                            {% else %}
+                        {% else %}
                             -
-                            {% endif %}
+                        {% endif %}
                     </dd>
                 </dl>
             </div>
@@ -86,7 +86,7 @@
     </div>
 </div>
 
-<!-- Ledger History -->
+<!-- Ledger / Transaction History -->
 <div class="card mt-4">
     <div class="card-header">
         <h5 class="mb-0">Transaction History</h5>
@@ -100,6 +100,7 @@
                         <th>Date</th>
                         <th>Type</th>
                         <th class="text-end">Quantity</th>
+                        <th>Reference</th>
                         <th>Notes</th>
                         <th>By</th>
                     </tr>
@@ -115,6 +116,21 @@
                         </td>
                         <td class="text-end {% if entry.quantity > 0 %}text-success{% else %}text-danger{% endif %}">
                             {% if entry.quantity > 0 %}+{% endif %}{{ entry.quantity }}
+                        </td>
+                        <td>
+                            {% if entry.reference_id and entry.reference_type in "Sale,Refund" %}
+                                {% for k, v in sale_number_map.items %}
+                                    {% if k == entry.reference_id %}
+                                        <a href="#"
+                                           class="batch-sale-detail-link fw-semibold text-decoration-none"
+                                           data-sale-id="{{ entry.reference_id }}">
+                                            <i class="bi bi-receipt me-1 small"></i>{{ v }}
+                                        </a>
+                                    {% endif %}
+                                {% endfor %}
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
                         </td>
                         <td>{{ entry.notes|default:"-" }}</td>
                         <td>{{ entry.created_by.get_full_name|default:"-" }}</td>
@@ -161,9 +177,172 @@
             </table>
         </div>
         {% else %}
-        <p class="text-muted text-center mb-0">No edits have been made to this batch.</p>
+        <p class="text-muted text-center mb-0">No edit history</p>
         {% endif %}
     </div>
 </div>
+</div>{# /batch-detail-content #}
+
+<!-- ── Sale Detail Modal ── -->
+<div class="modal fade" id="batchSaleDetailModal" tabindex="-1"
+     aria-labelledby="batchSaleDetailModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="batchSaleDetailModalLabel">
+                    <i class="bi bi-receipt-cutoff me-2"></i>Sale Details
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="text-center py-5" id="batchSaleDetailLoading">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="text-muted mt-2">Loading sale details...</p>
+                </div>
+                <div id="batchSaleDetailContent" style="display:none;"></div>
+            </div>
+            <div class="modal-footer">
+                <a href="#" class="btn btn-outline-info" id="batchSaleDetailPrintBtn" target="_blank">
+                    <i class="bi bi-printer me-1"></i>Print Receipt
+                </a>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const modal      = new bootstrap.Modal(document.getElementById('batchSaleDetailModal'));
+    const loadingEl  = document.getElementById('batchSaleDetailLoading');
+    const contentEl  = document.getElementById('batchSaleDetailContent');
+    const printBtn   = document.getElementById('batchSaleDetailPrintBtn');
+    const currencySymbol = '{{ current_tenant.currency_symbol|default:"$" }}';
+
+    document.querySelectorAll('.batch-sale-detail-link').forEach(function (link) {
+        link.addEventListener('click', function (e) {
+            e.preventDefault();
+            const saleId = this.dataset.saleId;
+
+            loadingEl.style.display = 'block';
+            contentEl.style.display = 'none';
+            contentEl.innerHTML = '';
+            if (printBtn) printBtn.href = '/sales/' + saleId + '/receipt/';
+
+            modal.show();
+
+            fetch('/sales/api/' + saleId + '/detail/')
+                .then(r => r.json())
+                .then(data => {
+                    contentEl.innerHTML = renderSaleDetail(data);
+                    loadingEl.style.display = 'none';
+                    contentEl.style.display = 'block';
+                })
+                .catch(() => {
+                    contentEl.innerHTML = '<div class="alert alert-danger">Failed to load sale details.</div>';
+                    loadingEl.style.display = 'none';
+                    contentEl.style.display = 'block';
+                });
+        });
+    });
+
+    function badge(color, text) {
+        return '<span class="badge bg-' + color + '">' + text + '</span>';
+    }
+    function statusBadge(code, display) {
+        const m = { COMPLETED: 'success', VOIDED: 'danger', REFUNDED: 'warning', PENDING: 'secondary', PENDING_DISPATCH: 'info' };
+        return badge(m[code] || 'secondary', display);
+    }
+    function payBadge(code, display) {
+        const m = { CASH: 'success', ECASH: 'primary', CREDIT: 'warning' };
+        return badge(m[code] || 'secondary', display);
+    }
+
+    function renderSaleDetail(d) {
+        let h = '';
+
+        // Header row
+        h += '<div class="row mb-3">';
+        h += '<div class="col-sm-6"><h6 class="text-muted mb-1">Sale Number</h6>'
+           + '<p class="fw-bold fs-5 mb-2">' + d.sale_number + '</p></div>';
+        h += '<div class="col-sm-6 text-sm-end"><h6 class="text-muted mb-1">Status</h6>'
+           + '<p class="mb-2">' + statusBadge(d.status_code, d.status) + '</p></div>';
+        h += '</div>';
+
+        // Details band
+        h += '<div class="row mb-3 py-2 bg-light rounded">';
+        h += '<div class="col-sm-4"><small class="text-muted d-block">Date</small><span class="fw-medium">' + d.created_at + '</span></div>';
+        h += '<div class="col-sm-4"><small class="text-muted d-block">Shop</small><span class="fw-medium">' + d.shop + '</span></div>';
+        h += '<div class="col-sm-4"><small class="text-muted d-block">Attendant</small><span class="fw-medium">' + d.attendant + '</span></div>';
+        h += '</div>';
+
+        // Payment & customer
+        h += '<div class="row mb-3">';
+        h += '<div class="col-sm-6"><small class="text-muted d-block">Payment Method</small>' + payBadge(d.payment_method_code, d.payment_method) + '</div>';
+        if (d.customer) {
+            const cust = d.customer_id
+                ? '<a href="/customers/' + d.customer_id + '/" class="text-decoration-none fw-bold">' + d.customer + '</a>'
+                : d.customer;
+            h += '<div class="col-sm-6"><small class="text-muted d-block">Customer</small><span class="fw-medium">' + cust + '</span>';
+            if (d.customer_phone) h += '<br><small class="text-muted"><i class="bi bi-telephone me-1"></i>' + d.customer_phone + '</small>';
+            h += '</div>';
+        }
+        h += '</div>';
+
+        // Items table
+        h += '<h6 class="border-bottom pb-2 mb-0">Items</h6>';
+        h += '<div class="table-responsive"><table class="table table-sm mb-0">';
+        h += '<thead class="table-light"><tr><th>Product</th><th class="text-center">Qty</th>'
+           + '<th class="text-center">Dispatched</th><th class="text-end">Price</th><th class="text-end">Total</th></tr></thead><tbody>';
+
+        d.items.forEach(function (item) {
+            const disp = parseFloat(item.dispatched_quantity);
+            const dispCell = item.is_fully_dispatched
+                ? '<td class="text-center text-success fw-bold">' + disp + ' <i class="bi bi-check-circle-fill"></i></td>'
+                : '<td class="text-center">' + disp + '</td>';
+            h += '<tr>'
+               + '<td>' + item.product_name + '<br><small class="text-muted">' + item.sku + '</small></td>'
+               + '<td class="text-center">' + parseFloat(item.quantity) + '</td>'
+               + dispCell
+               + '<td class="text-end">' + currencySymbol + parseFloat(item.unit_price).toFixed(2) + '</td>'
+               + '<td class="text-end">' + currencySymbol + parseFloat(item.total).toFixed(2) + '</td>'
+               + '</tr>';
+        });
+        h += '</tbody></table></div>';
+
+        // Dispatch history
+        if (d.dispatch_history && d.dispatch_history.length > 0) {
+            h += '<h6 class="border-bottom pb-2 mt-4 mb-2"><i class="bi bi-truck me-2"></i>Dispatch Log</h6>';
+            d.dispatch_history.forEach(function (event, idx) {
+                const rows = event.items.map(i =>
+                    '<tr><td class="ps-3 text-muted small">' + i.product_name + '</td>'
+                    + '<td class="text-center small fw-medium">' + i.qty + '</td></tr>'
+                ).join('');
+                h += '<div class="border rounded-3 mb-2 overflow-hidden">'
+                   + '<div class="d-flex align-items-center justify-content-between px-3 py-2 bg-light">'
+                   + '<div><i class="bi bi-send-check text-success me-2"></i>'
+                   + '<span class="fw-semibold small">Dispatch ' + (idx + 1) + '</span>'
+                   + '<span class="text-muted small ms-2">— ' + event.dispatched_by + '</span></div>'
+                   + '<span class="badge bg-success-subtle text-success rounded-pill small">'
+                   + '<i class="bi bi-clock me-1"></i>' + event.dispatched_at + '</span></div>'
+                   + '<table class="table table-sm mb-0"><thead class="table-light border-top"><tr>'
+                   + '<th class="ps-3 small">Product</th><th class="text-center small">Qty Released</th>'
+                   + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+            });
+        }
+
+        // Totals
+        h += '<div class="border-top pt-2 mt-4">'
+           + '<div class="d-flex justify-content-between fw-bold fs-5 border-top pt-2">'
+           + '<span>Total Paid</span><span>' + currencySymbol + parseFloat(d.amount_paid).toFixed(2) + '</span>'
+           + '</div></div>';
+
+        return h;
+    }
+});
+</script>
 {% endblock %}

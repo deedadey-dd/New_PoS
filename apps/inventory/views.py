@@ -1043,10 +1043,31 @@ class BatchDetailView(LoginRequiredMixin, DetailView):
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['ledger_entries'] = InventoryLedger.objects.filter(
+        ledger_entries = InventoryLedger.objects.filter(
             batch=self.object
         ).select_related('created_by').order_by('-created_at')
+        context['ledger_entries'] = ledger_entries
+
+        # Build a map of sale_id → sale_number so the template can render
+        # clickable sale number links for SALE / SALE_RETURN / SALE_VOID entries.
+        from apps.sales.models import Sale
+        sale_ids = set(
+            e.reference_id
+            for e in ledger_entries
+            if e.reference_type in ('Sale', 'Refund') and e.reference_id
+        )
+        if sale_ids:
+            sale_number_map = dict(
+                Sale.objects.filter(pk__in=sale_ids).values_list('pk', 'sale_number')
+            )
+        else:
+            sale_number_map = {}
+        context['sale_number_map'] = sale_number_map
+
+        # Currency symbol for display
+        context['currency_symbol'] = self.request.user.tenant.currency_symbol if hasattr(self.request.user.tenant, 'currency_symbol') else ''
         return context
+
 
 
 # ============ Stock Views ============
