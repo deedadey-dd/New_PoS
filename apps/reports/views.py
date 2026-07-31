@@ -345,17 +345,32 @@ class EndOfDayDetailsView(LoginRequiredMixin, View):
                 'created_at__date__gte': start_date,
                 'created_at__date__lte': end_date
             }
+            return_filter = {
+                'tenant': tenant,
+                'transaction_type': 'SALE_RETURN',
+                'created_at__date__gte': start_date,
+                'created_at__date__lte': end_date
+            }
             if role_name == 'SHOP_ATTENDANT':
                 dispatch_filter['created_by'] = user
+                return_filter['created_by'] = user
             elif shop_filter_for_inventory:
                 dispatch_filter['location'] = shop_filter_for_inventory
-                
+                return_filter['location'] = shop_filter_for_inventory
+
+            # Build a map of product_id → returned qty to subtract from dispatched
+            from django.db.models import Q as _Q
+            returned_map = {}
+            for row in InventoryLedger.objects.filter(**return_filter).values('product_id').annotate(ret_qty=Sum('quantity')):
+                returned_map[row['product_id']] = abs(row['ret_qty'] or Decimal('0'))
+
             dispatched_agg = InventoryLedger.objects.filter(**dispatch_filter).values('product_id', 'product__name').annotate(
                 dispatched_qty=Sum('quantity')
             )
             for row in dispatched_agg:
                 pid = row['product_id']
-                dq = abs(row['dispatched_qty'] or Decimal('0'))
+                # Net dispatched = dispatched_out - returned (floor at 0)
+                dq = max(abs(row['dispatched_qty'] or Decimal('0')) - returned_map.get(pid, Decimal('0')), Decimal('0'))
                 if pid in product_stats:
                     product_stats[pid]['qty_dispatched'] = dq
                 elif not exclude_inactive:
@@ -440,7 +455,11 @@ class EndOfDayDetailsView(LoginRequiredMixin, View):
                     tenant=tenant, created_by=user, transaction_type='SALE',
                     created_at__date__gte=start_date, created_at__date__lte=end_date
                 ).aggregate(q=Sum('quantity'))['q'] or Decimal('0')
-                summary['items_dispatched_qty'] = abs(dispatched_raw)
+                returned_raw = InventoryLedger.objects.filter(
+                    tenant=tenant, created_by=user, transaction_type='SALE_RETURN',
+                    created_at__date__gte=start_date, created_at__date__lte=end_date
+                ).aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+                summary['items_dispatched_qty'] = max(abs(dispatched_raw) - abs(returned_raw), Decimal('0'))
                 summary['customer_payments_received'] = CustomerTransaction.objects.filter(
                     **date_filter, performed_by=user, transaction_type='CREDIT'
                 ).aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
@@ -470,7 +489,11 @@ class EndOfDayDetailsView(LoginRequiredMixin, View):
                         tenant=tenant, location=shop, transaction_type='SALE',
                         created_at__date__gte=start_date, created_at__date__lte=end_date
                     ).aggregate(q=Sum('quantity'))['q'] or Decimal('0')
-                    summary['shop_items_dispatched_qty'] = abs(dispatched_raw)
+                    returned_raw = InventoryLedger.objects.filter(
+                        tenant=tenant, location=shop, transaction_type='SALE_RETURN',
+                        created_at__date__gte=start_date, created_at__date__lte=end_date
+                    ).aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+                    summary['shop_items_dispatched_qty'] = max(abs(dispatched_raw) - abs(returned_raw), Decimal('0'))
                     summary['shop_customer_payments_received'] = CustomerTransaction.objects.filter(
                         **date_filter, customer__shop=shop, transaction_type='CREDIT'
                     ).aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
