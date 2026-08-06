@@ -927,8 +927,21 @@ class StockRequestCreateView(LoginRequiredMixin, View):
                 ).values_list('product_id', flat=True))
                 products = products.filter(pk__in=favorite_product_ids)
             
+            from apps.inventory.models import InventoryLedger
+            from django.db.models import Sum
+            from decimal import Decimal
+            
+            # Fetch all stock levels in one query to prevent N+1
+            product_ids = [p.id for p in products]
+            stock_data = InventoryLedger.objects.filter(
+                location=user_location,
+                product_id__in=product_ids
+            ).values('product_id').annotate(total=Sum('quantity'))
+            
+            stock_map = {item['product_id']: item['total'] or Decimal('0.00') for item in stock_data}
+            
             for product in products:
-                stock_qty = product.get_stock_at_location(user_location)
+                stock_qty = stock_map.get(product.id, Decimal('0.00'))
                 
                 if stock_qty <= product.reorder_level:
                     reorder_qty = max(product.reorder_level - stock_qty, 1)

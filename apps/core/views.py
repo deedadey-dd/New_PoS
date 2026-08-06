@@ -911,6 +911,8 @@ class SettingsView(LoginRequiredMixin, View):
     template_name = 'core/settings.html'
 
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         if not request.user.role or request.user.role.name != 'ADMIN':
             messages.error(request, 'Only administrators can access settings.')
             return redirect('core:dashboard')
@@ -994,6 +996,8 @@ class AdminPasswordResetView(LoginRequiredMixin, View):
     template_name = 'core/admin_password_reset.html'
     
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         # Only allow ADMIN role
         if not request.user.role or request.user.role.name != 'ADMIN':
             messages.error(request, 'Only administrators can reset passwords.')

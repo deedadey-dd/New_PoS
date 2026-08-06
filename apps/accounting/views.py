@@ -219,6 +219,8 @@ class CashTransferCreateView(LoginRequiredMixin, View):
     template_name = 'accounting/cash_transfer_form.html'
     
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         # Shop Attendants, Shop Managers, Cashiers, Accountants and Admins can create transfers
         role_name = request.user.role.name if request.user.role else None
         if role_name not in ['SHOP_ATTENDANT', 'SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN', 'SHOP_CASHIER']:
@@ -670,6 +672,8 @@ class SalesReportView(LoginRequiredMixin, View):
     template_name = 'accounting/sales_report.html'
     
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         role_name = request.user.role.name if request.user.role else None
         if role_name not in ['ACCOUNTANT', 'ADMIN']:
             messages.error(request, 'Only accountants can access this report.')
@@ -818,6 +822,8 @@ class PriceHistoryView(LoginRequiredMixin, SortableMixin, View):
     default_sort = '-created_at'
     
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         role_name = request.user.role.name if request.user.role else None
         if role_name not in ['ACCOUNTANT', 'AUDITOR', 'ADMIN']:
             messages.error(request, 'Only accountants and auditors can access price history.')
@@ -869,6 +875,8 @@ class CashTransferExportView(LoginRequiredMixin, View):
     """Export cash transfers to Excel."""
 
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         role_name = request.user.role.name if request.user.role else None
         if role_name not in ['ACCOUNTANT', 'AUDITOR', 'ADMIN']:
             messages.error(request, 'You do not have permission to export cash transfers.')
@@ -959,6 +967,8 @@ class SalesReportExportView(LoginRequiredMixin, View):
     """Export accountant's sales report to Excel."""
 
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         role_name = request.user.role.name if request.user.role else None
         if role_name not in ['ACCOUNTANT', 'ADMIN']:
             messages.error(request, 'Only accountants can export this report.')
@@ -1067,6 +1077,8 @@ class PriceHistoryExportView(LoginRequiredMixin, View):
     """Export price history to Excel."""
 
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         role_name = request.user.role.name if request.user.role else None
         if role_name not in ['ACCOUNTANT', 'AUDITOR', 'ADMIN']:
             messages.error(request, 'Only accountants and auditors can export price history.')
@@ -1135,6 +1147,8 @@ class DigitalPaymentConfirmationView(LoginRequiredMixin, View):
     """View and confirm unconfirmed E-Cash and Momo transactions."""
     
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         role_name = request.user.role.name if request.user.role else None
         if role_name not in ['ACCOUNTANT', 'ADMIN']:
             messages.error(request, 'Only accountants can confirm digital payments.')
@@ -1374,6 +1388,8 @@ class BankTransferCreateView(LoginRequiredMixin, View):
     """Create a new bank transfer."""
     
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         role_name = request.user.role.name if request.user.role else None
         
         # In strict sales workflow, Cashiers can perform bank transfers
@@ -1434,6 +1450,8 @@ class ShopMomoListView(LoginRequiredMixin, TemplateView):
     template_name = 'accounting/shop_momo_list.html'
     
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         # Only Accountant and Admin can access
         role_name = request.user.role.name if request.user.role else None
         if role_name not in ['ACCOUNTANT', 'ADMIN']:
@@ -1526,6 +1544,8 @@ class ShopMomoWithdrawView(LoginRequiredMixin, View):
     Accountant action: Bulk confirm all unconfirmed momo transactions for a shop.
     """
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         role_name = request.user.role.name if request.user.role else None
         if role_name not in ['ACCOUNTANT', 'ADMIN']:
             messages.error(request, "Only accountants can withdraw momo funds.")
@@ -1602,6 +1622,8 @@ class ShopEcashListView(LoginRequiredMixin, TemplateView):
     template_name = 'accounting/shop_ecash_list.html'
     
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         role_name = request.user.role.name if request.user.role else None
         if role_name not in ['ACCOUNTANT', 'ADMIN']:
             messages.error(request, "Only accountants can access shop E-Cash balances.")
@@ -1730,6 +1752,8 @@ class ShopEcashWithdrawView(LoginRequiredMixin, View):
     Accountant action: Withdraw partial/full E-Cash from a shop via Ledger.
     """
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         role_name = request.user.role.name if request.user.role else None
         if role_name not in ['ACCOUNTANT', 'ADMIN']:
             messages.error(request, "Only accountants can withdraw E-Cash funds.")
@@ -1835,6 +1859,8 @@ class ShopEcashHistoryView(LoginRequiredMixin, TemplateView):
     template_name = 'accounting/shop_ecash_history.html'
 
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         allowed_roles = ['SHOP_MANAGER', 'ACCOUNTANT', 'AUDITOR', 'ADMIN', 'SHOP_CASHIER']
         role_name = request.user.role.name if request.user.role else None
         if role_name not in allowed_roles:
@@ -1999,6 +2025,8 @@ class ShopEcashExportView(LoginRequiredMixin, View):
     """Export e-cash history to Excel or PDF."""
 
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         role_name = request.user.role.name if request.user.role else None
         if role_name not in ['ACCOUNTANT', 'AUDITOR', 'ADMIN', 'SHOP_MANAGER', 'SHOP_CASHIER']:
             messages.error(request, 'You do not have permission to export this report.')
@@ -2090,6 +2118,8 @@ class ShopMomoHistoryView(LoginRequiredMixin, TemplateView):
 
 
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         allowed_roles = ['SHOP_MANAGER', 'ACCOUNTANT', 'AUDITOR', 'ADMIN', 'SHOP_CASHIER']
         role_name = request.user.role.name if request.user.role else None
         if role_name not in allowed_roles:
@@ -2236,6 +2266,8 @@ class ShopMomoExportView(LoginRequiredMixin, View):
     """Export local momo history to Excel or PDF."""
     
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         role_name = request.user.role.name if request.user.role else None
         if role_name not in ['ACCOUNTANT', 'AUDITOR', 'ADMIN', 'SHOP_MANAGER', 'SHOP_CASHIER']:
             messages.error(request, 'You do not have permission to export this report.')

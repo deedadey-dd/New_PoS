@@ -771,7 +771,8 @@ class EmailComposeView(SuperuserRequiredMixin, View):
         messages.success(request, f"Email scheduled to send on {scheduled_dt.strftime('%B %d, %Y at %I:%M %p')}.")
         return redirect('superadmin:email_list')
 
-# ============== FEATURE MESSAGES VIEWS ==============
+
+# ============== FEATURE MESSAGES VIEWS ==============
 
 class FeatureMessageListView(SuperuserRequiredMixin, ListView):
     """View all feature messages available for monthly distribution."""

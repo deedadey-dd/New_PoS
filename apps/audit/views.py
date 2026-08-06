@@ -23,6 +23,8 @@ class AuditAccessMixin(PaginationMixin):
     allowed_roles = ['AUDITOR', 'ACCOUNTANT', 'ADMIN']
     
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         if not request.user.role or request.user.role.name not in self.allowed_roles:
             messages.error(request, 'You do not have permission to access this page.')
             return redirect('core:dashboard')

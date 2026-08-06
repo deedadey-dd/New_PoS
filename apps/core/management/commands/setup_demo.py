@@ -391,29 +391,29 @@ class Command(BaseCommand):
         # --------------------------------------------------------------------
         # Products with Batches
         # --------------------------------------------------------------------
-        # Each entry: (name, cat, default_price, cost, shop1_qty, shop2_qty, stores_qty, prod_qty, reorder, expiry_days)
+        # Each entry: (name, cat, default_price, cost, shop1_qty, shop2_qty, stores_qty, prod_qty, reorder, expiry_days, image_filename)
         product_specs = [
             # Well-stocked (green)
-            ('Blue Ink Pen',           cat_stationery, '2.50',  '1.20',  200, 150, 400, 800, 20,  None),
-            ('Exercise Book 80pg',     cat_stationery, '5.00',  '2.50',  120,  90, 300, 600, 15,  None),
+            ('Blue Ink Pen',           cat_stationery, '2.50',  '1.20',  200, 150, 400, 800, 20,  None, 'blue_pen.png'),
+            ('Exercise Book 80pg',     cat_stationery, '5.00',  '2.50',  120,  90, 300, 600, 15,  None, 'exercise_book.png'),
             # Beverages with expiry
-            ('Fresh Cola 500ml',       cat_beverages,  '5.00',  '2.80',   80,  70, 200, 400, 15,    60),
-            ('Bottled Water 500ml',    cat_beverages,  '2.00',  '0.80',   60,  50, 200, 400, 25,    90),
+            ('Fresh Cola 500ml',       cat_beverages,  '5.00',  '2.80',   80,  70, 200, 400, 15,    60, 'fresh_cola.png'),
+            ('Bottled Water 500ml',    cat_beverages,  '2.00',  '0.80',   60,  50, 200, 400, 25,    90, 'bottled_water.webp'),
             # Snacks (dual batch for FEFO demo)
-            ('Chocolate Biscuit 200g', cat_snacks,     '6.00',  '3.50',    8,   5,  40,  80, 10,    45),
-            ('Potato Crisps 150g',     cat_snacks,     '4.50',  '2.00',   35,  30, 100, 200, 12,    75),
+            ('Chocolate Biscuit 200g', cat_snacks,     '6.00',  '3.50',    8,   5,  40,  80, 10,    45, 'chocolate_biscuit.png'),
+            ('Potato Crisps 150g',     cat_snacks,     '4.50',  '2.00',   35,  30, 100, 200, 12,    75, 'potato_crisps.webp'),
             # Toys
-            ('Action Figure (small)',  cat_toys,       '45.00', '20.00',  14,  20,  40,  80,  8,  None),
-            ('Puzzle 100-piece',       cat_toys,       '32.00', '14.00',  22,  18,  60, 120,  5,  None),
+            ('Action Figure (small)',  cat_toys,       '45.00', '20.00',  14,  20,  40,  80,  8,  None, None),
+            ('Puzzle 100-piece',       cat_toys,       '32.00', '14.00',  22,  18,  60, 120,  5,  None, None),
             # Extra critical stock (red)
-            ('Red Ink Pen',            cat_stationery,  '2.50',  '1.20',   3,   2,  10,  20, 10,  None),
+            ('Red Ink Pen',            cat_stationery,  '2.50',  '1.20',   3,   2,  10,  20, 10,  None, 'red_ink_pen.webp'),
             # High-value
-            ('Scientific Calculator',  cat_stationery, '55.00', '30.00',  12,   8,  30,  60,  3,  None),
+            ('Scientific Calculator',  cat_stationery, '55.00', '30.00',  12,   8,  30,  60,  3,  None, 'scientific_calculator.webp'),
         ]
 
         products = []
         for spec in product_specs:
-            name, cat, price, cost, stock1, stock2, stores_qty, prod_qty, reorder, expiry_days = spec
+            name, cat, price, cost, stock1, stock2, stores_qty, prod_qty, reorder, expiry_days, img_file = spec
             sku = (name.replace(' ', '').upper()[:10])
             p = Product.objects.create(
                 tenant=tenant, category=cat, name=name, sku=sku,
@@ -421,6 +421,10 @@ class Command(BaseCommand):
                 is_active=True,
                 reorder_level=Decimal(str(reorder)),
             )
+
+            if img_file:
+                p.image.name = f"products/{img_file}"
+                p.save(update_fields=['image'])
 
             expiry_date = (today + timedelta(days=expiry_days)) if expiry_days else None
 

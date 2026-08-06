@@ -41,6 +41,8 @@ class CustomerCreateView(LoginRequiredMixin, CreateView):
     success_url = reverse_lazy('customers:customer_list')
 
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         # Only Shop Managers, Cashiers and Admins can create customers
         role = request.user.role.name if request.user.role else None
         if role not in ['SHOP_MANAGER', 'ADMIN', 'SHOP_CASHIER']:
@@ -87,6 +89,8 @@ class CustomerUpdateView(LoginRequiredMixin, UpdateView):
     success_url = reverse_lazy('customers:customer_list')
 
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         # Only Shop Managers, Cashiers and Admins can edit customers
         role = request.user.role.name if request.user.role else None
         if role not in ['SHOP_MANAGER', 'ADMIN', 'SHOP_CASHIER']:
@@ -345,6 +349,8 @@ class CustomerCreditLedgerView(LoginRequiredMixin, PaginationMixin, ListView):
     context_object_name = 'transactions'
 
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         role_name = request.user.role.name if request.user.role else None
         if role_name not in ['ACCOUNTANT', 'AUDITOR', 'ADMIN', 'SHOP_MANAGER', 'SHOP_CASHIER']:
             messages.error(request, 'You do not have permission to view the credit ledger.')
@@ -431,6 +437,8 @@ class CustomerCreditLedgerExportView(LoginRequiredMixin, View):
     """Export customer credit ledger."""
 
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
         role_name = request.user.role.name if request.user.role else None
         if role_name not in ['ACCOUNTANT', 'AUDITOR', 'ADMIN', 'SHOP_MANAGER', 'SHOP_CASHIER']:
             messages.error(request, 'You do not have permission to export the credit ledger.')
