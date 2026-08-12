@@ -1653,7 +1653,7 @@ def api_dispatch_sale(request, pk):
             'sale_number': sale.sale_number,
             'fully_dispatched': fully_dispatched,
             'message': status_msg,
-            'waybill_url': reverse('sales:sale_waybill', args=[sale.pk]) if fully_dispatched else None,
+            'waybill_url': reverse('sales:sale_waybill', args=[sale.pk]),
         })
     except ValueError as e:
         return JsonResponse({'error': str(e)}, status=400)

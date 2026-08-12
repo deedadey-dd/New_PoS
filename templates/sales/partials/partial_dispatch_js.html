@@ -220,7 +220,7 @@ function submitDispatch(fillAll) {
             const modalInstance = bootstrap.Modal.getInstance(partialDispatchModalEl);
             if (modalInstance) modalInstance.hide();
         }
-        if (res.fully_dispatched && res.waybill_url) {
+        if (res.waybill_url) {
             window.open(res.waybill_url, '_blank');
         }
         alert(res.message || 'Dispatch recorded.');

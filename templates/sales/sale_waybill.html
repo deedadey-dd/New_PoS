@@ -201,14 +201,26 @@
             <thead>
                 <tr>
                     <th>Item Description</th>
+                    {% if not sale.is_dispatched %}
+                    <th class="text-right">Ordered</th>
+                    <th class="text-right">Taken</th>
+                    <th class="text-right">Remain</th>
+                    {% else %}
                     <th class="text-right">Qty</th>
+                    {% endif %}
                 </tr>
             </thead>
             <tbody>
                 {% for item in sale.items.all %}
                 <tr>
                     <td>{{ item.product.name }}</td>
+                    {% if not sale.is_dispatched %}
+                    <td class="text-right">{{ item.quantity }}</td>
+                    <td class="text-right"><strong>{{ item.dispatched_quantity }}</strong></td>
+                    <td class="text-right">{{ item.remaining_quantity }}</td>
+                    {% else %}
                     <td class="text-right"><strong>{{ item.quantity }}</strong></td>
+                    {% endif %}
                 </tr>
                 {% endfor %}
             </tbody>
