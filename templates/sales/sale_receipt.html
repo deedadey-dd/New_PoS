@@ -240,6 +240,18 @@
                         <td class="text-right">| {{ sale.get_payment_method_display }} |</td>
                         {% endif %}
                     </tr>
+                    {% if shop_settings is None or shop_settings.show_customer_info_on_receipt %}
+                        {% if sale.customer or sale.customer_name or sale.customer_phone %}
+                        <tr>
+                            <td colspan="2" style="border-top: 1px dashed #000; padding-top: 3px;">
+                                Customer: <strong>{{ sale.customer.name|default:sale.customer_name }}</strong>
+                                {% if sale.customer.phone or sale.customer_phone %}
+                                <br>Phone: <strong>{{ sale.customer.phone|default:sale.customer_phone }}</strong>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endif %}
+                    {% endif %}
                 </table>
             </div>
 
@@ -306,7 +318,10 @@
             <div style="border: 2px dashed #000; padding: 10px; margin: 10px 0; text-align: center;">
                 <strong style="font-size: 14px;">⚠️ CREDIT SALE ⚠️</strong>
                 {% if sale.customer %}
+                {% if shop_settings is None or shop_settings.show_customer_info_on_receipt %}
                 <p style="margin: 5px 0;">Customer: <strong>{{ sale.customer.name }}</strong></p>
+                {% if sale.customer.phone %}<p style="margin: 2px 0;">Phone: <strong>{{ sale.customer.phone }}</strong></p>{% endif %}
+                {% endif %}
                 <p style="margin: 5px 0;">Sale Total: {{ currency_symbol }}{{ sale.total|floatformat:"2g" }} | Paid:
                     {{ currency_symbol }}{{ sale.amount_paid|floatformat:"2g" }}</p>
                 <p style="margin: 5px 0;">Account Balance:
@@ -316,11 +331,14 @@
             </div>
             {% endif %}
 
+            {% if shop_settings is None or shop_settings.show_customer_info_on_receipt %}
             {% if sale.customer and sale.amount_paid >= sale.total %}
             <div style="border: 1px solid #000; padding: 5px; margin: 10px 0; text-align: center; font-size: 11px;">
                 Customer: {{ sale.customer.name }}<br>
+                {% if sale.customer.phone %}Phone: {{ sale.customer.phone }}<br>{% endif %}
                 Balance: {{ currency_symbol }}{{ sale.customer.current_balance|floatformat:"2g" }}
             </div>
+            {% endif %}
             {% endif %}
 
             <div class="receipt-footer">
@@ -360,6 +378,18 @@
                         <td class="text-right">| {{ sale.get_payment_method_display }} |</td>
                         {% endif %}
                     </tr>
+                    {% if shop_settings is None or shop_settings.show_customer_info_on_receipt %}
+                        {% if sale.customer or sale.customer_name or sale.customer_phone %}
+                        <tr>
+                            <td colspan="2" style="border-top: 1px dashed #000; padding-top: 3px;">
+                                Customer: <strong>{{ sale.customer.name|default:sale.customer_name }}</strong>
+                                {% if sale.customer.phone or sale.customer_phone %}
+                                <br>Phone: <strong>{{ sale.customer.phone|default:sale.customer_phone }}</strong>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endif %}
+                    {% endif %}
                 </table>
             </div>
 
@@ -426,7 +456,10 @@
             <div style="border: 2px dashed #000; padding: 10px; margin: 10px 0; text-align: center;">
                 <strong style="font-size: 14px;">⚠️ CREDIT SALE ⚠️</strong>
                 {% if sale.customer %}
+                {% if shop_settings is None or shop_settings.show_customer_info_on_receipt %}
                 <p style="margin: 5px 0;">Customer: <strong>{{ sale.customer.name }}</strong></p>
+                {% if sale.customer.phone %}<p style="margin: 2px 0;">Phone: <strong>{{ sale.customer.phone }}</strong></p>{% endif %}
+                {% endif %}
                 <p style="margin: 5px 0;">Sale Total: {{ currency_symbol }}{{ sale.total|floatformat:"2g" }} | Paid:
                     {{ currency_symbol }}{{ sale.amount_paid|floatformat:"2g" }}</p>
                 <p style="margin: 5px 0;">Account Balance:
@@ -436,11 +469,14 @@
             </div>
             {% endif %}
 
+            {% if shop_settings is None or shop_settings.show_customer_info_on_receipt %}
             {% if sale.customer and sale.amount_paid >= sale.total %}
             <div style="border: 1px solid #000; padding: 5px; margin: 10px 0; text-align: center; font-size: 11px;">
                 Customer: {{ sale.customer.name }}<br>
+                {% if sale.customer.phone %}Phone: {{ sale.customer.phone }}<br>{% endif %}
                 Balance: {{ currency_symbol }}{{ sale.customer.current_balance|floatformat:"2g" }}
             </div>
+            {% endif %}
             {% endif %}
 
             <div class="receipt-footer">
@@ -480,6 +516,18 @@
                         <td class="text-right">| {{ sale.get_payment_method_display }} |</td>
                         {% endif %}
                     </tr>
+                    {% if shop_settings is None or shop_settings.show_customer_info_on_receipt %}
+                        {% if sale.customer or sale.customer_name or sale.customer_phone %}
+                        <tr>
+                            <td colspan="2" style="border-top: 1px dashed #000; padding-top: 3px;">
+                                Customer: <strong>{{ sale.customer.name|default:sale.customer_name }}</strong>
+                                {% if sale.customer.phone or sale.customer_phone %}
+                                <br>Phone: <strong>{{ sale.customer.phone|default:sale.customer_phone }}</strong>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endif %}
+                    {% endif %}
                 </table>
             </div>
 
@@ -600,6 +648,18 @@
                     <td class="text-right">| {{ sale.get_payment_method_display }} |</td>
                     {% endif %}
                 </tr>
+                {% if shop_settings is None or shop_settings.show_customer_info_on_receipt %}
+                    {% if sale.customer or sale.customer_name or sale.customer_phone %}
+                    <tr>
+                        <td colspan="2" style="border-top: 1px dashed #000; padding-top: 3px;">
+                            Customer: <strong>{{ sale.customer.name|default:sale.customer_name }}</strong>
+                            {% if sale.customer.phone or sale.customer_phone %}
+                            <br>Phone: <strong>{{ sale.customer.phone|default:sale.customer_phone }}</strong>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endif %}
+                {% endif %}
             </table>
         </div>
 
@@ -666,7 +726,10 @@
         <div style="border: 2px dashed #000; padding: 10px; margin: 10px 0; text-align: center;">
             <strong style="font-size: 14px;">⚠️ CREDIT SALE ⚠️</strong>
             {% if sale.customer %}
+            {% if shop_settings is None or shop_settings.show_customer_info_on_receipt %}
             <p style="margin: 5px 0;">Customer: <strong>{{ sale.customer.name }}</strong></p>
+            {% if sale.customer.phone %}<p style="margin: 2px 0;">Phone: <strong>{{ sale.customer.phone }}</strong></p>{% endif %}
+            {% endif %}
             <p style="margin: 5px 0;">Sale Total: {{ currency_symbol }}{{ sale.total|floatformat:"2g" }} | Paid:
                 {{ currency_symbol }}{{ sale.amount_paid|floatformat:"2g" }}</p>
             <p style="margin: 5px 0;">Account Balance:
@@ -676,11 +739,14 @@
         </div>
         {% endif %}
 
+        {% if shop_settings is None or shop_settings.show_customer_info_on_receipt %}
         {% if sale.customer and sale.amount_paid >= sale.total %}
         <div style="border: 1px solid #000; padding: 5px; margin: 10px 0; text-align: center; font-size: 11px;">
             Customer: {{ sale.customer.name }}<br>
+            {% if sale.customer.phone %}Phone: {{ sale.customer.phone }}<br>{% endif %}
             Balance: {{ currency_symbol }}{{ sale.customer.current_balance|floatformat:"2g" }}
         </div>
+        {% endif %}
         {% endif %}
 
         <div class="receipt-footer">

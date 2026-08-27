@@ -361,9 +361,15 @@
                             data-bs-parent="#sidebarAccordion" id="inventoryMenu">
                             <ul class="nav flex-column ms-3">
                                 <li class="nav-item">
-                                    <a class="nav-link text-white-50 py-1 {% if 'products' in request.path and 'shop-prices' not in request.path %}active text-white{% endif %}"
+                                    <a class="nav-link text-white-50 py-1 {% if 'products' in request.path and 'shop-prices' not in request.path and 'bundles' not in request.path %}active text-white{% endif %}"
                                         href="{% url 'inventory:product_list' %}">
                                         Products
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link text-white-50 py-1 {% if 'bundles' in request.path %}active text-white{% endif %}"
+                                        href="{% url 'inventory:bundle_list' %}">
+                                        <i class="bi bi-boxes me-1"></i>Product Bundles
                                     </a>
                                 </li>
                                 {% if role_name == 'SHOP_MANAGER' or role_name == 'ADMIN' %}

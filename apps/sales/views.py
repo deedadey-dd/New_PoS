@@ -184,11 +184,40 @@ class POSView(LoginRequiredMixin, View):
         
         # Sort so default is first
         available_providers.sort(key=lambda x: x['is_default'], reverse=True)
+
+        # Get active product bundles for POS
+        from apps.inventory.models import ProductBundle
+        bundles = ProductBundle.objects.filter(
+            tenant=request.user.tenant,
+            is_active=True
+        ).prefetch_related('items__product')
+
+        bundles_data = []
+        for b in bundles:
+            b_items = []
+            for item in b.items.all():
+                if item.product and item.product.is_active:
+                    b_items.append({
+                        'product_id': item.product.pk,
+                        'product_name': item.product.name,
+                        'quantity': float(item.quantity),
+                        'unit': item.product.unit_of_measure,
+                        'default_price': str(item.product.default_selling_price)
+                    })
+            if b_items:
+                bundles_data.append({
+                    'id': b.pk,
+                    'name': b.name,
+                    'description': b.description or '',
+                    'items_count': len(b_items),
+                    'items': b_items
+                })
         
         context = {
             'shop': user_shop,
             'products': json.dumps(products_with_prices),
             'categories': categories,
+            'bundles': json.dumps(bundles_data),
             'customers': json.dumps(list(customers), default=str),
             'available_providers': json.dumps(available_providers),
             'shop_settings': shop_settings,

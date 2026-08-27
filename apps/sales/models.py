@@ -56,6 +56,10 @@ class ShopSettings(TenantModel):
         help_text="Custom footer text for receipts (e.g., 'Thank you!')"
     )
     show_logo_on_receipt = models.BooleanField(default=True)
+    show_customer_info_on_receipt = models.BooleanField(
+        default=True,
+        help_text="Display customer name and phone number on printed receipts."
+    )
     
     # Payment settings
     enable_cash_payment = models.BooleanField(default=True)

@@ -8,8 +8,60 @@ from django.core.files.uploadedfile import InMemoryUploadedFile
 from decimal import Decimal
 from io import BytesIO
 
-from .models import Category, Product, Batch, InventoryLedger, ShopPrice
+from .models import Category, Product, Batch, InventoryLedger, ShopPrice, StockAdjustment, ProductBundle, BundleItem
+from django.forms import inlineformset_factory
 from apps.core.models import Location
+
+
+class ProductBundleForm(forms.ModelForm):
+    """Form for creating/editing product bundles."""
+    
+    class Meta:
+        model = ProductBundle
+        fields = ['name', 'description', 'is_active']
+        widgets = {
+            'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. School Starter Pack, Bakery Kit'}),
+            'description': forms.Textarea(attrs={'class': 'form-control', 'rows': 2, 'placeholder': 'Optional bundle description'}),
+            'is_active': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if not self.instance.pk:
+            self.initial['is_active'] = True
+
+
+class BaseBundleItemFormSet(forms.BaseInlineFormSet):
+    """FormSet validation for BundleItems."""
+    def clean(self):
+        super().clean()
+        if any(self.errors):
+            return
+
+        products = []
+        for form in self.forms:
+            if self.can_delete and self._should_delete_form(form):
+                continue
+            product = form.cleaned_data.get('product')
+            if product:
+                if product.id in products:
+                    raise ValidationError(f"Product '{product.name}' is listed more than once in this bundle. Please combine quantities into a single row or select distinct products.")
+                products.append(product.id)
+
+
+BundleItemFormSet = inlineformset_factory(
+    ProductBundle,
+    BundleItem,
+    formset=BaseBundleItemFormSet,
+    fields=['product', 'quantity'],
+    widgets={
+        'product': forms.Select(attrs={'class': 'form-select product-select'}),
+        'quantity': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0.01'}),
+    },
+    extra=1,
+    can_delete=True
+)
+
 
 
 class CategoryForm(forms.ModelForm):

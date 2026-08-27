@@ -41,6 +41,14 @@
                         </label>
                     </div>
 
+                    <div class="mb-4 form-check form-switch">
+                        {{ form.show_customer_info_on_receipt }}
+                        <label class="form-check-label ms-2 fw-bold" for="{{ form.show_customer_info_on_receipt.id_for_label }}">
+                            Include Customer Name & Phone Number on Receipts
+                        </label>
+                        <div class="form-text">When enabled, customer name and phone number will be printed on receipts.</div>
+                    </div>
+
                     <div class="mb-4">
                         <label class="form-label fw-bold">Receipt Header Text</label>
                         {{ form.receipt_header }}

@@ -69,10 +69,14 @@
     </div>
 </div>
 
+<!-- Dynamic Alert Container -->
+<div id="dynamicAlertContainer"></div>
+
 <!-- Filters -->
 <div class="card mb-4">
     <div class="card-body">
         <form method="get" class="row g-3" id="searchForm">
+            {% csrf_token %}
             <div class="col-md-6">
                 <div class="input-group position-relative">
                     <span class="input-group-text"><i class="bi bi-search"></i></span>
@@ -101,6 +105,23 @@
     </div>
 </div>
 
+<!-- Bulk Actions Toolbar -->
+<div id="bulkActionsBar" class="alert alert-primary alert-permanent py-2 px-3 mb-3 d-none d-flex align-items-center justify-content-between shadow-sm">
+    <div class="d-flex align-items-center">
+        <i class="bi bi-check2-square fs-5 me-2"></i>
+        <span id="selectedCountText" class="fw-semibold">0 products selected</span>
+    </div>
+    <div class="d-flex gap-2">
+        <button type="button" class="btn btn-sm btn-warning" id="btnArchiveSelected">
+            <i class="bi bi-archive me-1"></i>Deactivate / Archive (<span id="archiveCountBadge">0</span>)
+        </button>
+        <button type="button" class="btn btn-sm btn-danger" id="btnDeleteSelected">
+            <i class="bi bi-trash me-1"></i>Delete (<span id="selectedCountBadge">0</span>)
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="btnClearSelection">Clear Selection</button>
+    </div>
+</div>
+
 <div class="card">
     <div class="card-body">
         {% if products %}
@@ -108,6 +129,9 @@
             <table class="table table-hover">
                 <thead>
                     <tr>
+                        <th style="width: 40px;" class="text-center">
+                            <input type="checkbox" class="form-check-input" id="selectAllProducts" title="Select All Products">
+                        </th>
                         <th style="width: 36px;"></th>
                         <th>{% sort_link "SKU" "sku" %}</th>
                         <th>{% sort_link "Name" "name" %}</th>
@@ -121,7 +145,10 @@
                 </thead>
                 <tbody>
                     {% for product in products %}
-                    <tr{% if product.pk in favorite_ids %} class="table-warning table-active"{% endif %}>
+                    <tr id="product-row-{{ product.pk }}" data-product-id="{{ product.pk }}" data-product-name="{{ product.name }}"{% if product.pk in favorite_ids %} class="table-warning table-active"{% endif %}>
+                        <td class="text-center">
+                            <input type="checkbox" class="form-check-input product-select-checkbox" value="{{ product.pk }}" data-product-name="{{ product.name }}">
+                        </td>
                         <td>
                             <button class="btn btn-sm btn-link p-0 favorite-toggle"
                                 data-product-id="{{ product.pk }}"
@@ -164,10 +191,14 @@
                                 class="btn btn-sm btn-outline-primary" title="Edit">
                                 <i class="bi bi-pencil"></i>
                             </a>
-                            <a href="{% url 'inventory:product_delete' product.pk %}"
-                                class="btn btn-sm btn-outline-danger" title="Delete">
+                            <button type="button"
+                                class="btn btn-sm btn-outline-danger btn-delete-single"
+                                data-product-id="{{ product.pk }}"
+                                data-product-name="{{ product.name }}"
+                                data-delete-url="{% url 'inventory:product_delete' product.pk %}"
+                                title="Delete">
                                 <i class="bi bi-trash"></i>
-                            </a>
+                            </button>
                         </td>
                     </tr>
                     {% endfor %}
@@ -187,6 +218,39 @@
             {% endif %}
         </div>
         {% endif %}
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteProductModal" tabindex="-1" aria-labelledby="deleteProductModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title" id="deleteProductModalLabel">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>Confirm Deletion
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p id="deleteModalMessage" class="fs-6 mb-2"></p>
+                <div id="deleteModalProductList" class="alert alert-light border alert-permanent small text-muted mb-0" style="max-height: 150px; overflow-y: auto; display: none;"></div>
+                <div class="alert alert-warning alert-permanent mt-3 py-2 small mb-0 d-flex align-items-center" id="deleteModalWarning">
+                    <i class="bi bi-info-circle-fill me-2 fs-5"></i>
+                    <span>This action will remove the product(s) permanently and cannot be undone.</span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="btnCancelDelete">Cancel</button>
+                <button type="button" class="btn btn-warning d-none" id="btnConfirmArchive">
+                    <span class="spinner-border spinner-border-sm d-none me-1" id="archiveSpinner" role="status" aria-hidden="true"></span>
+                    <i class="bi bi-archive me-1"></i>Deactivate (Archive) Instead
+                </button>
+                <button type="button" class="btn btn-danger" id="btnConfirmDelete">
+                    <span class="spinner-border spinner-border-sm d-none me-1" id="deleteSpinner" role="status" aria-hidden="true"></span>
+                    <span id="btnConfirmDeleteText">Delete</span>
+                </button>
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}
@@ -314,5 +378,300 @@
             .catch(() => {});
         });
     });
+
+    // Bulk Selection & Delete/Archive Modal Logic
+    (function () {
+        const selectAll = document.getElementById('selectAllProducts');
+        const rowCheckboxes = document.querySelectorAll('.product-select-checkbox');
+        const bulkBar = document.getElementById('bulkActionsBar');
+        const selectedCountText = document.getElementById('selectedCountText');
+        const selectedCountBadge = document.getElementById('selectedCountBadge');
+        const archiveCountBadge = document.getElementById('archiveCountBadge');
+        const btnClearSelection = document.getElementById('btnClearSelection');
+        const btnDeleteSelected = document.getElementById('btnDeleteSelected');
+        const btnArchiveSelected = document.getElementById('btnArchiveSelected');
+        const dynamicAlertContainer = document.getElementById('dynamicAlertContainer');
+
+        const deleteModalEl = document.getElementById('deleteProductModal');
+        if (!deleteModalEl) return;
+        const deleteModal = new bootstrap.Modal(deleteModalEl);
+        const deleteModalMessage = document.getElementById('deleteModalMessage');
+        const deleteModalProductList = document.getElementById('deleteModalProductList');
+        const btnConfirmDelete = document.getElementById('btnConfirmDelete');
+        const btnConfirmDeleteText = document.getElementById('btnConfirmDeleteText');
+        const btnConfirmArchive = document.getElementById('btnConfirmArchive');
+        const archiveSpinner = document.getElementById('archiveSpinner');
+        const deleteSpinner = document.getElementById('deleteSpinner');
+        const btnCancelDelete = document.getElementById('btnCancelDelete');
+
+        let pendingDeleteTarget = null; // { type: 'single'|'bulk', items: [{id, name, url}], action: 'delete'|'archive' }
+
+        function updateSelectionState() {
+            const checkedBoxes = document.querySelectorAll('.product-select-checkbox:checked');
+            const count = checkedBoxes.length;
+            const total = document.querySelectorAll('.product-select-checkbox').length;
+
+            if (selectAll) {
+                selectAll.checked = total > 0 && count === total;
+                selectAll.indeterminate = count > 0 && count < total;
+            }
+
+            if (count > 0) {
+                bulkBar.classList.remove('d-none');
+                selectedCountText.textContent = `${count} product${count > 1 ? 's' : ''} selected`;
+                if (selectedCountBadge) selectedCountBadge.textContent = count;
+                if (archiveCountBadge) archiveCountBadge.textContent = count;
+            } else {
+                bulkBar.classList.add('d-none');
+            }
+        }
+
+        if (selectAll) {
+            selectAll.addEventListener('change', function () {
+                document.querySelectorAll('.product-select-checkbox').forEach(cb => {
+                    cb.checked = selectAll.checked;
+                });
+                updateSelectionState();
+            });
+        }
+
+        rowCheckboxes.forEach(cb => {
+            cb.addEventListener('change', updateSelectionState);
+        });
+
+        if (btnClearSelection) {
+            btnClearSelection.addEventListener('click', function () {
+                document.querySelectorAll('.product-select-checkbox').forEach(cb => { cb.checked = false; });
+                if (selectAll) {
+                    selectAll.checked = false;
+                    selectAll.indeterminate = false;
+                }
+                updateSelectionState();
+            });
+        }
+
+        function showAlert(message, type = 'success') {
+            if (!dynamicAlertContainer) return;
+            const alertHtml = `
+                <div class="alert alert-${type} alert-dismissible fade show mb-4" role="alert">
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            `;
+            dynamicAlertContainer.innerHTML = alertHtml;
+            dynamicAlertContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        function escapeHtml(text) {
+            return text ? text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") : '';
+        }
+
+        function resetModalState() {
+            btnConfirmArchive.classList.add('d-none');
+            btnConfirmDelete.classList.remove('d-none');
+            btnConfirmDelete.disabled = false;
+            btnConfirmArchive.disabled = false;
+            btnCancelDelete.disabled = false;
+            deleteSpinner.classList.add('d-none');
+            archiveSpinner.classList.add('d-none');
+            btnConfirmDeleteText.textContent = 'Delete';
+        }
+
+        // Single Delete button click handler
+        document.querySelectorAll('.btn-delete-single').forEach(btn => {
+            btn.addEventListener('click', function () {
+                const id = this.dataset.productId;
+                const name = this.dataset.productName;
+                const url = this.dataset.deleteUrl;
+
+                pendingDeleteTarget = {
+                    type: 'single',
+                    items: [{ id: id, name: name, url: url }],
+                    action: 'delete'
+                };
+
+                resetModalState();
+                deleteModalMessage.innerHTML = `Are you sure you want to delete product <strong>"${escapeHtml(name)}"</strong>?`;
+                deleteModalProductList.style.display = 'none';
+                deleteModalProductList.innerHTML = '';
+                deleteModal.show();
+            });
+        });
+
+        // Bulk Delete button click handler
+        if (btnDeleteSelected) {
+            btnDeleteSelected.addEventListener('click', function () {
+                const checkedBoxes = Array.from(document.querySelectorAll('.product-select-checkbox:checked'));
+                if (checkedBoxes.length === 0) return;
+
+                const items = checkedBoxes.map(cb => ({
+                    id: cb.value,
+                    name: cb.dataset.productName
+                }));
+
+                pendingDeleteTarget = {
+                    type: 'bulk',
+                    items: items,
+                    action: 'delete'
+                };
+
+                resetModalState();
+                deleteModalMessage.innerHTML = `Are you sure you want to delete <strong>${items.length}</strong> selected product(s)?`;
+                deleteModalProductList.innerHTML = '<ul class="mb-0 ps-3">' + items.map(item => `<li>${escapeHtml(item.name)}</li>`).join('') + '</ul>';
+                deleteModalProductList.style.display = 'block';
+                deleteModal.show();
+            });
+        }
+
+        // Bulk Archive / Deactivate button click handler
+        if (btnArchiveSelected) {
+            btnArchiveSelected.addEventListener('click', function () {
+                const checkedBoxes = Array.from(document.querySelectorAll('.product-select-checkbox:checked'));
+                if (checkedBoxes.length === 0) return;
+
+                const items = checkedBoxes.map(cb => ({
+                    id: cb.value,
+                    name: cb.dataset.productName
+                }));
+
+                pendingDeleteTarget = {
+                    type: 'bulk',
+                    items: items,
+                    action: 'archive'
+                };
+
+                resetModalState();
+                btnConfirmDelete.classList.add('d-none');
+                btnConfirmArchive.classList.remove('d-none');
+                deleteModalMessage.innerHTML = `Deactivate <strong>${items.length}</strong> selected product(s)? This will hide them from POS and catalog views while preserving past sales & transaction records.`;
+                deleteModalProductList.innerHTML = '<ul class="mb-0 ps-3">' + items.map(item => `<li>${escapeHtml(item.name)}</li>`).join('') + '</ul>';
+                deleteModalProductList.style.display = 'block';
+                deleteModal.show();
+            });
+        }
+
+        function executeDeletionOrArchival(target, actionOverride) {
+            const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value
+                || '{{ csrf_token }}';
+
+            const action = actionOverride || target.action || 'delete';
+            let endpoint = '';
+            let requestOptions = {};
+
+            if (target.type === 'single') {
+                endpoint = target.items[0].url;
+                requestOptions = {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': csrfToken,
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ action: action })
+                };
+            } else {
+                endpoint = "{% url 'inventory:product_bulk_delete' %}";
+                const ids = target.items.map(i => i.id);
+                requestOptions = {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': csrfToken,
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ product_ids: ids, action: action })
+                };
+            }
+
+            fetch(endpoint, requestOptions)
+                .then(response => response.json().then(data => ({ status: response.status, data })))
+                .then(({ status, data }) => {
+                    if (data.success) {
+                        deleteModal.hide();
+                        const deletedIds = data.deleted_ids || (data.id ? [data.id] : []);
+
+                        deletedIds.forEach(id => {
+                            const row = document.getElementById(`product-row-${id}`);
+                            if (row) {
+                                row.classList.add('table-danger');
+                                row.style.transition = 'opacity 0.4s ease';
+                                row.style.opacity = '0';
+                                setTimeout(() => {
+                                    row.remove();
+                                    updateSelectionState();
+                                    const remainingRows = document.querySelectorAll('tbody tr[id^="product-row-"]');
+                                    if (remainingRows.length === 0) {
+                                        window.location.reload();
+                                    }
+                                }, 400);
+                            }
+                        });
+
+                        showAlert(data.message, data.partial ? 'warning' : 'success');
+                        pendingDeleteTarget = null;
+                    } else {
+                        if (data.can_archive) {
+                            // Show Archive option inside modal
+                            deleteModalMessage.innerHTML = `<div class="text-danger fw-semibold mb-2"><i class="bi bi-exclamation-triangle me-1"></i>Deletion Blocked</div>${escapeHtml(data.error)}<div class="mt-2 text-dark">Would you like to <strong>Deactivate (Archive)</strong> these product(s) instead? This hides them from sales while preserving sales history.</div>`;
+                            btnConfirmDelete.classList.add('d-none');
+                            btnConfirmArchive.classList.remove('d-none');
+                            btnConfirmDelete.disabled = false;
+                            btnConfirmArchive.disabled = false;
+                            btnCancelDelete.disabled = false;
+                            deleteSpinner.classList.add('d-none');
+                            archiveSpinner.classList.add('d-none');
+
+                            // Update target items to protected product IDs if specified
+                            if (data.product_ids && data.product_ids.length > 0) {
+                                pendingDeleteTarget = {
+                                    type: 'bulk',
+                                    items: data.product_ids.map((id, idx) => ({
+                                        id: id,
+                                        name: (data.product_names && data.product_names[idx]) || ''
+                                    })),
+                                    action: 'archive'
+                                };
+                            }
+                        } else {
+                            deleteModal.hide();
+                            showAlert(data.error || 'Failed to delete product(s).', 'danger');
+                            pendingDeleteTarget = null;
+                        }
+                    }
+                })
+                .catch(err => {
+                    deleteModal.hide();
+                    showAlert('An unexpected network error occurred.', 'danger');
+                    pendingDeleteTarget = null;
+                });
+        }
+
+        // Modal Confirm Delete button handler
+        if (btnConfirmDelete) {
+            btnConfirmDelete.addEventListener('click', function () {
+                if (!pendingDeleteTarget || !pendingDeleteTarget.items.length) return;
+
+                btnConfirmDelete.disabled = true;
+                btnCancelDelete.disabled = true;
+                deleteSpinner.classList.remove('d-none');
+                btnConfirmDeleteText.textContent = 'Deleting...';
+
+                executeDeletionOrArchival(pendingDeleteTarget, 'delete');
+            });
+        }
+
+        // Modal Confirm Archive button handler
+        if (btnConfirmArchive) {
+            btnConfirmArchive.addEventListener('click', function () {
+                if (!pendingDeleteTarget || !pendingDeleteTarget.items.length) return;
+
+                btnConfirmArchive.disabled = true;
+                btnCancelDelete.disabled = true;
+                archiveSpinner.classList.remove('d-none');
+
+                executeDeletionOrArchival(pendingDeleteTarget, 'archive');
+            });
+        }
+    })();
 </script>
 {% endblock %}

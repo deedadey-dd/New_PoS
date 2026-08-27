@@ -1,0 +1,229 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ title }} - {{ current_tenant.name }}{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <a href="{% url 'inventory:bundle_list' %}" class="text-decoration-none text-muted">
+        <i class="bi bi-arrow-left me-1"></i>Back to Bundles
+    </a>
+    <h2 class="mt-2">{{ title }}</h2>
+</div>
+
+{% if formset.non_form_errors %}
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
+    {% for error in formset.non_form_errors %}
+    <div><i class="bi bi-exclamation-triangle-fill me-2"></i>{{ error }}</div>
+    {% endfor %}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+</div>
+{% endif %}
+
+<div id="duplicate-warning-banner" class="alert alert-warning alert-permanent d-none mb-4" role="alert">
+    <i class="bi bi-exclamation-triangle-fill me-2 fs-5"></i>
+    <span id="duplicate-warning-text">Warning: Duplicate items selected in bundle!</span>
+</div>
+
+<form method="post" id="bundleForm">
+    {% csrf_token %}
+    <div class="row g-4">
+        <div class="col-md-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-light fw-bold">Bundle Information</div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Bundle Name *</label>
+                        {{ form.name }}
+                        {% if form.name.errors %}
+                        <div class="text-danger small">{{ form.name.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Description</label>
+                        {{ form.description }}
+                    </div>
+                    <div class="form-check form-switch mb-3">
+                        {{ form.is_active }}
+                        <label class="form-check-label fw-semibold">Active in POS</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-8">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <span class="fw-bold">Bundle Products & Quantities</span>
+                    <span class="text-muted small">Select as many products as needed</span>
+                </div>
+                <div class="card-body">
+                    {{ formset.management_form }}
+                    <div class="table-responsive">
+                        <table class="table align-middle" id="bundleItemsTable">
+                            <thead>
+                                <tr>
+                                    <th style="width: 55%;">Product *</th>
+                                    <th style="width: 30%;">Quantity *</th>
+                                    <th style="width: 15%;" class="text-end">Remove</th>
+                                </tr>
+                            </thead>
+                            <tbody id="bundle-items-tbody">
+                                {% for item_form in formset %}
+                                <tr class="bundle-item-row">
+                                    <td>
+                                        {{ item_form.id }}
+                                        {{ item_form.product }}
+                                        <div class="row-warning text-warning small mt-1 d-none">
+                                            <i class="bi bi-exclamation-triangle-fill me-1"></i>Duplicate item selected
+                                        </div>
+                                        {% if item_form.product.errors %}
+                                        <div class="text-danger small">{{ item_form.product.errors.0 }}</div>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {{ item_form.quantity }}
+                                        {% if item_form.quantity.errors %}
+                                        <div class="text-danger small">{{ item_form.quantity.errors.0 }}</div>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-end">
+                                        {% if formset.can_delete %}
+                                            <div class="form-check d-inline-block">
+                                                {{ item_form.DELETE }}
+                                            </div>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <button type="button" class="btn btn-outline-primary btn-sm mt-2" id="add-item-btn">
+                        <i class="bi bi-plus-circle me-1"></i>Add Another Product
+                    </button>
+                </div>
+                <div class="card-footer bg-light d-flex justify-content-between align-items-center">
+                    <a href="{% url 'inventory:bundle_list' %}" class="btn btn-outline-secondary">Cancel</a>
+                    <button type="submit" class="btn btn-success px-4" id="btn-save-bundle">
+                        <i class="bi bi-check-circle me-1"></i>Save Product Bundle
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const tbody = document.getElementById('bundle-items-tbody');
+        const addItemBtn = document.getElementById('add-item-btn');
+        const totalFormsInput = document.querySelector('[id$="-TOTAL_FORMS"]');
+        const banner = document.getElementById('duplicate-warning-banner');
+        const bannerText = document.getElementById('duplicate-warning-text');
+
+        function checkDuplicates() {
+            const rows = tbody.querySelectorAll('.bundle-item-row');
+            const selectedMap = new Map(); // productId -> count
+            let hasDuplicates = false;
+            let duplicateNames = new Set();
+
+            rows.forEach(row => {
+                const deleteCheck = row.querySelector('input[name$="-DELETE"]');
+                if (deleteCheck && deleteCheck.checked) return;
+
+                const select = row.querySelector('.product-select');
+                const warningDiv = row.querySelector('.row-warning');
+                if (warningDiv) warningDiv.classList.add('d-none');
+                if (select) select.classList.remove('border-warning');
+
+                if (select && select.value) {
+                    const val = select.value;
+                    const name = select.options[select.selectedIndex]?.text || 'Item';
+                    const count = (selectedMap.get(val) || 0) + 1;
+                    selectedMap.set(val, count);
+
+                    if (count > 1) {
+                        duplicateNames.add(name);
+                    }
+                }
+            });
+
+            // Mark rows with duplicates
+            rows.forEach(row => {
+                const deleteCheck = row.querySelector('input[name$="-DELETE"]');
+                if (deleteCheck && deleteCheck.checked) return;
+
+                const select = row.querySelector('.product-select');
+                const warningDiv = row.querySelector('.row-warning');
+                if (select && select.value && selectedMap.get(select.value) > 1) {
+                    hasDuplicates = true;
+                    if (warningDiv) warningDiv.classList.remove('d-none');
+                    select.classList.add('border-warning');
+                }
+            });
+
+            if (hasDuplicates && banner) {
+                banner.classList.remove('d-none');
+                bannerText.textContent = `Warning: ${Array.from(duplicateNames).join(', ')} added more than once. Combine quantities or select different products.`;
+            } else if (banner) {
+                banner.classList.add('d-none');
+            }
+        }
+
+        // Add item row
+        if (addItemBtn && tbody && totalFormsInput) {
+            addItemBtn.addEventListener('click', function () {
+                const rows = tbody.querySelectorAll('.bundle-item-row');
+                if (rows.length === 0) return;
+
+                const currentCount = parseInt(totalFormsInput.value, 10);
+                const firstRow = rows[0];
+                const newRow = firstRow.cloneNode(true);
+
+                // Reset inputs and update field names/ids
+                newRow.querySelectorAll('input, select').forEach(input => {
+                    const name = input.getAttribute('name');
+                    const id = input.getAttribute('id');
+                    if (name) {
+                        const newName = name.replace(/-\d+-/, `-${currentCount}-`);
+                        input.setAttribute('name', newName);
+                    }
+                    if (id) {
+                        const newId = id.replace(/-\d+-/, `-${currentCount}-`);
+                        input.setAttribute('id', newId);
+                    }
+
+                    if (input.type === 'checkbox') {
+                        input.checked = false;
+                    } else if (input.type === 'number') {
+                        input.value = '1.00';
+                    } else if (input.tagName === 'SELECT') {
+                        input.selectedIndex = 0;
+                        input.classList.remove('border-warning');
+                    } else if (input.type === 'hidden' && name && name.endsWith('-id')) {
+                        input.value = '';
+                    }
+                });
+
+                const warningDiv = newRow.querySelector('.row-warning');
+                if (warningDiv) warningDiv.classList.add('d-none');
+
+                tbody.appendChild(newRow);
+                totalFormsInput.value = currentCount + 1;
+                checkDuplicates();
+            });
+        }
+
+        // Listen for changes on product selects
+        tbody.addEventListener('change', function (e) {
+            if (e.target && (e.target.classList.contains('product-select') || e.target.name.endsWith('-DELETE'))) {
+                checkDuplicates();
+            }
+        });
+
+        checkDuplicates();
+    });
+</script>
+{% endblock %}

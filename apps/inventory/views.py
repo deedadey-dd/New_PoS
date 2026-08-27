@@ -16,8 +16,8 @@ import decimal
 
 from apps.core.mixins import PaginationMixin # Added this line
 
-from .models import Category, Product, Batch, InventoryLedger, ShopPrice, StockAdjustment
-from .forms import CategoryForm, ProductForm, BatchForm, BatchUpdateForm, StockAdjustmentForm, ShopPriceForm
+from .models import Category, Product, Batch, InventoryLedger, ShopPrice, StockAdjustment, ProductBundle, BundleItem
+from .forms import CategoryForm, ProductForm, BatchForm, BatchUpdateForm, StockAdjustmentForm, ShopPriceForm, ProductBundleForm, BundleItemFormSet
 from apps.core.models import Location
 from apps.core.mixins import PaginationMixin, SortableMixin
 
@@ -411,13 +411,159 @@ class ProductUpdateView(LoginRequiredMixin, UpdateView):
 
 
 class ProductDeleteView(LoginRequiredMixin, DeleteView):
-    """Delete a product."""
+    """Delete or archive a product."""
     model = Product
     template_name = 'inventory/product_confirm_delete.html'
     success_url = reverse_lazy('inventory:product_list')
     
     def get_queryset(self):
         return Product.objects.filter(tenant=self.request.user.tenant)
+
+    def post(self, request, *args, **kwargs):
+        from django.db.models import ProtectedError, RestrictedError
+        product = self.get_object()
+        product_name = product.name
+        product_id = product.pk
+        
+        is_ajax = (
+            request.headers.get('x-requested-with') == 'XMLHttpRequest' or 
+            request.content_type == 'application/json' or
+            request.GET.get('format') == 'json'
+        )
+
+        action = request.POST.get('action')
+        if request.content_type == 'application/json':
+            import json
+            try:
+                body = json.loads(request.body)
+                action = body.get('action', action)
+            except Exception:
+                pass
+
+        if action == 'archive':
+            product.is_active = False
+            product.save(update_fields=['is_active', 'updated_at'])
+            msg = f'Product "{product_name}" deactivated (archived) successfully.'
+            if is_ajax:
+                return JsonResponse({'success': True, 'id': product_id, 'message': msg, 'archived': True})
+            messages.success(request, msg)
+            return redirect(self.success_url)
+
+        try:
+            product.delete()
+            if is_ajax:
+                return JsonResponse({
+                    'success': True,
+                    'message': f'Product "{product_name}" deleted successfully.',
+                    'id': product_id
+                })
+            messages.success(request, f'Product "{product_name}" deleted successfully.')
+            return redirect(self.success_url)
+        except (ProtectedError, RestrictedError):
+            msg = f'Cannot delete "{product_name}" because it has associated sales or inventory records.'
+            if is_ajax:
+                return JsonResponse({
+                    'success': False, 
+                    'error': msg, 
+                    'can_archive': True,
+                    'product_ids': [product_id],
+                    'product_names': [product_name]
+                }, status=400)
+            messages.error(request, msg)
+            return redirect(self.success_url)
+        except Exception as e:
+            msg = f'Error deleting product: {str(e)}'
+            if is_ajax:
+                return JsonResponse({'success': False, 'error': msg}, status=400)
+            messages.error(request, msg)
+            return redirect(self.success_url)
+
+
+class ProductBulkDeleteView(LoginRequiredMixin, View):
+    """Bulk delete or archive products for the tenant."""
+
+    def post(self, request, *args, **kwargs):
+        import json
+        from django.db.models import ProtectedError, RestrictedError
+
+        action = 'delete'
+        product_ids = []
+
+        try:
+            if request.content_type == 'application/json':
+                data = json.loads(request.body)
+                product_ids = data.get('product_ids', [])
+                action = data.get('action', 'delete')
+            else:
+                product_ids = request.POST.getlist('product_ids')
+                action = request.POST.get('action', 'delete')
+        except Exception:
+            product_ids = []
+
+        if not product_ids:
+            return JsonResponse({'success': False, 'error': 'No products selected.'}, status=400)
+
+        products = list(Product.objects.filter(tenant=request.user.tenant, pk__in=product_ids))
+        if not products:
+            return JsonResponse({'success': False, 'error': 'No matching products found.'}, status=404)
+
+        if action == 'archive':
+            archived_ids = []
+            for product in products:
+                product.is_active = False
+                product.save(update_fields=['is_active', 'updated_at'])
+                archived_ids.append(product.pk)
+            return JsonResponse({
+                'success': True,
+                'deleted_ids': archived_ids,
+                'message': f'Successfully deactivated (archived) {len(archived_ids)} product(s).'
+            })
+
+        deleted_ids = []
+        protected_products = []
+        failed_products = []
+
+        for product in products:
+            p_name = product.name
+            p_id = product.pk
+            try:
+                product.delete()
+                deleted_ids.append(p_id)
+            except (ProtectedError, RestrictedError):
+                protected_products.append({'id': p_id, 'name': p_name})
+            except Exception as e:
+                failed_products.append(f'"{p_name}" ({str(e)})')
+
+        if deleted_ids:
+            msg_parts = [f"Successfully deleted {len(deleted_ids)} product(s)."]
+            if protected_products:
+                names = ', '.join([f'"{p["name"]}"' for p in protected_products])
+                msg_parts.append(f"Could not delete {len(protected_products)} product(s) with associated records: {names}.")
+            
+            return JsonResponse({
+                'success': True,
+                'deleted_ids': deleted_ids,
+                'protected_products': protected_products,
+                'can_archive': len(protected_products) > 0,
+                'product_ids': [p['id'] for p in protected_products],
+                'product_names': [p['name'] for p in protected_products],
+                'message': ' '.join(msg_parts),
+                'partial': len(protected_products) > 0 or len(failed_products) > 0
+            })
+        else:
+            if protected_products:
+                names = ', '.join([f'"{p["name"]}"' for p in protected_products])
+                msg = f"Cannot delete products because they have associated sales or inventory records: {names}."
+                return JsonResponse({
+                    'success': False,
+                    'error': msg,
+                    'can_archive': True,
+                    'product_ids': [p['id'] for p in protected_products],
+                    'product_names': [p['name'] for p in protected_products]
+                }, status=400)
+            else:
+                msg = f"Failed to delete products: {', '.join(failed_products)}"
+                return JsonResponse({'success': False, 'error': msg}, status=400)
 
 
 class ProductTemplateDownloadView(LoginRequiredMixin, View):
@@ -2103,3 +2249,164 @@ class PriceChangeCenterView(LoginRequiredMixin, SortableMixin, ListView):
             n.parsed_reference = 'Other'
             
         return context
+
+
+# ============ Product Bundle Views ============
+
+class BundleListView(LoginRequiredMixin, SortableMixin, ListView):
+    """List all product bundles for the tenant."""
+    model = ProductBundle
+    template_name = 'inventory/bundle_list.html'
+    context_object_name = 'bundles'
+    sortable_fields = ['name', 'created_at']
+    default_sort = 'name'
+
+    def get_queryset(self):
+        queryset = ProductBundle.objects.filter(
+            tenant=self.request.user.tenant
+        ).prefetch_related('items__product')
+        return self.apply_sorting(queryset)
+
+
+class BundleCreateView(LoginRequiredMixin, View):
+    """Create a new product bundle with items."""
+    template_name = 'inventory/bundle_form.html'
+
+    def get(self, request):
+        form = ProductBundleForm()
+        formset = BundleItemFormSet(queryset=BundleItem.objects.none())
+        for f in formset.forms:
+            f.fields['product'].queryset = Product.objects.filter(tenant=request.user.tenant, is_active=True)
+        formset.empty_form.fields['product'].queryset = Product.objects.filter(tenant=request.user.tenant, is_active=True)
+        return render(request, self.template_name, {
+            'form': form,
+            'formset': formset,
+            'title': 'Create Product Bundle'
+        })
+
+    def post(self, request):
+        form = ProductBundleForm(request.POST)
+        formset = BundleItemFormSet(request.POST)
+        for f in formset.forms:
+            f.fields['product'].queryset = Product.objects.filter(tenant=request.user.tenant, is_active=True)
+        formset.empty_form.fields['product'].queryset = Product.objects.filter(tenant=request.user.tenant, is_active=True)
+
+        if form.is_valid() and formset.is_valid():
+            bundle = form.save(commit=False)
+            bundle.tenant = request.user.tenant
+            bundle.created_by = request.user
+            bundle.save()
+
+            items = formset.save(commit=False)
+            for item in items:
+                item.bundle = bundle
+                item.save()
+
+            for item in formset.deleted_objects:
+                item.delete()
+
+            messages.success(request, f'Product Bundle "{bundle.name}" created successfully!')
+            return redirect('inventory:bundle_list')
+
+        return render(request, self.template_name, {
+            'form': form,
+            'formset': formset,
+            'title': 'Create Product Bundle'
+        })
+
+
+class BundleUpdateView(LoginRequiredMixin, View):
+    """Update an existing product bundle."""
+    template_name = 'inventory/bundle_form.html'
+
+    def get(self, request, pk):
+        bundle = get_object_or_404(ProductBundle, pk=pk, tenant=request.user.tenant)
+        form = ProductBundleForm(instance=bundle)
+        formset = BundleItemFormSet(instance=bundle)
+        for f in formset.forms:
+            f.fields['product'].queryset = Product.objects.filter(tenant=request.user.tenant, is_active=True)
+        formset.empty_form.fields['product'].queryset = Product.objects.filter(tenant=request.user.tenant, is_active=True)
+        return render(request, self.template_name, {
+            'form': form,
+            'formset': formset,
+            'bundle': bundle,
+            'title': f'Edit Bundle: {bundle.name}'
+        })
+
+    def post(self, request, pk):
+        bundle = get_object_or_404(ProductBundle, pk=pk, tenant=request.user.tenant)
+        form = ProductBundleForm(request.POST, instance=bundle)
+        formset = BundleItemFormSet(request.POST, instance=bundle)
+        for f in formset.forms:
+            f.fields['product'].queryset = Product.objects.filter(tenant=request.user.tenant, is_active=True)
+        formset.empty_form.fields['product'].queryset = Product.objects.filter(tenant=request.user.tenant, is_active=True)
+
+        if form.is_valid() and formset.is_valid():
+            form.save()
+            items = formset.save(commit=False)
+            for item in items:
+                item.bundle = bundle
+                item.save()
+
+            for item in formset.deleted_objects:
+                item.delete()
+
+            messages.success(request, f'Product Bundle "{bundle.name}" updated successfully!')
+            return redirect('inventory:bundle_list')
+
+        return render(request, self.template_name, {
+            'form': form,
+            'formset': formset,
+            'bundle': bundle,
+            'title': f'Edit Bundle: {bundle.name}'
+        })
+
+
+class BundleDeleteView(LoginRequiredMixin, DeleteView):
+    """Delete a product bundle."""
+    model = ProductBundle
+    template_name = 'inventory/bundle_confirm_delete.html'
+    success_url = reverse_lazy('inventory:bundle_list')
+
+    def get_queryset(self):
+        return ProductBundle.objects.filter(tenant=self.request.user.tenant)
+
+    def post(self, request, *args, **kwargs):
+        bundle = self.get_object()
+        name = bundle.name
+        bundle.delete()
+        messages.success(request, f'Product Bundle "{name}" deleted successfully.')
+        return redirect(self.success_url)
+
+
+@login_required
+def api_get_bundles(request):
+    """API endpoint to get all active product bundles with items for POS."""
+    bundles = ProductBundle.objects.filter(
+        tenant=request.user.tenant,
+        is_active=True
+    ).prefetch_related('items__product')
+
+    data = []
+    for b in bundles:
+        items_data = []
+        for item in b.items.all():
+            if item.product and item.product.is_active:
+                items_data.append({
+                    'product_id': item.product.pk,
+                    'product_name': item.product.name,
+                    'quantity': float(item.quantity),
+                    'unit': item.product.unit_of_measure,
+                    'default_price': str(item.product.default_selling_price)
+                })
+        if items_data:
+            data.append({
+                'id': b.pk,
+                'name': b.name,
+                'description': b.description,
+                'items_count': len(items_data),
+                'items': items_data
+            })
+
+    return JsonResponse({'bundles': data})
+

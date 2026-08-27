@@ -928,11 +928,16 @@
                 <div class="search-suggestions" id="search-suggestions"></div>
             </div>
 
-            <div class="category-tabs">
-                <button class="category-tab active" data-category="all">All</button>
-                {% for category in categories %}
-                <button class="category-tab" data-category="{{ category.name }}">{{ category.name }}</button>
-                {% endfor %}
+            <div class="category-tabs d-flex align-items-center justify-content-between">
+                <div class="d-flex flex-wrap gap-1 align-items-center" style="overflow-x: auto;">
+                    <button class="category-tab active" data-category="all">All</button>
+                    {% for category in categories %}
+                    <button class="category-tab" data-category="{{ category.name }}">{{ category.name }}</button>
+                    {% endfor %}
+                </div>
+                <button type="button" class="btn btn-warning btn-sm ms-2 px-3 fw-bold flex-shrink-0" id="btn-bundles-tab" onclick="openBundlesModal()">
+                    <i class="bi bi-boxes me-1"></i>Product Bundles (<span id="bundle-count-badge">0</span>)
+                </button>
             </div>
 
             <div class="products-grid" id="products-grid">
@@ -1258,6 +1263,7 @@
 
         const CURRENCY = '{{ currency_symbol }}';
         const PRODUCTS = {{ products| safe }};
+        const BUNDLES = {{ bundles|default:"[]"|safe }};
         const CUSTOMERS = {{ customers| safe }};
         const AVAILABLE_PROVIDERS = {{ available_providers|default:"[]"|safe }};
         const CSRF_TOKEN = '{{ csrf_token }}';
@@ -2819,6 +2825,154 @@
                 btn.innerHTML = '<i class="bi bi-save me-1"></i>Save Invoice';
             }
         }
+    </script>
+
+    <!-- Product Bundles Modal -->
+    <div class="modal fade" id="posBundlesModal" tabindex="-1" aria-labelledby="posBundlesModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content bg-dark text-light border-secondary">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title" id="posBundlesModalLabel">
+                        <i class="bi bi-boxes text-warning me-2"></i>Product Bundles
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small">Click any bundle to populate your cart with its items. You can then edit quantities or remove items before selling or printing.</p>
+                    <div class="row g-3" id="bundles-grid">
+                        <!-- Bundles loaded dynamically -->
+                    </div>
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function renderPosBundles() {
+            const grid = document.getElementById('bundles-grid');
+            const badge = document.getElementById('bundle-count-badge');
+            if (badge) badge.textContent = (typeof BUNDLES !== 'undefined' && BUNDLES) ? BUNDLES.length : 0;
+
+            if (!grid) return;
+
+            if (typeof BUNDLES === 'undefined' || !BUNDLES || BUNDLES.length === 0) {
+                grid.innerHTML = `
+                    <div class="col-12 text-center py-4 text-muted">
+                        <i class="bi bi-boxes display-4 d-block mb-2 text-warning"></i>
+                        <p class="mb-1 fw-bold">No Product Bundles Available</p>
+                        <small>Shop Managers can create bundles under <strong>Inventory > Product Bundles</strong>.</small>
+                    </div>
+                `;
+                return;
+            }
+
+            grid.innerHTML = BUNDLES.map(b => {
+                const totalEstimatedPrice = (b.items || []).reduce((sum, item) => {
+                    const product = PRODUCTS.find(p => p.id === item.product_id);
+                    const price = product ? parseFloat(product.price) : parseFloat(item.default_price || 0);
+                    return sum + (price * parseFloat(item.quantity || 1));
+                }, 0);
+
+                const itemsHtml = (b.items || []).map(item => `
+                    <span class="badge bg-secondary me-1 mb-1 text-light fs-6">
+                        ${item.quantity}x ${item.product_name}
+                    </span>
+                `).join('');
+
+                return `
+                    <div class="col-md-6">
+                        <div class="card h-100 bg-secondary bg-opacity-10 border-secondary">
+                            <div class="card-body d-flex flex-column justify-content-between p-3">
+                                <div>
+                                    <div class="d-flex justify-content-between align-items-start mb-2">
+                                        <h6 class="fw-bold mb-0 text-warning fs-5">${b.name}</h6>
+                                        <span class="badge bg-primary fs-6">${CURRENCY}${totalEstimatedPrice.toFixed(2)}</span>
+                                    </div>
+                                    ${b.description ? `<p class="small text-muted mb-2">${b.description}</p>` : ''}
+                                    <div class="mb-3">${itemsHtml}</div>
+                                </div>
+                                <button type="button" class="btn btn-warning w-100 fw-bold mt-2" onclick="addBundleToCart(${b.id})">
+                                    <i class="bi bi-cart-plus me-1"></i>Add Bundle to Cart
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function openBundlesModal() {
+            renderPosBundles();
+            const modalEl = document.getElementById('posBundlesModal');
+            if (modalEl) {
+                const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+                modal.show();
+            }
+        }
+
+        function addBundleToCart(bundleId) {
+            const bundle = BUNDLES.find(b => b.id === bundleId);
+            if (!bundle || !bundle.items || bundle.items.length === 0) {
+                showPosToast('Bundle contains no items', 'warning');
+                return;
+            }
+
+            let addedCount = 0;
+            let skippedCount = 0;
+
+            bundle.items.forEach(bItem => {
+                const product = PRODUCTS.find(p => p.id === bItem.product_id);
+                if (!product) return;
+
+                const qtyToAdd = parseFloat(bItem.quantity) || 1;
+                const existing = cart.find(item => item.id === product.id);
+                const currentQty = existing ? existing.quantity : 0;
+
+                if (!ALLOW_NEGATIVE_STOCK && currentQty + qtyToAdd > (product.quantity || 0)) {
+                    skippedCount++;
+                    return;
+                }
+
+                if (existing) {
+                    existing.quantity += qtyToAdd;
+                } else {
+                    cart.push({
+                        id: product.id,
+                        name: product.name,
+                        price: parseFloat(product.price),
+                        quantity: qtyToAdd
+                    });
+                }
+                addedCount++;
+            });
+
+            if (addedCount > 0) {
+                updateCart();
+                saveCartToStorage();
+                if (skippedCount > 0) {
+                    showPosToast(`Added bundle "${bundle.name}" (${addedCount} items added, ${skippedCount} skipped due to stock limits)`, 'warning');
+                } else {
+                    showPosToast(`Added bundle "${bundle.name}" to cart!`, 'success');
+                }
+                const modalEl = document.getElementById('posBundlesModal');
+                if (modalEl) {
+                    const modal = bootstrap.Modal.getInstance(modalEl);
+                    if (modal) modal.hide();
+                }
+            } else {
+                showPosToast(`Could not add bundle items (insufficient stock)`, 'error');
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const badge = document.getElementById('bundle-count-badge');
+            if (badge && typeof BUNDLES !== 'undefined') {
+                badge.textContent = BUNDLES.length;
+            }
+        });
     </script>
 
 

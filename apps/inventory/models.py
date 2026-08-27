@@ -607,3 +607,61 @@ class StockAdjustment(TenantModel):
         self.review_notes = notes
         self.save()
 
+
+class ProductBundle(TenantModel):
+    """
+    Product bundle containing products often bought together.
+    Created by Shop Managers / Admins.
+    """
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_bundles'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+        unique_together = ['tenant', 'name']
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def total_items_count(self):
+        return self.items.count()
+
+
+class BundleItem(models.Model):
+    """
+    Item within a product bundle.
+    """
+    bundle = models.ForeignKey(
+        ProductBundle,
+        on_delete=models.CASCADE,
+        related_name='items'
+    )
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name='bundle_items'
+    )
+    quantity = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('1.00')
+    )
+
+    class Meta:
+        unique_together = ['bundle', 'product']
+
+    def __str__(self):
+        return f"{self.quantity} x {self.product.name} in {self.bundle.name}"
+
+

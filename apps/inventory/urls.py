@@ -22,6 +22,7 @@ urlpatterns = [
     path('products/<int:pk>/', views.ProductDetailView.as_view(), name='product_detail'),
     path('products/<int:pk>/edit/', views.ProductUpdateView.as_view(), name='product_edit'),
     path('products/<int:pk>/delete/', views.ProductDeleteView.as_view(), name='product_delete'),
+    path('products/bulk-delete/', views.ProductBulkDeleteView.as_view(), name='product_bulk_delete'),
     
     # Batches
     path('batches/', views.BatchListView.as_view(), name='batch_list'),
@@ -43,9 +44,16 @@ urlpatterns = [
     path('shop-prices/<int:pk>/set/', views.ShopPriceSetView.as_view(), name='shop_price_set'),
     path('price-changes/', views.PriceChangeCenterView.as_view(), name='price_change_center'),
     
+    # Product Bundles
+    path('bundles/', views.BundleListView.as_view(), name='bundle_list'),
+    path('bundles/create/', views.BundleCreateView.as_view(), name='bundle_create'),
+    path('bundles/<int:pk>/edit/', views.BundleUpdateView.as_view(), name='bundle_edit'),
+    path('bundles/<int:pk>/delete/', views.BundleDeleteView.as_view(), name='bundle_delete'),
+
     # API
     path('api/batches/', views.get_batches_for_product, name='api_batches'),
     path('api/products/search/', views.search_products, name='api_product_search'),
     path('api/products/<int:pk>/toggle-favorite/', views.ToggleFavoriteView.as_view(), name='api_toggle_favorite'),
     path('api/stock/adjustment/<int:pk>/details/', views.get_adjustment_details_api, name='api_adjustment_details'),
+    path('api/bundles/', views.api_get_bundles, name='api_bundles'),
 ]
