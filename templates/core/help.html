@@ -147,6 +147,14 @@
                 </div>
             </a>
         </div>
+        <div class="col-md-3 mb-3">
+            <a href="#bundles" class="card shadow-sm text-decoration-none h-100">
+                <div class="card-body text-center">
+                    <i class="bi bi-boxes fs-1 mb-2 text-warning"></i>
+                    <h5 class="text-dark">Product Bundles</h5>
+                </div>
+            </a>
+        </div>
     </div>
 
     <!-- Getting Started -->
@@ -346,6 +354,7 @@
                                     </ul>
                                 </li>
                                 <li>Update <strong>Receipt Header/Footer</strong> text</li>
+                                <li>Toggle <strong>Include Customer Name & Phone Number on Receipts</strong> (shows/hides customer contact info on all receipt copies)</li>
                                 <li>Click <strong>Save Settings</strong></li>
                             </ol>
                         </div>
@@ -444,6 +453,7 @@
                         <li><strong>Category</strong> - Grouping for organization</li>
                         <li><strong>Default Price</strong> - Standard selling price</li>
                         <li><strong>Reorder Level</strong> - Low stock warning threshold</li>
+                        <li><strong>Bulk Deletion & Archiving</strong> - Select multiple products with checkboxes and delete via popup modal. If a product cannot be hard-deleted due to historical sales or ledger entries, click <strong>Deactivate / Archive Instead</strong> to archive it safely (<code>is_active = False</code>).</li>
                     </ul>
                 </div>
                 <div class="col-md-6">
@@ -488,6 +498,40 @@
                 <h6><i class="bi bi-tags me-2"></i>Shop Pricing</h6>
                 <p class="mb-0">Each shop can have different prices for products. Go to <strong>Inventory → Shop
                         Pricing</strong> to set location-specific prices.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Product Bundles -->
+    <div class="card shadow-sm mb-4" id="bundles">
+        <div class="card-header bg-warning text-dark">
+            <h4 class="mb-0"><i class="bi bi-boxes me-2"></i>Product Bundles</h4>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <h5><i class="bi bi-plus-circle me-2"></i>Creating Product Bundles</h5>
+                    <p>Shop Managers can create bundles of products often bought together:</p>
+                    <ol>
+                        <li>Go to <strong>Inventory → Product Bundles</strong></li>
+                        <li>Click <strong>Create Bundle</strong></li>
+                        <li>Enter the <strong>Bundle Name</strong> (e.g. <em>School Starter Pack</em>) and description</li>
+                        <li>Click <strong>+ Add Another Product</strong> to add as many products and quantities as needed</li>
+                        <li>Real-time warnings will alert you if a product is selected more than once</li>
+                        <li>Click <strong>Save Product Bundle</strong></li>
+                    </ol>
+                </div>
+                <div class="col-md-6">
+                    <h5><i class="bi bi-cart-plus me-2"></i>Using Bundles at POS</h5>
+                    <p>Shop Attendants and Managers can quickly populate the POS cart using bundles:</p>
+                    <ol>
+                        <li>In POS, click the <strong>📦 Product Bundles</strong> button on the category filter bar</li>
+                        <li>A popup modal displays available active bundles with item lists and price previews</li>
+                        <li>Click <strong>Add Bundle to Cart</strong></li>
+                        <li>All items and quantities in the bundle are added to the active cart instantly</li>
+                        <li>You can edit quantities, remove items, print quotes, or sell as normal</li>
+                    </ol>
+                </div>
             </div>
         </div>
     </div>

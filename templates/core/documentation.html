@@ -157,7 +157,8 @@
                             <a class="nav-link sub-link" href="#pos-payments">Payment Methods</a>
                             <a class="nav-link sub-link" href="#pos-offline">Offline Mode & Sync</a>
                             <a class="nav-link" href="#inventory">Inventory Management</a>
-                            <a class="nav-link sub-link" href="#products">Products</a>
+                            <a class="nav-link sub-link" href="#products">Products & Bulk Archiving</a>
+                            <a class="nav-link sub-link" href="#product-bundles">Product Bundles</a>
                             <a class="nav-link sub-link" href="#batches">Batches</a>
                             <a class="nav-link sub-link" href="#shop-pricing">Shop Pricing</a>
                             <a class="nav-link" href="#transfers">Stock Transfers</a>
@@ -830,6 +831,51 @@
                             </ul>
                         </li>
                         <li>Click <strong>Save</strong></li>
+                    </ol>
+
+                    <h4 id="bulk-delete"><i class="bi bi-check2-square me-2"></i>Bulk Product Selection, Deletion & Archiving</h4>
+                    <p>Manage multiple products simultaneously from <strong>Inventory → Products</strong>:</p>
+                    <ol>
+                        <li>Use the checkboxes on the left of each product row (or the "Select All" checkbox in the table header) to select one or multiple products</li>
+                        <li>A persistent bulk action toolbar appears showing the number of selected products</li>
+                        <li>Choose an action:
+                            <ul>
+                                <li><strong>Delete Selected</strong> — opens a modal popup confirming deletion of selected products without refreshing the page</li>
+                                <li><strong>Deactivate / Archive Selected</strong> — immediately deactivates selected products (sets <code>is_active = False</code>)</li>
+                            </ul>
+                        </li>
+                    </ol>
+                    <div class="alert alert-info">
+                        <i class="bi bi-shield-check me-2"></i>
+                        <strong>Protected Records Handling:</strong> Products referenced in historical sales, stock requests, or ledger records cannot be permanently hard-deleted to preserve accounting integrity. When attempting to delete such products, the modal popup intercepts the protected reference error and provides an instant <strong>"Deactivate / Archive Instead"</strong> fallback option.
+                    </div>
+
+                    <h3 id="product-bundles"><i class="bi bi-boxes me-2"></i>Product Bundles</h3>
+                    <p>Product Bundles allow shop managers to group products that are frequently purchased together (e.g., <em>School Starter Pack</em>, <em>Bakery Combo</em>, <em>Tech Accessories Pack</em>). Staff can load an entire bundle into the POS cart with a single click.</p>
+
+                    <h4>Creating & Managing Product Bundles</h4>
+                    <ol>
+                        <li>Go to <strong>Inventory → Product Bundles</strong></li>
+                        <li>Click <strong>Create Bundle</strong></li>
+                        <li>Enter a descriptive <strong>Name</strong> and optional <strong>Description</strong></li>
+                        <li>Add products to the bundle:
+                            <ul>
+                                <li>Select a product and specify the quantity included in the bundle</li>
+                                <li>Click <strong>+ Add Another Product</strong> to add additional product rows dynamically</li>
+                                <li>Real-time validation will warn you if the same product is added multiple times</li>
+                            </ul>
+                        </li>
+                        <li>Ensure <strong>Is Active</strong> is checked so attendants can see the bundle in POS</li>
+                        <li>Click <strong>Save Product Bundle</strong></li>
+                    </ol>
+
+                    <h4>Using Product Bundles at POS</h4>
+                    <ol>
+                        <li>In POS, click the <strong>📦 Product Bundles</strong> button located on the category filter bar</li>
+                        <li>The <strong>Product Bundles Modal</strong> opens listing all active bundles for your shop</li>
+                        <li>Click <strong>Add Bundle to Cart</strong> next to the desired bundle</li>
+                        <li>All products and quantities defined in the bundle are transferred into the active cart automatically</li>
+                        <li>Attendants can adjust quantities, remove unwanted items, or proceed to checkout as normal</li>
                     </ol>
 
                     <h3>Categories</h3>
@@ -1553,6 +1599,21 @@
                                 <li>Contact information</li>
                             </ul>
                         </li>
+                    </ol>
+
+                    <h3 id="shop-settings"><i class="bi bi-printer me-2"></i>Shop Settings & Receipt Preferences</h3>
+                    <p>Shop Managers and Administrators can configure shop-specific POS hardware and receipt printing behavior:</p>
+                    <ol>
+                        <li>Go to <strong>Inventory / Sales → Shop Settings</strong> in the sidebar</li>
+                        <li>Configure settings for your shop:
+                            <ul>
+                                <li><strong>Receipt Printer Type</strong> — select Thermal 80mm, Thermal 58mm, A4, A5, or No Print</li>
+                                <li><strong>Receipt Header & Footer</strong> — customize welcome messages, tax registration numbers, or thank-you text</li>
+                                <li><strong>Include Customer Name & Phone Number on Receipts</strong> — toggle switch to explicitly show or hide customer contact details on printed receipt copies (Cashier, Manager, Customer, and Store copies)</li>
+                                <li><strong>Payment Method Toggles</strong> — enable or disable Cash, E-Cash, MoMo, or Credit payment options at POS</li>
+                            </ul>
+                        </li>
+                        <li>Click <strong>Save Shop Settings</strong></li>
                     </ol>
 
                     <h3>Payment Provider</h3>

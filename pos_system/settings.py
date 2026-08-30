@@ -333,6 +333,7 @@ PLATFORM_COMPANY_NAME = os.getenv('PLATFORM_COMPANY_NAME', 'HendAxis PoS')
 PLATFORM_EMAIL = os.getenv('PLATFORM_EMAIL', 'sales@hendaxis.com')
 PLATFORM_PHONE = os.getenv('PLATFORM_PHONE', '+233538127939')
 FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://pos.hendaxis.com')
+GOOGLE_SITE_VERIFICATION = os.getenv('GOOGLE_SITE_VERIFICATION', '')
 
 # Third-party Services
 TINYMCE_API_KEY = os.getenv('TINYMCE_API_KEY', 'no-api-key')

@@ -70,10 +70,31 @@ urlpatterns = [
     # PWA: Service worker must be served from root for full scope
     path('serviceworker.js', serve_serviceworker, name='serviceworker'),
 
-    # SEO: Sitemap and robots.txt
+    # SEO: Google Search Console verification, Sitemap, and robots.txt
+    path('google<str:code>.html', __import__('apps.core.views', fromlist=['google_verification_view']).google_verification_view, name='google_verification'),
     path('sitemap.xml', sitemap, {'sitemaps': SITEMAPS}, name='django.contrib.sitemaps.views.sitemap'),
     path('robots.txt', lambda request: HttpResponse(
-        f"User-agent: *\nAllow: /\nDisallow: /dashboard/\nDisallow: /super_office/\nDisallow: /superadmin/\nDisallow: /accounting/\nDisallow: /inventory/\nDisallow: /transfers/\nDisallow: /sales/\nDisallow: /customers/\nDisallow: /reports/\nDisallow: /audit/\nDisallow: /users/\nDisallow: /settings/\nSitemap: {settings.FRONTEND_URL}/sitemap.xml\n",
+        f"User-agent: *\n"
+        f"Allow: /\n"
+        f"Allow: /help/\n"
+        f"Allow: /documentation/\n"
+        f"Allow: /demo/\n"
+        f"Allow: /get-started/\n"
+        f"Allow: /subscription/pricing/\n"
+        f"Allow: /features/feedback/\n"
+        f"Disallow: /dashboard/\n"
+        f"Disallow: /super_office/\n"
+        f"Disallow: /superadmin/\n"
+        f"Disallow: /accounting/\n"
+        f"Disallow: /inventory/\n"
+        f"Disallow: /transfers/\n"
+        f"Disallow: /sales/\n"
+        f"Disallow: /customers/\n"
+        f"Disallow: /reports/\n"
+        f"Disallow: /audit/\n"
+        f"Disallow: /users/\n"
+        f"Disallow: /settings/\n"
+        f"Sitemap: {settings.FRONTEND_URL.rstrip('/')}/sitemap.xml\n",
         content_type='text/plain'
     ), name='robots_txt'),
 ]

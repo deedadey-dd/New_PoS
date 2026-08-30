@@ -24,6 +24,7 @@ class StaticViewSitemap(Sitemap):
             'documentation',
             'demo_hub',
             'startup_kit',
+            'feature_feedback',
         ]
 
     def location(self, item):

@@ -10,5 +10,21 @@ class CoreConfig(AppConfig):
     verbose_name = 'Core'
     
     def ready(self):
-        # Import signals here if needed
+        from django.db.models.signals import post_migrate
+        post_migrate.connect(_sync_site_domain, sender=self)
+
+
+def _sync_site_domain(sender, **kwargs):
+    """Auto-sync Site #1 domain for sitemaps after migration."""
+    try:
+        from django.contrib.sites.models import Site
+        from django.conf import settings
+        from urllib.parse import urlparse
+        frontend_url = getattr(settings, 'FRONTEND_URL', 'https://pos.hendaxis.com')
+        domain = urlparse(frontend_url).netloc or 'pos.hendaxis.com'
+        Site.objects.filter(id=1).update(
+            domain=domain,
+            name=getattr(settings, 'PLATFORM_COMPANY_NAME', 'HendAxis PoS')
+        )
+    except Exception:
         pass

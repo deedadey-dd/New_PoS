@@ -11,13 +11,23 @@ from django.views import View
 from django.views.generic import ListView, CreateView, UpdateView, DeleteView
 from django.urls import reverse_lazy
 from django.db.models import Count
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.core.mail import send_mail
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django.conf import settings
 
 from .models import Tenant, Location, Role, User
+
+
+def google_verification_view(request, code):
+    """
+    Serve Google Search Console HTML verification files dynamically.
+    E.g., /google1234567890abcdef.html
+    Returns: 'google-site-verification: google1234567890abcdef.html'
+    """
+    content = f"google-site-verification: google{code}.html"
+    return HttpResponse(content, content_type="text/html")
 from .forms import (
     LoginForm, TenantSetupForm, LocationForm, 
     UserCreateForm, UserEditForm, TenantSettingsForm

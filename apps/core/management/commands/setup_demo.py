@@ -49,7 +49,7 @@ from django.contrib.auth import get_user_model
 from apps.core.models import Tenant, Location, Role
 from apps.inventory.models import (
     Category, Product, Batch, Inventory, InventoryLedger, ShopPrice,
-    FavoriteProduct, StockAdjustment,
+    FavoriteProduct, StockAdjustment, ProductBundle, BundleItem,
 )
 from apps.sales.models import Sale, SaleItem, Shift, ShopSettings, RefundRequest
 from apps.accounting.models import (
@@ -107,7 +107,8 @@ class Command(BaseCommand):
     # ========================================================================
 
     def _wipe_demo_data(self):
-        from apps.transfers.models import StockRequest, StockRequestItem, Transfer, TransferItem
+        from apps.transfers.models import StockRequest, StockRequestItem, Transfer, TransferItem, StockWriteOff
+        from apps.inventory.models import ProductBundle, BundleItem
 
         tenants = Tenant.objects.filter(name__in=DEMO_TENANT_NAMES)
         for tenant in tenants:
@@ -115,7 +116,12 @@ class Command(BaseCommand):
             Notification.objects.filter(tenant=tenant).delete()
             BulletinPost.objects.filter(tenant=tenant).delete()
 
-            # Transfers
+            # Product Bundles
+            BundleItem.objects.filter(bundle__tenant=tenant).delete()
+            ProductBundle.objects.filter(tenant=tenant).delete()
+
+            # Transfers & Stock Write-Offs
+            StockWriteOff.objects.filter(tenant=tenant).delete()
             TransferItem.objects.filter(tenant=tenant).delete()
             Transfer.objects.filter(tenant=tenant).delete()
             StockRequestItem.objects.filter(tenant=tenant).delete()
@@ -357,6 +363,7 @@ class Command(BaseCommand):
             receipt_printer_type='THERMAL_80MM',
             auto_print_receipts=True,
             show_logo_on_receipt=True,
+            show_customer_info_on_receipt=True,
             enable_cash_payment=True,
             enable_credit_payment=True,
             enable_ecash_payment=True,
@@ -370,6 +377,7 @@ class Command(BaseCommand):
             receipt_printer_type='THERMAL_58MM',
             auto_print_receipts=False,
             show_logo_on_receipt=False,
+            show_customer_info_on_receipt=False,
             enable_cash_payment=True,
             enable_credit_payment=True,
             enable_ecash_payment=True,
@@ -557,7 +565,7 @@ class Command(BaseCommand):
             )
 
         # --------------------------------------------------------------------
-        # FavoriteProducts
+        # FavoriteProducts & Product Bundles
         # --------------------------------------------------------------------
         favorites = ['Blue Ink Pen', 'Fresh Cola 500ml', 'Chocolate Biscuit 200g', 'Bottled Water 500ml']
         for item in products:
@@ -567,6 +575,39 @@ class Command(BaseCommand):
                         tenant=tenant, location=shop, product=item['product'],
                         defaults={'created_by': mgr}
                     )
+
+        # Seed Product Bundles
+        bundle1 = ProductBundle.objects.create(
+            tenant=tenant,
+            name='School Starter Pack',
+            description='Essential stationery items for school students (2x Blue Pen, 1x Exercise Book, 1x Red Pen).',
+            is_active=True,
+            created_by=manager1,
+        )
+        BundleItem.objects.create(bundle=bundle1, product=products[0]['product'], quantity=Decimal('2.00')) # Blue Ink Pen
+        BundleItem.objects.create(bundle=bundle1, product=products[1]['product'], quantity=Decimal('1.00')) # Exercise Book
+        BundleItem.objects.create(bundle=bundle1, product=products[8]['product'], quantity=Decimal('1.00')) # Red Ink Pen
+
+        bundle2 = ProductBundle.objects.create(
+            tenant=tenant,
+            name='Refreshment Combo',
+            description='Quick snack pack containing 1x Fresh Cola and 1x Potato Crisps.',
+            is_active=True,
+            created_by=manager1,
+        )
+        BundleItem.objects.create(bundle=bundle2, product=products[2]['product'], quantity=Decimal('1.00')) # Fresh Cola
+        BundleItem.objects.create(bundle=bundle2, product=products[5]['product'], quantity=Decimal('1.00')) # Potato Crisps
+
+        bundle3 = ProductBundle.objects.create(
+            tenant=tenant,
+            name='Exam Bundle',
+            description='Scientific Calculator with blue and red ink pens.',
+            is_active=True,
+            created_by=manager2,
+        )
+        BundleItem.objects.create(bundle=bundle3, product=products[9]['product'], quantity=Decimal('1.00')) # Scientific Calculator
+        BundleItem.objects.create(bundle=bundle3, product=products[0]['product'], quantity=Decimal('2.00')) # Blue Ink Pen
+        BundleItem.objects.create(bundle=bundle3, product=products[8]['product'], quantity=Decimal('1.00')) # Red Ink Pen
 
         # --------------------------------------------------------------------
         # Customers
@@ -1212,6 +1253,19 @@ class Command(BaseCommand):
             quantity_sent=Decimal('0'),
             quantity_received=Decimal('0'),
             unit_cost=water['cost'],
+        )
+
+        # ── Stock Write-Off ──────────────────────────────────────────────────
+        from apps.transfers.models import StockWriteOff
+        StockWriteOff.objects.create(
+            tenant=tenant,
+            location=loc_stores,
+            product=water['product'],
+            batch=water['batch_stores'],
+            quantity=Decimal('5'),
+            reason='DAMAGED',
+            notes='Damaged water bottles written off during warehouse inspection (demo).',
+            performed_by=stores_mgr,
         )
 
         # --------------------------------------------------------------------

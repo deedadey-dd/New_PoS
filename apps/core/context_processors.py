@@ -16,6 +16,7 @@ def platform_context(request):
         'PLATFORM_PHONE': getattr(settings, 'PLATFORM_PHONE', '+233538127939'),
         'FRONTEND_URL': getattr(settings, 'FRONTEND_URL', 'https://pos.hendaxis.com'),
         'TINYMCE_API_KEY': getattr(settings, 'TINYMCE_API_KEY', 'no-api-key'),
+        'GOOGLE_SITE_VERIFICATION': getattr(settings, 'GOOGLE_SITE_VERIFICATION', ''),
     }
 
 
