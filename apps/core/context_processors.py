@@ -73,170 +73,20 @@ def tenant_context(request):
         context['latest_unread_bulletin'] = unread_qs.first()
 
         
-        # Calculate cash on hand based on role
-        from apps.accounting.models import CashTransfer
-        
-        if role_name == 'SHOP_ATTENDANT':
-            # Cash currently held by this attendant:
-            #   (a) Cash from their currently OPEN shift (opening_cash + cash sales so far)
-            #   (b) Cash from shiftless sales (no shift opened) — stays until manually transferred
-            #   (c) Customer cash payments received
-            #   minus any MANUAL transfers out (not shift-close transfers, which are
-            #        implicitly removed from cash_on_hand when the shift status → CLOSED)
-            from apps.sales.models import Shift, Sale
+        # Calculate cash on hand based on role and workflow
+        from apps.accounting.models import CashTransfer, BankTransfer
+        from apps.sales.models import Shift, Sale
+        from apps.customers.models import CustomerTransaction
 
-            cash_on_hand = Decimal('0')
-
-            # 1. Cash from the current OPEN shift
-            open_shift = Shift.objects.filter(
-                tenant=tenant,
-                attendant=user,
-                status='OPEN'
-            ).first()
-
-            if open_shift:
-                cash_sales = Sale.objects.filter(
-                    tenant=tenant,
-                    shift=open_shift,
-                    status__in=['COMPLETED', 'PENDING_DISPATCH'],
-                    payment_method='CASH'
-                ).aggregate(total=Sum('total'))['total'] or Decimal('0')
-                mixed_cash = Sale.objects.filter(
-                    tenant=tenant,
-                    shift=open_shift,
-                    status__in=['COMPLETED', 'PENDING_DISPATCH'],
-                    payment_method='MIXED'
-                ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
-                cash_on_hand += open_shift.opening_cash + cash_sales + mixed_cash
-
-            # 2. Cash from shiftless sales (shift=None) — remains until attendant
-            #    manually transfers it to the manager
-            shiftless_cash_sales = Sale.objects.filter(
-                tenant=tenant,
-                attendant=user,
-                shift__isnull=True,
-                status__in=['COMPLETED', 'PENDING_DISPATCH'],
-                payment_method='CASH'
-            ).aggregate(total=Sum('total'))['total'] or Decimal('0')
-            shiftless_mixed = Sale.objects.filter(
-                tenant=tenant,
-                attendant=user,
-                shift__isnull=True,
-                status__in=['COMPLETED', 'PENDING_DISPATCH'],
-                payment_method='MIXED'
-            ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
-            cash_on_hand += shiftless_cash_sales + shiftless_mixed
-
-            # 3. Customer cash payments received (on-account payments in CASH)
-            from apps.customers.models import CustomerTransaction
-            customer_payments = CustomerTransaction.objects.filter(
-                tenant=tenant,
-                performed_by=user,
-                transaction_type='CREDIT',
-                description__icontains='(CASH)'
-            ).exclude(
-                description__icontains='ECASH'
-            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
-            cash_on_hand += customer_payments
-
-            # 4. Deduct ONLY manual (non-shift-close) transfers.
-            #    Shift-close transfers are auto-tagged with "Shift closing deposit - Shift #".
-            #    When a shift closes, the shift's cash is already removed from cash_on_hand
-            #    (because we only count OPEN shifts above), so deducting the shift-close
-            #    transfer again would cause a false double-subtraction.
-            manual_transferred = CashTransfer.objects.filter(
-                tenant=tenant,
-                from_user=user,
-                status__in=['PENDING', 'CONFIRMED']
-            ).exclude(
-                notes__startswith='Shift closing deposit'
-            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
-
-            cash_on_hand = max(Decimal('0'), cash_on_hand - manual_transferred)
-
-            context['cash_on_hand'] = cash_on_hand
-
-        
-        elif role_name in ['SHOP_MANAGER', 'SHOP_CASHIER']:
-            # Cash received from attendants (confirmed transfers TO this manager)
-            # Plus own cash sales (with or without shift)
-            # Plus customer cash payments received
-            # Minus cash sent out (to accountant, expenditures)
-            from apps.sales.models import Shift, Sale
-            from apps.customers.models import CustomerTransaction
-            
-            # Transfers IN from other users (attendants depositing to this manager)
-            # Exclude self-transfers (from_user == to_user) which cancel out
-            received = CashTransfer.objects.filter(
-                tenant=tenant,
-                to_user=user,
-                status='CONFIRMED'
-            ).exclude(
-                from_user=user  # exclude any legacy self-transfers
-            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
-            
-            # Transfers OUT from this manager (to accountant, expenditures)
-            # Exclude self-transfers
-            sent = CashTransfer.objects.filter(
-                tenant=tenant,
-                from_user=user,
-                status='CONFIRMED',
-                transfer_type__in=['DEPOSIT', 'EXPENDITURE'],
-            ).exclude(
-                to_user=user  # exclude any legacy self-transfers
-            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
-            
-            # Own cash collected from sales (either as cashier or attendant)
-            cash_sales = Sale.objects.filter(
-                tenant=tenant,
-                status__in=['COMPLETED', 'PENDING_DISPATCH'],
-                payment_method='CASH'
-            ).filter(
-                Q(cashier=user) | Q(cashier__isnull=True, attendant=user)
-            ).aggregate(total=Sum('total'))['total'] or Decimal('0')
-            
-            mixed_sales = Sale.objects.filter(
-                tenant=tenant,
-                status__in=['COMPLETED', 'PENDING_DISPATCH'],
-                payment_method='MIXED'
-            ).filter(
-                Q(cashier=user) | Q(cashier__isnull=True, attendant=user)
-            ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
-            
-            own_sales = cash_sales + mixed_sales
-            
-            # Opening cash from the currently OPEN shift run by this user
-            open_shift_opening_cash = Shift.objects.filter(
-                tenant=tenant,
-                attendant=user,
-                status='OPEN'
-            ).aggregate(total=Sum('opening_cash'))['total'] or Decimal('0')
-            
-            # Customer cash payments received (payments on account in cash)
-            customer_payments = CustomerTransaction.objects.filter(
-                tenant=tenant,
-                performed_by=user,
-                transaction_type='CREDIT',
-                description__icontains='(CASH)'
-            ).exclude(
-                description__icontains='ECASH'
-            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
-            
-            # Deduct cash transferred to the bank
-            from apps.accounting.models import BankTransfer
-            banked_cash = BankTransfer.objects.filter(
-                tenant=tenant,
-                accountant=user,
-                fund_source='CASH'
-            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
-            
-            # Check if using strict sales workflow
-            if not tenant.use_strict_sales_workflow and user.location:
-                # In standard workflow, the shop manager holds all of the shop's cash
+        if role_name in ['SHOP_ATTENDANT', 'SHOP_MANAGER', 'SHOP_CASHIER', 'ADMIN', 'ACCOUNTANT']:
+            # Check if using standard workflow (where Shop Manager / Admin holds all shop cash at location)
+            if not tenant.use_strict_sales_workflow and user.location and role_name in ['SHOP_MANAGER', 'ADMIN']:
                 location = user.location
                 
                 # All time cash sales at this location
-                all_sales_agg = Sale.objects.filter(tenant=tenant, shop=location, status__in=['COMPLETED', 'PENDING_DISPATCH']).aggregate(
+                all_sales_agg = Sale.objects.filter(
+                    tenant=tenant, shop=location, status__in=['COMPLETED', 'PENDING_DISPATCH']
+                ).aggregate(
                     cash_sales=Sum('total', filter=Q(payment_method='CASH')),
                     mixed_paid=Sum('amount_paid', filter=Q(payment_method='MIXED')),
                 )
@@ -267,7 +117,6 @@ def tenant_context(request):
                 ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
                 
                 # Bank transfers out
-                from apps.accounting.models import BankTransfer
                 banked_cash = BankTransfer.objects.filter(
                     tenant=tenant,
                     accountant=user,
@@ -276,7 +125,75 @@ def tenant_context(request):
                 
                 context['cash_on_hand'] = max(Decimal('0'), cash_sales_val + customer_payments + floats_received - deposits - expenditures - banked_cash)
             else:
-                # Strict workflow: Cash is tracked individually per user (attendants transfer to cashiers/managers)
+                # Per-user Cash Tracking (Strict Sales Workflow & Individual Roles)
+                # Transfers IN: Confirmed deposits received by user
+                received = CashTransfer.objects.filter(
+                    tenant=tenant,
+                    to_user=user,
+                    status='CONFIRMED'
+                ).exclude(
+                    from_user=user
+                ).exclude(
+                    transfer_type='EXPENDITURE'
+                ).exclude(
+                    destination='BANK'
+                ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
+                # Transfers OUT: Sent by user
+                sent = CashTransfer.objects.filter(
+                    tenant=tenant,
+                    from_user=user,
+                    status__in=['CONFIRMED', 'PENDING'],
+                    transfer_type__in=['DEPOSIT', 'EXPENDITURE'],
+                ).exclude(
+                    to_user=user
+                ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
+                # Own cash collected from sales where this user is the cashier (or attendant if no cashier assigned)
+                cash_sales = Sale.objects.filter(
+                    tenant=tenant,
+                    status__in=['COMPLETED', 'PENDING_DISPATCH'],
+                    payment_method='CASH'
+                ).filter(
+                    Q(cashier=user) | Q(cashier__isnull=True, attendant=user)
+                ).aggregate(total=Sum('total'))['total'] or Decimal('0')
+
+                mixed_sales = Sale.objects.filter(
+                    tenant=tenant,
+                    status__in=['COMPLETED', 'PENDING_DISPATCH'],
+                    payment_method='MIXED'
+                ).filter(
+                    Q(cashier=user) | Q(cashier__isnull=True, attendant=user)
+                ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+
+                own_sales = cash_sales + mixed_sales
+
+                # Opening cash from currently OPEN shift run by user
+                open_shift_opening_cash = Shift.objects.filter(
+                    tenant=tenant,
+                    attendant=user,
+                    status='OPEN'
+                ).aggregate(total=Sum('opening_cash'))['total'] or Decimal('0')
+
+                # Customer cash payments received by user
+                customer_payments = CustomerTransaction.objects.filter(
+                    tenant=tenant,
+                    performed_by=user,
+                    transaction_type='CREDIT',
+                    description__icontains='(CASH)'
+                ).exclude(
+                    description__icontains='ECASH'
+                ).exclude(
+                    description__icontains='MOMO'
+                ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
+                # Bank transfers in cash made by user
+                banked_cash = BankTransfer.objects.filter(
+                    tenant=tenant,
+                    accountant=user,
+                    fund_source='CASH'
+                ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
                 context['cash_on_hand'] = max(Decimal('0'), (
                     received
                     - sent
@@ -285,41 +202,6 @@ def tenant_context(request):
                     + open_shift_opening_cash
                     - banked_cash
                 ))
-        
-        elif role_name == 'ACCOUNTANT':
-            # All deposits received minus any sent out
-            received = CashTransfer.objects.filter(
-                tenant=tenant,
-                to_user=user,
-                status='CONFIRMED'
-            ).exclude(
-                transfer_type='EXPENDITURE'  # Exclude shop-cash expenditures
-            ).exclude(
-                destination='BANK'  # Exclude cash deposited directly to bank
-            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
-            
-            sent = CashTransfer.objects.filter(
-                tenant=tenant,
-                from_user=user,
-                status='CONFIRMED'
-            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
-            
-            # Subtract Bank Transfers
-            from apps.accounting.models import BankTransfer
-            banked_cash = BankTransfer.objects.filter(tenant=tenant, fund_source='CASH').aggregate(total=Sum('amount'))['total'] or Decimal('0')
-            
-            # Add direct customer cash payments received by accountant
-            from apps.customers.models import CustomerTransaction
-            customer_cash_payments = CustomerTransaction.objects.filter(
-                tenant=tenant,
-                performed_by=user,
-                transaction_type='CREDIT',
-                description__icontains='(CASH)'
-            ).exclude(
-                description__icontains='ECASH'
-            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
-            
-            context['cash_on_hand'] = max(Decimal('0'), received - sent - banked_cash + customer_cash_payments)
         
         # Add total credit debt for managers/admin
         if role_name in ['SHOP_MANAGER', 'ADMIN', 'ACCOUNTANT', 'SHOP_CASHIER']:

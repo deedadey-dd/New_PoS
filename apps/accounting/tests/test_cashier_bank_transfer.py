@@ -89,3 +89,92 @@ class CashierBankTransferTests(TestCase):
         form_invalid = BankTransferForm(data=form_data_invalid, user=self.cashier)
         self.assertFalse(form_invalid.is_valid(), form_invalid.errors)
         self.assertIn('amount', form_invalid.errors)
+
+    def test_strict_workflow_attendant_cash_sale_reflected_and_bankable(self):
+        """Attendants accepting cash sales in strict mode see cash on hand and can transfer to bank"""
+        attendant_role, _ = Role.objects.get_or_create(name='SHOP_ATTENDANT')
+        attendant = User.objects.create_user(
+            email='attendant@test.com',
+            password='password123',
+            tenant=self.tenant,
+            location=self.shop,
+            role=attendant_role,
+            is_active=True
+        )
+
+        # Attendant makes a cash sale (acting as cashier/attendant)
+        sale = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop,
+            attendant=attendant,
+            cashier=attendant,
+            payment_method='CASH',
+            total=Decimal('250.00'),
+            amount_paid=Decimal('250.00'),
+            status='PENDING_DISPATCH'
+        )
+
+        # Check context processor navbar calculation
+        from apps.core.context_processors import tenant_context
+        request = self.factory.get('/')
+        request.user = attendant
+        ctx = tenant_context(request)
+        self.assertEqual(ctx['cash_on_hand'], Decimal('250.00'))
+
+        # Check BankTransferForm validation
+        form_data = {
+            'amount': '200.00',
+            'fund_source': 'CASH',
+            'teller_name': 'Teller 1',
+        }
+        form = BankTransferForm(data=form_data, user=attendant)
+        self.assertTrue(form.is_valid(), form.errors)
+
+    def test_strict_workflow_cashier_receives_invoice_payment_reflected_in_cash_on_hand(self):
+        """When cashier receives cash for invoice created by attendant, cash on hand is assigned to cashier"""
+        attendant_role, _ = Role.objects.get_or_create(name='SHOP_ATTENDANT')
+        attendant = User.objects.create_user(
+            email='attendant2@test.com',
+            password='password123',
+            tenant=self.tenant,
+            location=self.shop,
+            role=attendant_role,
+            is_active=True
+        )
+
+        # Invoice created by attendant (pending)
+        sale = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop,
+            attendant=attendant,
+            cashier=None,
+            payment_method='PENDING_INVOICE',
+            total=Decimal('400.00'),
+            amount_paid=Decimal('0.00'),
+            status='PENDING'
+        )
+
+        # Cashier completes payment
+        sale.complete(Decimal('400.00'), payment_method='CASH', cashier=self.cashier)
+
+        # Cashier's cash on hand should be 400.00
+        from apps.core.context_processors import tenant_context
+        request = self.factory.get('/')
+        request.user = self.cashier
+        ctx_cashier = tenant_context(request)
+        self.assertEqual(ctx_cashier['cash_on_hand'], Decimal('400.00'))
+
+        # Attendant's cash on hand should be 0.00 (attendant did not take the cash)
+        request.user = attendant
+        ctx_attendant = tenant_context(request)
+        self.assertEqual(ctx_attendant['cash_on_hand'], Decimal('0.00'))
+
+        # Cashier can transfer 400 to bank
+        form_data = {
+            'amount': '400.00',
+            'fund_source': 'CASH',
+            'teller_name': 'Teller Cashier',
+        }
+        form = BankTransferForm(data=form_data, user=self.cashier)
+        self.assertTrue(form.is_valid(), form.errors)
+
