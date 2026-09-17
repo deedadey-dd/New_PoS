@@ -4,12 +4,30 @@
 <head>
     <meta charset="UTF-8">
     <title>Waybill - {{ sale.sale_number }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
-        /* Thermal receipt styles (80mm width = ~300px at 96dpi) */
-        * {
+        :root {
+            --receipt-font-family: {{ shop_settings.receipt_font_family_css|default:'Consolas, Menlo, "Courier New", monospace'|safe }};
+            --receipt-font-weight: {{ shop_settings.receipt_font_weight_css|default:"400"|safe }};
+            --receipt-font-scale: {{ shop_settings.receipt_font_scale_css|default:"1.0"|safe }};
+        }
+
+        /* Waybill styles for Thermal & A4/A5 Standard */
+        *, *::before, *::after {
             box-sizing: border-box;
             margin: 0;
             padding: 0;
+            font-family: inherit;
+        }
+
+        table, th, td, p, div, span, h1, h2, h3 {
+            font-family: inherit;
+        }
+
+        th, strong, b, .waybill-title {
+            font-weight: 700;
         }
 
         @page {
@@ -31,26 +49,28 @@
         }
 
         body {
-            font-family: 'Courier New', monospace;
+            font-family: var(--receipt-font-family) !important;
+            font-weight: var(--receipt-font-weight);
+            color: #000;
             line-height: 1.4;
             {% if shop_settings.receipt_printer_type == 'THERMAL_80MM' %}
-            font-size: 12px;
+            font-size: calc(12px * var(--receipt-font-scale));
             width: 78mm;
             margin: 0 auto;
             {% elif shop_settings.receipt_printer_type == 'THERMAL_58MM' %}
-            font-size: 10px;
+            font-size: calc(10px * var(--receipt-font-scale));
             width: 56mm;
             margin: 0 auto;
             {% elif shop_settings.receipt_printer_type == 'A4_STANDARD' %}
-            font-size: 14px;
+            font-size: calc(14px * var(--receipt-font-scale));
             max-width: 180mm;
             margin: 0 auto;
             {% elif shop_settings.receipt_printer_type == 'A5_STANDARD' %}
-            font-size: 12px;
+            font-size: calc(12px * var(--receipt-font-scale));
             max-width: 120mm;
             margin: 0 auto;
             {% else %}
-            font-size: 12px;
+            font-size: calc(12px * var(--receipt-font-scale));
             max-width: 400px;
             margin: 0 auto;
             {% endif %}

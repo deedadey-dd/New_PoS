@@ -23,7 +23,76 @@
                     <div class="mb-4">
                         <label class="form-label fw-bold">Receipt Printer Type</label>
                         {{ form.receipt_printer_type }}
-                        <div class="form-text">Select the type of printer connected to this shop's terminal.</div>
+                        <div class="form-text">Select the type of printer connected to this shop's terminal (Thermal 80mm/58mm, A4, or A5).</div>
+                    </div>
+
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-5">
+                            <label class="form-label fw-bold" for="{{ form.receipt_font_family.id_for_label }}">
+                                <i class="bi bi-fonts me-1"></i>Receipt Font Family
+                            </label>
+                            {{ form.receipt_font_family }}
+                            <div class="form-text small">Select font style. Modern Sans-Serif or Consolas give the sharpest output on thermal & standard printers.</div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold" for="{{ form.receipt_font_weight.id_for_label }}">
+                                <i class="bi bi-type-bold me-1"></i>Print Darkness / Weight
+                            </label>
+                            {{ form.receipt_font_weight }}
+                            <div class="form-text small">Use <strong>Medium / Semi-Bold</strong> for thermal printers so items & subtotals don't print thin/faded. Use <strong>Normal</strong> for A4/A5 laser/inkjet.</div>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-bold" for="{{ form.receipt_font_size.id_for_label }}">
+                                <i class="bi bi-arrows-angle-expand me-1"></i>Font Size Scale
+                            </label>
+                            {{ form.receipt_font_size }}
+                            <div class="form-text small">Scale text size.</div>
+                        </div>
+                    </div>
+
+                    <!-- Live Typography Preview -->
+                    <div class="mb-4">
+                        <label class="form-label fw-bold text-secondary">
+                            <i class="bi bi-eye me-1"></i>Live Receipt Font Preview
+                        </label>
+                        <div id="receiptPreviewBox" class="p-3 border rounded bg-light" style="max-width: 320px; margin: 0 auto; background-color: #fff !important; border: 1px dashed #aaa !important;">
+                            <div id="previewHeader" class="text-center pb-2 mb-2" style="border-bottom: 1px dashed #000;">
+                                <div style="font-size: 15px; font-weight: bold;">SAMPLE STORE</div>
+                                <div style="font-size: 11px;">123 Commercial St.</div>
+                            </div>
+                            <div id="previewInfo" class="d-flex justify-content-between pb-1" style="font-size: 11px;">
+                                <span>17/09/2026 10:30</span>
+                                <strong>#S-10492</strong>
+                            </div>
+                            <div id="previewItems" class="py-2" style="border-top: 1px dashed #000; border-bottom: 1px dashed #000; font-size: 11px;">
+                                <div class="d-flex justify-content-between fw-bold mb-1 pb-1" style="border-bottom: 1px solid #000;">
+                                    <span>Item</span>
+                                    <span>Total</span>
+                                </div>
+                                <div class="d-flex justify-content-between py-1">
+                                    <span>2x Basmati Rice 5kg</span>
+                                    <span>$45.00</span>
+                                </div>
+                                <div class="d-flex justify-content-between py-1">
+                                    <span>1x Sunflower Oil 1L</span>
+                                    <span>$12.50</span>
+                                </div>
+                            </div>
+                            <div id="previewTotals" class="pt-2" style="font-size: 12px;">
+                                <div class="d-flex justify-content-between py-1" style="font-size: 11px;">
+                                    <span>Subtotal:</span>
+                                    <span>$57.50</span>
+                                </div>
+                                <div class="d-flex justify-content-between py-1" style="font-size: 11px;">
+                                    <span>Discount:</span>
+                                    <span>-$2.50</span>
+                                </div>
+                                <div class="d-flex justify-content-between pt-1 fw-bold" style="border-top: 1px solid #000; font-size: 13px;">
+                                    <span>TOTAL:</span>
+                                    <span>$55.00</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     
                     <div class="mb-4 form-check form-switch">
@@ -92,4 +161,51 @@
         </div>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const fontSelect = document.getElementById('id_receipt_font_family');
+    const weightSelect = document.getElementById('id_receipt_font_weight');
+    const sizeSelect = document.getElementById('id_receipt_font_size');
+    const previewBox = document.getElementById('receiptPreviewBox');
+
+    const fontMap = {
+        'CONSOLAS': "Consolas, 'Courier New', Courier, monospace",
+        'SANSSERIF': "system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
+        'LUCIDA': "'Lucida Console', 'Lucida Sans Typewriter', Monaco, monospace",
+        'ROBOTO_MONO': "'Roboto Mono', Consolas, 'Courier New', monospace",
+        'COURIER': "'Courier New', Courier, monospace",
+        'MONOSPACE': "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
+    };
+
+    const weightMap = {
+        'NORMAL': '400',
+        'MEDIUM': '600',
+        'BOLD': '700'
+    };
+
+    const sizeMap = {
+        'COMPACT': '0.92em',
+        'NORMAL': '1em',
+        'LARGE': '1.1em'
+    };
+
+    function updatePreview() {
+        if (!previewBox) return;
+        const fontKey = fontSelect ? fontSelect.value : 'CONSOLAS';
+        const weightKey = weightSelect ? weightSelect.value : 'NORMAL';
+        const sizeKey = sizeSelect ? sizeSelect.value : 'NORMAL';
+
+        previewBox.style.fontFamily = fontMap[fontKey] || fontMap['CONSOLAS'];
+        previewBox.style.fontWeight = weightMap[weightKey] || '400';
+        previewBox.style.fontSize = sizeMap[sizeKey] || '1em';
+    }
+
+    if (fontSelect) fontSelect.addEventListener('change', updatePreview);
+    if (weightSelect) weightSelect.addEventListener('change', updatePreview);
+    if (sizeSelect) sizeSelect.addEventListener('change', updatePreview);
+
+    updatePreview();
+});
+</script>
 {% endblock %}

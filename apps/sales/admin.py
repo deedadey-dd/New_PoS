@@ -13,8 +13,8 @@ class SaleItemInline(admin.TabularInline):
 
 @admin.register(ShopSettings)
 class ShopSettingsAdmin(admin.ModelAdmin):
-    list_display = ['shop', 'receipt_printer_type', 'enable_cash_payment', 'enable_ecash_payment']
-    list_filter = ['receipt_printer_type']
+    list_display = ['shop', 'receipt_printer_type', 'receipt_font_family', 'receipt_font_weight', 'enable_cash_payment', 'enable_ecash_payment']
+    list_filter = ['receipt_printer_type', 'receipt_font_family', 'receipt_font_weight']
 
 
 @admin.register(Shift)

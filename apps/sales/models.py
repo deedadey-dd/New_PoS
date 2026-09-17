@@ -11,6 +11,7 @@ from decimal import Decimal
 
 from apps.core.models import TenantModel, Location, User
 from apps.inventory.models import Product, Batch, InventoryLedger
+from django.utils.safestring import mark_safe
 
 
 class ShopSettings(TenantModel):
@@ -23,6 +24,27 @@ class ShopSettings(TenantModel):
         ('A4_STANDARD', 'A4 Standard Printer'),
         ('A5_STANDARD', 'A5 Standard Printer'),
         ('NO_PRINT', 'No Printing (Digital Only)'),
+    ]
+
+    FONT_FAMILY_CHOICES = [
+        ('CONSOLAS', 'Consolas / Clean Monospace (Crisp on Thermal & Standard)'),
+        ('SANSSERIF', 'Modern Sans-Serif (Arial / Segoe UI - Great for A4/A5 & Thermal)'),
+        ('LUCIDA', 'Lucida Console / POS Monospace (Wide & Bold Monospace)'),
+        ('ROBOTO_MONO', 'Roboto Mono / Clean Tech Monospace'),
+        ('COURIER', 'Courier New (Traditional Monospace)'),
+        ('MONOSPACE', 'System Default Monospace'),
+    ]
+
+    FONT_WEIGHT_CHOICES = [
+        ('NORMAL', 'Normal (400 - Recommended for A4/A5 Laser & Inkjet)'),
+        ('MEDIUM', 'Medium / Semi-Bold (600 - Recommended for Thermal)'),
+        ('BOLD', 'Bold / High Contrast (700 - Darkest Print)'),
+    ]
+
+    FONT_SIZE_CHOICES = [
+        ('COMPACT', 'Compact (Small - 90%)'),
+        ('NORMAL', 'Standard (Normal - 100%)'),
+        ('LARGE', 'Large (High Visibility - 110%)'),
     ]
     
     shop = models.OneToOneField(
@@ -37,6 +59,24 @@ class ShopSettings(TenantModel):
         max_length=20,
         choices=PRINTER_CHOICES,
         default='THERMAL_80MM'
+    )
+    receipt_font_family = models.CharField(
+        max_length=30,
+        choices=FONT_FAMILY_CHOICES,
+        default='CONSOLAS',
+        help_text="Font family used for printed receipts and waybills."
+    )
+    receipt_font_weight = models.CharField(
+        max_length=20,
+        choices=FONT_WEIGHT_CHOICES,
+        default='NORMAL',
+        help_text="Font darkness/weight for receipt text."
+    )
+    receipt_font_size = models.CharField(
+        max_length=20,
+        choices=FONT_SIZE_CHOICES,
+        default='NORMAL',
+        help_text="Font scale size on receipts."
     )
 
     hide_zero_stock_in_pos = models.BooleanField(
@@ -70,6 +110,36 @@ class ShopSettings(TenantModel):
     # Paystack settings for E-Cash
     paystack_public_key = models.CharField(max_length=255, blank=True)
     paystack_secret_key = models.CharField(max_length=255, blank=True)
+
+    @property
+    def receipt_font_family_css(self):
+        mapping = {
+            'CONSOLAS': 'Consolas, Menlo, "Courier New", monospace',
+            'SANSSERIF': 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+            'LUCIDA': '"Lucida Console", "Lucida Sans Typewriter", Monaco, monospace',
+            'ROBOTO_MONO': '"Roboto Mono", Consolas, "Courier New", monospace',
+            'COURIER': '"Courier New", Courier, monospace',
+            'MONOSPACE': 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+        }
+        return mark_safe(mapping.get(self.receipt_font_family, 'Consolas, Menlo, "Courier New", monospace'))
+
+    @property
+    def receipt_font_weight_css(self):
+        mapping = {
+            'NORMAL': "400",
+            'MEDIUM': "600",
+            'BOLD': "700",
+        }
+        return mapping.get(self.receipt_font_weight, "400")
+
+    @property
+    def receipt_font_scale_css(self):
+        mapping = {
+            'COMPACT': "0.92",
+            'NORMAL': "1.0",
+            'LARGE': "1.1",
+        }
+        return mapping.get(self.receipt_font_size, "1.0")
     
     class Meta:
         verbose_name_plural = "Shop Settings"
