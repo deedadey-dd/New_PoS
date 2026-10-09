@@ -276,6 +276,26 @@ class ProductListView(LoginRequiredMixin, SortableMixin, ListView):
         else:
             context['current_location'] = None
         
+        # Summary metrics from the filtered queryset
+        filtered_products = self.get_queryset()
+        context['summary_total_products'] = filtered_products.count()
+        context['summary_active_categories'] = Category.objects.filter(tenant=user.tenant, is_active=True).count()
+        
+        # Calculate total stock units and low stock count for current view
+        stock_map = context['stock_by_product']
+        total_units = Decimal('0.00')
+        low_stock_count = 0
+        for p in filtered_products:
+            qty = stock_map.get(p.id, Decimal('0.00'))
+            if qty is not None:
+                total_units += Decimal(str(qty))
+            reorder_lvl = getattr(p, 'reorder_level', 5) or 5
+            if qty is None or Decimal(str(qty)) <= Decimal(str(reorder_lvl)):
+                low_stock_count += 1
+                
+        context['summary_total_units'] = total_units
+        context['summary_low_stock_count'] = low_stock_count
+        
         return context
 
 

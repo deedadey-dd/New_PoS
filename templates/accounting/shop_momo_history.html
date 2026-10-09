@@ -1,8 +1,32 @@
 {% extends 'base.html' %}
 {% load static %}
 {% load sort_tags %}
+{% load humanize %}
 
 {% block title %}Local Momo History{% endblock %}
+
+{% block extra_css %}
+<style>
+    .summary-card-mini {
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        border: 1px solid rgba(0, 0, 0, 0.06);
+        background: #ffffff;
+    }
+    .summary-card-mini:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px -4px rgba(0, 0, 0, 0.08) !important;
+    }
+    .summary-icon-box {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.15rem;
+    }
+</style>
+{% endblock %}
 
 {% block content %}
 <div class="container-fluid py-4">
@@ -22,15 +46,15 @@
         
         <div class="d-flex gap-3 align-items-center">
             <div class="text-end border-end pe-3">
-                <span class="d-block text-muted small">Unconfirmed</span>
+                <span class="d-block text-muted small">All-Time Unconfirmed</span>
                 <span class="fs-5 fw-bold" style="color: #d97706;">
-                    {{ currency_symbol }}{{ unconfirmed_balance|floatformat:"2g" }}
+                    {{ currency_symbol }}{{ unconfirmed_balance|floatformat:2|intcomma }}
                 </span>
             </div>
             <div class="text-end">
                 <span class="d-block text-muted small">Available to Withdraw</span>
                 <span class="fs-5 fw-bold text-success">
-                    {{ currency_symbol }}{{ available_balance|floatformat:"2g" }}
+                    {{ currency_symbol }}{{ available_balance|floatformat:2|intcomma }}
                 </span>
             </div>
             
@@ -99,6 +123,65 @@
                     </a>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- ===== SUMMARY CARDS ===== -->
+    <div class="row g-3 mb-4">
+        <!-- 1. Total Momo Volume -->
+        <div class="col-6 col-md-3">
+            <div class="card summary-card-mini rounded-4 shadow-sm h-100 p-3">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <span class="text-muted small text-uppercase fw-bold">Total Momo</span>
+                    <div class="summary-icon-box bg-warning bg-opacity-10 text-warning">
+                        <i class="bi bi-phone"></i>
+                    </div>
+                </div>
+                <h4 class="mb-1 fw-bold text-dark">{{ currency_symbol }}{{ filtered_total_momo|floatformat:2|intcomma }}</h4>
+                <div class="text-muted small">{{ filtered_total_count }} transaction{{ filtered_total_count|pluralize }}</div>
+            </div>
+        </div>
+
+        <!-- 2. Direct Sales -->
+        <div class="col-6 col-md-3">
+            <div class="card summary-card-mini rounded-4 shadow-sm h-100 p-3">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <span class="text-muted small text-uppercase fw-bold">Sales Revenue</span>
+                    <div class="summary-icon-box bg-success bg-opacity-10 text-success">
+                        <i class="bi bi-cart-check"></i>
+                    </div>
+                </div>
+                <h4 class="mb-1 fw-bold text-success">{{ currency_symbol }}{{ filtered_sales_momo|floatformat:2|intcomma }}</h4>
+                <div class="text-muted small">{{ filtered_sales_count }} sale{{ filtered_sales_count|pluralize }}</div>
+            </div>
+        </div>
+
+        <!-- 3. Account Payments -->
+        <div class="col-6 col-md-3">
+            <div class="card summary-card-mini rounded-4 shadow-sm h-100 p-3">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <span class="text-muted small text-uppercase fw-bold">Account Payments</span>
+                    <div class="summary-icon-box bg-primary bg-opacity-10 text-primary">
+                        <i class="bi bi-person-check"></i>
+                    </div>
+                </div>
+                <h4 class="mb-1 fw-bold text-primary">{{ currency_symbol }}{{ filtered_cts_momo|floatformat:2|intcomma }}</h4>
+                <div class="text-muted small">{{ filtered_cts_count }} payment{{ filtered_cts_count|pluralize }}</div>
+            </div>
+        </div>
+
+        <!-- 4. Confirmed Status -->
+        <div class="col-6 col-md-3">
+            <div class="card summary-card-mini rounded-4 shadow-sm h-100 p-3">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <span class="text-muted small text-uppercase fw-bold">Confirmed / Pending</span>
+                    <div class="summary-icon-box bg-info bg-opacity-10 text-info">
+                        <i class="bi bi-shield-check"></i>
+                    </div>
+                </div>
+                <h4 class="mb-1 fw-bold text-info" style="color: #0284c7 !important;">{{ currency_symbol }}{{ filtered_confirmed_momo|floatformat:2|intcomma }}</h4>
+                <div class="text-muted small">Pending: <span class="fw-semibold text-warning">{{ currency_symbol }}{{ filtered_unconfirmed_momo|floatformat:2|intcomma }}</span></div>
+            </div>
         </div>
     </div>
 

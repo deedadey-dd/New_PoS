@@ -1,11 +1,57 @@
 {% extends 'base.html' %}
 {% load sort_tags %}
 {% load core_filters %}
+{% load humanize %}
 
 {% block title %}Sales History{% endblock %}
 
+{% block extra_css %}
+<style>
+    .summary-card-mini {
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        border: 1px solid rgba(0, 0, 0, 0.06);
+        background: #ffffff;
+    }
+    .summary-card-mini:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px -4px rgba(0, 0, 0, 0.08) !important;
+    }
+    .summary-icon-box {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.15rem;
+    }
+    .nav-pill-custom {
+        padding: 0.45rem 1rem;
+        border-radius: 50rem;
+        font-weight: 600;
+        font-size: 0.85rem;
+        color: #64748b;
+        background: #f1f5f9;
+        text-decoration: none;
+        transition: all 0.2s ease;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+    }
+    .nav-pill-custom:hover {
+        background: #e2e8f0;
+        color: #1e293b;
+    }
+    .nav-pill-custom.active {
+        background: #0f172a;
+        color: #ffffff;
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
+    }
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex justify-content-between align-items-center mb-3">
     <div>
         <h2 class="mb-1">Sales History</h2>
         <p class="text-muted mb-0">View and manage sales transactions</p>
@@ -36,8 +82,36 @@
     </div>
 </div>
 
+<!-- Payment Method Navigation Pills -->
+<div class="d-flex flex-wrap gap-2 mb-3">
+    <a href="?{% if selected_shop %}shop={{ selected_shop }}&{% endif %}{% if date_from %}date_from={{ date_from }}&{% endif %}{% if date_to %}date_to={{ date_to }}&{% endif %}{% if selected_status %}status={{ selected_status }}&{% endif %}{% if q %}q={{ q }}&{% endif %}"
+       class="nav-pill-custom {% if not selected_payment %}active{% endif %}">
+        <i class="bi bi-grid-fill"></i> All Sales
+    </a>
+    <a href="?payment=CASH{% if selected_shop %}&shop={{ selected_shop }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if q %}&q={{ q }}{% endif %}"
+       class="nav-pill-custom {% if selected_payment == 'CASH' %}active{% endif %}">
+        <i class="bi bi-cash-stack"></i> Cash
+    </a>
+    <a href="?payment=ECASH{% if selected_shop %}&shop={{ selected_shop }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if q %}&q={{ q }}{% endif %}"
+       class="nav-pill-custom {% if selected_payment == 'ECASH' %}active{% endif %}">
+        <i class="bi bi-credit-card-2-front"></i> E-Cash (Paystack)
+    </a>
+    <a href="?payment=MOMO{% if selected_shop %}&shop={{ selected_shop }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if q %}&q={{ q }}{% endif %}"
+       class="nav-pill-custom {% if selected_payment == 'MOMO' %}active{% endif %}">
+        <i class="bi bi-phone"></i> Local Momo
+    </a>
+    <a href="?payment=CREDIT{% if selected_shop %}&shop={{ selected_shop }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if q %}&q={{ q }}{% endif %}"
+       class="nav-pill-custom {% if selected_payment == 'CREDIT' %}active{% endif %}">
+        <i class="bi bi-journal-bookmark"></i> Credit
+    </a>
+    <a href="?payment=MIXED{% if selected_shop %}&shop={{ selected_shop }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if q %}&q={{ q }}{% endif %}"
+       class="nav-pill-custom {% if selected_payment == 'MIXED' %}active{% endif %}">
+        <i class="bi bi-pie-chart"></i> Mixed
+    </a>
+</div>
+
 <!-- Filters -->
-<div class="card mb-4">
+<div class="card mb-4 border-0 shadow-sm">
     <div class="card-body">
         <form method="get" class="row g-3">
             {% if selected_payment %}
@@ -92,8 +166,8 @@
                 <label class="form-label">Status</label>
                 <select name="status" class="form-select">
                     <option value="">All</option>
-                    <option value="COMPLETED" {% if selected_status == 'COMPLETED' %}selected{% endif %}>Completed
-                    </option>
+                    <option value="COMPLETED" {% if selected_status == 'COMPLETED' %}selected{% endif %}>Completed</option>
+                    <option value="PENDING_DISPATCH" {% if selected_status == 'PENDING_DISPATCH' %}selected{% endif %}>Pending Dispatch</option>
                     <option value="VOIDED" {% if selected_status == 'VOIDED' %}selected{% endif %}>Voided</option>
                     <option value="PENDING" {% if selected_status == 'PENDING' %}selected{% endif %}>Pending</option>
                 </select>
@@ -102,11 +176,70 @@
                 <button type="submit" class="btn btn-primary flex-grow-1">
                     <i class="bi bi-filter me-1"></i>Filter
                 </button>
-                <a href="?" class="btn btn-outline-secondary">
+                <a href="?{% if selected_payment %}payment={{ selected_payment }}{% endif %}" class="btn btn-outline-secondary">
                     <i class="bi bi-x-lg"></i>
                 </a>
             </div>
         </form>
+    </div>
+</div>
+
+<!-- ===== SUMMARY CARDS ===== -->
+<div class="row g-3 mb-4">
+    <!-- 1. Total Sales Value -->
+    <div class="col-6 col-md-3">
+        <div class="card summary-card-mini rounded-4 shadow-sm h-100 p-3">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <span class="text-muted small text-uppercase fw-bold">Total Sales</span>
+                <div class="summary-icon-box bg-dark bg-opacity-10 text-dark">
+                    <i class="bi bi-wallet2"></i>
+                </div>
+            </div>
+            <h4 class="mb-1 fw-bold text-dark">{{ currency_symbol }}{{ summary_total_sales_value|floatformat:2|intcomma }}</h4>
+            <div class="text-muted small">{{ summary_total_count }} invoice{{ summary_total_count|pluralize }} ({{ summary_completed_count }} completed)</div>
+        </div>
+    </div>
+
+    <!-- 2. Cash Sales -->
+    <div class="col-6 col-md-3">
+        <div class="card summary-card-mini rounded-4 shadow-sm h-100 p-3">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <span class="text-muted small text-uppercase fw-bold">Cash</span>
+                <div class="summary-icon-box bg-success bg-opacity-10 text-success">
+                    <i class="bi bi-cash-stack"></i>
+                </div>
+            </div>
+            <h4 class="mb-1 fw-bold text-success">{{ currency_symbol }}{{ summary_cash_sales_value|floatformat:2|intcomma }}</h4>
+            <div class="text-muted small">Physical cash received</div>
+        </div>
+    </div>
+
+    <!-- 3. E-Cash Sales -->
+    <div class="col-6 col-md-3">
+        <div class="card summary-card-mini rounded-4 shadow-sm h-100 p-3">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <span class="text-muted small text-uppercase fw-bold">E-Cash</span>
+                <div class="summary-icon-box bg-primary bg-opacity-10 text-primary">
+                    <i class="bi bi-credit-card-2-front"></i>
+                </div>
+            </div>
+            <h4 class="mb-1 fw-bold text-primary">{{ currency_symbol }}{{ summary_ecash_sales_value|floatformat:2|intcomma }}</h4>
+            <div class="text-muted small">Paystack / Digital POS</div>
+        </div>
+    </div>
+
+    <!-- 4. Local Momo Sales -->
+    <div class="col-6 col-md-3">
+        <div class="card summary-card-mini rounded-4 shadow-sm h-100 p-3">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <span class="text-muted small text-uppercase fw-bold">Local Momo</span>
+                <div class="summary-icon-box bg-warning bg-opacity-10 text-warning">
+                    <i class="bi bi-phone"></i>
+                </div>
+            </div>
+            <h4 class="mb-1 fw-bold text-warning">{{ currency_symbol }}{{ summary_momo_sales_value|floatformat:2|intcomma }}</h4>
+            <div class="text-muted small">Mobile money received</div>
+        </div>
     </div>
 </div>
 

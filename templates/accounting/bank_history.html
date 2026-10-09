@@ -1,18 +1,42 @@
 {% extends 'base.html' %}
 {% load sort_tags %}
 {% load core_filters %}
+{% load humanize %}
 
 {% block title %}Bank Transfers History{% endblock %}
+
+{% block extra_css %}
+<style>
+.summary-card-mini {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.summary-card-mini:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 .5rem 1rem rgba(0,0,0,.08) !important;
+}
+.summary-icon-box {
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    font-size: 1.25rem;
+}
+</style>
+{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
-        <h2 class="mb-1">Bank Transfers History</h2>
+        <h2 class="mb-1">
+            <i class="bi bi-bank me-2 text-primary"></i>Bank Transfers History
+        </h2>
         <p class="text-muted mb-0">View all bank deposits made by accountants</p>
     </div>
     <div class="d-flex gap-2">
         <div class="dropdown">
-            <button class="btn btn-outline-success dropdown-toggle" type="button" id="exportDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+            <button class="btn btn-outline-success dropdown-toggle rounded-pill px-3" type="button" id="exportDropdown" data-bs-toggle="dropdown" aria-expanded="false">
                 <i class="bi bi-download me-1"></i>Export
             </button>
             <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="exportDropdown">
@@ -28,18 +52,83 @@
                 </li>
             </ul>
         </div>
-        <a href="{% url 'accounting:bank_transfer_create' %}" class="btn btn-primary">
-            <i class="bi bi-plus-lg me-2"></i>New Transfer
+        <a href="{% url 'accounting:bank_transfer_create' %}" class="btn btn-primary rounded-pill px-4 fw-bold">
+            <i class="bi bi-plus-lg me-1"></i>New Transfer
         </a>
     </div>
 </div>
 
-<div class="row mb-4">
-    <div class="col-md-3">
-        <div class="card bg-primary text-white h-100 border-0 rounded-4 shadow-sm">
-            <div class="card-body">
-                <h6 class="card-title text-white-50 text-uppercase fw-bold mb-3">Total Deposited</h6>
-                <h3 class="mb-0 fw-bold">{{ current_tenant.currency_symbol|default:'$' }}{{ total_deposited|floatformat:"2g" }}</h3>
+<!-- Summary Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3">
+        <div class="card border-0 shadow-sm rounded-4 h-100 summary-card-mini bg-white">
+            <div class="card-body p-3">
+                <div class="d-flex align-items-center justify-content-between">
+                    <div>
+                        <span class="text-muted small fw-semibold text-uppercase d-block mb-1">Total Deposited</span>
+                        <h4 class="fw-bold mb-0 text-primary">{{ current_tenant.currency_symbol|default:'$' }}{{ total_deposited|floatformat:2|intcomma }}</h4>
+                        <span class="badge bg-primary-subtle text-primary rounded-pill mt-1" style="font-size: 0.72rem;">
+                            {{ transfers_count }} deposit{{ transfers_count|pluralize }}
+                        </span>
+                    </div>
+                    <div class="summary-icon-box bg-primary-subtle text-primary">
+                        <i class="bi bi-bank2"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card border-0 shadow-sm rounded-4 h-100 summary-card-mini bg-white">
+            <div class="card-body p-3">
+                <div class="d-flex align-items-center justify-content-between">
+                    <div>
+                        <span class="text-muted small fw-semibold text-uppercase d-block mb-1">Cash Banked</span>
+                        <h4 class="fw-bold mb-0 text-success">{{ current_tenant.currency_symbol|default:'$' }}{{ cash_banked|floatformat:2|intcomma }}</h4>
+                        <span class="badge bg-success-subtle text-success rounded-pill mt-1" style="font-size: 0.72rem;">
+                            Physical Cash
+                        </span>
+                    </div>
+                    <div class="summary-icon-box bg-success-subtle text-success">
+                        <i class="bi bi-cash-stack"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card border-0 shadow-sm rounded-4 h-100 summary-card-mini bg-white">
+            <div class="card-body p-3">
+                <div class="d-flex align-items-center justify-content-between">
+                    <div>
+                        <span class="text-muted small fw-semibold text-uppercase d-block mb-1">E-Cash Banked</span>
+                        <h4 class="fw-bold mb-0 text-info">{{ current_tenant.currency_symbol|default:'$' }}{{ ecash_banked|floatformat:2|intcomma }}</h4>
+                        <span class="badge bg-info-subtle text-info rounded-pill mt-1" style="font-size: 0.72rem;">
+                            Online Gateways
+                        </span>
+                    </div>
+                    <div class="summary-icon-box bg-info-subtle text-info">
+                        <i class="bi bi-credit-card-2-front"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card border-0 shadow-sm rounded-4 h-100 summary-card-mini bg-white">
+            <div class="card-body p-3">
+                <div class="d-flex align-items-center justify-content-between">
+                    <div>
+                        <span class="text-muted small fw-semibold text-uppercase d-block mb-1">Momo Banked</span>
+                        <h4 class="fw-bold mb-0 text-warning">{{ current_tenant.currency_symbol|default:'$' }}{{ momo_banked|floatformat:2|intcomma }}</h4>
+                        <span class="badge bg-warning-subtle text-warning rounded-pill mt-1" style="font-size: 0.72rem;">
+                            Shop Momo POS
+                        </span>
+                    </div>
+                    <div class="summary-icon-box bg-warning-subtle text-warning">
+                        <i class="bi bi-phone"></i>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

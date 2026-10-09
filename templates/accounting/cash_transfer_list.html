@@ -1,7 +1,31 @@
 {% extends 'base.html' %}
 {% load sort_tags %}
+{% load humanize %}
 
 {% block title %}Cash Transfers - {{ current_tenant.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .summary-card-mini {
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        border: 1px solid rgba(0, 0, 0, 0.06);
+        background: #ffffff;
+    }
+    .summary-card-mini:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px -4px rgba(0, 0, 0, 0.08) !important;
+    }
+    .summary-icon-box {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.15rem;
+    }
+</style>
+{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -119,9 +143,68 @@
                 </a>
             </div>
         </form>
-    </div>
+</div>
 </div>
 {% endif %}
+
+<!-- ===== SUMMARY CARDS ===== -->
+<div class="row g-3 mb-4">
+    <!-- 1. Total Transferred -->
+    <div class="col-6 col-md-3">
+        <div class="card summary-card-mini rounded-4 shadow-sm h-100 p-3">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <span class="text-muted small text-uppercase fw-bold">Total Transfers</span>
+                <div class="summary-icon-box bg-primary bg-opacity-10 text-primary">
+                    <i class="bi bi-cash-stack"></i>
+                </div>
+            </div>
+            <h4 class="mb-1 fw-bold text-dark">{{ currency_symbol }}{{ summary_total_amount|floatformat:2|intcomma }}</h4>
+            <div class="text-muted small">{{ summary_total_count }} transfer{{ summary_total_count|pluralize }}</div>
+        </div>
+    </div>
+
+    <!-- 2. Confirmed -->
+    <div class="col-6 col-md-3">
+        <div class="card summary-card-mini rounded-4 shadow-sm h-100 p-3">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <span class="text-muted small text-uppercase fw-bold">Confirmed</span>
+                <div class="summary-icon-box bg-success bg-opacity-10 text-success">
+                    <i class="bi bi-check2-circle"></i>
+                </div>
+            </div>
+            <h4 class="mb-1 fw-bold text-success">{{ currency_symbol }}{{ summary_confirmed_amount|floatformat:2|intcomma }}</h4>
+            <div class="text-muted small">{{ summary_confirmed_count }} confirmed</div>
+        </div>
+    </div>
+
+    <!-- 3. Pending Confirmation -->
+    <div class="col-6 col-md-3">
+        <div class="card summary-card-mini rounded-4 shadow-sm h-100 p-3">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <span class="text-muted small text-uppercase fw-bold">Pending</span>
+                <div class="summary-icon-box bg-warning bg-opacity-10 text-warning">
+                    <i class="bi bi-hourglass-split"></i>
+                </div>
+            </div>
+            <h4 class="mb-1 fw-bold text-warning">{{ currency_symbol }}{{ summary_pending_amount|floatformat:2|intcomma }}</h4>
+            <div class="text-muted small">{{ summary_pending_count }} awaiting confirmation</div>
+        </div>
+    </div>
+
+    <!-- 4. Confirmed Deposits -->
+    <div class="col-6 col-md-3">
+        <div class="card summary-card-mini rounded-4 shadow-sm h-100 p-3">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <span class="text-muted small text-uppercase fw-bold">Deposits</span>
+                <div class="summary-icon-box bg-info bg-opacity-10 text-info">
+                    <i class="bi bi-bank"></i>
+                </div>
+            </div>
+            <h4 class="mb-1 fw-bold text-info" style="color: #0284c7 !important;">{{ currency_symbol }}{{ summary_deposits_amount|floatformat:2|intcomma }}</h4>
+            <div class="text-muted small">Deposits to HQ / Bank</div>
+        </div>
+    </div>
+</div>
 
 <!-- Transfers Table -->
 <div class="card">

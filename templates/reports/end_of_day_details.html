@@ -1,29 +1,98 @@
 {% extends "base.html" %}
 {% load humanize %}
 
-{% block title %}Detailed Breakdown Report{% endblock %}
+{% block title %}End of Day Report - {{ current_tenant.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .summary-card {
+        transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        border: 1px solid rgba(0, 0, 0, 0.06);
+        background: #ffffff;
+        position: relative;
+        overflow: hidden;
+    }
+    .summary-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.04) !important;
+    }
+    .summary-card-hero {
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+        color: #ffffff;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .summary-icon-box {
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.25rem;
+    }
+    .icon-emerald { background: rgba(16, 185, 129, 0.12); color: #10b981; }
+    .icon-green { background: rgba(34, 197, 94, 0.12); color: #16a34a; }
+    .icon-indigo { background: rgba(99, 102, 241, 0.12); color: #6366f1; }
+    .icon-amber { background: rgba(245, 158, 11, 0.14); color: #d97706; }
+    .icon-purple { background: rgba(168, 85, 247, 0.12); color: #9333ea; }
+    .icon-teal { background: rgba(20, 184, 166, 0.12); color: #0d9488; }
+    .icon-blue { background: rgba(59, 130, 246, 0.12); color: #2563eb; }
+    .icon-cyan { background: rgba(6, 182, 212, 0.12); color: #0891b2; }
+    .icon-violet { background: rgba(139, 92, 246, 0.12); color: #7c3aed; }
+    .icon-rose { background: rgba(244, 63, 94, 0.12); color: #e11d48; }
+
+    .stat-label {
+        font-size: 0.72rem;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        font-weight: 700;
+        color: #64748b;
+        margin-bottom: 0.25rem;
+    }
+    .stat-value {
+        font-size: 1.35rem;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        line-height: 1.2;
+    }
+    .stat-sub {
+        font-size: 0.75rem;
+        color: #94a3b8;
+        font-weight: 500;
+    }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="container-fluid py-4">
-    <div class="d-flex justify-content-between align-items-center mb-4 d-print-none">
+<div class="container-fluid py-4 px-lg-4">
+    <!-- ===== HEADER SECTION ===== -->
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4 d-print-none">
         <div>
-            <h2 class="mb-1">End of Day Report</h2>
-            <p class="text-muted mb-0">
-                {% if start_date == end_date %}
-                    Summary for {{ start_date|date:"F j, Y" }}
-                {% else %}
-                    Summary from {{ start_date|date:"F j, Y" }} to {{ end_date|date:"F j, Y" }}
-                {% endif %}
+            <div class="d-flex align-items-center gap-2">
+                <h2 class="h3 mb-0 fw-bold text-dark">End of Day Report</h2>
                 {% if viewing_shop %}
-                    &mdash; <span class="fw-bold">{{ viewing_shop.name }}</span>
+                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-3 py-1 fw-semibold">
+                        <i class="bi bi-shop me-1"></i>{{ viewing_shop.name }}
+                    </span>
                 {% endif %}
+            </div>
+            <p class="text-muted mb-0 small mt-1">
+                <i class="bi bi-clock-history me-1"></i>
+                {% if start_date == end_date %}
+                    Summary for <span class="fw-semibold text-dark">{{ start_date|date:"F j, Y" }}</span>
+                {% else %}
+                    Summary from <span class="fw-semibold text-dark">{{ start_date|date:"F j, Y" }}</span> to <span class="fw-semibold text-dark">{{ end_date|date:"F j, Y" }}</span>
+                {% endif %}
+                &bull; Generated as <span class="fw-medium text-dark">{{ role_display_name }}</span>
             </p>
         </div>
-        <div class="d-flex gap-2">
-            <form method="get" class="d-flex gap-2 align-items-center">
+
+        <!-- Filter & Action Controls -->
+        <div class="d-flex flex-wrap align-items-center gap-2">
+            <form method="get" class="d-flex flex-wrap align-items-center gap-2">
                 {% if available_shops %}
-                    <select name="shop_id" class="form-select" style="min-width: 150px;">
-                        <option value="">My Summary</option>
+                    <select name="shop_id" class="form-select form-select-sm shadow-sm" style="min-width: 140px;">
+                        <option value="">All / My Summary</option>
                         {% for shop in available_shops %}
                             <option value="{{ shop.id }}" {% if viewing_shop.id == shop.id %}selected{% endif %}>
                                 {{ shop.name }}
@@ -31,253 +100,259 @@
                         {% endfor %}
                     </select>
                 {% endif %}
-                <div class="input-group">
-                    <span class="input-group-text bg-light border-end-0"><i class="bi bi-calendar"></i></span>
-                    <input type="date" name="start_date" class="form-control" value="{{ start_date|date:'Y-m-d' }}" required>
+
+                <div class="input-group input-group-sm shadow-sm" style="width: auto;">
+                    <span class="input-group-text bg-white border-end-0 text-muted"><i class="bi bi-calendar3"></i></span>
+                    <input type="date" name="start_date" class="form-control border-start-0 ps-0" value="{{ start_date|date:'Y-m-d' }}" required>
                 </div>
-                <span class="text-muted">to</span>
-                <div class="input-group">
+                <span class="text-muted small">&ndash;</span>
+                <div class="input-group input-group-sm shadow-sm" style="width: auto;">
                     <input type="date" name="end_date" class="form-control" value="{{ end_date|date:'Y-m-d' }}" required>
                 </div>
-                <input type="hidden" name="exclude_inactive" value="{{ exclude_inactive|lower }}">
-                <input type="hidden" name="top_n" value="{{ top_n }}">
-                <button type="submit" class="btn btn-outline-primary">Filter</button>
+
+                <select name="top_n" class="form-select form-select-sm shadow-sm" style="width: auto;">
+                    <option value="all" {% if top_n == 'all' %}selected{% endif %}>All Items</option>
+                    <option value="10" {% if top_n == '10' %}selected{% endif %}>Top 10 Items</option>
+                    <option value="20" {% if top_n == '20' %}selected{% endif %}>Top 20 Items</option>
+                </select>
+
+                <button type="submit" class="btn btn-sm btn-primary shadow-sm px-3 fw-medium">
+                    <i class="bi bi-filter me-1"></i>Filter
+                </button>
             </form>
-            <a href="?{% if viewing_shop %}shop_id={{ viewing_shop.id }}&{% endif %}start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}&exclude_inactive={{ exclude_inactive|lower }}&top_n={{ top_n }}&excel=true" class="btn btn-success">
-                <i class="bi bi-file-earmark-excel me-2"></i>Export Excel
-            </a>
-            <a href="?{% if viewing_shop %}shop_id={{ viewing_shop.id }}&{% endif %}start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}&exclude_inactive={{ exclude_inactive|lower }}&top_n={{ top_n }}&pdf=true" class="btn btn-primary">
-                <i class="bi bi-file-earmark-pdf me-2"></i>Print PDF
-            </a>
+
+            <div class="btn-group btn-group-sm shadow-sm ms-lg-2">
+                <a href="?{% if viewing_shop %}shop_id={{ viewing_shop.id }}&{% endif %}start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}&top_n={{ top_n }}&excel=true" class="btn btn-outline-success">
+                    <i class="bi bi-file-earmark-excel me-1"></i>Excel
+                </a>
+                <a href="?{% if viewing_shop %}shop_id={{ viewing_shop.id }}&{% endif %}start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}&top_n={{ top_n }}&pdf=true" class="btn btn-outline-primary">
+                    <i class="bi bi-printer me-1"></i>PDF
+                </a>
+            </div>
         </div>
     </div>
 
-    <!-- Print Header (Hidden on screen) -->
+    <!-- Print Header (Visible only when printed) -->
     <div class="d-none d-print-block mb-4 text-center">
-        <h2>{{ current_tenant.name }}</h2>
-        <h4>End of Day Report</h4>
-        <p><strong>Period:</strong> {{ start_date|date:"F j, Y" }} {% if start_date != end_date %} - {{ end_date|date:"F j, Y" }} {% endif %}</p>
+        <h2 class="mb-1 fw-bold">{{ current_tenant.name }}</h2>
+        <h4 class="text-secondary mb-2">End of Day Report</h4>
+        <p class="mb-1"><strong>Period:</strong> {{ start_date|date:"F j, Y" }} {% if start_date != end_date %} - {{ end_date|date:"F j, Y" }} {% endif %}</p>
         {% if viewing_shop %}
-            <p><strong>Shop:</strong> {{ viewing_shop.name }}</p>
+            <p class="mb-1"><strong>Shop:</strong> {{ viewing_shop.name }}</p>
         {% endif %}
-        <p><strong>Generated By:</strong> {% if request.user %}{{ request.user.get_full_name|default:request.user.email }}{% else %}-{% endif %} ({{ role_display_name }})</p>
-        <hr>
+        <p class="text-muted small"><strong>Generated By:</strong> {% if request.user %}{{ request.user.get_full_name|default:request.user.email }}{% else %}-{% endif %} ({{ role_display_name }})</p>
+        <hr class="my-3">
     </div>
 
-    <!-- ===== SUMMARY CARDS ===== -->
+    <!-- ===== 10 SUMMARY CARDS GRID ===== -->
     <div class="row g-3 mb-4">
-        {% if role_name == 'SHOP_ATTENDANT' %}
-            <div class="col-6 col-md-3">
-                <div class="card border-0 shadow-sm rounded-4 h-100">
-                    <div class="card-body">
-                        <div class="text-muted small text-uppercase fw-bold mb-1">Total Sales</div>
-                        <h4 class="mb-0 text-success fw-bold">{{ currency_symbol }}{{ total_sales_value|floatformat:2|intcomma }}</h4>
+        <!-- 1. Shop Total Sales -->
+        <div class="col-6 col-md-4 col-xl-2-4 col-lg-3">
+            <div class="card summary-card summary-card-hero rounded-4 shadow-sm h-100 p-3">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <div class="stat-label text-slate-300 text-white-50">1. Total Sales</div>
+                    <div class="summary-icon-box bg-white bg-opacity-10 text-emerald-400">
+                        <i class="bi bi-wallet2 text-success"></i>
                     </div>
                 </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="card border-0 shadow-sm rounded-4 h-100">
-                    <div class="card-body">
-                        <div class="text-muted small text-uppercase fw-bold mb-1">Invoices Created</div>
-                        <h4 class="mb-0 text-primary fw-bold">{{ invoice_count|intcomma }}</h4>
-                    </div>
+                <div class="stat-value text-white mb-1">
+                    {{ currency_symbol }}{{ shop_total_sales|floatformat:2|intcomma }}
+                </div>
+                <div class="stat-sub text-white-50">
+                    Gross sales revenue
                 </div>
             </div>
-            <div class="col-6 col-md-3">
-                <div class="card border-0 shadow-sm rounded-4 h-100">
-                    <div class="card-body">
-                        <div class="text-muted small text-uppercase fw-bold mb-1">Items Sold</div>
-                        <h4 class="mb-0 text-info fw-bold">{{ items_sold_qty|floatformat:0|intcomma }}</h4>
-                        {% if user.tenant.use_strict_sales_workflow %}
-                        <div class="text-muted small mt-1">Dispatched: {{ items_dispatched_qty|floatformat:0|intcomma }}</div>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="card border-0 shadow-sm rounded-4 h-100">
-                    <div class="card-body">
-                        <div class="text-muted small text-uppercase fw-bold mb-1">Customer Payments</div>
-                        <h4 class="mb-0 text-warning fw-bold">{{ currency_symbol }}{{ customer_payments_received|floatformat:2|intcomma }}</h4>
-                    </div>
-                </div>
-            </div>
+        </div>
 
-        {% elif role_name == 'SHOP_CASHIER' %}
-            <div class="col-6 col-md-3">
-                <div class="card border-0 shadow-sm rounded-4 h-100 bg-primary text-white">
-                    <div class="card-body">
-                        <div class="text-white-50 small text-uppercase fw-bold mb-1">Total Processed</div>
-                        <h4 class="mb-0 fw-bold">{{ currency_symbol }}{{ total_sales_value|floatformat:2|intcomma }}</h4>
+        <!-- 2. Cash Sales -->
+        <div class="col-6 col-md-4 col-xl-2-4 col-lg-3">
+            <div class="card summary-card rounded-4 shadow-sm h-100 p-3">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <div class="stat-label">2. Cash Sales</div>
+                    <div class="summary-icon-box icon-green">
+                        <i class="bi bi-cash-stack"></i>
                     </div>
                 </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="card border-0 shadow-sm rounded-4 h-100">
-                    <div class="card-body">
-                        <div class="text-muted small text-uppercase fw-bold mb-1">Invoices Processed</div>
-                        <h4 class="mb-0 text-primary fw-bold">{{ invoice_count|intcomma }}</h4>
-                    </div>
+                <div class="stat-value text-success mb-1">
+                    {{ currency_symbol }}{{ cash_sales|floatformat:2|intcomma }}
+                </div>
+                <div class="stat-sub">
+                    Physical cash collected
                 </div>
             </div>
-            <div class="col-6 col-md-3">
-                <div class="card border-0 shadow-sm rounded-4 h-100">
-                    <div class="card-body">
-                        <div class="text-muted small text-uppercase fw-bold mb-1">Customer Payments</div>
-                        <h4 class="mb-0 text-warning fw-bold">{{ currency_symbol }}{{ customer_payments_received|floatformat:2|intcomma }}</h4>
-                    </div>
-                </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="card border-0 shadow-sm rounded-4 h-100">
-                    <div class="card-body">
-                        <div class="text-muted small text-uppercase fw-bold mb-1">Bank Transfers</div>
-                        <h4 class="mb-0 text-success fw-bold">{{ currency_symbol }}{{ bank_transfers_made|floatformat:2|intcomma }}</h4>
-                    </div>
-                </div>
-            </div>
+        </div>
 
-        {% elif role_name == 'SHOP_MANAGER' or viewing_shop %}
-            <div class="col-6 col-md-4">
-                <div class="card border-0 shadow-sm rounded-4 h-100 bg-success text-white">
-                    <div class="card-body">
-                        <div class="text-white-50 small text-uppercase fw-bold mb-1">Shop Total Sales</div>
-                        <h4 class="mb-0 fw-bold">{{ currency_symbol }}{{ shop_total_sales_value|floatformat:2|intcomma }}</h4>
+        <!-- 3. E-Cash Sales -->
+        <div class="col-6 col-md-4 col-xl-2-4 col-lg-3">
+            <div class="card summary-card rounded-4 shadow-sm h-100 p-3">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <div class="stat-label">3. E-Cash Sales</div>
+                    <div class="summary-icon-box icon-indigo">
+                        <i class="bi bi-credit-card-2-front"></i>
                     </div>
                 </div>
-            </div>
-            <div class="col-6 col-md-4">
-                <div class="card border-0 shadow-sm rounded-4 h-100">
-                    <div class="card-body">
-                        <div class="text-muted small text-uppercase fw-bold mb-1">Shop Invoices</div>
-                        <h4 class="mb-0 text-primary fw-bold">{{ shop_invoice_count|intcomma }}</h4>
-                    </div>
+                <div class="stat-value text-primary mb-1">
+                    {{ currency_symbol }}{{ ecash_sales|floatformat:2|intcomma }}
+                </div>
+                <div class="stat-sub">
+                    Paystack / Digital POS
                 </div>
             </div>
-            <div class="col-6 col-md-4">
-                <div class="card border-0 shadow-sm rounded-4 h-100">
-                    <div class="card-body">
-                        <div class="text-muted small text-uppercase fw-bold mb-1">Items Sold</div>
-                        <h4 class="mb-0 text-info fw-bold">{{ shop_items_sold_qty|floatformat:0|intcomma }}</h4>
-                        {% if user.tenant.use_strict_sales_workflow %}
-                        <div class="text-muted small mt-1">Dispatched: {{ shop_items_dispatched_qty|floatformat:0|intcomma }}</div>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-            <div class="col-6 col-md-4">
-                <div class="card border-0 shadow-sm rounded-4 h-100">
-                    <div class="card-body">
-                        <div class="text-muted small text-uppercase fw-bold mb-1">Customer Payments</div>
-                        <h4 class="mb-0 text-warning fw-bold">{{ currency_symbol }}{{ shop_customer_payments_received|floatformat:2|intcomma }}</h4>
-                    </div>
-                </div>
-            </div>
-            <div class="col-6 col-md-4">
-                <div class="card border-0 shadow-sm rounded-4 h-100">
-                    <div class="card-body">
-                        <div class="text-muted small text-uppercase fw-bold mb-1">Funds Sent Out</div>
-                        <h4 class="mb-0 text-danger fw-bold">{{ currency_symbol }}{{ transferred_funds_out|floatformat:2|intcomma }}</h4>
-                    </div>
-                </div>
-            </div>
-            <div class="col-6 col-md-4">
-                <div class="card border-0 shadow-sm rounded-4 h-100">
-                    <div class="card-body">
-                        <div class="text-muted small text-uppercase fw-bold mb-1">Expenditures</div>
-                        <h4 class="mb-0 text-danger fw-bold">{{ currency_symbol }}{{ shop_expenditures|floatformat:2|intcomma }}</h4>
-                    </div>
-                </div>
-            </div>
-            <div class="col-6 col-md-4">
-                <div class="card border-0 shadow-sm rounded-4 h-100">
-                    <div class="card-body">
-                        <div class="text-muted small text-uppercase fw-bold mb-1">Funds Sent to Bank</div>
-                        <h4 class="mb-0 text-success fw-bold">{{ currency_symbol }}{{ shop_bank_transfers_made|floatformat:2|intcomma }}</h4>
-                    </div>
-                </div>
-            </div>
+        </div>
 
-        {% elif role_name == 'ACCOUNTANT' or role_name == 'ADMIN' or role_name == 'AUDITOR' %}
-            <div class="col-6 col-md-3">
-                <div class="card border-0 shadow-sm rounded-4 h-100 bg-success text-white">
-                    <div class="card-body">
-                        <div class="text-white-50 small text-uppercase fw-bold mb-1">Funds Received</div>
-                        <h4 class="mb-0 fw-bold">{{ currency_symbol }}{{ cash_transfers_received|floatformat:2|intcomma }}</h4>
+        <!-- 4. Local Momo Sales -->
+        <div class="col-6 col-md-4 col-xl-2-4 col-lg-3">
+            <div class="card summary-card rounded-4 shadow-sm h-100 p-3">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <div class="stat-label">4. Local Momo Sales</div>
+                    <div class="summary-icon-box icon-amber">
+                        <i class="bi bi-phone"></i>
                     </div>
                 </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="card border-0 shadow-sm rounded-4 h-100">
-                    <div class="card-body">
-                        <div class="text-muted small text-uppercase fw-bold mb-1">Bank Deposits Made</div>
-                        <h4 class="mb-0 text-primary fw-bold">{{ currency_symbol }}{{ bank_transfers_made|floatformat:2|intcomma }}</h4>
-                    </div>
+                <div class="stat-value text-warning mb-1">
+                    {{ currency_symbol }}{{ momo_sales|floatformat:2|intcomma }}
+                </div>
+                <div class="stat-sub">
+                    Mobile Money payments
                 </div>
             </div>
-            <div class="col-6 col-md-3">
-                <div class="card border-0 shadow-sm rounded-4 h-100">
-                    <div class="card-body">
-                        <div class="text-muted small text-uppercase fw-bold mb-1">Expenditures Disbursed</div>
-                        <h4 class="mb-0 text-danger fw-bold">{{ currency_symbol }}{{ expenditures_disbursed|floatformat:2|intcomma }}</h4>
-                    </div>
-                </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="card border-0 shadow-sm rounded-4 h-100">
-                    <div class="card-body">
-                        <div class="text-muted small text-uppercase fw-bold mb-1">Digital Withdrawn</div>
-                        <h4 class="mb-0 text-danger fw-bold">{{ currency_symbol }}{{ digital_funds_withdrawn|floatformat:2|intcomma }}</h4>
-                    </div>
-                </div>
-            </div>
-        {% endif %}
-    </div>
+        </div>
 
-    <!-- ===== FILTERS ===== -->
-    <div class="card border-0 shadow-sm rounded-4 mb-4">
-        <div class="card-body">
-            <form method="get" class="row g-3 align-items-end">
-                <input type="hidden" name="start_date" value="{{ start_date|date:'Y-m-d' }}">
-                <input type="hidden" name="end_date" value="{{ end_date|date:'Y-m-d' }}">
-                <input type="hidden" name="shop_id" value="{{ shop_id }}">
-                
-                <div class="col-md-3">
-                    <label class="form-label text-muted small fw-bold">Report Scope</label>
-                    <select name="top_n" class="form-select">
-                        <option value="all" {% if top_n == 'all' %}selected{% endif %}>All Products</option>
-                        <option value="10" {% if top_n == '10' %}selected{% endif %}>Top 10 Products</option>
-                        <option value="20" {% if top_n == '20' %}selected{% endif %}>Top 20 Products</option>
-                    </select>
-                </div>
-                
-                <div class="col-md-4 d-flex align-items-end pb-1">
-                    <div class="form-check form-switch">
-                        <input class="form-check-input" type="checkbox" role="switch" id="excludeInactive" name="exclude_inactive" value="true" {% if exclude_inactive %}checked{% endif %}>
-                        <label class="form-check-label" for="excludeInactive">Exclude items with no sales activity</label>
+        <!-- 5. Credit Sales -->
+        <div class="col-6 col-md-4 col-xl-2-4 col-lg-3">
+            <div class="card summary-card rounded-4 shadow-sm h-100 p-3">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <div class="stat-label">5. Credit Sales</div>
+                    <div class="summary-icon-box icon-purple">
+                        <i class="bi bi-journal-bookmark"></i>
                     </div>
                 </div>
-                
-                <div class="col-md-2">
-                    <button type="submit" class="btn btn-outline-primary w-100">Apply Filters</button>
+                <div class="stat-value text-purple mb-1" style="color: #9333ea;">
+                    {{ currency_symbol }}{{ credit_sales|floatformat:2|intcomma }}
                 </div>
-            </form>
+                <div class="stat-sub">
+                    Unpaid / On account
+                </div>
+            </div>
+        </div>
+
+        <!-- 6. Customer Payments -->
+        <div class="col-6 col-md-4 col-xl-2-4 col-lg-3">
+            <div class="card summary-card rounded-4 shadow-sm h-100 p-3">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <div class="stat-label">6. Customer Payments</div>
+                    <div class="summary-icon-box icon-teal">
+                        <i class="bi bi-person-check"></i>
+                    </div>
+                </div>
+                <div class="stat-value text-teal mb-1" style="color: #0d9488;">
+                    {{ currency_symbol }}{{ customer_payments|floatformat:2|intcomma }}
+                </div>
+                <div class="stat-sub">
+                    Debt payments received
+                </div>
+            </div>
+        </div>
+
+        <!-- 7. Items Sold / Invoices -->
+        <div class="col-6 col-md-4 col-xl-2-4 col-lg-3">
+            <div class="card summary-card rounded-4 shadow-sm h-100 p-3">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <div class="stat-label">7. Items / Invoices</div>
+                    <div class="summary-icon-box icon-blue">
+                        <i class="bi bi-bag-check"></i>
+                    </div>
+                </div>
+                <div class="stat-value text-dark mb-1">
+                    {{ items_sold_qty|floatformat:0|intcomma }} <span class="fs-6 text-muted fw-normal">items</span>
+                </div>
+                <div class="stat-sub d-flex align-items-center gap-1">
+                    <span class="badge bg-light text-dark border">{{ invoice_count|intcomma }} Invoices</span>
+                    {% if user.tenant.use_strict_sales_workflow %}
+                        <span class="badge bg-info-subtle text-info border border-info-subtle">Disp: {{ items_dispatched_qty|floatformat:0|intcomma }}</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- 8. Funds Sent to Bank -->
+        <div class="col-6 col-md-4 col-xl-2-4 col-lg-3">
+            <div class="card summary-card rounded-4 shadow-sm h-100 p-3">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <div class="stat-label">8. Funds Sent to Bank</div>
+                    <div class="summary-icon-box icon-cyan">
+                        <i class="bi bi-bank"></i>
+                    </div>
+                </div>
+                <div class="stat-value text-info mb-1" style="color: #0284c7;">
+                    {{ currency_symbol }}{{ funds_sent_to_bank|floatformat:2|intcomma }}
+                </div>
+                <div class="stat-sub">
+                    Direct deposits to bank
+                </div>
+            </div>
+        </div>
+
+        <!-- 9. Funds Transfered to Accountant -->
+        <div class="col-6 col-md-4 col-xl-2-4 col-lg-3">
+            <div class="card summary-card rounded-4 shadow-sm h-100 p-3">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <div class="stat-label">9. Funds to Accountant</div>
+                    <div class="summary-icon-box icon-violet">
+                        <i class="bi bi-arrow-left-right"></i>
+                    </div>
+                </div>
+                <div class="stat-value mb-1" style="color: #7c3aed;">
+                    {{ currency_symbol }}{{ funds_transferred_to_accountant|floatformat:2|intcomma }}
+                </div>
+                <div class="stat-sub">
+                    Transferred to head office
+                </div>
+            </div>
+        </div>
+
+        <!-- 10. Expenditure -->
+        <div class="col-6 col-md-4 col-xl-2-4 col-lg-3">
+            <div class="card summary-card rounded-4 shadow-sm h-100 p-3">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <div class="stat-label">10. Expenditure</div>
+                    <div class="summary-icon-box icon-rose">
+                        <i class="bi bi-receipt-cutoff"></i>
+                    </div>
+                </div>
+                <div class="stat-value text-danger mb-1">
+                    {{ currency_symbol }}{{ expenditures|floatformat:2|intcomma }}
+                </div>
+                <div class="stat-sub">
+                    Approved shop expenses
+                </div>
+            </div>
         </div>
     </div>
 
-    <!-- ===== BREAKDOWN TABLE ===== -->
-    <div class="card border-0 shadow-sm rounded-4">
-        <div class="card-header bg-white border-0 pt-4 pb-2 d-flex justify-content-between align-items-center">
-            <h5 class="mb-0">Product Sales &amp; Stock Breakdown</h5>
-            <span class="text-muted small">Sorted by Quantity Sold</span>
+    <!-- ===== DETAILED BREAKDOWN TABLE ===== -->
+    <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+        <div class="card-header bg-white border-bottom border-light-subtle py-3 px-4 d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <div>
+                <h5 class="mb-0 fw-bold text-dark">Product Sales &amp; Stock Breakdown</h5>
+                <span class="text-muted small">
+                    Showing products with active sales or dispatches &bull; Sorted by Quantity Sold
+                    {% if top_n != 'all' %}&bull; <span class="badge bg-secondary-subtle text-secondary">Top {{ top_n }}</span>{% endif %}
+                </span>
+            </div>
+            <div class="text-muted small d-flex align-items-center gap-3">
+                <span class="d-flex align-items-center gap-1"><span class="badge bg-success rounded-circle p-1"> </span> High Stock</span>
+                <span class="d-flex align-items-center gap-1"><span class="badge bg-warning rounded-circle p-1"> </span> Low Stock (&le;10)</span>
+                <span class="d-flex align-items-center gap-1"><span class="badge bg-danger rounded-circle p-1"> </span> Out of Stock</span>
+            </div>
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
-                    <thead class="table-dark">
+                    <thead class="table-light text-uppercase small text-muted">
                         <tr>
-                            <th class="ps-4" style="width:3%;">#</th>
-                            <th>Product Name</th>
+                            <th class="ps-4" style="width: 4%;">#</th>
+                            <th style="min-width: 200px;">Product Name</th>
                             <th class="text-center">Qty Sold</th>
                             <th class="text-end">Total Revenue</th>
                             <th class="text-center">Qty Dispatched</th>
@@ -290,47 +365,60 @@
                             <td class="ps-4 text-muted small">
                                 {% if item.name != 'Others' %}{{ forloop.counter }}{% else %}&mdash;{% endif %}
                             </td>
-                            <td>{{ item.name }}</td>
+                            <td class="fw-semibold text-dark">
+                                {{ item.name }}
+                            </td>
                             <td class="text-center">
                                 {% if item.qty_sold > 0 %}
-                                    <span class="badge bg-success rounded-pill px-3">{{ item.qty_sold|floatformat:0|intcomma }}</span>
+                                    <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3 py-1 fw-bold fs-7">
+                                        {{ item.qty_sold|floatformat:0|intcomma }}
+                                    </span>
                                 {% else %}
-                                    <span class="text-muted">—</span>
+                                    <span class="text-muted">&mdash;</span>
                                 {% endif %}
                             </td>
-                            <td class="text-end fw-medium">
+                            <td class="text-end fw-bold text-dark">
                                 {% if item.revenue > 0 %}
                                     {{ currency_symbol }}{{ item.revenue|floatformat:2|intcomma }}
                                 {% else %}
-                                    <span class="text-muted">—</span>
+                                    <span class="text-muted">&mdash;</span>
                                 {% endif %}
                             </td>
                             <td class="text-center">
                                 {% if item.qty_dispatched > 0 %}
-                                    <span class="badge bg-primary rounded-pill px-3">{{ item.qty_dispatched|floatformat:0|intcomma }}</span>
+                                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-3 py-1 fw-semibold">
+                                        {{ item.qty_dispatched|floatformat:0|intcomma }}
+                                    </span>
                                 {% else %}
-                                    <span class="text-muted">—</span>
+                                    <span class="text-muted">&mdash;</span>
                                 {% endif %}
                             </td>
                             <td class="text-center pe-4">
                                 {% if item.stock_left == '-' %}
-                                    <span class="text-muted">—</span>
+                                    <span class="text-muted">&mdash;</span>
                                 {% elif item.stock_left == 'N/A' %}
-                                    <span class="badge bg-secondary rounded-pill px-3">N/A</span>
+                                    <span class="badge bg-secondary-subtle text-secondary rounded-pill px-3">N/A</span>
                                 {% elif item.stock_left > 10 %}
-                                    <span class="badge bg-info text-dark rounded-pill px-3">{{ item.stock_left|floatformat:0|intcomma }}</span>
+                                    <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3 py-1 fw-bold">
+                                        {{ item.stock_left|floatformat:0|intcomma }}
+                                    </span>
                                 {% elif item.stock_left > 0 %}
-                                    <span class="badge bg-warning text-dark rounded-pill px-3">{{ item.stock_left|floatformat:0|intcomma }}</span>
+                                    <span class="badge bg-warning-subtle text-warning border border-warning-subtle rounded-pill px-3 py-1 fw-bold">
+                                        {{ item.stock_left|floatformat:0|intcomma }}
+                                    </span>
                                 {% else %}
-                                    <span class="badge bg-danger rounded-pill px-3">Out of Stock</span>
+                                    <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-3 py-1 fw-bold">
+                                        Out of Stock
+                                    </span>
                                 {% endif %}
                             </td>
                         </tr>
                         {% empty %}
                         <tr>
-                            <td colspan="5" class="text-center py-5 text-muted">
-                                <i class="bi bi-inbox fs-1 d-block mb-3"></i>
-                                No data available for the selected filters.
+                            <td colspan="6" class="text-center py-5 text-muted">
+                                <i class="bi bi-inbox fs-1 d-block mb-2 text-muted opacity-50"></i>
+                                <div class="fw-semibold">No sales or inventory activity recorded for this period.</div>
+                                <div class="small text-muted mt-1">Try selecting a different date range or shop.</div>
                             </td>
                         </tr>
                         {% endfor %}

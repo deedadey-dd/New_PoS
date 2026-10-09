@@ -15,6 +15,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from django.http import JsonResponse, HttpResponse
 from django.db import transaction
+from django.db.models import Sum, Count, Q
 from django.utils import timezone
 
 from django.urls import reverse_lazy
@@ -686,6 +687,31 @@ class ShopECashHistoryView(LoginRequiredMixin, SortableMixin, ListView):
         context['shop'] = shop
         context['shop_balance'] = ECashLedger.get_shop_balance(tenant, shop) if shop else Decimal('0')
         
+        # Summary metrics on filtered queryset
+        filtered_qs = self.get_queryset()
+        summary = filtered_qs.aggregate(
+            total_payments=Sum('amount', filter=Q(transaction_type='PAYMENT')),
+            payments_count=Count('id', filter=Q(transaction_type='PAYMENT')),
+            total_withdrawals=Sum('amount', filter=Q(transaction_type='WITHDRAWAL')),
+            withdrawals_count=Count('id', filter=Q(transaction_type='WITHDRAWAL')),
+            total_refunds=Sum('amount', filter=Q(transaction_type='REFUND')),
+            refunds_count=Count('id', filter=Q(transaction_type='REFUND')),
+            total_count=Count('id')
+        )
+        total_payments = summary['total_payments'] or Decimal('0.00')
+        total_withdrawals = summary['total_withdrawals'] or Decimal('0.00')
+        total_refunds = summary['total_refunds'] or Decimal('0.00')
+        net_volume = total_payments - total_withdrawals - total_refunds
+        
+        context['filtered_total_payments'] = total_payments
+        context['filtered_payments_count'] = summary['payments_count'] or 0
+        context['filtered_total_withdrawals'] = total_withdrawals
+        context['filtered_withdrawals_count'] = summary['withdrawals_count'] or 0
+        context['filtered_total_refunds'] = total_refunds
+        context['filtered_refunds_count'] = summary['refunds_count'] or 0
+        context['filtered_net_volume'] = net_volume
+        context['filtered_total_count'] = summary['total_count'] or 0
+
         # Pass filters to context
         context['date_from'] = self.request.GET.get('date_from', '')
         context['date_to'] = self.request.GET.get('date_to', '')

@@ -1,8 +1,32 @@
 {% extends 'base.html' %}
 {% load sort_tags %}
 {% load core_filters %}
+{% load humanize %}
 
 {% block title %}Dispatch History{% endblock %}
+
+{% block extra_css %}
+<style>
+    .summary-card-mini {
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        border: 1px solid rgba(0, 0, 0, 0.06);
+        background: #ffffff;
+    }
+    .summary-card-mini:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px -4px rgba(0, 0, 0, 0.08) !important;
+    }
+    .summary-icon-box {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.15rem;
+    }
+</style>
+{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -33,7 +57,7 @@
 </div>
 
 <!-- Filters -->
-<div class="card mb-4">
+<div class="card mb-4 border-0 shadow-sm">
     <div class="card-body">
         <form method="get" class="row g-3">
             <div class="col-md-4">
@@ -63,6 +87,52 @@
         </form>
     </div>
 </div>
+
+<!-- ===== SUMMARY CARDS ===== -->
+<div class="row g-3 mb-4">
+    <!-- 1. Total Dispatched Sales -->
+    <div class="col-6 col-md-4">
+        <div class="card summary-card-mini rounded-4 shadow-sm h-100 p-3">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <span class="text-muted small text-uppercase fw-bold">Dispatched Sales Value</span>
+                <div class="summary-icon-box bg-success bg-opacity-10 text-success">
+                    <i class="bi bi-truck"></i>
+                </div>
+            </div>
+            <h4 class="mb-1 fw-bold text-success">{{ currency_symbol }}{{ summary_total_sales_value|floatformat:2|intcomma }}</h4>
+            <div class="text-muted small">Total value of goods dispatched</div>
+        </div>
+    </div>
+
+    <!-- 2. Dispatches Count -->
+    <div class="col-6 col-md-4">
+        <div class="card summary-card-mini rounded-4 shadow-sm h-100 p-3">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <span class="text-muted small text-uppercase fw-bold">Dispatched Invoices</span>
+                <div class="summary-icon-box bg-primary bg-opacity-10 text-primary">
+                    <i class="bi bi-check2-all"></i>
+                </div>
+            </div>
+            <h4 class="mb-1 fw-bold text-primary">{{ summary_total_count }}</h4>
+            <div class="text-muted small">{{ summary_dispatched_count }} fully dispatched</div>
+        </div>
+    </div>
+
+    <!-- 3. Total Cash/Payments Collected -->
+    <div class="col-6 col-md-4">
+        <div class="card summary-card-mini rounded-4 shadow-sm h-100 p-3">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <span class="text-muted small text-uppercase fw-bold">Amount Paid</span>
+                <div class="summary-icon-box bg-info bg-opacity-10 text-info">
+                    <i class="bi bi-cash-coin"></i>
+                </div>
+            </div>
+            <h4 class="mb-1 fw-bold text-info" style="color: #0284c7 !important;">{{ currency_symbol }}{{ summary_total_paid_value|floatformat:2|intcomma }}</h4>
+            <div class="text-muted small">Collected payments on dispatches</div>
+        </div>
+    </div>
+</div>
+
 <div class="card">
     <div class="card-body">
         {% if sales %}

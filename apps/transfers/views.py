@@ -103,6 +103,13 @@ class TransferListView(LoginRequiredMixin, SortableMixin, ListView):
         except EmptyPage:
             history_transfers = paginator.page(paginator.num_pages)
         
+        base_qs = self.get_base_queryset()
+        context['summary_total_transfers'] = base_qs.count()
+        context['summary_in_transit'] = base_qs.filter(status='SENT').count()
+        context['summary_completed'] = base_qs.filter(status__in=['RECEIVED', 'CLOSED']).count()
+        context['summary_disputed'] = base_qs.filter(status__in=['DISPUTED', 'PARTIAL']).count()
+        context['summary_draft'] = base_qs.filter(status='DRAFT').count()
+        
         context['history_transfers'] = history_transfers
         context['history_paginator'] = paginator
         
@@ -862,6 +869,13 @@ class StockRequestListView(LoginRequiredMixin, SortableMixin, ListView):
         user = self.request.user
         base_qs = StockRequest.objects.filter(tenant=user.tenant)
         
+        filtered_qs = self.get_queryset()
+        context['summary_total_requests'] = filtered_qs.count()
+        context['summary_pending_requests'] = filtered_qs.filter(status='PENDING').count()
+        context['summary_approved_requests'] = filtered_qs.filter(status='APPROVED').count()
+        context['summary_converted_requests'] = filtered_qs.filter(status='CONVERTED').count()
+        context['summary_rejected_requests'] = filtered_qs.filter(status='REJECTED').count()
+
         if user.role and user.role.name != 'ADMIN':
             role_location_map = {
                 'PRODUCTION_MANAGER': 'PRODUCTION',

@@ -1,33 +1,134 @@
 {% extends 'base.html' %}
 {% load sort_tags %}
+{% load humanize %}
 
 {% block title %}Transfers - {{ current_tenant.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+.summary-card-mini {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.summary-card-mini:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 .5rem 1rem rgba(0,0,0,.08) !important;
+}
+.summary-icon-box {
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    font-size: 1.25rem;
+}
+</style>
+{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
-        <h2 class="mb-1">Stock Transfers</h2>
+        <h2 class="mb-1">
+            <i class="bi bi-arrow-left-right me-2 text-primary"></i>Stock Transfers
+        </h2>
         <p class="text-muted mb-0">Manage transfers between locations</p>
     </div>
     <div class="d-flex gap-2">
-        <a href="{% url 'transfers:transfer_list_export' %}?{{ request.GET.urlencode }}" class="btn btn-outline-success">
+        <a href="{% url 'transfers:transfer_list_export' %}?{{ request.GET.urlencode }}" class="btn btn-outline-success rounded-pill px-3">
             <i class="bi bi-file-earmark-spreadsheet me-1"></i>Export
         </a>
-        <a href="{% url 'transfers:transfer_item_history' %}" class="btn btn-outline-primary">
-            <i class="bi bi-box-seam me-2"></i>View Products
+        <a href="{% url 'transfers:transfer_item_history' %}" class="btn btn-outline-primary rounded-pill px-3">
+            <i class="bi bi-box-seam me-1"></i>View Products
         </a>
-        <a href="{% url 'transfers:transfer_create' %}" class="btn btn-primary">
-            <i class="bi bi-plus-circle me-2"></i>New Transfer
+        <a href="{% url 'transfers:transfer_create' %}" class="btn btn-primary rounded-pill px-4 fw-bold">
+            <i class="bi bi-plus-circle me-1"></i>New Transfer
         </a>
     </div>
 </div>
 
+<!-- Summary Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3">
+        <div class="card border-0 shadow-sm rounded-4 h-100 summary-card-mini bg-white">
+            <div class="card-body p-3">
+                <div class="d-flex align-items-center justify-content-between">
+                    <div>
+                        <span class="text-muted small fw-semibold text-uppercase d-block mb-1">Total Transfers</span>
+                        <h4 class="fw-bold mb-0 text-dark">{{ summary_total_transfers|intcomma }}</h4>
+                        <span class="badge bg-secondary-subtle text-secondary rounded-pill mt-1" style="font-size: 0.72rem;">
+                            All locations
+                        </span>
+                    </div>
+                    <div class="summary-icon-box bg-secondary-subtle text-secondary">
+                        <i class="bi bi-boxes"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card border-0 shadow-sm rounded-4 h-100 summary-card-mini bg-white">
+            <div class="card-body p-3">
+                <div class="d-flex align-items-center justify-content-between">
+                    <div>
+                        <span class="text-muted small fw-semibold text-uppercase d-block mb-1">In Transit</span>
+                        <h4 class="fw-bold mb-0 text-primary">{{ summary_in_transit|intcomma }}</h4>
+                        <span class="badge bg-primary-subtle text-primary rounded-pill mt-1" style="font-size: 0.72rem;">
+                            Dispatched / On Way
+                        </span>
+                    </div>
+                    <div class="summary-icon-box bg-primary-subtle text-primary">
+                        <i class="bi bi-truck"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card border-0 shadow-sm rounded-4 h-100 summary-card-mini bg-white">
+            <div class="card-body p-3">
+                <div class="d-flex align-items-center justify-content-between">
+                    <div>
+                        <span class="text-muted small fw-semibold text-uppercase d-block mb-1">Completed</span>
+                        <h4 class="fw-bold mb-0 text-success">{{ summary_completed|intcomma }}</h4>
+                        <span class="badge bg-success-subtle text-success rounded-pill mt-1" style="font-size: 0.72rem;">
+                            Received & Closed
+                        </span>
+                    </div>
+                    <div class="summary-icon-box bg-success-subtle text-success">
+                        <i class="bi bi-check-circle-fill"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card border-0 shadow-sm rounded-4 h-100 summary-card-mini bg-white">
+            <div class="card-body p-3">
+                <div class="d-flex align-items-center justify-content-between">
+                    <div>
+                        <span class="text-muted small fw-semibold text-uppercase d-block mb-1">Disputed / Issues</span>
+                        <h4 class="fw-bold mb-0 {% if summary_disputed > 0 %}text-danger{% else %}text-muted{% endif %}">{{ summary_disputed|intcomma }}</h4>
+                        <span class="badge bg-danger-subtle text-danger rounded-pill mt-1" style="font-size: 0.72rem;">
+                            Needs Investigation
+                        </span>
+                    </div>
+                    <div class="summary-icon-box bg-danger-subtle text-danger">
+                        <i class="bi bi-exclamation-triangle-fill"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Filters -->
-<div class="card mb-4">
-    <div class="card-body">
-        <form method="get" class="row g-3">
-            <div class="col-md-4">
-                <select name="status" class="form-select">
+<div class="card mb-4 border-0 shadow-sm rounded-4">
+    <div class="card-body p-3">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-5">
+                <label class="form-label small mb-1 fw-semibold text-muted">Status</label>
+                <select name="status" class="form-select form-select-sm">
                     <option value="">All Statuses</option>
                     {% for code, label in status_choices %}
                     <option value="{{ code }}" {% if request.GET.status == code %}selected{% endif %}>{{ label }}
@@ -35,8 +136,9 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-md-4">
-                <select name="location" class="form-select">
+            <div class="col-md-5">
+                <label class="form-label small mb-1 fw-semibold text-muted">Location</label>
+                <select name="location" class="form-select form-select-sm">
                     <option value="">All Locations</option>
                     {% for loc in locations %}
                     <option value="{{ loc.pk }}"
@@ -45,9 +147,13 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-md-4">
-                <button type="submit" class="btn btn-outline-primary">Filter</button>
-                <a href="{% url 'transfers:transfer_list' %}" class="btn btn-outline-secondary">Clear</a>
+            <div class="col-md-2 d-flex gap-2">
+                <button type="submit" class="btn btn-sm btn-primary flex-fill fw-semibold">
+                    <i class="bi bi-filter me-1"></i>Filter
+                </button>
+                <a href="{% url 'transfers:transfer_list' %}" class="btn btn-sm btn-outline-secondary" title="Clear Filters">
+                    <i class="bi bi-x-lg"></i>
+                </a>
             </div>
         </form>
     </div>

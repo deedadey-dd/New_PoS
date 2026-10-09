@@ -124,20 +124,27 @@ class CashTransferListView(LoginRequiredMixin, SortableMixin, ListView):
                 location_type='SHOP',
                 is_active=True
             )
-            context['can_send_to_shops'] = user.tenant.allow_accountant_to_shop_transfers if user.tenant else False
-            
-            # Cash deposit summary
-            today = timezone.now().date()
-            context['today_deposits'] = CashTransfer.objects.filter(
-                tenant=user.tenant,
-                transfer_type='DEPOSIT',
-                status='CONFIRMED',
-                confirmed_at__date=today
-            ).aggregate(
-                total=Sum('amount'),
-                count=Count('id')
-            )
-        
+        # Summary metrics from the filtered queryset
+        filtered_qs = self.get_queryset()
+        summary = filtered_qs.aggregate(
+            total_amount=Sum('amount'),
+            total_count=Count('id'),
+            confirmed_amount=Sum('amount', filter=Q(status='CONFIRMED')),
+            confirmed_count=Count('id', filter=Q(status='CONFIRMED')),
+            pending_amount=Sum('amount', filter=Q(status='PENDING')),
+            pending_count_filtered=Count('id', filter=Q(status='PENDING')),
+            deposits_amount=Sum('amount', filter=Q(transfer_type='DEPOSIT', status='CONFIRMED')),
+            cancelled_amount=Sum('amount', filter=Q(status='CANCELLED')),
+        )
+        context['summary_total_amount'] = summary['total_amount'] or Decimal('0.00')
+        context['summary_total_count'] = summary['total_count'] or 0
+        context['summary_confirmed_amount'] = summary['confirmed_amount'] or Decimal('0.00')
+        context['summary_confirmed_count'] = summary['confirmed_count'] or 0
+        context['summary_pending_amount'] = summary['pending_amount'] or Decimal('0.00')
+        context['summary_pending_count'] = summary['pending_count_filtered'] or 0
+        context['summary_deposits_amount'] = summary['deposits_amount'] or Decimal('0.00')
+        context['summary_cancelled_amount'] = summary['cancelled_amount'] or Decimal('0.00')
+
         # Preserve filter values for all filtered views
         if context.get('show_filters'):
             context['date_from'] = self.request.GET.get('date_from', '')
@@ -2222,6 +2229,32 @@ class ShopMomoHistoryView(LoginRequiredMixin, TemplateView):
         unconfirmed_balance = unconfirmed_sales + unconfirmed_cts
         available_balance = (total_sales + total_cts) - unconfirmed_balance - total_withdrawn
         
+        # Calculate dynamic summary metrics on filtered results
+        filtered_sales_agg = sales.aggregate(total=Sum('amount_paid'), count=Count('id'))
+        filtered_cts_agg = cts.aggregate(total=Sum('amount'), count=Count('id'))
+        
+        sales_momo_amount = filtered_sales_agg['total'] or Decimal('0.00')
+        sales_momo_count = filtered_sales_agg['count'] or 0
+        cts_momo_amount = filtered_cts_agg['total'] or Decimal('0.00')
+        cts_momo_count = filtered_cts_agg['count'] or 0
+        
+        filtered_total_momo = sales_momo_amount + cts_momo_amount
+        filtered_total_count = sales_momo_count + cts_momo_count
+        
+        unconf_sales_filtered = sales.filter(is_accountant_confirmed=False).aggregate(t=Sum('amount_paid'))['t'] or Decimal('0.00')
+        unconf_cts_filtered = cts.filter(is_accountant_confirmed=False).aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
+        filtered_unconfirmed_total = unconf_sales_filtered + unconf_cts_filtered
+        filtered_confirmed_total = filtered_total_momo - filtered_unconfirmed_total
+
+        context['filtered_total_momo'] = filtered_total_momo
+        context['filtered_total_count'] = filtered_total_count
+        context['filtered_sales_momo'] = sales_momo_amount
+        context['filtered_sales_count'] = sales_momo_count
+        context['filtered_cts_momo'] = cts_momo_amount
+        context['filtered_cts_count'] = cts_momo_count
+        context['filtered_confirmed_momo'] = filtered_confirmed_total
+        context['filtered_unconfirmed_momo'] = filtered_unconfirmed_total
+
         context['unconfirmed_balance'] = unconfirmed_balance
         context['available_balance'] = available_balance
         context['shop'] = shop
@@ -2479,6 +2512,10 @@ class ExpenditureListView(LoginRequiredMixin, ListView):
                 qs = qs.filter(location=self.request.user.location)
 
         # Apply filters from GET params
+        shop = self.request.GET.get('shop')
+        if shop and role_name in ['ACCOUNTANT', 'ADMIN', 'AUDITOR']:
+            qs = qs.filter(location_id=shop)
+
         status = self.request.GET.get('status')
         if status:
             qs = qs.filter(status=status)
@@ -2528,8 +2565,17 @@ class ExpenditureListView(LoginRequiredMixin, ListView):
         ctx['can_view_all_shops'] = role_name in ['ACCOUNTANT', 'ADMIN', 'AUDITOR']
         ctx['selected_status'] = self.request.GET.get('status', '')
         ctx['selected_category'] = self.request.GET.get('category', '')
+        ctx['selected_shop'] = self.request.GET.get('shop', '')
         ctx['date_from'] = self.request.GET.get('date_from', '')
         ctx['date_to'] = self.request.GET.get('date_to', '')
+
+        if ctx['can_view_all_shops']:
+            from apps.core.models import Location
+            ctx['shops'] = Location.objects.filter(
+                tenant=self.request.user.tenant,
+                location_type='SHOP',
+                is_active=True
+            ).order_by('name')
 
         # Categories for filter dropdown
         ctx['categories'] = ExpenditureCategory.objects.filter(
@@ -2919,6 +2965,8 @@ class CashHistoryView(LoginRequiredMixin, ListView):
         ).order_by('-created_at')
         if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER', 'SHOP_ATTENDANT']:
             transfer_qs = transfer_qs.filter(Q(from_user=user) | Q(to_user=user))
+        if shop_id and role_name in ['ACCOUNTANT', 'AUDITOR', 'ADMIN']:
+            transfer_qs = transfer_qs.filter(Q(from_location_id=shop_id) | Q(to_location_id=shop_id))
         if date_from:
             try:
                 transfer_qs = transfer_qs.filter(
@@ -2936,7 +2984,7 @@ class CashHistoryView(LoginRequiredMixin, ListView):
         context['cash_transfers'] = transfer_qs[:20]
         context['total_transferred'] = transfer_qs.filter(
             status='CONFIRMED', transfer_type='DEPOSIT'
-        ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+        ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
 
         # ---- Cash customer payments ----
         cust_qs = CustomerTransaction.objects.filter(
@@ -2946,6 +2994,8 @@ class CashHistoryView(LoginRequiredMixin, ListView):
         ).exclude(description__icontains='ECASH').order_by('-created_at')
         if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER', 'SHOP_ATTENDANT']:
             cust_qs = cust_qs.filter(performed_by=user)
+        if shop_id and role_name in ['ACCOUNTANT', 'AUDITOR', 'ADMIN']:
+            cust_qs = cust_qs.filter(customer__shop_id=shop_id)
         if date_from:
             try:
                 cust_qs = cust_qs.filter(
@@ -2961,7 +3011,13 @@ class CashHistoryView(LoginRequiredMixin, ListView):
             except ValueError:
                 pass
         context['cash_customer_payments'] = cust_qs[:20]
-        context['total_customer_cash'] = cust_qs.aggregate(total=Sum('amount'))['total'] or Decimal('0')
+        context['total_customer_cash'] = cust_qs.aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+        context['customer_cash_count'] = cust_qs.count()
+
+        # Net cash inflow and balance
+        total_inflow = context['total_cash_sales'] + context['total_customer_cash']
+        context['total_cash_inflow'] = total_inflow
+        context['net_cash_balance'] = total_inflow - context['total_transferred']
 
         # ---- Permissions ----
         if getattr(user.tenant, 'use_strict_sales_workflow', False):
@@ -3129,7 +3185,18 @@ class BankHistoryListView(LoginRequiredMixin, SortableMixin, ListView):
             context['selected_shop'] = self.request.GET.get('shop', '')
             context['selected_user'] = self.request.GET.get('user', '')
         
-        context['total_deposited'] = qs.aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
+        bank_agg = qs.aggregate(
+            total_deposited=Sum('amount'),
+            transfers_count=Count('id'),
+            cash_banked=Sum('amount', filter=Q(fund_source='CASH')),
+            ecash_banked=Sum('amount', filter=Q(fund_source='ECASH')),
+            momo_banked=Sum('amount', filter=Q(fund_source='SHOP_MOMO')),
+        )
+        context['total_deposited'] = bank_agg['total_deposited'] or Decimal('0.00')
+        context['transfers_count'] = bank_agg['transfers_count'] or 0
+        context['cash_banked'] = bank_agg['cash_banked'] or Decimal('0.00')
+        context['ecash_banked'] = bank_agg['ecash_banked'] or Decimal('0.00')
+        context['momo_banked'] = bank_agg['momo_banked'] or Decimal('0.00')
         context['fund_choices'] = BankTransfer.FUND_CHOICES
         return context
 

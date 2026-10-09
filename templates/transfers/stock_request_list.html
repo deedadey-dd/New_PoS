@@ -1,7 +1,29 @@
 {% extends 'base.html' %}
 {% load static sort_tags %}
+{% load humanize %}
 
 {% block title %}Stock Requests{% endblock %}
+
+{% block extra_css %}
+<style>
+.summary-card-mini {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.summary-card-mini:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 .5rem 1rem rgba(0,0,0,.08) !important;
+}
+.summary-icon-box {
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    font-size: 1.25rem;
+}
+</style>
+{% endblock %}
 
 {% block content %}
 <div class="container-fluid py-4">
@@ -11,27 +33,103 @@
             <h2 class="fw-bold mb-0">
                 <i class="bi bi-box-arrow-in-down me-2 text-primary"></i>Stock Requests
             </h2>
-            <p class="text-muted mb-0">Request stock from suppliers</p>
+            <p class="text-muted mb-0">Request stock from supplying stores & production locations</p>
         </div>
-        <a href="{% url 'transfers:stock_request_create' %}" class="btn btn-primary">
+        <a href="{% url 'transfers:stock_request_create' %}" class="btn btn-primary rounded-pill px-4 fw-bold">
             <i class="bi bi-plus-lg me-1"></i>New Request
         </a>
     </div>
 
+    <!-- Summary Cards -->
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-lg-3">
+            <div class="card border-0 shadow-sm rounded-4 h-100 summary-card-mini bg-white">
+                <div class="card-body p-3">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <span class="text-muted small fw-semibold text-uppercase d-block mb-1">Total Requests</span>
+                            <h4 class="fw-bold mb-0 text-dark">{{ summary_total_requests|intcomma }}</h4>
+                            <span class="badge bg-secondary-subtle text-secondary rounded-pill mt-1" style="font-size: 0.72rem;">
+                                {{ current_tab|capfirst }} view
+                            </span>
+                        </div>
+                        <div class="summary-icon-box bg-secondary-subtle text-secondary">
+                            <i class="bi bi-card-checklist"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="card border-0 shadow-sm rounded-4 h-100 summary-card-mini bg-white">
+                <div class="card-body p-3">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <span class="text-muted small fw-semibold text-uppercase d-block mb-1">Pending Approval</span>
+                            <h4 class="fw-bold mb-0 text-warning">{{ summary_pending_requests|intcomma }}</h4>
+                            <span class="badge bg-warning-subtle text-warning rounded-pill mt-1" style="font-size: 0.72rem;">
+                                Action needed
+                            </span>
+                        </div>
+                        <div class="summary-icon-box bg-warning-subtle text-warning">
+                            <i class="bi bi-hourglass-split"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="card border-0 shadow-sm rounded-4 h-100 summary-card-mini bg-white">
+                <div class="card-body p-3">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <span class="text-muted small fw-semibold text-uppercase d-block mb-1">Approved / Fulfilling</span>
+                            <h4 class="fw-bold mb-0 text-info">{{ summary_approved_requests|intcomma }}</h4>
+                            <span class="badge bg-info-subtle text-info rounded-pill mt-1" style="font-size: 0.72rem;">
+                                In pipeline
+                            </span>
+                        </div>
+                        <div class="summary-icon-box bg-info-subtle text-info">
+                            <i class="bi bi-check2-circle"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="card border-0 shadow-sm rounded-4 h-100 summary-card-mini bg-white">
+                <div class="card-body p-3">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <span class="text-muted small fw-semibold text-uppercase d-block mb-1">Converted to Transfer</span>
+                            <h4 class="fw-bold mb-0 text-success">{{ summary_converted_requests|intcomma }}</h4>
+                            <span class="badge bg-success-subtle text-success rounded-pill mt-1" style="font-size: 0.72rem;">
+                                Fulfilled
+                            </span>
+                        </div>
+                        <div class="summary-icon-box bg-success-subtle text-success">
+                            <i class="bi bi-arrow-left-right"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Tabs -->
-    <ul class="nav nav-tabs mb-4" id="requestTabs" role="tablist">
+    <ul class="nav nav-pills mb-4 gap-2" id="requestTabs" role="tablist">
         <li class="nav-item" role="presentation">
-            <a class="nav-link {% if current_tab == 'incoming' %}active{% endif %}" href="?tab=incoming">
+            <a class="nav-link rounded-pill px-4 fw-bold {% if current_tab == 'incoming' %}active{% endif %}" href="?tab=incoming">
                 <i class="bi bi-inbox me-1"></i>Incoming Requests
                 {% if incoming_count > 0 %}
-                <span class="badge bg-danger">{{ incoming_count }}</span>
+                <span class="badge bg-danger ms-1">{{ incoming_count }}</span>
                 {% endif %}
             </a>
         </li>
         <li class="nav-item" role="presentation">
-            <a class="nav-link {% if current_tab == 'outgoing' %}active{% endif %}" href="?tab=outgoing">
+            <a class="nav-link rounded-pill px-4 fw-bold {% if current_tab == 'outgoing' %}active{% endif %}" href="?tab=outgoing">
                 <i class="bi bi-send me-1"></i>My Requests
-                <span class="badge bg-secondary">{{ outgoing_count }}</span>
+                <span class="badge bg-secondary ms-1">{{ outgoing_count }}</span>
             </a>
         </li>
     </ul>

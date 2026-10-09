@@ -1,8 +1,30 @@
 {% extends 'base.html' %}
 {% load static %}
 {% load sort_tags %}
+{% load humanize %}
 
 {% block title %}Customer Credit Ledger{% endblock %}
+
+{% block extra_css %}
+<style>
+.summary-card-mini {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.summary-card-mini:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 .5rem 1rem rgba(0,0,0,.08) !important;
+}
+.summary-icon-box {
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    font-size: 1.25rem;
+}
+</style>
+{% endblock %}
 
 {% block content %}
 <div class="container-fluid py-4">
@@ -16,7 +38,7 @@
         
         <div class="d-flex gap-3 align-items-center">
             <div class="dropdown">
-                <button class="btn btn-outline-danger dropdown-toggle" type="button" id="exportDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                <button class="btn btn-outline-danger dropdown-toggle rounded-pill px-3" type="button" id="exportDropdown" data-bs-toggle="dropdown" aria-expanded="false">
                     <i class="bi bi-download me-1"></i>Export
                 </button>
                 <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="exportDropdown">
@@ -35,14 +57,79 @@
         </div>
     </div>
     
-    <!-- Net Total Card -->
-    <div class="row mb-4">
-        <div class="col-md-4">
-            <div class="card bg-danger text-white h-100 border-0 shadow-sm">
-                <div class="card-body">
-                    <h6 class="card-title text-white-50"><i class="bi bi-wallet2 me-2"></i>Net Credit Total</h6>
-                    <h3 class="mb-0">{{ currency_symbol }}{{ net_total|floatformat:"2g" }}</h3>
-                    <small class="text-white-50">Based on current filters</small>
+    <!-- Summary Cards -->
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-lg-3">
+            <div class="card border-0 shadow-sm rounded-4 h-100 summary-card-mini bg-white">
+                <div class="card-body p-3">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <span class="text-muted small fw-semibold text-uppercase d-block mb-1">Total Credit Issued</span>
+                            <h4 class="fw-bold mb-0 text-danger">{{ currency_symbol }}{{ total_debt|floatformat:2|intcomma }}</h4>
+                            <span class="badge bg-danger-subtle text-danger rounded-pill mt-1" style="font-size: 0.72rem;">
+                                New Debt
+                            </span>
+                        </div>
+                        <div class="summary-icon-box bg-danger-subtle text-danger">
+                            <i class="bi bi-arrow-up-right-circle"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="card border-0 shadow-sm rounded-4 h-100 summary-card-mini bg-white">
+                <div class="card-body p-3">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <span class="text-muted small fw-semibold text-uppercase d-block mb-1">Payments Received</span>
+                            <h4 class="fw-bold mb-0 text-success">{{ currency_symbol }}{{ total_payment|floatformat:2|intcomma }}</h4>
+                            <span class="badge bg-success-subtle text-success rounded-pill mt-1" style="font-size: 0.72rem;">
+                                Debt Settled
+                            </span>
+                        </div>
+                        <div class="summary-icon-box bg-success-subtle text-success">
+                            <i class="bi bi-check2-circle"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="card border-0 shadow-sm rounded-4 h-100 summary-card-mini bg-white">
+                <div class="card-body p-3">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <span class="text-muted small fw-semibold text-uppercase d-block mb-1">Net Credit Balance</span>
+                            <h4 class="fw-bold mb-0 {% if net_total > 0 %}text-danger{% elif net_total < 0 %}text-success{% else %}text-muted{% endif %}">
+                                {{ currency_symbol }}{{ net_total|floatformat:2|intcomma }}
+                            </h4>
+                            <span class="badge bg-primary-subtle text-primary rounded-pill mt-1" style="font-size: 0.72rem;">
+                                Net Outstanding
+                            </span>
+                        </div>
+                        <div class="summary-icon-box bg-primary-subtle text-primary">
+                            <i class="bi bi-wallet2"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="card border-0 shadow-sm rounded-4 h-100 summary-card-mini bg-white">
+                <div class="card-body p-3">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <span class="text-muted small fw-semibold text-uppercase d-block mb-1">Ledger Entries</span>
+                            <h4 class="fw-bold mb-0 text-dark">{{ transaction_count|intcomma }}</h4>
+                            <span class="badge bg-secondary-subtle text-secondary rounded-pill mt-1" style="font-size: 0.72rem;">
+                                Filtered events
+                            </span>
+                        </div>
+                        <div class="summary-icon-box bg-secondary-subtle text-secondary">
+                            <i class="bi bi-journal-text"></i>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

@@ -1,6 +1,30 @@
 {% extends 'base.html' %}
+{% load humanize %}
 
 {% block title %}Customers - {{ current_tenant.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .summary-card-mini {
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        border: 1px solid rgba(0, 0, 0, 0.06);
+        background: #ffffff;
+    }
+    .summary-card-mini:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px -4px rgba(0, 0, 0, 0.08) !important;
+    }
+    .summary-icon-box {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.15rem;
+    }
+</style>
+{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -32,17 +56,120 @@
     </div>
 </div>
 
-<!-- Search -->
-<div class="card mb-4">
+<!-- Search & Filters -->
+<div class="card mb-4 border-0 shadow-sm">
     <div class="card-body">
-        <form method="get" class="d-flex gap-2">
-            <input type="text" name="search" class="form-control" placeholder="Search by name, phone or email..."
-                value="{{ request.GET.search }}">
-            <button type="submit" class="btn btn-secondary">Search</button>
-            {% if request.GET.search %}
-            <a href="{% url 'customers:customer_list' %}" class="btn btn-outline-secondary">Clear</a>
+        <form method="get" class="row g-2 align-items-center">
+            <div class="col-md-4">
+                <div class="input-group">
+                    <span class="input-group-text bg-white border-end-0 text-muted"><i class="bi bi-search"></i></span>
+                    <input type="text" name="search" class="form-control border-start-0 ps-0" placeholder="Search by name, phone or email..."
+                        value="{{ search_query }}">
+                </div>
+            </div>
+            {% if shops %}
+            <div class="col-md-2">
+                <select name="shop" class="form-select">
+                    <option value="">All Shops</option>
+                    {% for s in shops %}
+                    <option value="{{ s.pk }}" {% if selected_shop == s.pk|stringformat:"i" %}selected{% endif %}>
+                        {{ s.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
             {% endif %}
+            <div class="col-md-2">
+                <select name="balance_status" class="form-select">
+                    <option value="">All Balances</option>
+                    <option value="debtors" {% if selected_balance_status == 'debtors' %}selected{% endif %}>Owing Debt (>0)</option>
+                    <option value="credit" {% if selected_balance_status == 'credit' %}selected{% endif %}>In Credit (<0)</option>
+                    <option value="zero" {% if selected_balance_status == 'zero' %}selected{% endif %}>Zero Balance (0)</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select name="status" class="form-select">
+                    <option value="">All Statuses</option>
+                    <option value="active" {% if selected_status == 'active' %}selected{% endif %}>Active</option>
+                    <option value="inactive" {% if selected_status == 'inactive' %}selected{% endif %}>Inactive</option>
+                </select>
+            </div>
+            <div class="col-md-2 d-flex gap-2">
+                <button type="submit" class="btn btn-primary flex-grow-1">
+                    <i class="bi bi-filter me-1"></i>Filter
+                </button>
+                {% if search_query or selected_shop or selected_balance_status or selected_status %}
+                <a href="{% url 'customers:customer_list' %}" class="btn btn-outline-secondary" title="Clear Filters">
+                    <i class="bi bi-x-lg"></i>
+                </a>
+                {% endif %}
+            </div>
         </form>
+    </div>
+</div>
+
+<!-- ===== SUMMARY CARDS ===== -->
+<div class="row g-3 mb-4">
+    <!-- 1. Total Customers -->
+    <div class="col-6 col-md-3">
+        <div class="card summary-card-mini rounded-4 shadow-sm h-100 p-3">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <span class="text-muted small text-uppercase fw-bold">Customers</span>
+                <div class="summary-icon-box bg-primary bg-opacity-10 text-primary">
+                    <i class="bi bi-people"></i>
+                </div>
+            </div>
+            <h4 class="mb-1 fw-bold text-dark">{{ summary_total_count }}</h4>
+            <div class="text-muted small">{{ summary_active_count }} active customer{{ summary_active_count|pluralize }}</div>
+        </div>
+    </div>
+
+    <!-- 2. Total Outstanding Debt -->
+    <div class="col-6 col-md-3">
+        <div class="card summary-card-mini rounded-4 shadow-sm h-100 p-3">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <span class="text-muted small text-uppercase fw-bold">Outstanding Debt</span>
+                <div class="summary-icon-box bg-danger bg-opacity-10 text-danger">
+                    <i class="bi bi-exclamation-triangle"></i>
+                </div>
+            </div>
+            <h4 class="mb-1 fw-bold text-danger">{{ currency_symbol }}{{ summary_total_debt|floatformat:2|intcomma }}</h4>
+            <div class="text-muted small">{{ summary_debtors_count }} customer{{ summary_debtors_count|pluralize }} owe debt</div>
+        </div>
+    </div>
+
+    <!-- 3. Total Credit Balance -->
+    <div class="col-6 col-md-3">
+        <div class="card summary-card-mini rounded-4 shadow-sm h-100 p-3">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <span class="text-muted small text-uppercase fw-bold">Customer Credit</span>
+                <div class="summary-icon-box bg-success bg-opacity-10 text-success">
+                    <i class="bi bi-wallet2"></i>
+                </div>
+            </div>
+            <h4 class="mb-1 fw-bold text-success">{{ currency_symbol }}{{ summary_total_credit|floatformat:2|intcomma }}</h4>
+            <div class="text-muted small">{{ summary_credit_count }} customer{{ summary_credit_count|pluralize }} in credit</div>
+        </div>
+    </div>
+
+    <!-- 4. Debt Status Overview -->
+    <div class="col-6 col-md-3">
+        <div class="card summary-card-mini rounded-4 shadow-sm h-100 p-3">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <span class="text-muted small text-uppercase fw-bold">Debtor Ratio</span>
+                <div class="summary-icon-box bg-warning bg-opacity-10 text-warning">
+                    <i class="bi bi-pie-chart"></i>
+                </div>
+            </div>
+            <h4 class="mb-1 fw-bold text-dark">
+                {% if summary_total_count > 0 %}
+                    {{ summary_debtors_count }} <span class="fs-6 text-muted fw-normal">of {{ summary_total_count }}</span>
+                {% else %}
+                    0
+                {% endif %}
+            </h4>
+            <div class="text-muted small">Customers with active debt balance</div>
+        </div>
     </div>
 </div>
 

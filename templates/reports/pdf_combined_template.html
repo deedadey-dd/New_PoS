@@ -67,62 +67,29 @@
     <!-- ===== SECTION 1: FINANCIAL SUMMARY ===== -->
     <h2>Financial Summary</h2>
 
-    {% if role_name == 'SHOP_ATTENDANT' %}
     <table class="cards-table">
         <tr>
-            <td><div class="card-label">Total Sales</div><div class="card-value">{{ currency_symbol }}{{ total_sales_value|default:"0.00" }}</div></td>
-            <td><div class="card-label">Invoices Created</div><div class="card-value">{{ invoice_count|default:"0" }}</div></td>
+            <td><div class="card-label">1. Shop Total Sales</div><div class="card-value">{{ currency_symbol }}{{ shop_total_sales|default:"0.00"|floatformat:2|intcomma }}</div></td>
+            <td><div class="card-label">2. Cash Sales</div><div class="card-value">{{ currency_symbol }}{{ cash_sales|default:"0.00"|floatformat:2|intcomma }}</div></td>
+            <td><div class="card-label">3. E-Cash Sales</div><div class="card-value">{{ currency_symbol }}{{ ecash_sales|default:"0.00"|floatformat:2|intcomma }}</div></td>
+        </tr>
+        <tr>
+            <td><div class="card-label">4. Local Momo Sales</div><div class="card-value">{{ currency_symbol }}{{ momo_sales|default:"0.00"|floatformat:2|intcomma }}</div></td>
+            <td><div class="card-label">5. Credit Sales</div><div class="card-value">{{ currency_symbol }}{{ credit_sales|default:"0.00"|floatformat:2|intcomma }}</div></td>
+            <td><div class="card-label">6. Customer Payments</div><div class="card-value">{{ currency_symbol }}{{ customer_payments|default:"0.00"|floatformat:2|intcomma }}</div></td>
+        </tr>
+        <tr>
             <td>
-                <div class="card-label">Items Sold</div><div class="card-value">{{ items_sold_qty|default:"0" }}</div>
-                {% if user.tenant.use_strict_sales_workflow %}
-                <div class="card-label" style="margin-top: 5px;">Items Dispatched</div><div class="card-value" style="font-size: 11pt;">{{ items_dispatched_qty|default:"0" }}</div>
-                {% endif %}
+                <div class="card-label">7. Items Sold / Invoices</div>
+                <div class="card-value">{{ items_sold_qty|default:"0"|floatformat:0|intcomma }} <span style="font-size: 9pt; color: #777;">({{ invoice_count|default:"0" }} inv)</span></div>
             </td>
+            <td><div class="card-label">8. Funds Sent to Bank</div><div class="card-value">{{ currency_symbol }}{{ funds_sent_to_bank|default:"0.00"|floatformat:2|intcomma }}</div></td>
+            <td><div class="card-label">9. Funds to Accountant</div><div class="card-value">{{ currency_symbol }}{{ funds_transferred_to_accountant|default:"0.00"|floatformat:2|intcomma }}</div></td>
         </tr>
         <tr>
-            <td colspan="3"><div class="card-label">Customer Payments Received</div><div class="card-value">{{ currency_symbol }}{{ customer_payments_received|default:"0.00" }}</div></td>
+            <td colspan="3"><div class="card-label">10. Expenditure</div><div class="card-value" style="color: #c0392b;">{{ currency_symbol }}{{ expenditures|default:"0.00"|floatformat:2|intcomma }}</div></td>
         </tr>
     </table>
-
-    {% elif role_name == 'SHOP_CASHIER' %}
-    <table class="cards-table">
-        <tr>
-            <td><div class="card-label">Total Processed Value</div><div class="card-value">{{ currency_symbol }}{{ total_sales_value|default:"0.00" }}</div></td>
-            <td><div class="card-label">Invoices Processed</div><div class="card-value">{{ invoice_count|default:"0" }}</div></td>
-            <td><div class="card-label">Bank Transfers Executed</div><div class="card-value">{{ currency_symbol }}{{ bank_transfers_made|default:"0.00" }}</div></td>
-        </tr>
-    </table>
-    {% elif role_name == 'SHOP_MANAGER' or viewing_shop %}
-    <table class="cards-table">
-        <tr>
-            <td><div class="card-label">Shop Total Sales</div><div class="card-value">{{ currency_symbol }}{{ shop_total_sales_value|default:"0.00" }}</div></td>
-            <td><div class="card-label">Invoices Created</div><div class="card-value">{{ shop_invoice_count|default:"0" }}</div></td>
-            <td>
-                <div class="card-label">Items Sold</div><div class="card-value">{{ shop_items_sold_qty|default:"0" }}</div>
-                {% if user.tenant.use_strict_sales_workflow %}
-                <div class="card-label" style="margin-top: 5px;">Items Dispatched</div><div class="card-value" style="font-size: 11pt;">{{ shop_items_dispatched_qty|default:"0" }}</div>
-                {% endif %}
-            </td>
-        </tr>
-        <tr>
-            <td><div class="card-label">Customer Payments Received</div><div class="card-value">{{ currency_symbol }}{{ shop_customer_payments_received|default:"0.00" }}</div></td>
-            <td><div class="card-label">Funds Sent to Accountant</div><div class="card-value">{{ currency_symbol }}{{ transferred_funds_out|default:"0.00" }}</div></td>
-            <td><div class="card-label">Expenditures</div><div class="card-value">{{ currency_symbol }}{{ shop_expenditures|default:"0.00" }}</div></td>
-        </tr>
-        <tr>
-            <td colspan="3"><div class="card-label">Funds Sent to Bank</div><div class="card-value">{{ currency_symbol }}{{ shop_bank_transfers_made|default:"0.00" }}</div></td>
-        </tr>
-    </table>
-
-    {% elif role_name in 'ACCOUNTANT ADMIN AUDITOR' %}
-    <table class="cards-table">
-        <tr>
-            <td><div class="card-label">Funds Received In</div><div class="card-value">{{ currency_symbol }}{{ cash_transfers_received|default:"0.00" }}</div></td>
-            <td><div class="card-label">Bank Deposits Made</div><div class="card-value">{{ currency_symbol }}{{ bank_transfers_made|default:"0.00" }}</div></td>
-            <td><div class="card-label">Expenditures Disbursed</div><div class="card-value">{{ currency_symbol }}{{ expenditures_disbursed|default:"0.00" }}</div></td>
-        </tr>
-    </table>
-    {% endif %}
 
     {% if payments_breakdown %}
     <h3>Payments Breakdown</h3>

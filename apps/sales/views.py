@@ -489,6 +489,23 @@ class ShiftListView(LoginRequiredMixin, SortableMixin, ListView):
         context['date_from'] = self.request.GET.get('date_from', '')
         context['date_to'] = self.request.GET.get('date_to', '')
         
+        # Shift summaries
+        from django.db.models import Sum, Count, Q
+        from decimal import Decimal
+        qs = self.get_queryset()
+        shift_agg = qs.aggregate(
+            total_shifts=Count('id'),
+            open_shifts=Count('id', filter=Q(status='OPEN')),
+            closed_shifts=Count('id', filter=Q(status='CLOSED')),
+            total_closing_cash=Sum('closing_cash', filter=Q(status='CLOSED')),
+            total_opening_cash=Sum('opening_cash'),
+        )
+        context['summary_total_shifts'] = shift_agg['total_shifts'] or 0
+        context['summary_open_shifts'] = shift_agg['open_shifts'] or 0
+        context['summary_closed_shifts'] = shift_agg['closed_shifts'] or 0
+        context['summary_closing_cash'] = shift_agg['total_closing_cash'] or Decimal('0.00')
+        context['summary_opening_cash'] = shift_agg['total_opening_cash'] or Decimal('0.00')
+        
         return context
 
 
@@ -671,6 +688,37 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
         # Check if full view (Auditor/Accountant/Admin)
         context['is_full_view'] = role_name in ['AUDITOR', 'ACCOUNTANT', 'ADMIN']
         
+        # Summary metrics on filtered queryset
+        from django.db.models import Sum, Count, Q
+        filtered_qs = self.get_queryset()
+        summary = filtered_qs.aggregate(
+            total_sales_value=Sum('total', filter=~Q(status__in=['VOIDED', 'REFUNDED'])),
+            total_paid_value=Sum('amount_paid', filter=~Q(status__in=['VOIDED', 'REFUNDED'])),
+            total_count=Count('id'),
+            completed_count=Count('id', filter=Q(status='COMPLETED')),
+            pending_dispatch_count=Count('id', filter=Q(status='PENDING_DISPATCH')),
+            voided_count=Count('id', filter=Q(status='VOIDED')),
+            voided_value=Sum('total', filter=Q(status='VOIDED')),
+            cash_sales_value=Sum('amount_paid', filter=Q(payment_method__in=['CASH', 'MIXED'], status__in=['COMPLETED', 'PENDING_DISPATCH'])),
+            ecash_sales_value=Sum('total', filter=Q(payment_method='ECASH', status__in=['COMPLETED', 'PENDING_DISPATCH'])),
+            momo_sales_value=Sum('total', filter=Q(payment_method='MOMO', status__in=['COMPLETED', 'PENDING_DISPATCH'])),
+            credit_sales_value=Sum('total', filter=Q(payment_method__in=['CREDIT', 'PENDING_INVOICE'], status__in=['COMPLETED', 'PENDING_DISPATCH'])),
+            dispatched_count=Count('id', filter=Q(is_dispatched=True, status__in=['COMPLETED', 'PENDING_DISPATCH'])),
+        )
+
+        context['summary_total_sales_value'] = summary['total_sales_value'] or Decimal('0.00')
+        context['summary_total_paid_value'] = summary['total_paid_value'] or Decimal('0.00')
+        context['summary_total_count'] = summary['total_count'] or 0
+        context['summary_completed_count'] = summary['completed_count'] or 0
+        context['summary_pending_dispatch_count'] = summary['pending_dispatch_count'] or 0
+        context['summary_dispatched_count'] = summary['dispatched_count'] or 0
+        context['summary_voided_count'] = summary['voided_count'] or 0
+        context['summary_voided_value'] = summary['voided_value'] or Decimal('0.00')
+        context['summary_cash_sales_value'] = summary['cash_sales_value'] or Decimal('0.00')
+        context['summary_ecash_sales_value'] = summary['ecash_sales_value'] or Decimal('0.00')
+        context['summary_momo_sales_value'] = summary['momo_sales_value'] or Decimal('0.00')
+        context['summary_credit_sales_value'] = summary['credit_sales_value'] or Decimal('0.00')
+
         if context['is_full_view']:
             # Shops for filter
             context['shops'] = Location.objects.filter(

@@ -2,7 +2,8 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.views.generic import ListView, DetailView, CreateView, UpdateView, View
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib import messages
-from django.db.models import Sum, Q
+from django.db.models import Sum, Count, Q
+from decimal import Decimal
 from django.urls import reverse_lazy
 from django.db import transaction
 
@@ -14,6 +15,7 @@ class CustomerListView(LoginRequiredMixin, PaginationMixin, ListView):
     model = Customer
     template_name = 'customers/customer_list.html'
     context_object_name = 'customers'
+    paginate_by = 20
 
     def get_queryset(self):
         user = self.request.user
@@ -24,6 +26,10 @@ class CustomerListView(LoginRequiredMixin, PaginationMixin, ListView):
         if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER']:
              # Shop managers and cashiers only see their shop's customers
              queryset = queryset.filter(shop=user.location)
+        elif role_name in ['ACCOUNTANT', 'AUDITOR', 'ADMIN']:
+            shop_id = self.request.GET.get('shop')
+            if shop_id:
+                queryset = queryset.filter(shop_id=shop_id)
         
         search_query = self.request.GET.get('search')
         if search_query:
@@ -32,7 +38,57 @@ class CustomerListView(LoginRequiredMixin, PaginationMixin, ListView):
                 Q(phone__icontains=search_query) |
                 Q(email__icontains=search_query)
             )
-        return queryset
+
+        balance_status = self.request.GET.get('balance_status')
+        if balance_status == 'debtors':
+            queryset = queryset.filter(current_balance__gt=0)
+        elif balance_status == 'credit':
+            queryset = queryset.filter(current_balance__lt=0)
+        elif balance_status == 'zero':
+            queryset = queryset.filter(current_balance=0)
+
+        status = self.request.GET.get('status')
+        if status == 'active':
+            queryset = queryset.filter(is_active=True)
+        elif status == 'inactive':
+            queryset = queryset.filter(is_active=False)
+
+        return queryset.order_by('-current_balance', 'name')
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        user = self.request.user
+        tenant = user.tenant
+        role_name = user.role.name if user.role else 'ATTENDANT'
+        
+        filtered_qs = self.get_queryset()
+        summary = filtered_qs.aggregate(
+            total_count=Count('id'),
+            total_debt=Sum('current_balance', filter=Q(current_balance__gt=0)),
+            debtors_count=Count('id', filter=Q(current_balance__gt=0)),
+            total_credit=Sum('current_balance', filter=Q(current_balance__lt=0)),
+            credit_count=Count('id', filter=Q(current_balance__lt=0)),
+            active_count=Count('id', filter=Q(is_active=True)),
+        )
+        
+        context['summary_total_count'] = summary['total_count'] or 0
+        context['summary_total_debt'] = summary['total_debt'] or Decimal('0.00')
+        context['summary_debtors_count'] = summary['debtors_count'] or 0
+        context['summary_total_credit'] = abs(summary['total_credit'] or Decimal('0.00'))
+        context['summary_credit_count'] = summary['credit_count'] or 0
+        context['summary_active_count'] = summary['active_count'] or 0
+
+        # Filter parameters
+        context['search_query'] = self.request.GET.get('search', '')
+        context['selected_shop'] = self.request.GET.get('shop', '')
+        context['selected_balance_status'] = self.request.GET.get('balance_status', '')
+        context['selected_status'] = self.request.GET.get('status', '')
+
+        if role_name in ['ACCOUNTANT', 'AUDITOR', 'ADMIN']:
+            from apps.core.models import Location
+            context['shops'] = Location.objects.filter(tenant=tenant, location_type='SHOP', is_active=True).order_by('name')
+
+        return context
 
 class CustomerCreateView(LoginRequiredMixin, CreateView):
     model = Customer
@@ -418,18 +474,23 @@ class CustomerCreditLedgerView(LoginRequiredMixin, PaginationMixin, ListView):
             context['is_full_view'] = True
             
         # Compute net total from the filtered queryset
-        from django.db.models import Sum, Q
+        from django.db.models import Sum, Q, Count
+        from decimal import Decimal
         qs = self.get_queryset()
         
         # In CustomerTransaction, 'amount' is positive for both DEBT and PAYMENT.
         # Net Credit = Total DEBT - Total PAYMENT
         totals = qs.aggregate(
             total_debt=Sum('amount', filter=Q(transaction_type='DEBT')),
-            total_payment=Sum('amount', filter=Q(transaction_type='PAYMENT'))
+            total_payment=Sum('amount', filter=Q(transaction_type='PAYMENT')),
+            transaction_count=Count('id')
         )
-        total_debt = totals['total_debt'] or 0
-        total_payment = totals['total_payment'] or 0
+        total_debt = totals['total_debt'] or Decimal('0.00')
+        total_payment = totals['total_payment'] or Decimal('0.00')
+        context['total_debt'] = total_debt
+        context['total_payment'] = total_payment
         context['net_total'] = total_debt - total_payment
+        context['transaction_count'] = totals['transaction_count'] or 0
         
         return context
 
