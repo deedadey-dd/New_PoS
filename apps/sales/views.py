@@ -699,12 +699,23 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
             pending_dispatch_count=Count('id', filter=Q(status='PENDING_DISPATCH')),
             voided_count=Count('id', filter=Q(status='VOIDED')),
             voided_value=Sum('total', filter=Q(status='VOIDED')),
-            cash_sales_value=Sum('amount_paid', filter=Q(payment_method__in=['CASH', 'MIXED'], status__in=['COMPLETED', 'PENDING_DISPATCH'])),
+            cash_sales_full=Sum('total', filter=Q(payment_method='CASH', status__in=['COMPLETED', 'PENDING_DISPATCH'])),
+            cash_sales_mixed=Sum('amount_paid', filter=Q(payment_method='MIXED', status__in=['COMPLETED', 'PENDING_DISPATCH'])),
+            other_cash_sales=Sum('amount_paid', filter=~Q(payment_method__in=['CASH', 'ECASH', 'MOMO', 'CREDIT', 'PENDING_INVOICE', 'MIXED']) & Q(status__in=['COMPLETED', 'PENDING_DISPATCH'])),
             ecash_sales_value=Sum('total', filter=Q(payment_method='ECASH', status__in=['COMPLETED', 'PENDING_DISPATCH'])),
             momo_sales_value=Sum('total', filter=Q(payment_method='MOMO', status__in=['COMPLETED', 'PENDING_DISPATCH'])),
-            credit_sales_value=Sum('total', filter=Q(payment_method__in=['CREDIT', 'PENDING_INVOICE'], status__in=['COMPLETED', 'PENDING_DISPATCH'])),
+            credit_sales_full=Sum('total', filter=Q(payment_method__in=['CREDIT', 'PENDING_INVOICE'], status__in=['COMPLETED', 'PENDING_DISPATCH'])),
+            mixed_sales_total=Sum('total', filter=Q(payment_method='MIXED', status__in=['COMPLETED', 'PENDING_DISPATCH'])),
             dispatched_count=Count('id', filter=Q(is_dispatched=True, status__in=['COMPLETED', 'PENDING_DISPATCH'])),
         )
+
+        cash_full = summary['cash_sales_full'] or Decimal('0.00')
+        cash_mixed = summary['cash_sales_mixed'] or Decimal('0.00')
+        other_cash = summary['other_cash_sales'] or Decimal('0.00')
+
+        mixed_total = summary['mixed_sales_total'] or Decimal('0.00')
+        mixed_credit = max(mixed_total - cash_mixed, Decimal('0.00'))
+        credit_full = summary['credit_sales_full'] or Decimal('0.00')
 
         context['summary_total_sales_value'] = summary['total_sales_value'] or Decimal('0.00')
         context['summary_total_paid_value'] = summary['total_paid_value'] or Decimal('0.00')
@@ -714,10 +725,10 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
         context['summary_dispatched_count'] = summary['dispatched_count'] or 0
         context['summary_voided_count'] = summary['voided_count'] or 0
         context['summary_voided_value'] = summary['voided_value'] or Decimal('0.00')
-        context['summary_cash_sales_value'] = summary['cash_sales_value'] or Decimal('0.00')
+        context['summary_cash_sales_value'] = cash_full + cash_mixed + other_cash
         context['summary_ecash_sales_value'] = summary['ecash_sales_value'] or Decimal('0.00')
         context['summary_momo_sales_value'] = summary['momo_sales_value'] or Decimal('0.00')
-        context['summary_credit_sales_value'] = summary['credit_sales_value'] or Decimal('0.00')
+        context['summary_credit_sales_value'] = credit_full + mixed_credit
 
         if context['is_full_view']:
             # Shops for filter

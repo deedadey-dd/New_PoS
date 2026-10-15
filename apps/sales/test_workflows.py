@@ -1402,3 +1402,68 @@ class WorkflowIntegrationTests(TestCase):
         txn = CustomerTransaction.objects.filter(customer=customer, transaction_type="DEBIT").first()
         self.assertIsNotNone(txn)
         self.assertEqual(txn.amount, Decimal("150.00"))
+
+    def test_sales_history_cash_card_vs_end_of_day_calculation(self):
+        """
+        Verify that SaleListView summary_cash_sales_value (Cash card) correctly computes
+        the net physical cash received (sale.total for CASH sales, amount_paid for MIXED sales)
+        and matches End-of-Day report logic, rather than inflating by change given.
+        """
+        from apps.sales.views import SaleListView
+        from apps.reports.views import EndOfDayDetailsView
+
+        # 1. CASH sale with change: Total 100, Paid 150, Change 50
+        cash_sale = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.attendant_user,
+            total=Decimal("100.00"),
+            amount_paid=Decimal("150.00"),
+            change_given=Decimal("50.00"),
+            payment_method="CASH",
+            status="COMPLETED"
+        )
+
+        # 2. MIXED sale: Total 200, Paid 70 in cash, 130 on credit
+        from apps.customers.models import Customer
+        customer = Customer.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            name="Mixed Payment Customer",
+            current_balance=Decimal("0.00")
+        )
+        mixed_sale = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.attendant_user,
+            customer=customer,
+            total=Decimal("200.00"),
+            amount_paid=Decimal("70.00"),
+            change_given=Decimal("0.00"),
+            payment_method="MIXED",
+            status="COMPLETED"
+        )
+
+        # Build request for SaleListView
+        factory = RequestFactory()
+        req = factory.get(f"/sales/?shop={self.shop_location.id}")
+        req.user = self.admin_user
+
+        view = SaleListView()
+        view.setup(req)
+        view.object_list = view.get_queryset()
+        context = view.get_context_data()
+
+        # Expected physical cash:
+        # 100.00 (from full cash sale, net of change) + 70.00 (from mixed cash portion) = 170.00
+        # If the bug was present, it would be 150.00 + 70.00 = 220.00 (inflated by change_given of 50.00)
+        self.assertEqual(context['summary_cash_sales_value'], Decimal("170.00"))
+
+        # Verify EndOfDayDetailsView calculation for the same sales
+        eod_sales = Sale.objects.filter(tenant=self.tenant, shop=self.shop_location, status__in=['COMPLETED', 'PENDING_DISPATCH'])
+        eod_cash_full = eod_sales.filter(payment_method='CASH').aggregate(t=Sum('total'))['t'] or Decimal('0.00')
+        eod_cash_mixed = eod_sales.filter(payment_method='MIXED').aggregate(t=Sum('amount_paid'))['t'] or Decimal('0.00')
+        eod_cash = eod_cash_full + eod_cash_mixed
+
+        self.assertEqual(eod_cash, Decimal("170.00"))
+        self.assertEqual(context['summary_cash_sales_value'], eod_cash)
