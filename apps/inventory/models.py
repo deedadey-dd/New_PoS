@@ -263,6 +263,8 @@ class InventoryLedger(TenantModel):
         ('TRANSFER_IN', 'Transfer In'),
         ('SALE', 'Sale'),
         ('RETURN', 'Return'),
+        ('SALE_RETURN', 'Sale Return / Refund'),
+        ('SALE_VOID', 'Sale Void'),
         ('DAMAGE', 'Damage/Write-off'),
         ('PRODUCTION', 'Production'),
         ('DISPUTE_REVERSAL', 'Dispute Reversal'),
@@ -582,13 +584,17 @@ class StockAdjustment(TenantModel):
         self.review_notes = notes
         
         # Create the actual inventory ledger entry
+        adj_qty = self.quantity
+        if self.adjustment_type == 'DAMAGE' and adj_qty > 0:
+            adj_qty = -adj_qty
+
         ledger = InventoryLedger.objects.create(
             tenant=self.tenant,
             product=self.product,
             batch=self.batch,
             location=self.location,
             transaction_type=self.adjustment_type,
-            quantity=self.quantity,
+            quantity=adj_qty,
             unit_cost=self.batch.unit_cost if self.batch else None,
             notes=f"Adjustment approved by {user.get_full_name() or user.email}. Reason: {self.reason}",
             reference_type='StockAdjustment',

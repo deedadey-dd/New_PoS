@@ -45,10 +45,15 @@
                     <label class="form-label fw-semibold">To Date</label>
                     <input type="date" name="date_to" class="form-control" value="{{ date_to|default:'' }}">
                 </div>
-                <div class="col-md-2">
-                    <button type="submit" class="btn btn-primary w-100">
+                <div class="col-md-2 d-flex gap-2">
+                    <button type="submit" class="btn btn-primary flex-grow-1">
                         <i class="bi bi-filter me-1"></i> Filter
                     </button>
+                    {% if date_from or date_to %}
+                    <a href="{% url 'audit:product_lifecycle_detail' selected_product.pk %}" class="btn btn-outline-secondary" title="Clear Date Filter">
+                        <i class="bi bi-x-circle"></i>
+                    </a>
+                    {% endif %}
                 </div>
                 {% endif %}
             </form>
@@ -82,7 +87,22 @@
                 </div>
                 <div class="col-md-3">
                     <div class="text-muted small">Current Total Stock</div>
-                    <div class="fw-bold text-primary fs-4">{{ total_stock|floatformat:"2g" }}</div>
+                    <div class="fw-bold text-primary fs-4">{{ current_total_stock|floatformat:"2g" }}</div>
+                    {% if has_strict_workflow and total_pending_dispatch_qty > 0 %}
+                    <div class="small mt-1">
+                        <span class="text-muted">Available:</span>
+                        <span class="fw-bold text-success">{{ available_total_stock|floatformat:"2g" }}</span>
+                        <span class="badge bg-warning text-dark ms-1" title="Items sold in strict workflow awaiting dispatch">{{ total_pending_dispatch_qty|floatformat:"2g" }} pending</span>
+                    </div>
+                    {% endif %}
+                    {% if has_date_filter %}
+                    <div class="small">
+                        <span class="text-muted">Period Net:</span>
+                        <span class="fw-semibold {% if period_net_movement >= 0 %}text-success{% else %}text-danger{% endif %}">
+                            {% if period_net_movement > 0 %}+{% endif %}{{ period_net_movement|floatformat:"2g" }}
+                        </span>
+                    </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -93,37 +113,112 @@
         <!-- Entries -->
         <div class="col-md-4">
             <div class="card shadow-sm h-100 border-success">
-                <div class="card-header bg-success text-white">
-                    <i class="bi bi-box-arrow-in-down me-2"></i> Stock Entries
+                <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                    <div>
+                        <i class="bi bi-box-arrow-in-down me-2"></i> Stock Entries
+                    </div>
+                    <span class="badge bg-light text-success">{{ total_entries_count }} entries</span>
                 </div>
-                <div class="card-body">
-                    <table class="table table-sm mb-0">
+                <div class="card-body p-0">
+                    <table class="table table-sm table-hover mb-0">
                         <tbody>
-                            <tr>
-                                <td>Stock In (Initial)</td>
-                                <td class="text-end fw-semibold text-success">
-                                    +{{ summary.IN.qty|default:"0"|floatformat:"2g" }}
+                            <tr class="bg-light">
+                                <td colspan="2" class="fw-bold text-uppercase text-muted px-3 py-1 small">
+                                    Stock In / Receiving
                                 </td>
                             </tr>
                             <tr>
-                                <td>Production</td>
-                                <td class="text-end fw-semibold text-success">
-                                    +{{ summary.PRODUCTION.qty|default:"0"|floatformat:"2g" }}
+                                <td class="ps-3">
+                                    <i class="bi bi-boxes text-success me-1"></i> Bulk Receive
+                                </td>
+                                <td class="text-end pe-3 fw-semibold text-success">
+                                    +{{ bulk_receive_qty|floatformat:"2g" }}
                                 </td>
                             </tr>
                             <tr>
-                                <td>Transfer In</td>
-                                <td class="text-end fw-semibold text-success">
-                                    +{{ summary.TRANSFER_IN.qty|default:"0"|floatformat:"2g" }}
+                                <td class="ps-3">
+                                    <i class="bi bi-box-arrow-in-down text-success me-1"></i> Batch Receive / Direct In
+                                </td>
+                                <td class="text-end pe-3 fw-semibold text-success">
+                                    +{{ batch_receive_qty|floatformat:"2g" }}
+                                </td>
+                            </tr>
+                            {% if initial_stock_qty > 0 %}
+                            <tr>
+                                <td class="ps-3">
+                                    <i class="bi bi-archive text-success me-1"></i> Initial / Seed Stock
+                                </td>
+                                <td class="text-end pe-3 fw-semibold text-success">
+                                    +{{ initial_stock_qty|floatformat:"2g" }}
+                                </td>
+                            </tr>
+                            {% endif %}
+                            <tr class="bg-light">
+                                <td colspan="2" class="fw-bold text-uppercase text-muted px-3 py-1 small">
+                                    Other Inflows
                                 </td>
                             </tr>
                             <tr>
-                                <td>Returns</td>
-                                <td class="text-end fw-semibold text-success">
-                                    +{{ summary.RETURN.qty|default:"0"|floatformat:"2g" }}
+                                <td class="ps-3">
+                                    <i class="bi bi-gear text-success me-1"></i> Production
+                                </td>
+                                <td class="text-end pe-3 fw-semibold text-success">
+                                    +{{ production_qty|floatformat:"2g" }}
                                 </td>
                             </tr>
+                            <tr>
+                                <td class="ps-3">
+                                    <i class="bi bi-arrow-down-left-square text-success me-1"></i> Transfer In
+                                </td>
+                                <td class="text-end pe-3 fw-semibold text-success">
+                                    +{{ transfer_in_qty|floatformat:"2g" }}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="ps-3">
+                                    <i class="bi bi-arrow-counterclockwise text-success me-1"></i> Returns & Refunds
+                                </td>
+                                <td class="text-end pe-3 fw-semibold text-success">
+                                    +{{ returns_qty|floatformat:"2g" }}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="ps-3">
+                                    <i class="bi bi-plus-circle text-success me-1"></i> Adjustments (Additions)
+                                </td>
+                                <td class="text-end pe-3 fw-semibold text-success">
+                                    +{{ adjust_pos_qty|floatformat:"2g" }}
+                                </td>
+                            </tr>
+                            {% if dispute_qty > 0 %}
+                            <tr>
+                                <td class="ps-3">
+                                    <i class="bi bi-shield-check text-success me-1"></i> Dispute Reversals (Restored)
+                                </td>
+                                <td class="text-end pe-3 fw-semibold text-success">
+                                    +{{ dispute_qty|floatformat:"2g" }}
+                                </td>
+                            </tr>
+                            {% endif %}
+                            {% if other_pos_qty > 0 %}
+                            <tr>
+                                <td class="ps-3">
+                                    <i class="bi bi-plus text-success me-1"></i> Other Inflows
+                                </td>
+                                <td class="text-end pe-3 fw-semibold text-success">
+                                    +{{ other_pos_qty|floatformat:"2g" }}
+                                </td>
+                            </tr>
+                            {% endif %}
                         </tbody>
+                        <tfoot class="table-success border-top border-2">
+                            <tr>
+                                <th class="ps-3">Total Stock Entries</th>
+                                <th class="text-end pe-3 fw-bold text-success">
+                                    +{{ total_entries_qty|floatformat:"2g" }}
+                                </th>
+                            </tr>
+                        </tfoot>
                     </table>
                 </div>
             </div>
@@ -132,38 +227,110 @@
         <!-- Exits -->
         <div class="col-md-4">
             <div class="card shadow-sm h-100 border-danger">
-                <div class="card-header bg-danger text-white">
-                    <i class="bi bi-box-arrow-up me-2"></i> Stock Exits
+                <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center">
+                    <div>
+                        <i class="bi bi-box-arrow-up me-2"></i> Stock Exits
+                    </div>
+                    <span class="badge bg-light text-danger">{{ total_exits_count }} exits</span>
                 </div>
-                <div class="card-body">
-                    <table class="table table-sm mb-0">
+                <div class="card-body p-0">
+                    <table class="table table-sm table-hover mb-0">
                         <tbody>
-                            <tr>
-                                <td>Sales</td>
-                                <td class="text-end fw-semibold text-danger">
-                                    {{ summary.SALE.qty|default:"0"|floatformat:"2g" }}
+                            <tr class="bg-light">
+                                <td colspan="2" class="fw-bold text-uppercase text-muted px-3 py-1 small">
+                                    Outflows & Dispatches
                                 </td>
                             </tr>
                             <tr>
-                                <td>Transfer Out</td>
-                                <td class="text-end fw-semibold text-danger">
-                                    {{ summary.TRANSFER_OUT.qty|default:"0"|floatformat:"2g" }}
+                                <td class="ps-3">
+                                    <i class="bi bi-cart-check text-danger me-1"></i> Sales Dispatched
+                                    {% if has_strict_workflow %}
+                                    <small class="text-muted d-block" style="font-size: 0.72rem;">Physical exits from shop</small>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end pe-3 fw-semibold text-danger">
+                                    {{ sales_qty|floatformat:"2g" }}
+                                </td>
+                            </tr>
+                            {% if total_pending_dispatch_qty > 0 %}
+                            <tr class="table-warning border-0">
+                                <td class="ps-3 py-1">
+                                    <i class="bi bi-clock-history text-warning-emphasis me-1"></i> Sold (Pending Dispatch)
+                                    <small class="text-muted d-block" style="font-size: 0.72rem;">Strict workflow orders awaiting delivery</small>
+                                </td>
+                                <td class="text-end pe-3 fw-semibold text-warning-emphasis py-1">
+                                    +{{ total_pending_dispatch_qty|floatformat:"2g" }}
+                                </td>
+                            </tr>
+                            {% endif %}
+                            <tr>
+                                <td class="ps-3">
+                                    <i class="bi bi-arrow-up-right-square text-danger me-1"></i> Transfer Out
+                                </td>
+                                <td class="text-end pe-3 fw-semibold text-danger">
+                                    {{ transfer_out_qty|floatformat:"2g" }}
                                 </td>
                             </tr>
                             <tr>
-                                <td>Damage/Write-off</td>
-                                <td class="text-end fw-semibold text-danger">
-                                    {{ summary.DAMAGE.qty|default:"0"|floatformat:"2g" }}
+                                <td class="ps-3">
+                                    <i class="bi bi-exclamation-triangle text-danger me-1"></i> Damage / Write-off
+                                </td>
+                                <td class="text-end pe-3 fw-semibold text-danger">
+                                    {{ damage_qty|floatformat:"2g" }}
                                 </td>
                             </tr>
                             <tr>
-                                <td>Dispute Reversal</td>
-                                <td class="text-end fw-semibold">
-                                    {{ summary.DISPUTE_REVERSAL.qty|default:"0"|floatformat:"2g" }}
+                                <td class="ps-3">
+                                    <i class="bi bi-dash-circle text-danger me-1"></i> Adjustments (Deductions)
+                                </td>
+                                <td class="text-end pe-3 fw-semibold text-danger">
+                                    {{ adjust_neg_qty|floatformat:"2g" }}
                                 </td>
                             </tr>
+                            {% if stock_out_qty < 0 %}
+                            <tr>
+                                <td class="ps-3">
+                                    <i class="bi bi-box-arrow-right text-danger me-1"></i> Stock Out (Other)
+                                </td>
+                                <td class="text-end pe-3 fw-semibold text-danger">
+                                    {{ stock_out_qty|floatformat:"2g" }}
+                                </td>
+                            </tr>
+                            {% endif %}
+                            {% if other_neg_qty < 0 %}
+                            <tr>
+                                <td class="ps-3">
+                                    <i class="bi bi-dash text-danger me-1"></i> Other Outflows
+                                </td>
+                                <td class="text-end pe-3 fw-semibold text-danger">
+                                    {{ other_neg_qty|floatformat:"2g" }}
+                                </td>
+                            </tr>
+                            {% endif %}
                         </tbody>
+                        <tfoot class="table-danger border-top border-2">
+                            <tr>
+                                <th class="ps-3">Total Stock Exits</th>
+                                <th class="text-end pe-3 fw-bold text-danger">
+                                    {{ total_exits_qty|floatformat:"2g" }}
+                                </th>
+                            </tr>
+                            {% if total_pending_dispatch_qty > 0 %}
+                            <tr class="table-light">
+                                <td class="ps-3 small text-muted">Total Sales Committed (Disp. + Pending)</td>
+                                <td class="text-end pe-3 small fw-bold text-dark">
+                                    {{ total_sales_committed|floatformat:"2g" }}
+                                </td>
+                            </tr>
+                            {% endif %}
+                        </tfoot>
                     </table>
+                </div>
+                <div class="card-footer bg-light py-2 d-flex justify-content-between align-items-center">
+                    <span class="small fw-semibold text-muted">Period Net Movement:</span>
+                    <span class="fw-bold {% if period_net_movement >= 0 %}text-success{% else %}text-danger{% endif %}">
+                        {% if period_net_movement > 0 %}+{% endif %}{{ period_net_movement|floatformat:"2g" }}
+                    </span>
                 </div>
             </div>
         </div>
@@ -171,30 +338,87 @@
         <!-- Location Balances -->
         <div class="col-md-4">
             <div class="card shadow-sm h-100 border-info">
-                <div class="card-header bg-info text-white">
-                    <i class="bi bi-geo-alt me-2"></i> Stock by Location
+                <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+                    <div>
+                        <i class="bi bi-geo-alt me-2"></i> Stock by Location
+                    </div>
+                    {% if has_strict_workflow and total_pending_dispatch_qty > 0 %}
+                    <span class="badge bg-warning text-dark small" title="Undispatched goods in strict sales">{{ total_pending_dispatch_qty|floatformat:"2g" }} Pending Disp.</span>
+                    {% elif has_date_filter %}
+                    <span class="badge bg-light text-dark small">Current vs Period</span>
+                    {% endif %}
                 </div>
-                <div class="card-body">
-                    <table class="table table-sm mb-0">
-                        <tbody>
-                            {% for loc in location_balances %}
-                            <tr>
-                                <td>
-                                    {{ loc.location__name }}
-                                    <span class="badge bg-secondary ms-1">{{ loc.location__location_type }}</span>
-                                </td>
-                                <td
-                                    class="text-end fw-semibold {% if loc.current_stock >= 0 %}text-success{% else %}text-danger{% endif %}">
-                                    {{ loc.current_stock|floatformat:"2g" }}
-                                </td>
-                            </tr>
-                            {% empty %}
-                            <tr>
-                                <td colspan="2" class="text-muted text-center">No stock data</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th class="ps-3">Location</th>
+                                    {% if has_date_filter %}
+                                    <th class="text-end text-muted small">Period Net</th>
+                                    {% endif %}
+                                    <th class="text-end {% if has_strict_workflow and total_pending_dispatch_qty > 0 %}px-2{% else %}pe-3{% endif %}">
+                                        {% if has_strict_workflow and total_pending_dispatch_qty > 0 %}On Hand{% else %}Current Stock{% endif %}
+                                    </th>
+                                    {% if has_strict_workflow and total_pending_dispatch_qty > 0 %}
+                                    <th class="text-end text-warning-emphasis px-2 small">Pending</th>
+                                    <th class="text-end pe-3 text-success small">Available</th>
+                                    {% endif %}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for loc in location_balances %}
+                                <tr>
+                                    <td class="ps-3">
+                                        {{ loc.location__name }}
+                                        <span class="badge bg-secondary ms-1">{{ loc.location__location_type }}</span>
+                                    </td>
+                                    {% if has_date_filter %}
+                                    <td class="text-end text-muted small">
+                                        {% if loc.period_movement > 0 %}+{% endif %}{{ loc.period_movement|floatformat:"2g" }}
+                                    </td>
+                                    {% endif %}
+                                    <td class="text-end {% if has_strict_workflow and total_pending_dispatch_qty > 0 %}px-2{% else %}pe-3{% endif %} fw-semibold {% if loc.current_stock > 0 %}text-primary{% elif loc.current_stock < 0 %}text-danger{% else %}text-muted{% endif %}">
+                                        {{ loc.current_stock|floatformat:"2g" }}
+                                    </td>
+                                    {% if has_strict_workflow and total_pending_dispatch_qty > 0 %}
+                                    <td class="text-end px-2 small {% if loc.pending_dispatch > 0 %}text-warning-emphasis fw-semibold{% else %}text-muted{% endif %}">
+                                        {% if loc.pending_dispatch > 0 %}{{ loc.pending_dispatch|floatformat:"2g" }}{% else %}-{% endif %}
+                                    </td>
+                                    <td class="text-end pe-3 small fw-bold {% if loc.available_stock > 0 %}text-success{% elif loc.available_stock < 0 %}text-danger{% else %}text-muted{% endif %}">
+                                        {{ loc.available_stock|floatformat:"2g" }}
+                                    </td>
+                                    {% endif %}
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="{% if has_strict_workflow and total_pending_dispatch_qty > 0 %}5{% elif has_date_filter %}3{% else %}2{% endif %}" class="text-muted text-center py-3">No stock data</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                            <tfoot class="table-info border-top border-2">
+                                <tr>
+                                    <th class="ps-3">Total</th>
+                                    {% if has_date_filter %}
+                                    <th class="text-end text-muted small">
+                                        {% if period_net_movement > 0 %}+{% endif %}{{ period_net_movement|floatformat:"2g" }}
+                                    </th>
+                                    {% endif %}
+                                    <th class="text-end {% if has_strict_workflow and total_pending_dispatch_qty > 0 %}px-2{% else %}pe-3{% endif %} fw-bold text-primary">
+                                        {{ current_total_stock|floatformat:"2g" }}
+                                    </th>
+                                    {% if has_strict_workflow and total_pending_dispatch_qty > 0 %}
+                                    <th class="text-end px-2 small fw-bold text-warning-emphasis">
+                                        {{ total_pending_dispatch_qty|floatformat:"2g" }}
+                                    </th>
+                                    <th class="text-end pe-3 small fw-bold text-success">
+                                        {{ available_total_stock|floatformat:"2g" }}
+                                    </th>
+                                    {% endif %}
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
@@ -257,9 +481,12 @@
                             </td>
                             <td>
                                 {% if entry.reference_type and entry.reference_id %}
-                                <small>{{ entry.reference_type }} #{{ entry.reference_id }}</small>
+                                <small class="fw-semibold">{{ entry.reference_type }} #{{ entry.reference_id }}</small>
                                 {% else %}
                                 <span class="text-muted">-</span>
+                                {% endif %}
+                                {% if entry.notes %}
+                                <div class="text-muted small fst-italic" style="font-size: 0.75rem;">{{ entry.notes }}</div>
                                 {% endif %}
                             </td>
                             <td>
@@ -284,6 +511,64 @@
             {% include 'includes/audit_pagination.html' %}
         </div>
     </div>
+
+    {% if pending_sales_items %}
+    <!-- Pending Dispatches / Strict Workflow Section -->
+    <div class="card shadow-sm mt-4 border-warning">
+        <div class="card-header bg-warning bg-opacity-25 d-flex justify-content-between align-items-center">
+            <h5 class="mb-0 text-dark">
+                <i class="bi bi-clock-history text-warning me-2"></i>
+                Orders Awaiting Dispatch (Strict Sales Workflow)
+                <span class="badge bg-warning text-dark ms-2">{{ pending_dispatch_count }} item{{ pending_dispatch_count|pluralize }}</span>
+            </h5>
+            <a href="{% url 'sales:dispatch_list' %}" class="btn btn-sm btn-outline-dark">
+                <i class="bi bi-send me-1"></i> Go to Dispatch List
+            </a>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover table-sm mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="ps-3">Sale #</th>
+                            <th>Date</th>
+                            <th>Shop</th>
+                            <th>Customer</th>
+                            <th class="text-end">Sold Qty</th>
+                            <th class="text-end">Dispatched</th>
+                            <th class="text-end pe-3">Remaining Undispatched</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in pending_sales_items %}
+                        <tr>
+                            <td class="ps-3 fw-semibold">
+                                <a href="{% url 'sales:sale_receipt' item.sale.pk %}" class="text-decoration-none">
+                                    {{ item.sale.sale_number }}
+                                </a>
+                            </td>
+                            <td><small class="text-muted">{{ item.sale.created_at|date:"d M Y H:i" }}</small></td>
+                            <td>{{ item.sale.shop.name }}</td>
+                            <td>{{ item.sale.customer.name|default:item.sale.customer_name|default:"Walk-in Customer" }}</td>
+                            <td class="text-end">{{ item.quantity|floatformat:"2g" }}</td>
+                            <td class="text-end text-success">{{ item.dispatched_quantity|floatformat:"2g" }}</td>
+                            <td class="text-end pe-3 fw-bold text-danger">{{ item.remaining_quantity|floatformat:"2g" }}</td>
+                            <td>
+                                {% if item.dispatched_quantity > 0 %}
+                                <span class="badge bg-info text-dark">Partially Dispatched</span>
+                                {% else %}
+                                <span class="badge bg-warning text-dark">Awaiting Dispatch</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 
     {% else %}
     <!-- No Product Selected -->

@@ -58,49 +58,230 @@ class ProductLifecycleView(LoginRequiredMixin, AuditAccessMixin, SortableMixin, 
             context['selected_product'] = product
             
             # Get date range
-            date_from = request.GET.get('date_from', '')
-            date_to = request.GET.get('date_to', '')
+            date_from = request.GET.get('date_from', '').strip()
+            date_to = request.GET.get('date_to', '').strip()
             
-            # Build filters
-            filters = Q(tenant=tenant, product=product)
+            # Validate: swap if date_from > date_to
+            if date_from and date_to and date_from > date_to:
+                date_from, date_to = date_to, date_from
+                messages.info(request, 'Start date was after end date; dates have been swapped.')
+            
+            # Base query for all time
+            all_time_ledger = InventoryLedger.objects.filter(
+                tenant=tenant, product=product
+            )
+            
+            # Period filters
+            period_filters = Q(tenant=tenant, product=product)
+            has_date_filter = False
             if date_from:
-                filters &= Q(created_at__date__gte=date_from)
+                period_filters &= Q(created_at__date__gte=date_from)
                 context['date_from'] = date_from
+                has_date_filter = True
             if date_to:
-                filters &= Q(created_at__date__lte=date_to)
+                period_filters &= Q(created_at__date__lte=date_to)
                 context['date_to'] = date_to
+                has_date_filter = True
             
-            ledger = InventoryLedger.objects.filter(filters).select_related(
+            ledger = InventoryLedger.objects.filter(period_filters).select_related(
                 'location', 'batch', 'created_by'
             )
             ledger = self.apply_sorting(ledger)
             
-            # Group by transaction type for summary
-            summary_data = ledger.values('transaction_type').annotate(
+            # ── 1. Stock Entries (Inflows) Breakdown ──────────────────
+            in_entries = ledger.filter(transaction_type='IN', quantity__gt=0)
+            
+            bulk_filter = Q(reference_type='BulkBatch') | Q(notes__icontains='bulk receive')
+            bulk_receive_qty = in_entries.filter(bulk_filter).aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+            bulk_receive_count = in_entries.filter(bulk_filter).count()
+
+            init_filter = (
+                Q(reference_type__startswith='DEMO-SEED') | 
+                Q(reference_type__in=['Initial', 'INITIAL']) | 
+                Q(notes__icontains='initial demo')
+            ) & ~bulk_filter & ~Q(reference_type__in=['Batch', 'GoodsReceipt'])
+            initial_stock_qty = in_entries.filter(init_filter).aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+            initial_stock_count = in_entries.filter(init_filter).count()
+
+            batch_filter = ~bulk_filter & ~init_filter
+            batch_receive_qty = in_entries.filter(batch_filter).aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+            batch_receive_count = in_entries.filter(batch_filter).count()
+
+            total_in_qty = bulk_receive_qty + initial_stock_qty + batch_receive_qty
+            total_in_count = in_entries.count()
+
+            prod_entries = ledger.filter(transaction_type='PRODUCTION', quantity__gt=0)
+            production_qty = prod_entries.aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+            production_count = prod_entries.count()
+
+            transfer_in_entries = ledger.filter(transaction_type='TRANSFER_IN', quantity__gt=0)
+            transfer_in_qty = transfer_in_entries.aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+            transfer_in_count = transfer_in_entries.count()
+
+            returns_entries = ledger.filter(
+                transaction_type__in=['RETURN', 'SALE_RETURN', 'SALE_VOID'],
+                quantity__gt=0
+            )
+            returns_qty = returns_entries.aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+            returns_count = returns_entries.count()
+
+            adjust_pos_entries = ledger.filter(transaction_type='ADJUST', quantity__gt=0)
+            adjust_pos_qty = adjust_pos_entries.aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+            adjust_pos_count = adjust_pos_entries.count()
+
+            dispute_entries = ledger.filter(transaction_type='DISPUTE_REVERSAL', quantity__gt=0)
+            dispute_qty = dispute_entries.aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+            dispute_count = dispute_entries.count()
+
+            known_pos_types = [
+                'IN', 'PRODUCTION', 'TRANSFER_IN', 'RETURN', 
+                'SALE_RETURN', 'SALE_VOID', 'ADJUST', 'DISPUTE_REVERSAL'
+            ]
+            other_pos_entries = ledger.exclude(transaction_type__in=known_pos_types).filter(quantity__gt=0)
+            other_pos_qty = other_pos_entries.aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+            other_pos_count = other_pos_entries.count()
+
+            total_entries_qty = (
+                total_in_qty + production_qty + transfer_in_qty + 
+                returns_qty + adjust_pos_qty + dispute_qty + other_pos_qty
+            )
+            total_entries_count = (
+                total_in_count + production_count + transfer_in_count +
+                returns_count + adjust_pos_count + dispute_count + other_pos_count
+            )
+
+            # ── 2. Stock Exits (Outflows) Breakdown ───────────────────
+            sales_entries = ledger.filter(transaction_type='SALE', quantity__lt=0)
+            sales_qty = sales_entries.aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+            sales_count = sales_entries.count()
+
+            transfer_out_entries = ledger.filter(transaction_type='TRANSFER_OUT', quantity__lt=0)
+            transfer_out_qty = transfer_out_entries.aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+            transfer_out_count = transfer_out_entries.count()
+
+            damage_entries = ledger.filter(transaction_type='DAMAGE', quantity__lt=0)
+            damage_qty = damage_entries.aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+            damage_count = damage_entries.count()
+
+            adjust_neg_entries = ledger.filter(transaction_type='ADJUST', quantity__lt=0)
+            adjust_neg_qty = adjust_neg_entries.aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+            adjust_neg_count = adjust_neg_entries.count()
+
+            stock_out_entries = ledger.filter(transaction_type='OUT', quantity__lt=0)
+            stock_out_qty = stock_out_entries.aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+            stock_out_count = stock_out_entries.count()
+
+            known_neg_types = ['SALE', 'TRANSFER_OUT', 'DAMAGE', 'ADJUST', 'OUT']
+            other_neg_entries = ledger.exclude(transaction_type__in=known_neg_types).filter(quantity__lt=0)
+            other_neg_qty = other_neg_entries.aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+            other_neg_count = other_neg_entries.count()
+
+            total_exits_qty = (
+                sales_qty + transfer_out_qty + damage_qty + 
+                adjust_neg_qty + stock_out_qty + other_neg_qty
+            )
+            total_exits_count = (
+                sales_count + transfer_out_count + damage_count +
+                adjust_neg_count + stock_out_count + other_neg_count
+            )
+
+            # Period Net Movement
+            period_net_movement = total_entries_qty + total_exits_qty
+
+            # ── 3. Strict Sales Workflow: Pending Dispatches (Committed Stock) ──
+            pending_sales_items = SaleItem.objects.filter(
+                sale__tenant=tenant,
+                product=product,
+                sale__status__in=['PENDING_DISPATCH', 'COMPLETED'],
+                dispatched_quantity__lt=F('quantity')
+            ).exclude(sale__status__in=['VOIDED', 'REFUNDED']).select_related('sale', 'sale__shop', 'sale__customer')
+
+            total_pending_dispatch_qty = pending_sales_items.aggregate(
+                pending=Sum(F('quantity') - F('dispatched_quantity'))
+            )['pending'] or Decimal('0')
+            pending_dispatch_count = pending_sales_items.count()
+
+            loc_pending_map = {
+                item['sale__shop_id']: item['pending']
+                for item in pending_sales_items.order_by().values('sale__shop_id').annotate(
+                    pending=Sum(F('quantity') - F('dispatched_quantity'))
+                )
+            }
+
+            # ── 4. Stock by Location & Overall Total Stock ────────────
+            # True current total physical stock of the product across all locations (all-time)
+            current_total_stock = all_time_ledger.aggregate(total=Sum('quantity'))['total'] or Decimal('0')
+            available_total_stock = current_total_stock - total_pending_dispatch_qty
+            total_sales_committed = abs(sales_qty) + total_pending_dispatch_qty
+
+            # Locations: Map all-time stock and period movements
+            all_time_loc_map = {
+                item['location_id']: item['qty']
+                for item in all_time_ledger.order_by().values('location_id').annotate(qty=Sum('quantity'))
+            }
+            
+            period_loc_map = {}
+            if has_date_filter:
+                period_loc_map = {
+                    item['location_id']: item['qty']
+                    for item in ledger.order_by().values('location_id').annotate(qty=Sum('quantity'))
+                }
+
+            tenant_locations = Location.objects.filter(tenant=tenant, is_active=True).order_by('name')
+            location_balances = []
+            for loc in tenant_locations:
+                loc_stock = all_time_loc_map.get(loc.pk, Decimal('0'))
+                period_movement = period_loc_map.get(loc.pk, Decimal('0'))
+                loc_pending = loc_pending_map.get(loc.pk, Decimal('0'))
+                loc_avail = loc_stock - loc_pending
+                
+                # Show location if it has stock, historical movements, period activity, or pending dispatch
+                if loc_stock != Decimal('0') or period_movement != Decimal('0') or loc_pending != Decimal('0') or loc.pk in all_time_loc_map:
+                    location_balances.append({
+                        'location__id': loc.pk,
+                        'location__name': loc.name,
+                        'location__location_type': loc.location_type,
+                        'current_stock': loc_stock,
+                        'period_movement': period_movement,
+                        'pending_dispatch': loc_pending,
+                        'available_stock': loc_avail,
+                    })
+
+            # Include inactive locations if they still hold or held stock
+            known_loc_ids = set(loc['location__id'] for loc in location_balances)
+            missing_loc_ids = set(all_time_loc_map.keys()) - known_loc_ids
+            if missing_loc_ids:
+                missing_locs = Location.objects.filter(pk__in=missing_loc_ids)
+                for loc in missing_locs:
+                    loc_stock = all_time_loc_map.get(loc.pk, Decimal('0'))
+                    loc_pending = loc_pending_map.get(loc.pk, Decimal('0'))
+                    location_balances.append({
+                        'location__id': loc.pk,
+                        'location__name': loc.name + (' (Inactive)' if not loc.is_active else ''),
+                        'location__location_type': loc.location_type,
+                        'current_stock': loc_stock,
+                        'period_movement': period_loc_map.get(loc.pk, Decimal('0')),
+                        'pending_dispatch': loc_pending,
+                        'available_stock': loc_stock - loc_pending,
+                    })
+            location_balances.sort(key=lambda x: x['location__name'])
+
+            # Legacy summary dictionary for backward compatibility
+            summary_data = ledger.order_by().values('transaction_type').annotate(
                 total_qty=Sum('quantity'),
                 entry_count=Count('id')
             )
-            
-            # Build summary dict
             summary = {}
             for item in summary_data:
                 summary[item['transaction_type']] = {
                     'qty': item['total_qty'] or Decimal('0'),
                     'count': item['entry_count']
                 }
-            
-            # Calculate running balance per location
-            location_balances = ledger.values(
-                'location__id', 'location__name', 'location__location_type'
-            ).annotate(
-                current_stock=Sum('quantity'),
-            ).order_by('location__name')
-            
-            # Overall product stock
-            total_stock = ledger.aggregate(total=Sum('quantity'))['total'] or Decimal('0')
-            
+
             # Paginate ledger
             paginated_ledger, per_page = self.paginate_queryset(request, ledger)
+
+            has_strict_workflow = getattr(tenant, 'use_strict_sales_workflow', False) or (total_pending_dispatch_qty > 0)
 
             context.update({
                 'ledger_entries': paginated_ledger,
@@ -108,7 +289,57 @@ class ProductLifecycleView(LoginRequiredMixin, AuditAccessMixin, SortableMixin, 
                 'per_page': per_page,
                 'summary': summary,
                 'location_balances': location_balances,
-                'total_stock': total_stock,
+                'current_total_stock': current_total_stock,
+                'total_stock': current_total_stock,
+                'available_total_stock': available_total_stock,
+                'total_pending_dispatch_qty': total_pending_dispatch_qty,
+                'total_sales_committed': total_sales_committed,
+                'pending_dispatch_count': pending_dispatch_count,
+                'pending_sales_items': pending_sales_items[:50],
+                'has_strict_workflow': has_strict_workflow,
+                'period_net_movement': period_net_movement,
+                'has_date_filter': has_date_filter,
+                
+                # Entries
+                'bulk_receive_qty': bulk_receive_qty,
+                'bulk_receive_count': bulk_receive_count,
+                'batch_receive_qty': batch_receive_qty,
+                'batch_receive_count': batch_receive_count,
+                'initial_stock_qty': initial_stock_qty,
+                'initial_stock_count': initial_stock_count,
+                'total_in_qty': total_in_qty,
+                'total_in_count': total_in_count,
+                'production_qty': production_qty,
+                'production_count': production_count,
+                'transfer_in_qty': transfer_in_qty,
+                'transfer_in_count': transfer_in_count,
+                'returns_qty': returns_qty,
+                'returns_count': returns_count,
+                'adjust_pos_qty': adjust_pos_qty,
+                'adjust_pos_count': adjust_pos_count,
+                'dispute_qty': dispute_qty,
+                'dispute_count': dispute_count,
+                'other_pos_qty': other_pos_qty,
+                'other_pos_count': other_pos_count,
+                'total_entries_qty': total_entries_qty,
+                'total_entries_count': total_entries_count,
+                
+                # Exits
+                'sales_qty': sales_qty,
+                'sales_count': sales_count,
+                'transfer_out_qty': transfer_out_qty,
+                'transfer_out_count': transfer_out_count,
+                'damage_qty': damage_qty,
+                'damage_count': damage_count,
+                'adjust_neg_qty': adjust_neg_qty,
+                'adjust_neg_count': adjust_neg_count,
+                'stock_out_qty': stock_out_qty,
+                'stock_out_count': stock_out_count,
+                'other_neg_qty': other_neg_qty,
+                'other_neg_count': other_neg_count,
+                'total_exits_qty': total_exits_qty,
+                'total_exits_count': total_exits_count,
+                
                 'current_sort': self.request.GET.get('sort', ''),
                 'current_dir': self.request.GET.get('dir', 'asc'),
             })
