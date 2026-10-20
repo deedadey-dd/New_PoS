@@ -243,7 +243,7 @@
                             </tr>
                             <tr>
                                 <td class="ps-3">
-                                    <i class="bi bi-cart-check text-danger me-1"></i> Sales Dispatched
+                                    <i class="bi bi-cart-check text-danger me-1"></i> {% if has_strict_workflow %}Sales Dispatched{% else %}Sales{% endif %}
                                     {% if has_strict_workflow %}
                                     <small class="text-muted d-block" style="font-size: 0.72rem;">Physical exits from shop</small>
                                     {% endif %}
@@ -252,7 +252,7 @@
                                     {{ sales_qty|floatformat:"2g" }}
                                 </td>
                             </tr>
-                            {% if total_pending_dispatch_qty > 0 %}
+                            {% if has_strict_workflow and total_pending_dispatch_qty > 0 %}
                             <tr class="table-warning border-0">
                                 <td class="ps-3 py-1">
                                     <i class="bi bi-clock-history text-warning-emphasis me-1"></i> Sold (Pending Dispatch)
@@ -315,7 +315,7 @@
                                     {{ total_exits_qty|floatformat:"2g" }}
                                 </th>
                             </tr>
-                            {% if total_pending_dispatch_qty > 0 %}
+                            {% if has_strict_workflow and total_pending_dispatch_qty > 0 %}
                             <tr class="table-light">
                                 <td class="ps-3 small text-muted">Total Sales Committed (Disp. + Pending)</td>
                                 <td class="text-end pe-3 small fw-bold text-dark">
@@ -512,7 +512,7 @@
         </div>
     </div>
 
-    {% if pending_sales_items %}
+    {% if has_strict_workflow and pending_sales_items %}
     <!-- Pending Dispatches / Strict Workflow Section -->
     <div class="card shadow-sm mt-4 border-warning">
         <div class="card-header bg-warning bg-opacity-25 d-flex justify-content-between align-items-center">

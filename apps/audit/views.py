@@ -189,24 +189,32 @@ class ProductLifecycleView(LoginRequiredMixin, AuditAccessMixin, SortableMixin, 
             period_net_movement = total_entries_qty + total_exits_qty
 
             # ── 3. Strict Sales Workflow: Pending Dispatches (Committed Stock) ──
-            pending_sales_items = SaleItem.objects.filter(
-                sale__tenant=tenant,
-                product=product,
-                sale__status__in=['PENDING_DISPATCH', 'COMPLETED'],
-                dispatched_quantity__lt=F('quantity')
-            ).exclude(sale__status__in=['VOIDED', 'REFUNDED']).select_related('sale', 'sale__shop', 'sale__customer')
+            has_strict_workflow = bool(getattr(tenant, 'use_strict_sales_workflow', False))
 
-            total_pending_dispatch_qty = pending_sales_items.aggregate(
-                pending=Sum(F('quantity') - F('dispatched_quantity'))
-            )['pending'] or Decimal('0')
-            pending_dispatch_count = pending_sales_items.count()
+            if has_strict_workflow:
+                pending_sales_items = SaleItem.objects.filter(
+                    sale__tenant=tenant,
+                    product=product,
+                    sale__status__in=['PENDING_DISPATCH', 'COMPLETED'],
+                    dispatched_quantity__lt=F('quantity')
+                ).exclude(sale__status__in=['VOIDED', 'REFUNDED']).select_related('sale', 'sale__shop', 'sale__customer')
 
-            loc_pending_map = {
-                item['sale__shop_id']: item['pending']
-                for item in pending_sales_items.order_by().values('sale__shop_id').annotate(
+                total_pending_dispatch_qty = pending_sales_items.aggregate(
                     pending=Sum(F('quantity') - F('dispatched_quantity'))
-                )
-            }
+                )['pending'] or Decimal('0')
+                pending_dispatch_count = pending_sales_items.count()
+
+                loc_pending_map = {
+                    item['sale__shop_id']: item['pending']
+                    for item in pending_sales_items.order_by().values('sale__shop_id').annotate(
+                        pending=Sum(F('quantity') - F('dispatched_quantity'))
+                    )
+                }
+            else:
+                pending_sales_items = SaleItem.objects.none()
+                total_pending_dispatch_qty = Decimal('0')
+                pending_dispatch_count = 0
+                loc_pending_map = {}
 
             # ── 4. Stock by Location & Overall Total Stock ────────────
             # True current total physical stock of the product across all locations (all-time)
@@ -280,8 +288,6 @@ class ProductLifecycleView(LoginRequiredMixin, AuditAccessMixin, SortableMixin, 
 
             # Paginate ledger
             paginated_ledger, per_page = self.paginate_queryset(request, ledger)
-
-            has_strict_workflow = getattr(tenant, 'use_strict_sales_workflow', False) or (total_pending_dispatch_qty > 0)
 
             context.update({
                 'ledger_entries': paginated_ledger,
@@ -358,8 +364,8 @@ class ProductProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
         from datetime import datetime
         tenant = request.user.tenant
         
-        # Parse date range - support both preset and custom
-        date_range = request.GET.get('range', 'month')
+        # Parse date range - default to 'all' so all products are immediately visible
+        date_range = request.GET.get('range', 'all')
         custom_from = request.GET.get('date_from')
         custom_to = request.GET.get('date_to')
         today = timezone.now().date()
@@ -388,72 +394,96 @@ class ProductProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
                 date_label = f'{date_from.strftime("%b %d")} - {date_to.strftime("%b %d, %Y")}'
                 date_range = 'custom'
             except ValueError:
-                date_warning = 'Invalid date format. Using default 30-day range.'
-                date_from = today - timedelta(days=30)
-                date_to = today
-                date_label = 'Last 30 Days'
+                date_warning = 'Invalid date format. Using All Time.'
+                date_from = None
+                date_to = None
+                date_label = 'All Time'
+                date_range = 'all'
         elif custom_from or custom_to:
-            # Only one date provided
-            date_warning = 'Both From and To dates are required for custom range. Using default.'
-            date_to = today
-            date_from = today - timedelta(days=30)
-            date_label = 'Last 30 Days'
+            date_warning = 'Both From and To dates are required for custom range. Using All Time.'
+            date_from = None
+            date_to = None
+            date_label = 'All Time'
+            date_range = 'all'
         else:
             date_to = today
             if date_range == 'week':
                 date_from = today - timedelta(days=7)
                 date_label = 'Last 7 Days'
+            elif date_range == 'month':
+                date_from = today - timedelta(days=30)
+                date_label = 'Last 30 Days'
             elif date_range == 'quarter':
                 date_from = today - timedelta(days=90)
                 date_label = 'Last 90 Days'
             elif date_range == 'year':
                 date_from = today - timedelta(days=365)
                 date_label = 'Last 365 Days'
-            elif date_range == 'all':
+            else:  # 'all' (default)
+                date_range = 'all'
                 date_from = None
                 date_to = None
                 date_label = 'All Time'
-            else:  # month (default)
-                date_from = today - timedelta(days=30)
-                date_label = 'Last 30 Days'
         
-        # Build query
-        filters = Q(sale__tenant=tenant, sale__status__in=['COMPLETED', 'PENDING_DISPATCH'])
-        if date_from:
-            filters &= Q(sale__created_at__date__gte=date_from)
-        if date_to:
-            filters &= Q(sale__created_at__date__lte=date_to)
-            
-        location_id = request.GET.get('location')
-        if location_id:
-            filters &= Q(sale__shop_id=location_id)
-            
-        q = request.GET.get('q')
+        # 1. Base query on Product catalog so all products exist in report and are searchable
+        products_qs = Product.objects.filter(tenant=tenant)
+        
+        q = request.GET.get('q', '').strip()
         if q:
-            filters &= (Q(product__name__icontains=q) | Q(product__sku__icontains=q))
+            products_qs = products_qs.filter(Q(name__icontains=q) | Q(sku__icontains=q))
             
         category_id = request.GET.get('category')
-        if category_id:
-            filters &= Q(product__category_id=category_id)
-        
-        product_data = list(SaleItem.objects.filter(filters).values(
-            'product__id', 'product__name', 'product__sku', 'product__category__name'
-        ).annotate(
+        if category_id and category_id.isdigit():
+            products_qs = products_qs.filter(category_id=int(category_id))
+            
+        location_id = request.GET.get('location')
+
+        # 2. Build sales filter for the specified period & location
+        sales_filter = Q(sale__tenant=tenant, sale__status__in=['COMPLETED', 'PENDING_DISPATCH'])
+        if date_from:
+            sales_filter &= Q(sale__created_at__date__gte=date_from)
+        if date_to:
+            sales_filter &= Q(sale__created_at__date__lte=date_to)
+        if location_id and location_id.isdigit():
+            sales_filter &= Q(sale__shop_id=int(location_id))
+
+        # 3. Aggregate sales performance by product
+        sales_items = SaleItem.objects.filter(sales_filter, product__in=products_qs).values('product_id').annotate(
             qty_sold=Sum('quantity'),
             revenue=Sum('total'),
             cost=Sum(F('quantity') * F('unit_cost')),
-        ).order_by('-revenue'))
-        
-        # Calculate profit and margin
-        for item in product_data:
-            item['revenue'] = item['revenue'] or Decimal('0')
-            item['cost'] = item['cost'] or Decimal('0')
-            item['qty_sold'] = item['qty_sold'] or Decimal('0')
-            item['profit'] = item['revenue'] - item['cost']
-            if item['revenue'] > 0:
-                item['margin_pct'] = round((item['profit'] / item['revenue']) * 100, 1)
+        )
+        sales_map = {item['product_id']: item for item in sales_items}
+
+        # 4. Include all active products, or any inactive products that had sales
+        if q:
+            included_products = products_qs
+        else:
+            included_products = products_qs.filter(Q(is_active=True) | Q(id__in=sales_map.keys()))
+
+        product_data = []
+        for p in included_products.select_related('category'):
+            s = sales_map.get(p.id)
+            qty_sold = s['qty_sold'] if s else Decimal('0')
+            revenue = s['revenue'] if s else Decimal('0')
+            cost = s['cost'] if s else Decimal('0')
+            profit = revenue - cost
+            if revenue > 0:
+                margin_pct = round((profit / revenue) * 100, 1)
             else:
-                item['margin_pct'] = 0
+                margin_pct = 0
+                
+            product_data.append({
+                'product__id': p.id,
+                'product__name': p.name,
+                'product__sku': p.sku or '',
+                'product__category__name': p.category.name if p.category else '-',
+                'qty_sold': qty_sold,
+                'revenue': revenue,
+                'cost': cost,
+                'profit': profit,
+                'margin_pct': margin_pct,
+            })
                 
         # Sort logic
         sort_by = request.GET.get('sort', 'profit')
@@ -466,7 +496,7 @@ class ProductProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
         if sort_by == 'product__name':
             product_data.sort(key=lambda x: x['product__name'].lower(), reverse=reverse_sort)
         else:
-            product_data.sort(key=lambda x: x[sort_by], reverse=reverse_sort)
+            product_data.sort(key=lambda x: (x[sort_by], x['revenue']), reverse=reverse_sort)
         
         # Totals
         totals = {
@@ -936,7 +966,7 @@ class ProductProfitLossExportView(LoginRequiredMixin, AuditAccessMixin, View):
         tenant = request.user.tenant
 
         # Parse date range (same as ProductProfitLossView)
-        date_range = request.GET.get('range', 'month')
+        date_range = request.GET.get('range', 'all')
         custom_from = request.GET.get('date_from')
         custom_to = request.GET.get('date_to')
         today = timezone.now().date()
@@ -950,64 +980,91 @@ class ProductProfitLossExportView(LoginRequiredMixin, AuditAccessMixin, View):
                 if date_to > today:
                     date_to = today
             except ValueError:
-                date_from = today - timedelta(days=30)
-                date_to = today
+                date_from = None
+                date_to = None
+                date_range = 'all'
+        elif custom_from or custom_to:
+            date_from = None
+            date_to = None
+            date_range = 'all'
         else:
             date_to = today
             if date_range == 'week':
                 date_from = today - timedelta(days=7)
+            elif date_range == 'month':
+                date_from = today - timedelta(days=30)
             elif date_range == 'quarter':
                 date_from = today - timedelta(days=90)
             elif date_range == 'year':
                 date_from = today - timedelta(days=365)
-            elif date_range == 'all':
+            else:  # all
                 date_from = None
                 date_to = None
-            else:
-                date_from = today - timedelta(days=30)
+                date_range = 'all'
 
-        filters = Q(sale__tenant=tenant, sale__status__in=['COMPLETED', 'PENDING_DISPATCH'])
-        if date_from:
-            filters &= Q(sale__created_at__date__gte=date_from)
-        if date_to:
-            filters &= Q(sale__created_at__date__lte=date_to)
-
-        location_id = request.GET.get('location')
-        if location_id:
-            filters &= Q(sale__shop_id=location_id)
-            
-        q = request.GET.get('q')
+        products_qs = Product.objects.filter(tenant=tenant)
+        q = request.GET.get('q', '').strip()
         if q:
-            filters &= (Q(product__name__icontains=q) | Q(product__sku__icontains=q))
+            products_qs = products_qs.filter(Q(name__icontains=q) | Q(sku__icontains=q))
             
         category_id = request.GET.get('category')
-        if category_id:
-            filters &= Q(product__category_id=category_id)
+        if category_id and category_id.isdigit():
+            products_qs = products_qs.filter(category_id=int(category_id))
 
-        product_data = list(SaleItem.objects.filter(filters).values(
-            'product__name', 'product__sku', 'product__category__name'
-        ).annotate(
+        location_id = request.GET.get('location')
+
+        sales_filter = Q(sale__tenant=tenant, sale__status__in=['COMPLETED', 'PENDING_DISPATCH'])
+        if date_from:
+            sales_filter &= Q(sale__created_at__date__gte=date_from)
+        if date_to:
+            sales_filter &= Q(sale__created_at__date__lte=date_to)
+        if location_id and location_id.isdigit():
+            sales_filter &= Q(sale__shop_id=int(location_id))
+
+        sales_items = SaleItem.objects.filter(sales_filter, product__in=products_qs).values('product_id').annotate(
             qty_sold=Sum('quantity'),
             revenue=Sum('total'),
             cost=Sum(F('quantity') * F('unit_cost')),
-        ).order_by('-revenue'))
+        )
+        sales_map = {item['product_id']: item for item in sales_items}
+
+        if q:
+            included_products = products_qs
+        else:
+            included_products = products_qs.filter(Q(is_active=True) | Q(id__in=sales_map.keys()))
+
+        product_data = []
+        for p in included_products.select_related('category'):
+            s = sales_map.get(p.id)
+            qty_sold = s['qty_sold'] if s else Decimal('0')
+            revenue = s['revenue'] if s else Decimal('0')
+            cost = s['cost'] if s else Decimal('0')
+            profit = revenue - cost
+            margin = round((profit / revenue * 100), 1) if revenue > 0 else 0
+            product_data.append({
+                'product__name': p.name,
+                'product__sku': p.sku or '',
+                'product__category__name': p.category.name if p.category else '-',
+                'qty_sold': qty_sold,
+                'revenue': revenue,
+                'cost': cost,
+                'profit': profit,
+                'margin': margin,
+            })
+        product_data.sort(key=lambda x: (x['profit'], x['revenue']), reverse=True)
 
         headers = ['Product', 'SKU', 'Category', 'Qty Sold', 'Revenue', 'Cost', 'Profit', 'Margin %']
         rows = []
         for item in product_data:
-            revenue = item['revenue'] or Decimal('0')
-            cost = item['cost'] or Decimal('0')
-            profit = revenue - cost
-            margin = round((profit / revenue * 100), 1) if revenue > 0 else 0
             rows.append([
                 item['product__name'],
                 item['product__sku'] or '',
                 item['product__category__name'] or '',
                 float(item['qty_sold'] or 0),
-                float(revenue),
-                float(cost),
-                float(profit),
-                margin,
+                float(item['revenue'] or 0),
+                float(item['cost'] or 0),
+                float(item['profit'] or 0),
+                item['margin'],
             ])
 
         export_format = request.GET.get('format', 'excel')

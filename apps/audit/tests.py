@@ -330,3 +330,119 @@ class ProductLifecycleViewTests(TestCase):
         self.assertEqual(loc_b['pending_dispatch'], Decimal('6.00'))
         self.assertEqual(loc_b['available_stock'], Decimal('10.00'))
 
+    def test_standard_workflow_does_not_include_pending_dispatch(self):
+        """Test standard workflow: goods dispatched upon sales, no pending dispatch columns or rows."""
+        self.tenant.use_strict_sales_workflow = False
+        self.tenant.save()
+
+        # 1. Stock in (+50)
+        InventoryLedger.objects.create(
+            tenant=self.tenant,
+            product=self.product,
+            location=self.location_b,
+            transaction_type='IN',
+            quantity=Decimal('50.00'),
+            reference_type='Batch'
+        )
+
+        # 2. Standard sale (-10)
+        InventoryLedger.objects.create(
+            tenant=self.tenant,
+            product=self.product,
+            location=self.location_b,
+            transaction_type='SALE',
+            quantity=Decimal('-10.00'),
+            reference_type='Sale'
+        )
+
+        self.client.force_login(self.user)
+        response = self.client.get(f'/audit/product-lifecycle/{self.product.pk}/')
+        self.assertEqual(response.status_code, 200)
+        c = response.context
+
+        # Workflow flag is False
+        self.assertFalse(c['has_strict_workflow'])
+        self.assertEqual(c['total_pending_dispatch_qty'], Decimal('0.00'))
+        self.assertEqual(c['sales_qty'], Decimal('-10.00'))
+        self.assertEqual(c['current_total_stock'], Decimal('40.00'))
+        self.assertEqual(c['available_total_stock'], Decimal('40.00'))
+
+        # Location balances do not have pending dispatch values
+        loc_b = [loc for loc in c['location_balances'] if loc['location__id'] == self.location_b.pk][0]
+        self.assertEqual(loc_b['current_stock'], Decimal('40.00'))
+        self.assertEqual(loc_b['pending_dispatch'], Decimal('0.00'))
+
+        html = response.content.decode()
+        # Verify Pending Dispatch row is NOT in Stock Exits
+        self.assertNotIn('Sold (Pending Dispatch)', html)
+        self.assertNotIn('Total Sales Committed', html)
+        # Verify Pending / Available column headers are NOT in Stock by Location
+        self.assertNotIn('Pending Disp.', html)
+        self.assertNotIn('Orders Awaiting Dispatch', html)
+        self.assertIn('Current Stock', html)
+
+    def test_product_profit_loss_view_populates_products_by_default(self):
+        """Test that /audit/profit-loss/products/ populates products readily by default."""
+        from apps.sales.models import Sale, SaleItem
+
+        # Create a second product with no sales
+        Product.objects.create(
+            tenant=self.tenant,
+            name="Unsold Water Bottle",
+            sku="WB-001",
+            default_selling_price=Decimal("5.00")
+        )
+
+        # Create a sale for the first product
+        sale = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.location_b,
+            attendant=self.user,
+            status='COMPLETED',
+            payment_method='CASH',
+            total=Decimal('30.00'),
+            amount_paid=Decimal('30.00'),
+            is_dispatched=True
+        )
+        SaleItem.objects.create(
+            tenant=self.tenant,
+            sale=sale,
+            product=self.product,
+            quantity=Decimal('3.00'),
+            unit_price=Decimal('10.00'),
+            unit_cost=Decimal('6.00'),
+            total=Decimal('30.00')
+        )
+
+        self.client.force_login(self.user)
+        response = self.client.get('/audit/profit-loss/products/')
+        self.assertEqual(response.status_code, 200)
+
+        html = response.content.decode()
+        # Both products must be readily visible in the table
+        self.assertIn('Super Biscuit', html)
+        self.assertIn('Unsold Water Bottle', html)
+
+        # Context validation
+        c = response.context
+        self.assertEqual(c['date_range'], 'all')
+        self.assertEqual(c['totals']['revenue'], Decimal('30.00'))
+        self.assertEqual(c['totals']['cost'], Decimal('18.00'))
+        self.assertEqual(c['totals']['profit'], Decimal('12.00'))
+
+    def test_product_profit_loss_search_finds_products(self):
+        """Test searching for products on /audit/profit-loss/products/ finds matching products."""
+        self.client.force_login(self.user)
+
+        # Search for existing product
+        response = self.client.get('/audit/profit-loss/products/?q=Super')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('Super Biscuit', response.content.decode())
+
+        # Search for non-existent product
+        response_empty = self.client.get('/audit/profit-loss/products/?q=NonExistentSKUXYZ')
+        self.assertEqual(response_empty.status_code, 200)
+        self.assertIn('No products found matching "NonExistentSKUXYZ"', response_empty.content.decode())
+
+
+
