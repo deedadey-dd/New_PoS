@@ -2,15 +2,67 @@
 Transfer models for the POS system.
 Handles stock transfers between locations with state machine workflow.
 """
-from django.db import models
+from django.db import models, transaction, IntegrityError
 from django.db.models import Sum
 from django.core.validators import MinValueValidator
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 from decimal import Decimal
+import re
 
 from apps.core.models import TenantModel, Location, User
 from apps.inventory.models import Product, Batch, InventoryLedger
+
+
+def generate_sequential_number(model_cls, tenant, field_name, prefix, digits=6):
+    """
+    Generate the next unique sequential number for a given tenant.
+    
+    1. If currently inside an atomic transaction, row-locks the tenant row
+       using select_for_update() to serialize concurrent number generations.
+    2. Determines the highest numeric suffix across existing records (checking both
+       natural lexicographical order and recent ID order).
+    3. Verifies that the candidate number does not already exist in the database.
+    """
+    if not tenant:
+        return f"{prefix}{1:0{digits}d}"
+        
+    # Serialize concurrent generations when inside an atomic block
+    if transaction.get_connection().in_atomic_block and getattr(tenant, 'pk', None):
+        try:
+            from apps.core.models import Tenant
+            Tenant.objects.select_for_update().filter(pk=tenant.pk).exists()
+        except Exception:
+            pass
+
+    filter_kwargs = {f'{field_name}__startswith': prefix, 'tenant': tenant}
+    last_by_field = model_cls.objects.filter(**filter_kwargs).order_by(f'-{field_name}').first()
+    last_by_id = model_cls.objects.filter(**filter_kwargs).order_by('-id').first()
+
+    last_num = 0
+    for record in (last_by_field, last_by_id):
+        if record:
+            val = getattr(record, field_name, '') or ''
+            match = re.search(r'\d+', val)
+            if match:
+                try:
+                    num = int(match.group())
+                    if num > last_num:
+                        last_num = num
+                except ValueError:
+                    pass
+
+    next_num = last_num + 1
+    candidate = f"{prefix}{next_num:0{digits}d}"
+
+    # Ensure candidate does not collide with any existing record
+    check_kwargs = {field_name: candidate, 'tenant': tenant}
+    while model_cls.objects.filter(**check_kwargs).exists():
+        next_num += 1
+        candidate = f"{prefix}{next_num:0{digits}d}"
+        check_kwargs[field_name] = candidate
+
+    return candidate
 
 
 class Transfer(TenantModel):
@@ -83,19 +135,27 @@ class Transfer(TenantModel):
     def __str__(self):
         return f"Transfer {self.transfer_number}: {self.source_location.name} → {self.destination_location.name}"
     
+    def generate_transfer_number(self):
+        return generate_sequential_number(Transfer, self.tenant, 'transfer_number', 'TRF')
+
     def save(self, *args, **kwargs):
         # Auto-generate transfer number
         if not self.transfer_number:
-            last_transfer = Transfer.objects.filter(tenant=self.tenant).order_by('-id').first()
-            if last_transfer and last_transfer.transfer_number:
+            max_attempts = 10
+            for attempt in range(max_attempts):
+                self.transfer_number = self.generate_transfer_number()
                 try:
-                    last_num = int(last_transfer.transfer_number.replace('TRF', ''))
-                    self.transfer_number = f"TRF{last_num + 1:06d}"
-                except ValueError:
-                    self.transfer_number = "TRF000001"
-            else:
-                self.transfer_number = "TRF000001"
-        super().save(*args, **kwargs)
+                    with transaction.atomic():
+                        super().save(*args, **kwargs)
+                    break
+                except IntegrityError as e:
+                    if attempt < max_attempts - 1 and 'transfer_number' in str(e).lower():
+                        self.transfer_number = None
+                        self.pk = None
+                        continue
+                    raise
+        else:
+            super().save(*args, **kwargs)
     
     def clean(self):
         # Safely check if both locations are set before comparing
@@ -662,19 +722,27 @@ class StockRequest(TenantModel):
     def __str__(self):
         return f"Request {self.request_number}: {self.requesting_location.name} ← {self.supplying_location.name}"
     
+    def generate_request_number(self):
+        return generate_sequential_number(StockRequest, self.tenant, 'request_number', 'REQ')
+
     def save(self, *args, **kwargs):
         # Auto-generate request number
         if not self.request_number:
-            last_request = StockRequest.objects.filter(tenant=self.tenant).order_by('-id').first()
-            if last_request and last_request.request_number:
+            max_attempts = 10
+            for attempt in range(max_attempts):
+                self.request_number = self.generate_request_number()
                 try:
-                    last_num = int(last_request.request_number.replace('REQ', ''))
-                    self.request_number = f"REQ{last_num + 1:06d}"
-                except ValueError:
-                    self.request_number = "REQ000001"
-            else:
-                self.request_number = "REQ000001"
-        super().save(*args, **kwargs)
+                    with transaction.atomic():
+                        super().save(*args, **kwargs)
+                    break
+                except IntegrityError as e:
+                    if attempt < max_attempts - 1 and 'request_number' in str(e).lower():
+                        self.request_number = None
+                        self.pk = None
+                        continue
+                    raise
+        else:
+            super().save(*args, **kwargs)
     
     def clean(self):
         # Validate request direction
@@ -971,21 +1039,28 @@ class StockWriteOff(TenantModel):
     def __str__(self):
         return f"WO-{self.writeoff_number}: {self.product.name} x {self.quantity}"
 
+    def generate_writeoff_number(self):
+        return generate_sequential_number(StockWriteOff, self.tenant, 'writeoff_number', 'WO')
+
     def save(self, *args, **kwargs):
+        is_new = self.pk is None
         # Auto-generate write-off number
         if not self.writeoff_number:
-            last_wo = StockWriteOff.objects.filter(tenant=self.tenant).order_by('-id').first()
-            if last_wo and last_wo.writeoff_number:
+            max_attempts = 10
+            for attempt in range(max_attempts):
+                self.writeoff_number = self.generate_writeoff_number()
                 try:
-                    last_num = int(last_wo.writeoff_number.replace('WO', ''))
-                    self.writeoff_number = f"WO{last_num + 1:06d}"
-                except ValueError:
-                    self.writeoff_number = "WO000001"
-            else:
-                self.writeoff_number = "WO000001"
-
-        is_new = self.pk is None
-        super().save(*args, **kwargs)
+                    with transaction.atomic():
+                        super().save(*args, **kwargs)
+                    break
+                except IntegrityError as e:
+                    if attempt < max_attempts - 1 and 'writeoff_number' in str(e).lower():
+                        self.writeoff_number = None
+                        self.pk = None
+                        continue
+                    raise
+        else:
+            super().save(*args, **kwargs)
 
         # Create inventory ledger entry on first save only
         if is_new:

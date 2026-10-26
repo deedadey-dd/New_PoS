@@ -37,7 +37,7 @@
                             <label class="form-label fw-bold">Target Specific Tenants</label>
                             <select name="target_tenants" class="form-select" multiple style="min-height: 150px;">
                                 {% for tenant in tenants %}
-                                <option value="{{ tenant.id }}">{{ tenant.name }} ({{ tenant.schema_name }})</option>
+                                <option value="{{ tenant.id }}">{{ tenant.name }} ({{ tenant.slug }})</option>
                                 {% endfor %}
                             </select>
                             <div class="form-text small">Leave all unselected to send to ALL active tenants. Hold CTRL/CMD to select multiple.</div>

@@ -10,17 +10,6 @@ import sentry_sdk
 # Load environment variables
 load_dotenv()
 
-# Sentry Error Tracking
-sentry_dsn = os.getenv('SENTRY_DSN')
-if sentry_dsn:
-    from django.core.exceptions import DisallowedHost
-    sentry_sdk.init(
-        dsn=sentry_dsn,
-        traces_sample_rate=1.0,
-        profiles_sample_rate=1.0,
-        ignore_errors=[DisallowedHost]
-    )
-
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -31,6 +20,19 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-dev-key-change-in-producti
 DEBUG = os.getenv('DEBUG', 'True').lower() == 'true'
 
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+
+# Sentry Error Tracking
+sentry_dsn = os.getenv('SENTRY_DSN')
+if sentry_dsn:
+    from django.core.exceptions import DisallowedHost
+    sentry_environment = os.getenv('SENTRY_ENVIRONMENT', 'development' if DEBUG else 'production')
+    sentry_sdk.init(
+        dsn=sentry_dsn,
+        environment=sentry_environment,
+        traces_sample_rate=0.1 if DEBUG else 1.0,
+        profiles_sample_rate=0.1 if DEBUG else 1.0,
+        ignore_errors=[DisallowedHost]
+    )
 
 
 # Application definition
