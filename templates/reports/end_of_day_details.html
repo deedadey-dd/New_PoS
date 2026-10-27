@@ -42,7 +42,7 @@
     .icon-rose { background: rgba(244, 63, 94, 0.12); color: #e11d48; }
 
     .stat-label {
-        font-size: 0.72rem;
+        font-size: 0.85rem;
         letter-spacing: 0.05em;
         text-transform: uppercase;
         font-weight: 700;
@@ -50,13 +50,13 @@
         margin-bottom: 0.25rem;
     }
     .stat-value {
-        font-size: 1.35rem;
+        font-size: 1.5rem;
         font-weight: 800;
         letter-spacing: -0.02em;
         line-height: 1.2;
     }
     .stat-sub {
-        font-size: 0.75rem;
+        font-size: 0.88rem;
         color: #94a3b8;
         font-weight: 500;
     }
@@ -64,7 +64,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="container-fluid py-4 px-lg-4">
+<div class="container-fluid py-4 px-lg-4" style="font-size: 1.12rem;">
     <!-- ===== HEADER SECTION ===== -->
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4 d-print-none">
         <div>
@@ -89,6 +89,17 @@
 
         <!-- Filter & Action Controls -->
         <div class="d-flex flex-wrap align-items-center gap-2">
+            <!-- View Mode Switcher -->
+            <div class="btn-group bg-white p-1 rounded-3 shadow-sm border me-lg-2" role="group" aria-label="Report View Mode">
+                <a href="#" class="btn btn-sm btn-dark text-white fw-semibold shadow-sm" style="font-size: 0.82rem; padding: 0.4rem 0.85rem; border-radius: 0.5rem;">
+                    <i class="bi bi-table me-1"></i>Standard Detailed
+                </a>
+                <a href="{% url 'reports:end_of_day_management' %}?{% if viewing_shop %}shop_id={{ viewing_shop.id }}&{% endif %}start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}" 
+                   class="btn btn-sm text-muted fw-semibold" style="font-size: 0.82rem; padding: 0.4rem 0.85rem; border-radius: 0.5rem;">
+                    <i class="bi bi-pie-chart-fill me-1"></i>Management Overview
+                </a>
+            </div>
+
             <form method="get" class="d-flex flex-wrap align-items-center gap-2">
                 {% if available_shops %}
                     <select name="shop_id" class="form-select form-select-sm shadow-sm" style="min-width: 140px;">
@@ -125,9 +136,27 @@
                 <a href="?{% if viewing_shop %}shop_id={{ viewing_shop.id }}&{% endif %}start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}&top_n={{ top_n }}&excel=true" class="btn btn-outline-success">
                     <i class="bi bi-file-earmark-excel me-1"></i>Excel
                 </a>
-                <a href="?{% if viewing_shop %}shop_id={{ viewing_shop.id }}&{% endif %}start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}&top_n={{ top_n }}&pdf=true" class="btn btn-outline-primary">
+                <a href="?{% if viewing_shop %}shop_id={{ viewing_shop.id }}&{% endif %}start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}&top_n={{ top_n }}&pdf=true&format=standard" target="_blank" class="btn btn-outline-primary" title="Download Standard PDF">
                     <i class="bi bi-printer me-1"></i>PDF
                 </a>
+                <button type="button" class="btn btn-outline-primary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false">
+                    <span class="visually-hidden">Toggle PDF Options</span>
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end shadow border-0 mt-1" style="font-size: 0.85rem;">
+                    <li><h6 class="dropdown-header small text-uppercase">Choose PDF Format</h6></li>
+                    <li>
+                        <a class="dropdown-item py-2 fw-semibold text-primary" 
+                           href="?{% if viewing_shop %}shop_id={{ viewing_shop.id }}&{% endif %}start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}&top_n={{ top_n }}&pdf=true&format=standard" target="_blank">
+                            <i class="bi bi-file-earmark-text me-2"></i>Standard Detailed PDF
+                        </a>
+                    </li>
+                    <li>
+                        <a class="dropdown-item py-2 text-dark" 
+                           href="?{% if viewing_shop %}shop_id={{ viewing_shop.id }}&{% endif %}start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}&top_n={{ top_n }}&pdf=true&format=management" target="_blank">
+                            <i class="bi bi-file-earmark-pdf-fill me-2 text-danger"></i>Management Overview (4-Page PDF)
+                        </a>
+                    </li>
+                </ul>
             </div>
         </div>
     </div>
@@ -336,7 +365,7 @@
             <div>
                 <h5 class="mb-0 fw-bold text-dark">Product Sales &amp; Stock Breakdown</h5>
                 <span class="text-muted small">
-                    Showing products with active sales or dispatches &bull; Sorted by Quantity Sold
+                    Showing products with active sales{% if user.tenant.use_strict_sales_workflow %} or dispatches{% endif %} &bull; Sorted by Quantity Sold
                     {% if top_n != 'all' %}&bull; <span class="badge bg-secondary-subtle text-secondary">Top {{ top_n }}</span>{% endif %}
                 </span>
             </div>
@@ -348,14 +377,16 @@
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0">
-                    <thead class="table-light text-uppercase small text-muted">
+                <table class="table table-hover align-middle mb-0" style="font-size: 1.08rem;">
+                    <thead class="table-light text-uppercase small text-muted" style="font-size: 0.92rem;">
                         <tr>
                             <th class="ps-4" style="width: 4%;">#</th>
                             <th style="min-width: 200px;">Product Name</th>
                             <th class="text-center">Qty Sold</th>
                             <th class="text-end">Total Revenue</th>
-                            <th class="text-center">Qty Dispatched</th>
+                            {% if user.tenant.use_strict_sales_workflow %}
+                                <th class="text-center">Qty Dispatched</th>
+                            {% endif %}
                             <th class="text-center pe-4">Stock Remaining</th>
                         </tr>
                     </thead>
@@ -384,6 +415,7 @@
                                     <span class="text-muted">&mdash;</span>
                                 {% endif %}
                             </td>
+                            {% if user.tenant.use_strict_sales_workflow %}
                             <td class="text-center">
                                 {% if item.qty_dispatched > 0 %}
                                     <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-3 py-1 fw-semibold">
@@ -393,6 +425,7 @@
                                     <span class="text-muted">&mdash;</span>
                                 {% endif %}
                             </td>
+                            {% endif %}
                             <td class="text-center pe-4">
                                 {% if item.stock_left == '-' %}
                                     <span class="text-muted">&mdash;</span>
@@ -415,7 +448,7 @@
                         </tr>
                         {% empty %}
                         <tr>
-                            <td colspan="6" class="text-center py-5 text-muted">
+                            <td colspan="{% if user.tenant.use_strict_sales_workflow %}6{% else %}5{% endif %}" class="text-center py-5 text-muted">
                                 <i class="bi bi-inbox fs-1 d-block mb-2 text-muted opacity-50"></i>
                                 <div class="fw-semibold">No sales or inventory activity recorded for this period.</div>
                                 <div class="small text-muted mt-1">Try selecting a different date range or shop.</div>

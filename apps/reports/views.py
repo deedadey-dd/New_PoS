@@ -253,6 +253,9 @@ class EndOfDayDetailsView(LoginRequiredMixin, View):
     template_name = 'reports/end_of_day_details.html'
 
     def get(self, request):
+        if request.GET.get('view') == 'management':
+            return EndOfDayManagementView.as_view()(request)
+
         user = request.user
         tenant = user.tenant
         role_name = user.role.name if user.role else None
@@ -326,48 +329,50 @@ class EndOfDayDetailsView(LoginRequiredMixin, View):
                 'stock_left': 'N/A'
             }
             
-        dispatch_filter = {
-            'tenant': tenant,
-            'transaction_type': 'SALE',
-            'created_at__date__gte': start_date,
-            'created_at__date__lte': end_date
-        }
-        return_filter = {
-            'tenant': tenant,
-            'transaction_type': 'SALE_RETURN',
-            'created_at__date__gte': start_date,
-            'created_at__date__lte': end_date
-        }
-        if role_name == 'SHOP_ATTENDANT':
-            dispatch_filter['created_by'] = user
-            return_filter['created_by'] = user
-        elif shop_filter_for_inventory:
-            dispatch_filter['location'] = shop_filter_for_inventory
-            return_filter['location'] = shop_filter_for_inventory
+        is_strict_workflow = bool(getattr(tenant, 'use_strict_sales_workflow', False))
 
-        # Build a map of product_id → returned qty to subtract from dispatched
-        from django.db.models import Q as _Q
-        returned_map = {}
-        for row in InventoryLedger.objects.filter(**return_filter).values('product_id').annotate(ret_qty=Sum('quantity')):
-            returned_map[row['product_id']] = abs(row['ret_qty'] or Decimal('0'))
+        if is_strict_workflow:
+            dispatch_filter = {
+                'tenant': tenant,
+                'transaction_type': 'SALE',
+                'created_at__date__gte': start_date,
+                'created_at__date__lte': end_date
+            }
+            return_filter = {
+                'tenant': tenant,
+                'transaction_type': 'SALE_RETURN',
+                'created_at__date__gte': start_date,
+                'created_at__date__lte': end_date
+            }
+            if role_name == 'SHOP_ATTENDANT':
+                dispatch_filter['created_by'] = user
+                return_filter['created_by'] = user
+            elif shop_filter_for_inventory:
+                dispatch_filter['location'] = shop_filter_for_inventory
+                return_filter['location'] = shop_filter_for_inventory
 
-        dispatched_agg = InventoryLedger.objects.filter(**dispatch_filter).values('product_id', 'product__name').annotate(
-            dispatched_qty=Sum('quantity')
-        )
-        for row in dispatched_agg:
-            pid = row['product_id']
-            # Net dispatched = dispatched_out - returned (floor at 0)
-            dq = max(abs(row['dispatched_qty'] or Decimal('0')) - returned_map.get(pid, Decimal('0')), Decimal('0'))
-            if pid in product_stats:
-                product_stats[pid]['qty_dispatched'] = dq
-            elif not exclude_inactive:
-                product_stats[pid] = {
-                    'name': row['product__name'],
-                    'qty_sold': Decimal('0'),
-                    'revenue': Decimal('0.00'),
-                    'qty_dispatched': dq,
-                    'stock_left': 'N/A'
-                }
+            # Build a map of product_id → returned qty to subtract from dispatched
+            returned_map = {}
+            for row in InventoryLedger.objects.filter(**return_filter).values('product_id').annotate(ret_qty=Sum('quantity')):
+                returned_map[row['product_id']] = abs(row['ret_qty'] or Decimal('0'))
+
+            dispatched_agg = InventoryLedger.objects.filter(**dispatch_filter).values('product_id', 'product__name').annotate(
+                dispatched_qty=Sum('quantity')
+            )
+            for row in dispatched_agg:
+                pid = row['product_id']
+                # Net dispatched = dispatched_out - returned (floor at 0)
+                dq = max(abs(row['dispatched_qty'] or Decimal('0')) - returned_map.get(pid, Decimal('0')), Decimal('0'))
+                if pid in product_stats:
+                    product_stats[pid]['qty_dispatched'] = dq
+                elif not exclude_inactive:
+                    product_stats[pid] = {
+                        'name': row['product__name'],
+                        'qty_sold': Decimal('0'),
+                        'revenue': Decimal('0.00'),
+                        'qty_dispatched': dq,
+                        'stock_left': 'N/A'
+                    }
             
         if shop_filter_for_inventory:
             if not exclude_inactive:
@@ -436,9 +441,12 @@ class EndOfDayDetailsView(LoginRequiredMixin, View):
         items_sold_qty = SaleItem.objects.filter(sale__in=sales).aggregate(q=Sum('quantity'))['q'] or Decimal('0')
         
         # 3. Dispatched items (for strict workflow)
-        summary_dispatched_raw = InventoryLedger.objects.filter(**dispatch_filter).aggregate(q=Sum('quantity'))['q'] or Decimal('0')
-        summary_returned_raw = InventoryLedger.objects.filter(**return_filter).aggregate(q=Sum('quantity'))['q'] or Decimal('0')
-        items_dispatched_qty = max(abs(summary_dispatched_raw) - abs(summary_returned_raw), Decimal('0'))
+        if is_strict_workflow:
+            summary_dispatched_raw = InventoryLedger.objects.filter(**dispatch_filter).aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+            summary_returned_raw = InventoryLedger.objects.filter(**return_filter).aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+            items_dispatched_qty = max(abs(summary_dispatched_raw) - abs(summary_returned_raw), Decimal('0'))
+        else:
+            items_dispatched_qty = Decimal('0')
         
         # 4. Payment breakdown: Cash, E-Cash, Local Momo, Credit
         # Full Cash sales: sale.total is the exact sales revenue (amount_paid can include change tendered)
@@ -507,7 +515,7 @@ class EndOfDayDetailsView(LoginRequiredMixin, View):
         funds_transferred_to_accountant = CashTransfer.objects.filter(
             **acc_transfer_filter
         ).filter(
-            _Q(destination='ACCOUNTANT') | _Q(destination__isnull=True) | ~_Q(destination='BANK')
+            Q(destination='ACCOUNTANT') | Q(destination__isnull=True) | ~Q(destination='BANK')
         ).aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
 
         if role_name in ['ACCOUNTANT', 'ADMIN', 'AUDITOR'] and not shop_filter_for_inventory:
@@ -518,7 +526,7 @@ class EndOfDayDetailsView(LoginRequiredMixin, View):
                 confirmed_at__date__gte=start_date,
                 confirmed_at__date__lte=end_date
             ).filter(
-                _Q(destination='ACCOUNTANT') | _Q(destination__isnull=True) | ~_Q(destination='BANK')
+                Q(destination='ACCOUNTANT') | Q(destination__isnull=True) | ~Q(destination='BANK')
             ).aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
 
         # 7. Funds Sent to Bank
@@ -600,6 +608,9 @@ class EndOfDayDetailsView(LoginRequiredMixin, View):
             'exclude_inactive': exclude_inactive,
             'top_n': top_n_str,
             'shop_id': viewing_shop_id or '',
+            'user': user,
+            'tenant': tenant,
+            'use_strict_sales_workflow': is_strict_workflow,
             **summary,
         }
 
@@ -613,13 +624,31 @@ class EndOfDayDetailsView(LoginRequiredMixin, View):
             from xhtml2pdf import pisa
             from io import BytesIO
 
-            template = get_template('reports/pdf_combined_template.html')
-            html = template.render(context)
+            pdf_format = request.GET.get('format', 'standard')
+            if pdf_format == 'management':
+                from apps.reports.services.end_of_day import build_management_end_of_day_report
+                report_data = build_management_end_of_day_report(
+                    tenant=tenant,
+                    start_date=start_date,
+                    end_date=end_date,
+                    shop=viewing_shop,
+                    user=user,
+                    exclude_inactive=exclude_inactive,
+                    top_n=top_n_str
+                )
+                template = get_template('reports/pdf_management_template.html')
+                html = template.render({'report': report_data})
+                filename = f"management_end_of_day_{start_date}.pdf"
+            else:
+                template = get_template('reports/pdf_combined_template.html')
+                html = template.render(context)
+                filename = f"end_of_day_report_{start_date}.pdf"
+
             result = BytesIO()
             pdf = pisa.pisaDocument(BytesIO(html.encode("UTF-8")), result)
             if not pdf.err:
                 response = HttpResponse(result.getvalue(), content_type='application/pdf')
-                response['Content-Disposition'] = f'attachment; filename="end_of_day_report_{start_date}.pdf"'
+                response['Content-Disposition'] = f'attachment; filename="{filename}"'
                 return response
 
         if request.GET.get('excel') == 'true':
@@ -652,7 +681,10 @@ class EndOfDayDetailsView(LoginRequiredMixin, View):
             
             ws.append([])
             ws.append(["Detailed Product Breakdown"])
-            ws.append(['#', 'Product Name', 'Qty Sold', 'Total Revenue', 'Stock Left'])
+            if is_strict_workflow:
+                ws.append(['#', 'Product Name', 'Qty Sold', 'Total Revenue', 'Qty Dispatched', 'Stock Left'])
+            else:
+                ws.append(['#', 'Product Name', 'Qty Sold', 'Total Revenue', 'Stock Left'])
             
             for i, item in enumerate(sorted_stats, 1):
                 idx = i if item['name'] != 'Others' else '-'
@@ -661,7 +693,11 @@ class EndOfDayDetailsView(LoginRequiredMixin, View):
                 stock = item['stock_left']
                 if isinstance(stock, Decimal):
                     stock = float(stock)
-                ws.append([idx, item['name'], qty, rev, stock])
+                if is_strict_workflow:
+                    disp = float(item.get('qty_dispatched', 0)) if item.get('qty_dispatched') else 0
+                    ws.append([idx, item['name'], qty, rev, disp, stock])
+                else:
+                    ws.append([idx, item['name'], qty, rev, stock])
                 
             response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
             response['Content-Disposition'] = f'attachment; filename="end_of_day_report_{start_date}.xlsx"'
@@ -669,3 +705,100 @@ class EndOfDayDetailsView(LoginRequiredMixin, View):
             return response
 
         return render(request, self.template_name, context)
+
+
+class EndOfDayManagementView(LoginRequiredMixin, View):
+    """
+    Executive Management Overview End of Day Report.
+    Presents high-level business analytics, reconciliation, merchandising,
+    and inventory dispatch visibility.
+    """
+    template_name = 'reports/end_of_day_management.html'
+
+    def get(self, request):
+        if request.GET.get('view') == 'standard':
+            return EndOfDayDetailsView.as_view()(request)
+
+        user = request.user
+        tenant = user.tenant
+        role_name = user.role.name if user.role else None
+
+        start_date_str = request.GET.get('start_date')
+        end_date_str = request.GET.get('end_date')
+        
+        today = timezone.now().date()
+        
+        try:
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date() if start_date_str else today
+        except ValueError:
+            start_date = today
+            
+        try:
+            end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date() if end_date_str else today
+        except ValueError:
+            end_date = today
+
+        if start_date > end_date:
+            start_date = end_date
+
+        viewing_shop_id = request.GET.get('shop_id')
+        viewing_shop = None
+        
+        if role_name in ['ACCOUNTANT', 'ADMIN', 'AUDITOR']:
+            from apps.core.models import Location
+            if viewing_shop_id:
+                try:
+                    viewing_shop = Location.objects.get(id=viewing_shop_id, tenant=tenant, location_type='SHOP')
+                except Location.DoesNotExist:
+                    pass
+
+        from apps.reports.services.end_of_day import build_management_end_of_day_report
+        report = build_management_end_of_day_report(
+            tenant=tenant,
+            start_date=start_date,
+            end_date=end_date,
+            shop=viewing_shop,
+            user=user,
+            exclude_inactive=request.GET.get('exclude_inactive', 'true').lower() != 'false',
+            top_n=request.GET.get('top_n', 'all')
+        )
+
+        context = {
+            'report': report,
+            'start_date': start_date,
+            'end_date': end_date,
+            'viewing_shop': viewing_shop,
+            'role_name': role_name,
+            'role_display_name': role_name.replace('_', ' ').title() if role_name else 'Unknown',
+        }
+
+        if role_name in ['ACCOUNTANT', 'ADMIN', 'AUDITOR']:
+            from apps.core.models import Location
+            context['available_shops'] = Location.objects.filter(tenant=tenant, location_type='SHOP', is_active=True)
+
+        if request.GET.get('pdf') == 'true':
+            from django.template.loader import get_template
+            from django.http import HttpResponse
+            from xhtml2pdf import pisa
+            from io import BytesIO
+
+            pdf_format = request.GET.get('format', 'management')
+            if pdf_format == 'standard':
+                return EndOfDayDetailsView.as_view()(request)
+            else:
+                template = get_template('reports/pdf_management_template.html')
+                html = template.render({'report': report})
+                filename = f"management_end_of_day_{start_date}.pdf"
+
+            result = BytesIO()
+            pdf = pisa.pisaDocument(BytesIO(html.encode("UTF-8")), result)
+            if not pdf.err:
+                response = HttpResponse(result.getvalue(), content_type='application/pdf')
+                response['Content-Disposition'] = f'attachment; filename="{filename}"'
+                return response
+
+        if request.GET.get('excel') == 'true':
+            return EndOfDayDetailsView.as_view()(request)
+
+        return render(request, self.template_name, context)
+

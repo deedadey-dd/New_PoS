@@ -834,10 +834,12 @@
                             <div class="dropdown-header d-flex justify-content-between align-items-center">
                                 <strong>Notifications</strong>
                                 {% if unread_notification_count > 0 %}
-                                <a href="{% url 'notifications:mark_all_read' %}"
-                                    class="btn btn-sm btn-link p-0 text-decoration-none">
-                                    Mark all read
-                                </a>
+                                <form method="POST" action="{% url 'notifications:mark_all_read' %}" class="d-inline m-0 p-0">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-sm btn-link p-0 text-decoration-none border-0 shadow-none">
+                                        Mark all as read
+                                    </button>
+                                </form>
                                 {% endif %}
                             </div>
                             {% if recent_notifications %}

@@ -1,0 +1,728 @@
+{% extends "base.html" %}
+{% load humanize %}
+
+{% block title %}Daily Management Overview - {{ current_tenant.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    :root {
+        --mgmt-navy: #0f172a;
+        --mgmt-slate: #1e293b;
+        --mgmt-teal: #0d9488;
+        --mgmt-blue: #2563eb;
+        --mgmt-amber: #d97706;
+        --mgmt-amber-bg: #fffbeb;
+        --mgmt-amber-border: #fde68a;
+    }
+
+    .mgmt-header {
+        background: linear-gradient(135deg, #090d16 0%, #0f172a 60%, #1e293b 100%);
+        border-radius: 1rem;
+        color: #ffffff;
+        padding: 1.75rem 2rem;
+        box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.25);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .mgmt-card {
+        background: #ffffff;
+        border: 1px solid rgba(15, 23, 42, 0.08);
+        border-radius: 1rem;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px -2px rgba(0, 0, 0, 0.02);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .mgmt-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 12px 20px -5px rgba(0, 0, 0, 0.06);
+    }
+
+    .mgmt-root {
+        font-size: 1.15rem;
+        line-height: 1.6;
+    }
+    .mgmt-root p {
+        font-size: 1.12rem;
+        line-height: 1.6;
+    }
+    .mgmt-root .small,
+    .mgmt-root small {
+        font-size: 1.02rem !important;
+    }
+
+    .kpi-title {
+        font-size: 1.02rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #64748b;
+        margin-bottom: 0.4rem;
+    }
+    .kpi-value {
+        font-size: 2.35rem;
+        font-weight: 800;
+        color: #0f172a;
+        letter-spacing: -0.03em;
+        line-height: 1.1;
+    }
+    .kpi-subtitle {
+        font-size: 1.05rem;
+        color: #64748b;
+        margin-top: 0.4rem;
+    }
+
+    .section-label {
+        font-size: 0.98rem;
+        font-weight: 800;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: #2563eb;
+        margin-bottom: 0.3rem;
+    }
+
+    .reconciliation-box {
+        background-color: var(--mgmt-amber-bg);
+        border: 1px solid var(--mgmt-amber-border);
+        border-left: 5px solid var(--mgmt-amber);
+        border-radius: 0.75rem;
+        padding: 1.35rem 1.6rem;
+    }
+    .reconciliation-box p {
+        font-size: 1.12rem;
+        line-height: 1.55;
+    }
+
+    .reading-box {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-left: 4px solid #0d9488;
+        border-radius: 0.75rem;
+        padding: 1.25rem 1.5rem;
+    }
+    .reading-box p {
+        font-size: 1.18rem;
+        line-height: 1.6;
+    }
+
+    .progress-track {
+        height: 10px;
+        background-color: #f1f5f9;
+        border-radius: 999px;
+        overflow: hidden;
+    }
+    .progress-fill {
+        height: 100%;
+        border-radius: 999px;
+        transition: width 0.6s ease;
+    }
+
+    .leader-row {
+        padding: 0.5rem 0;
+        border-bottom: 1px dashed #f1f5f9;
+    }
+    .leader-row:last-child {
+        border-bottom: none;
+    }
+
+    .watchlist-item {
+        padding: 0.95rem 0;
+        border-bottom: 1px solid #f1f5f9;
+        font-size: 1.12rem;
+    }
+    .watchlist-item:last-child {
+        border-bottom: none;
+    }
+
+    .badge-stock-low {
+        background-color: #fee2e2;
+        color: #991b1b;
+        font-weight: 700;
+        font-size: 0.95rem;
+        padding: 0.35rem 0.7rem;
+        border-radius: 999px;
+    }
+    .badge-stock-ok {
+        background-color: #f1f5f9;
+        color: #334155;
+        font-weight: 600;
+        font-size: 0.95rem;
+        padding: 0.35rem 0.7rem;
+        border-radius: 999px;
+    }
+
+    .nav-toggle-btn {
+        font-size: 1.02rem;
+        font-weight: 600;
+        padding: 0.45rem 0.95rem;
+        border-radius: 0.5rem;
+        transition: all 0.15s ease;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4 px-lg-4 mgmt-root">
+    <!-- ===== HEADER SECTION & VIEW SWITCHER ===== -->
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4 d-print-none">
+        <div>
+            <!-- Breadcrumb / Mode indicator -->
+            <div class="d-flex align-items-center gap-2 mb-1">
+                <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-2 py-1 small fw-semibold">
+                    <i class="bi bi-shield-check me-1"></i>Executive Management Edition
+                </span>
+                {% if report.shop_name %}
+                    <span class="badge bg-light text-dark border rounded-pill px-2 py-1 small">
+                        <i class="bi bi-shop me-1"></i>{{ report.shop_name }}
+                    </span>
+                {% endif %}
+            </div>
+            <h1 class="h3 mb-0 fw-bold text-dark">End of Day Overview</h1>
+            <p class="text-muted small mb-0 mt-1">
+                <i class="bi bi-calendar3 me-1"></i>{{ report.date_display }} &bull; Source: POS end-of-day reconciled figures
+            </p>
+        </div>
+
+        <div class="d-flex flex-wrap align-items-center gap-2">
+            <!-- View Mode Switcher -->
+            <div class="btn-group bg-white p-1 rounded-3 shadow-sm border me-lg-2" role="group" aria-label="Report View Mode">
+                <a href="{% url 'reports:end_of_day_summary' %}?{% if viewing_shop %}shop_id={{ viewing_shop.id }}&{% endif %}start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}&view=standard" 
+                   class="btn btn-sm text-muted nav-toggle-btn">
+                    <i class="bi bi-table me-1"></i>Standard Detailed
+                </a>
+                <a href="#" class="btn btn-sm btn-dark text-white nav-toggle-btn shadow-sm">
+                    <i class="bi bi-pie-chart-fill me-1"></i>Management Overview
+                </a>
+            </div>
+
+            <!-- Filters Form -->
+            <form method="get" class="d-flex flex-wrap align-items-center gap-2">
+                <input type="hidden" name="view" value="management">
+                {% if available_shops %}
+                    <select name="shop_id" class="form-select form-select-sm shadow-sm" style="min-width: 130px;">
+                        <option value="">All Shops</option>
+                        {% for s in available_shops %}
+                            <option value="{{ s.id }}" {% if viewing_shop.id == s.id %}selected{% endif %}>{{ s.name }}</option>
+                        {% endfor %}
+                    </select>
+                {% endif %}
+
+                <div class="input-group input-group-sm shadow-sm" style="width: auto;">
+                    <span class="input-group-text bg-white text-muted border-end-0"><i class="bi bi-calendar-event"></i></span>
+                    <input type="date" name="start_date" class="form-control border-start-0 ps-0" value="{{ start_date|date:'Y-m-d' }}" required>
+                </div>
+                <span class="text-muted small">&ndash;</span>
+                <div class="input-group input-group-sm shadow-sm" style="width: auto;">
+                    <input type="date" name="end_date" class="form-control" value="{{ end_date|date:'Y-m-d' }}" required>
+                </div>
+
+                <button type="submit" class="btn btn-sm btn-primary shadow-sm px-3 fw-medium">
+                    <i class="bi bi-filter me-1"></i>Filter
+                </button>
+            </form>
+
+            <!-- Export Actions Dropdown -->
+            <div class="dropdown shadow-sm ms-lg-1">
+                <button class="btn btn-sm btn-outline-dark dropdown-toggle fw-medium px-3" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="bi bi-download me-1"></i>Export Report
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end shadow border-0 mt-1">
+                    <li>
+                        <h6 class="dropdown-header small text-uppercase">PDF Formats</h6>
+                    </li>
+                    <li>
+                        <a class="dropdown-item py-2 fw-semibold text-primary" 
+                           href="?{% if viewing_shop %}shop_id={{ viewing_shop.id }}&{% endif %}start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}&pdf=true&format=management" target="_blank">
+                            <i class="bi bi-file-earmark-pdf-fill me-2 text-danger"></i>Management Overview (4-Page PDF)
+                        </a>
+                    </li>
+                    <li>
+                        <a class="dropdown-item py-2 text-secondary" 
+                           href="?{% if viewing_shop %}shop_id={{ viewing_shop.id }}&{% endif %}start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}&pdf=true&format=standard" target="_blank">
+                            <i class="bi bi-file-earmark-text me-2"></i>Standard Detailed PDF
+                        </a>
+                    </li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li>
+                        <h6 class="dropdown-header small text-uppercase">Spreadsheets</h6>
+                    </li>
+                    <li>
+                        <a class="dropdown-item py-2" 
+                           href="?{% if viewing_shop %}shop_id={{ viewing_shop.id }}&{% endif %}start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}&excel=true">
+                            <i class="bi bi-file-earmark-excel-fill me-2 text-success"></i>Full Report Workbook (.xlsx)
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== SECTION 1: SALES & CONTROLS DASHBOARD ===== -->
+    <div class="mgmt-header mb-4">
+        <div class="d-flex flex-wrap justify-content-between align-items-end gap-2">
+            <div>
+                <div class="text-uppercase tracking-wider small text-white-50 fw-bold">Daily Management Overview</div>
+                <h2 class="h2 mb-0 fw-bold text-white">Sales & controls dashboard</h2>
+            </div>
+            <div class="text-white-50 text-end small">
+                <div class="fw-semibold text-white">{{ report.company_name }} | {{ report.shop_name }}</div>
+                <div>{{ report.date_display }}</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3 Top KPIs Row -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-4">
+            <div class="card mgmt-card h-100 p-4 border-start border-4 border-primary">
+                <div class="kpi-title">Net Reported Sales</div>
+                <div class="kpi-value text-primary mb-1">
+                    {{ report.currency_symbol }} {{ report.net_reported_sales|floatformat:2|intcomma }}
+                </div>
+                <div class="kpi-subtitle">
+                    <span class="badge bg-primary-subtle text-primary fw-bold">{{ report.cash_share_percent|floatformat:0 }}% cash</span>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card mgmt-card h-100 p-4 border-start border-4 border-info">
+                <div class="kpi-title">Invoices</div>
+                <div class="kpi-value text-dark mb-1">
+                    {{ report.invoice_count }}
+                </div>
+                <div class="kpi-subtitle text-muted">
+                    Avg ticket: <span class="fw-bold text-dark">{{ report.currency_symbol }} {{ report.avg_ticket|floatformat:2|intcomma }}</span>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card mgmt-card h-100 p-4 border-start border-4 border-teal">
+                <div class="kpi-title">Units Sold</div>
+                <div class="kpi-value text-dark mb-1">
+                    {{ report.units_sold|floatformat:0|intcomma }}
+                </div>
+                <div class="kpi-subtitle text-muted">
+                    <span class="fw-bold text-dark">{{ report.items_per_invoice|floatformat:2 }}</span> items / invoice
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Payment Mix & Financial Movements -->
+    <div class="row g-4 mb-4">
+        <!-- Payment Mix -->
+        <div class="col-lg-6">
+            <div class="card mgmt-card h-100 p-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="fw-bold mb-0 text-dark">Payment mix</h5>
+                    <span class="text-muted small">Recorded payment methods</span>
+                </div>
+
+                <div class="mb-4">
+                    {% for p in report.payments_list %}
+                        <div class="d-flex justify-content-between align-items-center mb-1 small fw-semibold">
+                            <span class="text-dark">{{ p.name }}</span>
+                            <span>{{ report.currency_symbol }} {{ p.amount|floatformat:2|intcomma }} / {{ p.percentage|floatformat:1 }}%</span>
+                        </div>
+                        <div class="progress-track mb-3">
+                            <div class="progress-fill" style="width: {{ p.percentage }}%; background-color: {{ p.color }};"></div>
+                        </div>
+                    {% endfor %}
+                </div>
+
+                <p class="text-muted small mb-0 fst-italic">
+                    <i class="bi bi-info-circle me-1"></i>{{ report.non_cash_notes }}
+                </p>
+            </div>
+        </div>
+
+        <!-- Financial Movements -->
+        <div class="col-lg-6">
+            <div class="card mgmt-card h-100 p-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="fw-bold mb-0 text-dark">Financial movements</h5>
+                    <span class="text-muted small">Do not treat transfers as same-day sales</span>
+                </div>
+
+                <div class="d-flex flex-column gap-2 mb-2">
+                    <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+                        <span class="text-muted small fw-medium">Sales collected in cash</span>
+                        <span class="fw-bold text-dark">{{ report.currency_symbol }} {{ report.sales_cash|floatformat:2|intcomma }}</span>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+                        <span class="text-muted small fw-medium">Customer payments / expenses</span>
+                        <span class="fw-bold text-dark">
+                            {{ report.currency_symbol }} {{ report.customer_payments|floatformat:2|intcomma }} / 
+                            <span class="text-danger">{{ report.currency_symbol }} {{ report.expenses|floatformat:2|intcomma }}</span>
+                        </span>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center py-2 border-bottom bg-light bg-opacity-50 px-2 rounded">
+                        <span class="text-dark small fw-bold">Funds sent to bank</span>
+                        <span class="fw-bold text-primary">{{ report.currency_symbol }} {{ report.funds_to_bank|floatformat:2|intcomma }}</span>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center py-2">
+                        <span class="text-muted small fw-medium">Funds to accountant</span>
+                        <span class="fw-bold text-dark">{{ report.currency_symbol }} {{ report.funds_to_accountant|floatformat:2|intcomma }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reconciliation Review & Daily Controls -->
+    <div class="row g-4 mb-5">
+        <div class="col-12">
+            <div class="reconciliation-box shadow-sm mb-4">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div class="fw-bold text-uppercase small text-amber-800" style="color: #92400e;">
+                        <i class="bi bi-shield-exclamation me-1"></i>RECONCILIATION REVIEW
+                    </div>
+                    <span class="badge {{ report.reconciliation_badge_class }} px-2 py-1 small fw-bold">
+                        {{ report.reconciliation_label }}
+                    </span>
+                </div>
+                <p class="mb-0 text-dark small leading-relaxed" style="color: #78350f;">
+                    {{ report.reconciliation_text }}
+                </p>
+            </div>
+
+            <div class="card mgmt-card p-4">
+                <h5 class="fw-bold mb-3 text-dark">Daily control checks</h5>
+                <div class="row g-3">
+                    <div class="col-md-8">
+                        <div class="small text-muted mb-2">
+                            <strong>Product rows:</strong> {{ report.product_rows_count }} | 
+                            <strong>Product revenue sum:</strong> {{ report.currency_symbol }} {{ report.product_revenue_sum|floatformat:2|intcomma }} | 
+                            <strong>Quantity sum:</strong> {{ report.product_qty_sum|floatformat:0|intcomma }}.
+                        </div>
+                        <div class="small text-dark fw-medium mb-1">
+                            {% if report.sales_product_match %}
+                                <i class="bi bi-check-circle-fill text-success me-1"></i>Sales and product breakdown match. Deposit origin, counted till cash and cashier sign-off remain unverified.
+                            {% else %}
+                                <i class="bi bi-exclamation-triangle-fill text-danger me-1"></i>Attention: Discrepancy observed between invoice aggregate and line-item totals.
+                            {% endif %}
+                        </div>
+                        <div class="small text-muted fst-italic">
+                            Operating note: no historical comparison or refund / discount / tax totals appear in the source report.
+                        </div>
+                    </div>
+                    <div class="col-md-4 text-md-end d-flex flex-column justify-content-center">
+                        <span class="badge bg-light text-muted border py-2 px-3 align-self-md-end">
+                            <i class="bi bi-fingerprint me-1"></i>Audit Check Validated
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== SECTION 2: MERCHANDISING / PRODUCT PERFORMANCE ===== -->
+    <div class="mgmt-header mb-4" style="background: linear-gradient(135deg, #064e3b 0%, #0f172a 70%);">
+        <div class="d-flex justify-content-between align-items-end">
+            <div>
+                <div class="text-uppercase tracking-wider small text-emerald-300 fw-bold">Merchandising</div>
+                <h2 class="h2 mb-0 fw-bold text-white">Product performance</h2>
+            </div>
+            <div class="text-white-50 text-end small">
+                {{ report.company_name }} | {{ report.date_display }}
+            </div>
+        </div>
+    </div>
+
+    <!-- Merchandising 3 KPI Cards -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-4">
+            <div class="card mgmt-card h-100 p-4 border-start border-4 border-emerald-500" style="border-left-color: #10b981 !important;">
+                <div class="kpi-title">Top Revenue SKU</div>
+                <div class="kpi-value text-dark mb-1">
+                    {{ report.currency_symbol }} {{ report.top_revenue_sku.revenue|default:"0.00"|floatformat:2|intcomma }}
+                </div>
+                <div class="kpi-subtitle fw-semibold text-dark">
+                    {{ report.top_revenue_sku.name|default:"None" }}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card mgmt-card h-100 p-4 border-start border-4 border-blue-500" style="border-left-color: #3b82f6 !important;">
+                <div class="kpi-title">Top Volume Item</div>
+                <div class="kpi-value text-dark mb-1">
+                    {{ report.top_volume_item.units|default:"0"|floatformat:0|intcomma }}
+                </div>
+                <div class="kpi-subtitle text-dark fw-semibold">
+                    {{ report.top_volume_item.name|default:"None" }} <span class="text-muted fw-normal">| {{ report.top_volume_item.vol_share|default:"0"|floatformat:1 }}% of units</span>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card mgmt-card h-100 p-4 border-start border-4 border-teal-500" style="border-left-color: #14b8a6 !important;">
+                <div class="kpi-title">{{ report.category_highlight.label }}</div>
+                <div class="kpi-value text-dark mb-1">
+                    {{ report.currency_symbol }} {{ report.category_highlight.revenue|default:"0.00"|floatformat:2|intcomma }}
+                </div>
+                <div class="kpi-subtitle text-muted">
+                    <span class="fw-bold text-dark">{{ report.category_highlight.share|default:"0"|floatformat:1 }}%</span> of sales
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Revenue Leaders & Management Reading -->
+    <div class="row g-4 mb-5">
+        <div class="col-lg-7">
+            <div class="card mgmt-card h-100 p-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="fw-bold mb-0 text-dark">Revenue leaders</h5>
+                    <span class="text-muted small">Share of {{ report.currency_symbol }} {{ report.net_reported_sales|floatformat:2|intcomma }}</span>
+                </div>
+
+                <div class="d-flex flex-column gap-3">
+                    {% for p in report.revenue_leaders %}
+                    <div class="leader-row">
+                        <div class="d-flex justify-content-between align-items-center small mb-1">
+                            <span class="fw-semibold text-dark">{{ p.name }}</span>
+                            <span class="fw-bold text-dark">{{ report.currency_symbol }} {{ p.revenue|floatformat:2|intcomma }} ({{ p.share|floatformat:1 }}%)</span>
+                        </div>
+                        <div class="progress-track" style="height: 8px;">
+                            <div class="progress-fill" style="width: {{ p.bar_width }}%; background: linear-gradient(90deg, #0d9488, #2563eb);"></div>
+                        </div>
+                    </div>
+                    {% empty %}
+                    <p class="text-muted small py-3">No revenue items recorded.</p>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-5">
+            <div class="card mgmt-card h-100 p-4 d-flex flex-column justify-content-between">
+                <div>
+                    <h5 class="fw-bold mb-3 text-dark">Management reading</h5>
+                    <div class="reading-box mb-4">
+                        <p class="small text-dark mb-0 leading-relaxed fw-medium">
+                            {{ report.management_reading }}
+                        </p>
+                    </div>
+                </div>
+
+                <div class="small text-muted fst-italic border-top pt-3">
+                    <i class="bi bi-tag me-1"></i>Category grouping is inferred from product master data and descriptive nomenclature. Live POS master classifications control accounting reporting.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== SECTION 3: OPERATIONS / INVENTORY & DISPATCH ===== -->
+    <div class="mgmt-header mb-4" style="background: linear-gradient(135deg, #1e1b4b 0%, #0f172a 70%);">
+        <div class="d-flex justify-content-between align-items-end">
+            <div>
+                <div class="text-uppercase tracking-wider small text-indigo-300 fw-bold">Operations</div>
+                <h2 class="h2 mb-0 fw-bold text-white">
+                    {% if report.use_strict_sales_workflow %}Inventory &amp; dispatch visibility{% else %}Inventory visibility{% endif %}
+                </h2>
+            </div>
+            <div class="text-white-50 text-end small">
+                {{ report.company_name }} | {{ report.date_display }}
+            </div>
+        </div>
+    </div>
+
+    <!-- Operations 3 KPI Cards -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-4">
+            <div class="card mgmt-card h-100 p-4 border-start border-4 border-indigo-500" style="border-left-color: #6366f1 !important;">
+                <div class="kpi-title">Product Lines</div>
+                <div class="kpi-value text-dark mb-1">
+                    {{ report.product_rows_count }}
+                </div>
+                <div class="kpi-subtitle text-muted">
+                    All active lines in report
+                </div>
+            </div>
+        </div>
+        {% if report.use_strict_sales_workflow %}
+        <div class="col-md-4">
+            <div class="card mgmt-card h-100 p-4 border-start border-4 border-blue-500" style="border-left-color: #3b82f6 !important;">
+                <div class="kpi-title">Dispatch Reported</div>
+                <div class="kpi-value text-dark mb-1">
+                    {{ report.dispatch_reported_sum|floatformat:0|intcomma }}
+                </div>
+                <div class="kpi-subtitle text-muted">
+                    {{ report.dispatch_numeric_count }} lines with numeric entries
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="col-md-4">
+            <div class="card mgmt-card h-100 p-4 border-start border-4 border-teal-500" style="border-left-color: #0d9488 !important;">
+                <div class="kpi-title">Total In-Stock Units</div>
+                <div class="kpi-value text-dark mb-1">
+                    {{ report.total_stock_units|floatformat:0|intcomma }}
+                </div>
+                <div class="kpi-subtitle text-muted">
+                    {{ report.in_stock_count }} lines currently in stock
+                </div>
+            </div>
+        </div>
+        {% endif %}
+        <div class="col-md-4">
+            <div class="card mgmt-card h-100 p-4 border-start border-4 border-amber-500" style="border-left-color: #f59e0b !important;">
+                <div class="kpi-title">Stock Watch</div>
+                <div class="kpi-value text-danger mb-1">
+                    {{ report.stock_watch_count }}
+                </div>
+                <div class="kpi-subtitle text-muted">
+                    At or below 25 units*
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stock Watchlist & Definitions -->
+    <div class="row g-4 mb-5">
+        <div class="col-lg-6">
+            <div class="card mgmt-card h-100 p-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="fw-bold mb-0 text-dark">Stock watchlist</h5>
+                    <span class="text-muted small">*Screening indicator only; no reorder levels supplied</span>
+                </div>
+
+                <div class="d-flex flex-column">
+                    {% for item in report.watchlist_display %}
+                    <div class="watchlist-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="fw-bold text-dark small">{{ item.name }}</div>
+                            <div class="text-muted" style="font-size: 0.98rem;">
+                                {% if report.use_strict_sales_workflow %}
+                                    Sold {{ item.sold_qty|floatformat:0 }} | Dispatched {{ item.dispatched_txt }}
+                                {% else %}
+                                    Sold {{ item.sold_qty|floatformat:0 }} units
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div>
+                            {% if item.is_low %}
+                                <span class="badge-stock-low">{{ item.stock_left|floatformat:0 }} left</span>
+                            {% else %}
+                                <span class="badge-stock-ok">{{ item.stock_left|floatformat:0 }} left</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% empty %}
+                    <p class="text-muted small py-3">No low-stock items detected in active catalog.</p>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-6">
+            <div class="card mgmt-card h-100 p-4 d-flex flex-column justify-content-between">
+                <div>
+                    <h5 class="fw-bold mb-3 text-dark">
+                        {% if report.use_strict_sales_workflow %}
+                            Dispatch and inventory definitions
+                        {% else %}
+                            Inventory definitions &amp; guidance
+                        {% endif %}
+                    </h5>
+                    
+                    {% if report.use_strict_sales_workflow %}
+                    <div class="mb-3">
+                        <div class="fw-semibold text-dark small mb-1">Quantity Sold vs. Dispatched:</div>
+                        <p class="text-muted small mb-0">
+                            Qty sold and qty dispatched are different report fields and must not be equated. A dash in the original dispatched column means missing / not recorded, NOT zero.
+                        </p>
+                    </div>
+                    {% endif %}
+
+                    <div class="mb-3">
+                        <div class="fw-semibold text-dark small mb-1">End of Day Stock Count:</div>
+                        <p class="text-muted small mb-0">
+                            Stocks shown are end-of-day quantities as reported; warehouse/location, stock units, opening balance, adjustments and movement timestamps are preserved from ledger audit records.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="p-3 bg-light rounded-3 border-start border-4 border-primary">
+                    <small class="fw-bold text-dark d-block mb-1">Action Recommendation:</small>
+                    <small class="text-muted">Configure item-level reorder points and validate physical movements before activating automated low-stock warnings.</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== SECTION 4: APPENDIX / COMPLETE PRODUCT DETAIL ===== -->
+    <div class="card mgmt-card p-4 mb-4">
+        <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+            <div>
+                <div class="section-label">Appendix</div>
+                <h4 class="h5 fw-bold text-dark mb-0">Complete product detail</h4>
+                <p class="text-muted small mb-0 mt-1">Sorted by quantity sold (original report order) | Revenue and quantities reproduced from source</p>
+            </div>
+            <span class="badge bg-light text-dark border px-3 py-2 fw-medium small">
+                {{ report.product_rows_count }} Total Line Items
+            </span>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0" style="font-size: 1.15rem;">
+                <thead class="table-dark text-uppercase small" style="font-size: 0.98rem; letter-spacing: 0.05em;">
+                    <tr>
+                        <th style="width: 50px;">#</th>
+                        <th>Product</th>
+                        <th class="text-center" style="width: 110px;">Sold</th>
+                        <th class="text-end" style="width: 140px;">Revenue ({{ report.currency_symbol }})</th>
+                        {% if report.use_strict_sales_workflow %}
+                            <th class="text-center" style="width: 110px;">Disp.</th>
+                        {% endif %}
+                        <th class="text-end" style="width: 120px;">Stock</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in report.appendix_rows %}
+                    <tr>
+                        <td class="text-muted small">{{ item.rank }}</td>
+                        <td class="fw-semibold text-dark">{{ item.name }}</td>
+                        <td class="text-center fw-medium">{{ item.qty_sold|floatformat:0 }}</td>
+                        <td class="text-end fw-semibold">{{ item.revenue|floatformat:2|intcomma }}</td>
+                        {% if report.use_strict_sales_workflow %}
+                        <td class="text-center text-muted">
+                            {% if item.qty_dispatched is not None %}
+                                <span class="badge bg-light text-dark border">{{ item.qty_dispatched|floatformat:0 }}</span>
+                            {% else %}
+                                &mdash;
+                            {% endif %}
+                        </td>
+                        {% endif %}
+                        <td class="text-end">
+                            {% if item.stock_left != 'N/A' and item.stock_left != '-' %}
+                                <span class="fw-medium">{{ item.stock_left|floatformat:0|intcomma }}</span>
+                            {% else %}
+                                <span class="text-muted">&mdash;</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="{% if report.use_strict_sales_workflow %}6{% else %}5{% endif %}" class="text-center py-4 text-muted">No product items found for the selected period.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot class="table-light fw-bold" style="border-top: 2px solid #0f172a;">
+                    <tr>
+                        <td colspan="2" class="text-uppercase tracking-wider text-success" style="font-size: 1.08rem;">
+                            <i class="bi bi-check2-circle me-1"></i>Verified Total
+                        </td>
+                        <td class="text-center text-dark">{{ report.verified_total_sold|floatformat:0|intcomma }}</td>
+                        <td class="text-end text-dark">{{ report.verified_total_revenue|floatformat:2|intcomma }}</td>
+                        {% if report.use_strict_sales_workflow %}
+                            <td class="text-center text-muted">&mdash;</td>
+                        {% endif %}
+                        <td class="text-end text-muted">&mdash;</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+        <div class="mt-3 text-muted small fst-italic">
+            Source: POS end-of-day report.{% if report.use_strict_sales_workflow %} Blank dispatch entries preserved as missing data.{% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
