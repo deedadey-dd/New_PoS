@@ -1467,3 +1467,486 @@ class WorkflowIntegrationTests(TestCase):
 
         self.assertEqual(eod_cash, Decimal("170.00"))
         self.assertEqual(context['summary_cash_sales_value'], eod_cash)
+
+    def test_16_strict_partial_dispatch_halt_walkin_cash_refund(self):
+        """
+        Verify strict sales workflow halt after partial dispatch for a walk-in cash customer:
+        1. Customer buys 10 items @ 10.00 = 100.00 in CASH. Status is PENDING_DISPATCH.
+        2. Manager partially dispatches 5 items. Stock ledger records -5 items.
+        3. Manager halts further dispatch and requests refund via api_halt_and_request_refund.
+        4. Accountant approves refund choosing CASH.
+        5. Sale settles to 5 items (total 50.00, amount_paid 50.00, status COMPLETED).
+        6. Inventory ledger untouched (no phantom stock added!).
+        7. Cashier executes cash payout via api_payout_refund.
+        """
+        import json
+        from apps.sales.models import RefundRequest
+
+        self.tenant.use_strict_sales_workflow = True
+        self.tenant.save()
+
+        # Attendant creates and completes cash sale for 10 items
+        sale = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.attendant_user,
+            cashier=self.cashier_user,
+            total=Decimal("100.00"),
+            amount_paid=Decimal("100.00"),
+            payment_method="CASH",
+            status="PENDING_DISPATCH"
+        )
+        item = SaleItem.objects.create(
+            tenant=self.tenant,
+            sale=sale,
+            product=self.product,
+            batch=self.shop_batch,
+            quantity=Decimal("10.00"),
+            unit_price=Decimal("10.00"),
+            dispatched_quantity=Decimal("0.00")
+        )
+
+        # 1. Partial dispatch of 5 units by Shop Manager
+        self.client.force_login(self.manager_user)
+        disp_resp = self.client.post(
+            f"/sales/api/sales/{sale.pk}/dispatch/",
+            data=json.dumps({'items': [{'sale_item_id': item.pk, 'qty': 5}]}),
+            content_type='application/json'
+        )
+        self.assertEqual(disp_resp.status_code, 200)
+        item.refresh_from_db()
+        self.assertEqual(item.dispatched_quantity, Decimal("5.00"))
+        self.assertEqual(item.remaining_quantity, Decimal("5.00"))
+
+        ledger_sales_count = InventoryLedger.objects.filter(
+            reference_id=sale.pk, transaction_type="SALE"
+        ).count()
+        self.assertEqual(ledger_sales_count, 1)
+
+        # 2. Manager halts further dispatch and requests refund
+        halt_resp = self.client.post(
+            f"/sales/api/sales/{sale.pk}/halt-dispatch/",
+            data=json.dumps({'reason': 'Customer requested cancellation of remaining 5 units'}),
+            content_type='application/json'
+        )
+        self.assertEqual(halt_resp.status_code, 200)
+        data = halt_resp.json()
+        self.assertTrue(data['success'])
+        self.assertEqual(data['dispatched_total'], "50.00")
+        self.assertEqual(data['refund_amount'], "50.00")
+        self.assertEqual(data['debt_reduction_amount'], "0.00")
+
+        refund_req = RefundRequest.objects.get(sale=sale, status='PENDING')
+        self.assertTrue(refund_req.is_partial_halt)
+        self.assertEqual(refund_req.refund_amount, Decimal("50.00"))
+
+        # 3. Accountant approves refund
+        self.client.force_login(self.accountant_user)
+        approve_resp = self.client.post(
+            f"/sales/api/refund-requests/{refund_req.pk}/approve/",
+            data=json.dumps({'refund_method': 'CASH'}),
+            content_type='application/json'
+        )
+        self.assertEqual(approve_resp.status_code, 200)
+
+        # Sale is now settled to 5 items and COMPLETED
+        sale.refresh_from_db()
+        self.assertEqual(sale.status, 'COMPLETED')
+        self.assertTrue(sale.is_dispatched)
+        self.assertEqual(sale.total, Decimal("50.00"))
+        self.assertEqual(sale.amount_paid, Decimal("50.00"))
+
+        item.refresh_from_db()
+        self.assertEqual(item.quantity, Decimal("5.00"))
+        self.assertEqual(item.dispatched_quantity, Decimal("5.00"))
+
+        # Crucial check: Inventory ledger entries must NOT change!
+        ledger_count_after = InventoryLedger.objects.filter(reference_id=sale.pk).count()
+        self.assertEqual(ledger_count_after, 1, "No phantom inventory movements should be generated!")
+
+        # 4. Cashier executes cash payout
+        refund_req.refresh_from_db()
+        self.assertEqual(refund_req.status, 'APPROVED')
+        self.assertEqual(refund_req.payout_status, 'PENDING')
+
+        self.client.force_login(self.cashier_user)
+        payout_resp = self.client.post(f"/sales/api/refund-requests/{refund_req.pk}/payout/")
+        self.assertEqual(payout_resp.status_code, 200)
+        refund_req.refresh_from_db()
+        self.assertEqual(refund_req.payout_status, 'PAID')
+        self.assertEqual(refund_req.paid_by, self.cashier_user)
+
+    def test_17_strict_partial_dispatch_halt_registered_customer_credit(self):
+        """
+        Verify strict partial dispatch halt for a registered customer on 100% CREDIT:
+        1. Customer buys 10 items @ 10.00 = 100.00 on CREDIT. Customer debt increases by 100.00.
+        2. 5 items dispatched.
+        3. Manager halts dispatch. Refund owed = 0.00, Debt reduction = 50.00.
+        4. Accountant approves.
+        5. Customer's balance drops from 100.00 to 50.00 (debt reduced by 50.00).
+        6. No cashier cash payout is required.
+        """
+        import json
+        from apps.sales.models import RefundRequest
+
+        self.tenant.use_strict_sales_workflow = True
+        self.tenant.save()
+
+        customer = Customer.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            name="Credit Customer Partial",
+            current_balance=Decimal("0.00")
+        )
+
+        sale = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.attendant_user,
+            cashier=self.cashier_user,
+            customer=customer,
+            total=Decimal("100.00"),
+            amount_paid=Decimal("0.00"),
+            payment_method="CREDIT",
+            status="PENDING_DISPATCH"
+        )
+        item = SaleItem.objects.create(
+            tenant=self.tenant,
+            sale=sale,
+            product=self.product,
+            batch=self.shop_batch,
+            quantity=Decimal("10.00"),
+            unit_price=Decimal("10.00"),
+            dispatched_quantity=Decimal("0.00")
+        )
+        # Register debt
+        customer.current_balance = Decimal("100.00")
+        customer.save()
+
+        # Manager dispatches 5 units
+        self.client.force_login(self.manager_user)
+        self.client.post(
+            f"/sales/api/sales/{sale.pk}/dispatch/",
+            data=json.dumps({'items': [{'sale_item_id': item.pk, 'qty': 5}]}),
+            content_type='application/json'
+        )
+
+        # Manager halts dispatch
+        halt_resp = self.client.post(
+            f"/sales/api/sales/{sale.pk}/halt-dispatch/",
+            data=json.dumps({'reason': 'Customer requested halt'}),
+            content_type='application/json'
+        )
+        data = halt_resp.json()
+        self.assertEqual(data['refund_amount'], "0.00")
+        self.assertEqual(data['debt_reduction_amount'], "50.00")
+
+        refund_req = RefundRequest.objects.get(sale=sale, status='PENDING')
+
+        # Accountant approves
+        self.client.force_login(self.accountant_user)
+        self.client.post(
+            f"/sales/api/refund-requests/{refund_req.pk}/approve/",
+            data=json.dumps({}),
+            content_type='application/json'
+        )
+
+        # Verify customer debt reduced
+        customer.refresh_from_db()
+        self.assertEqual(customer.current_balance, Decimal("50.00"))
+
+        # Verify debt reduction transaction created
+        debt_txn = CustomerTransaction.objects.filter(
+            customer=customer, transaction_type="CREDIT", amount=Decimal("50.00")
+        ).first()
+        self.assertIsNotNone(debt_txn)
+
+        # Sale settled
+        sale.refresh_from_db()
+        self.assertEqual(sale.status, 'COMPLETED')
+        self.assertEqual(sale.total, Decimal("50.00"))
+
+    def test_18_strict_partial_dispatch_halt_registered_customer_account_credit(self):
+        """
+        Verify strict partial dispatch halt for a registered customer who paid CASH,
+        where accountant chooses ACCOUNT_CREDIT as refund method:
+        1. Customer pays 100.00 cash for 10 items.
+        2. 5 items dispatched.
+        3. Manager halts dispatch. Refund owed = 50.00.
+        4. Accountant approves with refund_method='ACCOUNT_CREDIT'.
+        5. Customer balance becomes -50.00 (store credit). No cashier cash leaves the till.
+        """
+        import json
+        from apps.sales.models import RefundRequest
+
+        self.tenant.use_strict_sales_workflow = True
+        self.tenant.save()
+
+        customer = Customer.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            name="Prepaid Registered Customer",
+            current_balance=Decimal("0.00")
+        )
+
+        sale = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.attendant_user,
+            cashier=self.cashier_user,
+            customer=customer,
+            total=Decimal("100.00"),
+            amount_paid=Decimal("100.00"),
+            payment_method="CASH",
+            status="PENDING_DISPATCH"
+        )
+        item = SaleItem.objects.create(
+            tenant=self.tenant,
+            sale=sale,
+            product=self.product,
+            batch=self.shop_batch,
+            quantity=Decimal("10.00"),
+            unit_price=Decimal("10.00"),
+            dispatched_quantity=Decimal("0.00")
+        )
+
+        # Dispatch 5 units
+        self.client.force_login(self.manager_user)
+        self.client.post(
+            f"/sales/api/sales/{sale.pk}/dispatch/",
+            data=json.dumps({'items': [{'sale_item_id': item.pk, 'qty': 5}]}),
+            content_type='application/json'
+        )
+
+        # Halt dispatch
+        self.client.post(
+            f"/sales/api/sales/{sale.pk}/halt-dispatch/",
+            data=json.dumps({'reason': 'Refund to customer store credit account'}),
+            content_type='application/json'
+        )
+        refund_req = RefundRequest.objects.get(sale=sale, status='PENDING')
+
+        # Accountant approves with ACCOUNT_CREDIT
+        self.client.force_login(self.accountant_user)
+        self.client.post(
+            f"/sales/api/refund-requests/{refund_req.pk}/approve/",
+            data=json.dumps({'refund_method': 'ACCOUNT_CREDIT'}),
+            content_type='application/json'
+        )
+
+        customer.refresh_from_db()
+        self.assertEqual(customer.current_balance, Decimal("-50.00"), "Customer should now have 50.00 store credit!")
+
+        refund_req.refresh_from_db()
+        self.assertEqual(refund_req.payout_status, 'PAID', "Account credit is immediately fulfilled")
+
+    def test_19_registered_customer_credit_payout_cash(self):
+        """
+        Verify that a registered customer who has positive credit (negative current_balance)
+        can withdraw some or all of their credit in cash from the cashier:
+        1. Customer has -100.00 balance (100.00 store credit).
+        2. Cashier opens shift with 200.00 cash.
+        3. Cashier executes credit payout of 40.00 cash.
+        4. Customer balance becomes -60.00.
+        5. Shift credit_payouts records 40.00, expected_cash drops from 200.00 to 160.00.
+        6. Attempt to withdraw 70.00 (more than remaining 60.00) is rejected with 400 error.
+        7. Customer with debt (positive balance) cannot withdraw credit.
+        """
+        import json
+
+        # Customer with 100.00 store credit
+        customer = Customer.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            name="Credit Holder",
+            current_balance=Decimal("-100.00")
+        )
+
+        # Cashier open shift
+        shift = Shift.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.cashier_user,
+            opening_cash=Decimal("200.00"),
+            status='OPEN'
+        )
+
+        # 1. Payout 40.00
+        self.client.force_login(self.cashier_user)
+        payout_resp = self.client.post(
+            f"/sales/api/customers/{customer.pk}/credit-payout/",
+            data=json.dumps({'amount': '40.00', 'notes': 'Partial withdrawal'}),
+            content_type='application/json'
+        )
+        self.assertEqual(payout_resp.status_code, 200)
+        data = payout_resp.json()
+        self.assertTrue(data['success'])
+        self.assertEqual(data['new_balance'], "-60.00")
+        self.assertEqual(data['remaining_credit'], "60.00")
+
+        customer.refresh_from_db()
+        self.assertEqual(customer.current_balance, Decimal("-60.00"))
+
+        # Verify CustomerTransaction
+        txn = CustomerTransaction.objects.get(pk=data['transaction_id'])
+        self.assertEqual(txn.transaction_type, 'DEBIT')
+        self.assertEqual(txn.amount, Decimal("40.00"))
+
+        # Verify shift expected_cash drops to 160.00
+        self.assertEqual(shift.credit_payouts, Decimal("40.00"))
+        self.assertEqual(shift.expected_cash, Decimal("160.00"))
+
+        # 2. Over-withdrawal guard
+        fail_resp = self.client.post(
+            f"/sales/api/customers/{customer.pk}/credit-payout/",
+            data=json.dumps({'amount': '70.00'}),
+            content_type='application/json'
+        )
+        self.assertEqual(fail_resp.status_code, 400)
+        self.assertIn("exceeds available credit", fail_resp.json()['error'])
+
+        # 3. Customer with debt guard
+        debt_customer = Customer.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            name="Debtor",
+            current_balance=Decimal("50.00")
+        )
+        debt_resp = self.client.post(
+            f"/sales/api/customers/{debt_customer.pk}/credit-payout/",
+            data=json.dumps({'amount': '10.00'}),
+            content_type='application/json'
+        )
+        self.assertEqual(debt_resp.status_code, 400)
+        self.assertIn("no available credit", debt_resp.json()['error'])
+
+    def test_20_standard_workflow_unaffected(self):
+        """
+        Verify that the standard sales workflow remains completely unaffected:
+        Completing a sale immediately completes and dispatches the sale, deducts inventory,
+        and does not require any separate dispatch step.
+        """
+        self.tenant.use_strict_sales_workflow = False
+        self.tenant.save()
+
+        sale = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.attendant_user,
+            total=Decimal("50.00"),
+            payment_method="CASH",
+            status="PENDING"
+        )
+        item = SaleItem.objects.create(
+            tenant=self.tenant,
+            sale=sale,
+            product=self.product,
+            batch=self.shop_batch,
+            quantity=Decimal("5.00"),
+            unit_price=Decimal("10.00")
+        )
+
+        sale.complete(amount_paid=Decimal("50.00"), payment_method="CASH")
+        sale.refresh_from_db()
+
+        self.assertEqual(sale.status, "COMPLETED")
+        self.assertTrue(sale.is_dispatched)
+        self.assertEqual(sale.amount_paid, Decimal("50.00"))
+
+        # Inventory immediately deducted
+        ledger_entry = InventoryLedger.objects.filter(reference_id=sale.pk, transaction_type="SALE").first()
+        self.assertIsNotNone(ledger_entry)
+        self.assertEqual(ledger_entry.quantity, Decimal("-5.00"))
+
+    def test_21_strict_partial_dispatch_halt_rejection_allows_dispatch_resume(self):
+        """
+        Verify that rejecting a partial dispatch halt request:
+        1. Sets refund request to REJECTED with the rejection reason.
+        2. Clears the pending refund lock on the sale.
+        3. Allows the shop manager to resume dispatching the remaining items to completion.
+        """
+        import json
+        from apps.sales.models import RefundRequest
+
+        self.tenant.use_strict_sales_workflow = True
+        self.tenant.save()
+
+        sale = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.attendant_user,
+            cashier=self.cashier_user,
+            total=Decimal("80.00"),
+            amount_paid=Decimal("80.00"),
+            payment_method="CASH",
+            status="PENDING_DISPATCH"
+        )
+        item = SaleItem.objects.create(
+            tenant=self.tenant,
+            sale=sale,
+            product=self.product,
+            batch=self.shop_batch,
+            quantity=Decimal("8.00"),
+            unit_price=Decimal("10.00"),
+            dispatched_quantity=Decimal("0.00")
+        )
+
+        # 1. Partial dispatch of 3 units
+        self.client.force_login(self.manager_user)
+        self.client.post(
+            f"/sales/api/sales/{sale.pk}/dispatch/",
+            data=json.dumps({'items': [{'sale_item_id': item.pk, 'qty': 3}]}),
+            content_type='application/json'
+        )
+        item.refresh_from_db()
+        self.assertEqual(item.dispatched_quantity, Decimal("3.00"))
+
+        # 2. Halt dispatch request
+        halt_resp = self.client.post(
+            f"/sales/api/sales/{sale.pk}/halt-dispatch/",
+            data=json.dumps({'reason': 'Customer considering cancellation'}),
+            content_type='application/json'
+        )
+        self.assertEqual(halt_resp.status_code, 200)
+
+        refund_req = RefundRequest.objects.get(sale=sale, status='PENDING')
+        self.assertTrue(refund_req.is_partial_halt)
+        self.assertEqual(refund_req.refund_amount, Decimal("50.00"))
+
+        # 3. Further dispatch attempt while PENDING is rejected
+        dispatch_blocked = self.client.post(
+            f"/sales/api/sales/{sale.pk}/dispatch/",
+            data=json.dumps({'items': [{'sale_item_id': item.pk, 'qty': 5}]}),
+            content_type='application/json'
+        )
+        self.assertEqual(dispatch_blocked.status_code, 400)
+        self.assertIn("refund or halt request is pending", dispatch_blocked.json()['error'].lower())
+
+        # 4. Accountant rejects the halt request
+        self.client.force_login(self.accountant_user)
+        reject_resp = self.client.post(
+            f"/sales/api/refund-requests/{refund_req.pk}/reject/",
+            data=json.dumps({'reason': 'Customer decided to take the remaining items after all.'}),
+            content_type='application/json'
+        )
+        self.assertEqual(reject_resp.status_code, 200)
+
+        refund_req.refresh_from_db()
+        self.assertEqual(refund_req.status, 'REJECTED')
+        self.assertEqual(refund_req.rejection_reason, 'Customer decided to take the remaining items after all.')
+        self.assertEqual(refund_req.reviewed_by, self.accountant_user)
+
+        # 5. Manager resumes dispatch and releases remaining 5 units
+        self.client.force_login(self.manager_user)
+        resume_resp = self.client.post(
+            f"/sales/api/sales/{sale.pk}/dispatch/",
+            data=json.dumps({'items': [{'sale_item_id': item.pk, 'qty': 5}]}),
+            content_type='application/json'
+        )
+        self.assertEqual(resume_resp.status_code, 200)
+
+        sale.refresh_from_db()
+        item.refresh_from_db()
+        self.assertEqual(item.dispatched_quantity, Decimal("8.00"))
+        self.assertTrue(sale.is_dispatched)
+        self.assertEqual(sale.status, "COMPLETED")

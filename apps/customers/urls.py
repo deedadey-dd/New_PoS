@@ -9,6 +9,7 @@ urlpatterns = [
     path('<int:pk>/', views.CustomerDetailView.as_view(), name='customer_detail'),
     path('<int:pk>/edit/', views.CustomerUpdateView.as_view(), name='customer_edit'),
     path('<int:pk>/payment/', views.CustomerPaymentView.as_view(), name='customer_payment'),
+    path('<int:pk>/credit-payout/', views.api_customer_credit_payout if hasattr(views, 'api_customer_credit_payout') else __import__('apps.sales.views', fromlist=['api_customer_credit_payout']).api_customer_credit_payout, name='customer_credit_payout'),
     path('payment/<int:pk>/receipt/', views.PaymentReceiptView.as_view(), name='payment_receipt'),
 
     # Excel Export

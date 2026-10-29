@@ -44,13 +44,58 @@
                     <div id="dispatchHistoryBody"></div>
                 </div>
             </div>
-            <div class="modal-footer gap-2">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-success" id="fullDispatchBtn">
-                    <i class="bi bi-check2-all me-1"></i>Full Dispatch
+            <div class="modal-footer gap-2 d-flex justify-content-between">
+                <button type="button" class="btn btn-outline-warning text-dark" id="haltDispatchBtn">
+                    <i class="bi bi-stop-circle me-1"></i>Halt & Settle
                 </button>
-                <button type="button" class="btn btn-outline-primary" id="partialDispatchSubmitBtn">
-                    <i class="bi bi-send me-1"></i>Partial Dispatch
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-success" id="fullDispatchBtn">
+                        <i class="bi bi-check2-all me-1"></i>Full Dispatch
+                    </button>
+                    <button type="button" class="btn btn-outline-primary" id="partialDispatchSubmitBtn">
+                        <i class="bi bi-send me-1"></i>Partial Dispatch
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Halt & Settle Reason Modal -->
+<div class="modal fade" id="haltDispatchModal" tabindex="-1" aria-labelledby="haltDispatchModalLabel" aria-hidden="true" style="z-index: 1065;">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-4 border-0 shadow">
+            <div class="modal-header border-0 pb-0 bg-warning bg-opacity-10">
+                <h5 class="modal-title fw-bold text-dark" id="haltDispatchModalLabel">
+                    <i class="bi bi-stop-circle-fill text-warning me-2"></i>Halt & Settle Dispatch
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex align-items-center justify-content-between mb-3 p-2 bg-light rounded-3">
+                    <span class="text-muted small">Sale Reference:</span>
+                    <span class="fw-bold font-monospace text-dark" id="haltModalSaleNumber">-</span>
+                </div>
+                <p class="text-muted small mb-3">
+                    Halting dispatch will cancel all remaining undispatched items and submit a partial refund / debt reduction request for Accountant approval.
+                </p>
+                <div class="mb-3">
+                    <label for="haltDispatchReason" class="form-label fw-semibold">
+                        Reason for Halting <span class="text-danger">*</span>
+                    </label>
+                    <textarea class="form-control" id="haltDispatchReason" rows="3" 
+                              placeholder="Enter the customer or manager reason for halting further dispatch..." required></textarea>
+                    <div class="invalid-feedback" id="haltDispatchReasonFeedback" style="display:none;">
+                        A reason is required to halt dispatch.
+                    </div>
+                </div>
+                <div id="haltDispatchErrorAlert" class="alert alert-danger py-2 small mb-0 d-none"></div>
+            </div>
+            <div class="modal-footer border-0 gap-2">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-warning fw-bold text-dark" id="confirmHaltDispatchBtn">
+                    <i class="bi bi-stop-circle me-1"></i>Confirm Halt & Request Refund
                 </button>
             </div>
         </div>

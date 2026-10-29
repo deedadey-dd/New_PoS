@@ -1,78 +1,70 @@
 // ── Partial Dispatch Modal Logic ──
-let _dispatchSaleItems = [];
-let _dispatchSaleId = null;
+var _dispatchSaleItems = [];
+var _dispatchSaleId = null;
 
-const partialDispatchModalEl = document.getElementById('partialDispatchModal');
-
-// ── Unified open-modal trigger ──
-document.querySelectorAll('.open-dispatch-modal').forEach(function(btn) {
-    btn.addEventListener('click', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        const saleId = this.dataset.saleId;
-        const saleNumber = this.dataset.saleNumber;
-
-        fetch('/sales/api/' + saleId + '/detail/')
-            .then(res => {
-                if (!res.ok) throw new Error('Failed to load sale details');
-                return res.json();
-            })
-            .then(data => {
-                _dispatchSaleId = saleId;
-                document.getElementById('dispatchModalSaleNumber').textContent = '#' + (saleNumber || '');
-                populateDispatchModal(data.items, data.allow_partial_dispatch !== false);
-                populateDispatchHistory(data.dispatch_history || []);
-                if (partialDispatchModalEl) {
-                    const modalInstance = bootstrap.Modal.getInstance(partialDispatchModalEl) || new bootstrap.Modal(partialDispatchModalEl);
-                    modalInstance.show();
-                }
-            })
-            .catch(err => {
-                console.error(err);
-                alert('Failed to load items for dispatch.');
-            });
-    });
-});
-
-// ── Sale Detail modal dispatch button ──
-const saleDetailDispatchBtn = document.getElementById('saleDetailDispatchBtn');
-if (saleDetailDispatchBtn && partialDispatchModalEl) {
-    saleDetailDispatchBtn.addEventListener('click', function() {
-        _dispatchSaleId = this.dataset.saleId;
-        document.getElementById('dispatchModalSaleNumber').textContent = '#' + (this.dataset.saleNumber || '');
-        const allowPartial = window._allowPartialDispatch !== false;
-        populateDispatchModal(_dispatchSaleItems, allowPartial);
-        populateDispatchHistory(window._dispatchHistory || []);
-        const saleDetailModal = document.getElementById('saleDetailModal');
-        if (saleDetailModal) {
-            const sdInstance = bootstrap.Modal.getInstance(saleDetailModal);
-            if (sdInstance) sdInstance.hide();
-        }
-        const modalInstance = bootstrap.Modal.getInstance(partialDispatchModalEl) || new bootstrap.Modal(partialDispatchModalEl);
-        modalInstance.show();
-    });
-}
-
-function populateDispatchModal(items, allowPartial) {
-    // allowPartial defaults to true if not explicitly false
+function populateDispatchModal(items, allowPartial, hasPendingRefund, pendingRefundInfo) {
     if (allowPartial === undefined) allowPartial = true;
 
     const tbody = document.getElementById('dispatchItemsBody');
     const toggleContainer = document.getElementById('showDispatchedToggleContainer');
     const toggle = document.getElementById('showDispatchedToggle');
     const partialBtn = document.getElementById('partialDispatchSubmitBtn');
+    const fullBtn = document.getElementById('fullDispatchBtn');
+    const haltBtn = document.getElementById('haltDispatchBtn');
     const dispatchNowHeader = document.getElementById('dispatchNowColHeader');
     const infoText = document.getElementById('dispatchInfoText');
+    const infoBanner = document.getElementById('dispatchInfoBanner');
     if (!tbody) return;
 
-    // ── Adapt UI based on shop setting ──
+    if (hasPendingRefund) {
+        const isHalt = pendingRefundInfo && pendingRefundInfo.is_partial_halt;
+        const typeName = isHalt ? 'Halt & Settle' : 'Refund';
+        const refNum = pendingRefundInfo && pendingRefundInfo.refund_number ? `(${pendingRefundInfo.refund_number})` : '';
+        if (infoBanner && infoText) {
+            infoBanner.className = 'alert alert-warning py-2 mb-3 d-flex align-items-center gap-2 border border-warning';
+            infoText.innerHTML = `<i class="bi bi-exclamation-triangle-fill text-warning me-1"></i>` +
+                `<strong>${typeName} Pending Approval:</strong> Sale has request <strong>${refNum}</strong> awaiting review by the Accountant. ` +
+                `Goods dispatch and further halt requests are locked.`;
+        }
+        if (haltBtn) {
+            haltBtn.disabled = true;
+            haltBtn.className = 'btn btn-secondary';
+            haltBtn.innerHTML = '<i class="bi bi-clock-history me-1"></i>Halt Pending Approval';
+            haltBtn.title = 'A refund or halt request is already pending Accountant review.';
+        }
+        if (fullBtn) {
+            fullBtn.disabled = true;
+            fullBtn.title = 'Locked while refund request is pending';
+        }
+        if (partialBtn) {
+            partialBtn.disabled = true;
+            partialBtn.title = 'Locked while refund request is pending';
+        }
+    } else {
+        if (infoBanner && infoText) {
+            infoBanner.className = 'alert alert-info py-2 mb-3 d-flex align-items-center gap-2';
+            infoText.innerHTML = allowPartial
+                ? 'Review the items below. Click <strong>Full Dispatch</strong> to release all remaining items, or adjust quantities and click <strong>Partial Dispatch</strong> to release only some items now.'
+                : 'This shop requires <strong>full dispatch only</strong>. Click <strong>Full Dispatch</strong> to release all remaining items at once.';
+        }
+        if (haltBtn) {
+            haltBtn.disabled = false;
+            haltBtn.className = 'btn btn-outline-warning text-dark';
+            haltBtn.innerHTML = '<i class="bi bi-stop-circle me-1"></i>Halt & Settle';
+            haltBtn.removeAttribute('title');
+        }
+        if (fullBtn) {
+            fullBtn.disabled = false;
+            fullBtn.removeAttribute('title');
+        }
+        if (partialBtn) {
+            partialBtn.disabled = false;
+            partialBtn.removeAttribute('title');
+        }
+    }
+
     if (partialBtn) partialBtn.style.display = allowPartial ? '' : 'none';
     if (dispatchNowHeader) dispatchNowHeader.style.display = allowPartial ? '' : 'none';
-    if (infoText) {
-        infoText.innerHTML = allowPartial
-            ? 'Review the items below. Click <strong>Full Dispatch</strong> to release all remaining items, or adjust quantities and click <strong>Partial Dispatch</strong> to release only some items now.'
-            : 'This shop requires <strong>full dispatch only</strong>. Click <strong>Full Dispatch</strong> to release all remaining items at once.';
-    }
 
     const hasFullyDispatched = items.some(i => i.is_fully_dispatched);
     if (hasFullyDispatched) {
@@ -95,7 +87,6 @@ function populateDispatchModal(items, allowPartial) {
             const tr = document.createElement('tr');
             if (done) tr.classList.add('table-secondary', 'text-muted');
 
-            // Dispatch Now cell: only show input if partial dispatch is allowed AND item not done
             let dispatchNowCell;
             if (done) {
                 dispatchNowCell = '<span class="text-muted small"><i class="bi bi-check-circle-fill text-success me-1"></i>Dispatched</span>';
@@ -103,9 +94,9 @@ function populateDispatchModal(items, allowPartial) {
                 dispatchNowCell = `<input type="number" class="form-control form-control-sm text-center dispatch-qty-input"
                                 data-item-id="${item.id}" data-max="${remaining}"
                                 min="0" max="${remaining}" step="1" value="0"
+                                ${hasPendingRefund ? 'disabled' : ''}
                                 style="width:90px; margin: 0 auto;">`;
             } else {
-                // Full dispatch only — show remaining as static text, hidden input carries the value
                 dispatchNowCell = `<span class="fw-bold text-success">${remaining}</span>
                     <input type="hidden" class="dispatch-qty-input" data-item-id="${item.id}" data-max="${remaining}" value="${remaining}">`;
             }
@@ -174,7 +165,6 @@ function populateDispatchHistory(history) {
     });
 }
 
-// ── Dispatch helper ──
 function submitDispatch(fillAll) {
     const inputs = document.querySelectorAll('#dispatchItemsBody .dispatch-qty-input');
     const dispatchItems = [];
@@ -190,7 +180,11 @@ function submitDispatch(fillAll) {
     });
 
     if (!hasQty) {
-        alert('No remaining quantities to dispatch.');
+        if (window.showAppToast) {
+            window.showAppToast('Please enter at least one quantity greater than 0 to dispatch.', 'warning');
+        } else {
+            alert('No remaining quantities to dispatch.');
+        }
         return;
     }
 
@@ -216,18 +210,25 @@ function submitDispatch(fillAll) {
     })
     .then(r => r.ok ? r.json() : r.json().then(e => { throw new Error(e.error || 'Dispatch failed'); }))
     .then(function(res) {
-        if (partialDispatchModalEl) {
-            const modalInstance = bootstrap.Modal.getInstance(partialDispatchModalEl);
+        const modalEl = document.getElementById('partialDispatchModal');
+        if (modalEl) {
+            const modalInstance = bootstrap.Modal.getInstance(modalEl);
             if (modalInstance) modalInstance.hide();
         }
         if (res.waybill_url) {
             window.open(res.waybill_url, '_blank');
         }
-        alert(res.message || 'Dispatch recorded.');
-        location.reload();
+        if (window.showAppToast) {
+            window.showAppToast(res.message || 'Dispatch recorded successfully.', 'success');
+        }
+        setTimeout(() => location.reload(), 800);
     })
     .catch(function(err) {
-        alert(err.message);
+        if (window.showAppToast) {
+            window.showAppToast(err.message, 'danger');
+        } else {
+            alert(err.message);
+        }
         if (activeBtn) {
             activeBtn.disabled = false;
             activeBtn.innerHTML = originalHtml;
@@ -236,14 +237,190 @@ function submitDispatch(fillAll) {
     });
 }
 
-// ── Full Dispatch: fills all remaining quantities, then submits ──
-const fullDispatchBtn = document.getElementById('fullDispatchBtn');
-if (fullDispatchBtn) {
-    fullDispatchBtn.addEventListener('click', function() { submitDispatch(true); });
+function initPartialDispatch() {
+    // ── Unified open-modal trigger ──
+    document.querySelectorAll('.open-dispatch-modal').forEach(function(btn) {
+        if (btn.dataset.dispatchBound) return;
+        btn.dataset.dispatchBound = 'true';
+        btn.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const saleId = this.dataset.saleId;
+            const saleNumber = this.dataset.saleNumber;
+
+            fetch('/sales/api/' + saleId + '/detail/')
+                .then(res => {
+                    if (!res.ok) throw new Error('Failed to load sale details');
+                    return res.json();
+                })
+                .then(data => {
+                    _dispatchSaleId = saleId;
+                    const snEl = document.getElementById('dispatchModalSaleNumber');
+                    if (snEl) snEl.textContent = '#' + (saleNumber || '');
+                    populateDispatchModal(data.items, data.allow_partial_dispatch !== false, data.has_pending_refund, data.pending_refund_info);
+                    populateDispatchHistory(data.dispatch_history || []);
+                    const modalEl = document.getElementById('partialDispatchModal');
+                    if (modalEl) {
+                        const modalInstance = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+                        modalInstance.show();
+                    }
+                })
+                .catch(err => {
+                    console.error(err);
+                    if (window.showAppToast) {
+                        window.showAppToast('Failed to load items for dispatch: ' + err.message, 'danger');
+                    } else {
+                        alert('Failed to load items for dispatch.');
+                    }
+                });
+        });
+    });
+
+    // ── Sale Detail modal dispatch button ──
+    const saleDetailDispatchBtn = document.getElementById('saleDetailDispatchBtn');
+    if (saleDetailDispatchBtn && !saleDetailDispatchBtn.dataset.dispatchBound) {
+        saleDetailDispatchBtn.dataset.dispatchBound = 'true';
+        saleDetailDispatchBtn.addEventListener('click', function() {
+            _dispatchSaleId = this.dataset.saleId;
+            const snEl = document.getElementById('dispatchModalSaleNumber');
+            if (snEl) snEl.textContent = '#' + (this.dataset.saleNumber || '');
+            const allowPartial = window._allowPartialDispatch !== false;
+            populateDispatchModal(_dispatchSaleItems, allowPartial, window._saleHasPendingRefund, window._salePendingRefundInfo);
+            populateDispatchHistory(window._dispatchHistory || []);
+            const saleDetailModal = document.getElementById('saleDetailModal');
+            if (saleDetailModal) {
+                const sdInstance = bootstrap.Modal.getInstance(saleDetailModal);
+                if (sdInstance) sdInstance.hide();
+            }
+            const modalEl = document.getElementById('partialDispatchModal');
+            if (modalEl) {
+                const modalInstance = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+                modalInstance.show();
+            }
+        });
+    }
+
+    // ── Full Dispatch: fills all remaining quantities, then submits ──
+    const fullDispatchBtn = document.getElementById('fullDispatchBtn');
+    if (fullDispatchBtn && !fullDispatchBtn.dataset.dispatchBound) {
+        fullDispatchBtn.dataset.dispatchBound = 'true';
+        fullDispatchBtn.addEventListener('click', function() { submitDispatch(true); });
+    }
+
+    // ── Partial Dispatch: submits only entered quantities ──
+    const partialDispatchSubmitBtn = document.getElementById('partialDispatchSubmitBtn');
+    if (partialDispatchSubmitBtn && !partialDispatchSubmitBtn.dataset.dispatchBound) {
+        partialDispatchSubmitBtn.dataset.dispatchBound = 'true';
+        partialDispatchSubmitBtn.addEventListener('click', function() { submitDispatch(false); });
+    }
+
+    // ── Halt Dispatch Trigger (opens Halt & Settle Modal) ──
+    const haltDispatchBtn = document.getElementById('haltDispatchBtn');
+    if (haltDispatchBtn && !haltDispatchBtn.dataset.dispatchBound) {
+        haltDispatchBtn.dataset.dispatchBound = 'true';
+        haltDispatchBtn.addEventListener('click', function() {
+            if (!_dispatchSaleId) return;
+
+            const haltModalEl = document.getElementById('haltDispatchModal');
+            if (!haltModalEl) return;
+
+            // Reset modal inputs and errors
+            const reasonInput = document.getElementById('haltDispatchReason');
+            const feedback = document.getElementById('haltDispatchReasonFeedback');
+            const errAlert = document.getElementById('haltDispatchErrorAlert');
+            const haltSnEl = document.getElementById('haltModalSaleNumber');
+            const dispatchSnEl = document.getElementById('dispatchModalSaleNumber');
+
+            if (reasonInput) {
+                reasonInput.value = '';
+                reasonInput.classList.remove('is-invalid');
+            }
+            if (feedback) feedback.style.display = 'none';
+            if (errAlert) {
+                errAlert.classList.add('d-none');
+                errAlert.textContent = '';
+            }
+            if (haltSnEl && dispatchSnEl) {
+                haltSnEl.textContent = dispatchSnEl.textContent;
+            }
+
+            // Hide partial dispatch modal and show halt modal
+            const pdModalEl = document.getElementById('partialDispatchModal');
+            if (pdModalEl) {
+                const pdInstance = bootstrap.Modal.getInstance(pdModalEl);
+                if (pdInstance) pdInstance.hide();
+            }
+
+            const haltInstance = bootstrap.Modal.getInstance(haltModalEl) || new bootstrap.Modal(haltModalEl);
+            haltInstance.show();
+        });
+    }
+
+    // ── Confirm Halt & Settle Submission ──
+    const confirmHaltBtn = document.getElementById('confirmHaltDispatchBtn');
+    if (confirmHaltBtn && !confirmHaltBtn.dataset.dispatchBound) {
+        confirmHaltBtn.dataset.dispatchBound = 'true';
+        confirmHaltBtn.addEventListener('click', function() {
+            if (!_dispatchSaleId) return;
+
+            const reasonInput = document.getElementById('haltDispatchReason');
+            const feedback = document.getElementById('haltDispatchReasonFeedback');
+            const errAlert = document.getElementById('haltDispatchErrorAlert');
+            const reason = reasonInput ? reasonInput.value.trim() : '';
+
+            if (!reason) {
+                if (reasonInput) {
+                    reasonInput.classList.add('is-invalid');
+                    reasonInput.focus();
+                }
+                if (feedback) feedback.style.display = 'block';
+                return;
+            }
+
+            if (reasonInput) reasonInput.classList.remove('is-invalid');
+            if (feedback) feedback.style.display = 'none';
+            if (errAlert) errAlert.classList.add('d-none');
+
+            confirmHaltBtn.disabled = true;
+            const originalHtml = confirmHaltBtn.innerHTML;
+            confirmHaltBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Submitting...';
+
+            const csrfEl = document.querySelector('[name=csrfmiddlewaretoken]');
+            const csrfToken = csrfEl ? csrfEl.value : '';
+
+            fetch('/sales/api/sales/' + _dispatchSaleId + '/halt-dispatch/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+                body: JSON.stringify({ reason: reason })
+            })
+            .then(r => r.ok ? r.json() : r.json().then(e => { throw new Error(e.error || 'Failed to halt dispatch'); }))
+            .then(function(res) {
+                const haltModalEl = document.getElementById('haltDispatchModal');
+                if (haltModalEl) {
+                    const haltInstance = bootstrap.Modal.getInstance(haltModalEl);
+                    if (haltInstance) haltInstance.hide();
+                }
+                if (window.showAppToast) {
+                    window.showAppToast(res.message || 'Dispatch halted and refund request submitted.', 'success');
+                }
+                setTimeout(() => location.reload(), 900);
+            })
+            .catch(function(err) {
+                confirmHaltBtn.disabled = false;
+                confirmHaltBtn.innerHTML = originalHtml;
+                if (errAlert) {
+                    errAlert.textContent = err.message;
+                    errAlert.classList.remove('d-none');
+                } else if (window.showAppToast) {
+                    window.showAppToast(err.message, 'danger');
+                }
+            });
+        });
+    }
 }
 
-// ── Partial Dispatch: submits only entered quantities ──
-const partialDispatchSubmitBtn = document.getElementById('partialDispatchSubmitBtn');
-if (partialDispatchSubmitBtn) {
-    partialDispatchSubmitBtn.addEventListener('click', function() { submitDispatch(false); });
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initPartialDispatch);
+} else {
+    initPartialDispatch();
 }

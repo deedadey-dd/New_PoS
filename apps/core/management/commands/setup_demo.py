@@ -13,7 +13,7 @@ Covers ALL features:
 - FEFO demo: dual-batch product with different expiry dates
 - Inventory snapshots + ShopPrice entries per shop per product
 - FavoriteProduct entries at each shop
-- 8 Customers with realistic credit balances + CustomerTransaction history
+- 10 Customers with realistic credit balances + CustomerTransaction history
 - Shifts: one open (today), two closed (historical)
 - 40 Mock Sales: CASH, ECASH, MOMO, CREDIT, MIXED — spanning last 30 days
 - PENDING / PENDING_DISPATCH sales for strict workflow cashier queue
@@ -272,11 +272,13 @@ class Command(BaseCommand):
         )
         loc_shop1 = Location.objects.create(
             tenant=tenant, name='Downtown Shop', location_type='SHOP',
-            address='123 Main Street', phone='0241000001', is_active=True
+            address='123 Main Street', phone='0241000001', is_active=True,
+            allow_partial_dispatch=True,
         )
         loc_shop2 = Location.objects.create(
             tenant=tenant, name='Uptown Shop', location_type='SHOP',
-            address='456 High Street', phone='0241000002', is_active=True
+            address='456 High Street', phone='0241000002', is_active=True,
+            allow_partial_dispatch=True,
         )
 
         # --------------------------------------------------------------------
@@ -617,10 +619,12 @@ class Command(BaseCommand):
             ('Ama Serwah',     '0242222222', 'ama@email.com',     loc_shop1, Decimal('45.50'),  Decimal('200.00')),
             ('Kofi Mensah',    '0243333333', '',                  loc_shop1, Decimal('0.00'),   Decimal('300.00')),
             ('Abena Osei',     '0247777777', '',                  loc_shop1, Decimal('85.00'),  Decimal('250.00')),
+            ('Kwabena Mensah', '0249999991', 'kwabena@email.com', loc_shop1, Decimal('-150.00'), Decimal('500.00')),
             ('Akua Boateng',   '0244444444', 'akua@email.com',    loc_shop2, Decimal('230.00'), Decimal('500.00')),
             ('Yaw Darko',      '0245555555', '',                  loc_shop2, Decimal('15.00'),  Decimal('100.00')),
             ('Efua Nyarko',    '0246666666', 'efua@email.com',    loc_shop2, Decimal('0.00'),   Decimal('150.00')),
             ('Kojo Owusu',     '0248888888', '',                  loc_shop2, Decimal('310.00'), Decimal('400.00')),
+            ('Adwoa Mansa',    '0249999992', 'adwoa@email.com',   loc_shop2, Decimal('-80.00'),  Decimal('300.00')),
         ]
         customer_map = {}
         for cname, cphone, cemail, cshop, balance, limit in customer_specs:
@@ -638,6 +642,25 @@ class Command(BaseCommand):
                     description='Credit purchase (demo seed)',
                     balance_before=Decimal('0.00'), balance_after=balance,
                     performed_by=attendant,
+                )
+            elif balance < Decimal('0'):
+                # Customer with positive credit (store credit) from overpayments/deposits
+                init_deposit = abs(balance) + Decimal('50.00')
+                CustomerTransaction.objects.create(
+                    tenant=tenant, customer=customer,
+                    transaction_type='CREDIT', amount=init_deposit,
+                    description='Account deposit / Overpayment credit (demo seed)',
+                    balance_before=Decimal('0.00'), balance_after=-init_deposit,
+                    performed_by=attendant,
+                )
+                # Cashier cash payout transaction (customer received some cash from their credit)
+                payout_user = cashier if (is_strict and cshop == loc_shop1 and cashier) else attendant
+                CustomerTransaction.objects.create(
+                    tenant=tenant, customer=customer,
+                    transaction_type='DEBIT', amount=Decimal('50.00'),
+                    description='Credit payout to customer (cash withdrawal from store credit)',
+                    balance_before=-init_deposit, balance_after=balance,
+                    performed_by=payout_user,
                 )
 
         # --------------------------------------------------------------------
@@ -776,7 +799,7 @@ class Command(BaseCommand):
                 completed_sales.append(sale)
 
         # --------------------------------------------------------------------
-        # Additional PENDING sales for cashier queue (strict workflow)
+        # Additional PENDING sales & Partial Dispatches (strict workflow)
         # --------------------------------------------------------------------
         if is_strict:
             for i in range(5):
@@ -803,6 +826,214 @@ class Command(BaseCommand):
                 pending_sale.subtotal = p_total
                 pending_sale.save()
 
+            # ── Strict Workflow: Dedicated Partial Dispatch & Halt Scenarios ──
+            pen = products[0]['product']
+            batch_pen = products[0]['batch_shop1']
+            biscuit = products[4]['product']
+            batch_biscuit = products[4]['batch_shop1']
+
+            # 1. Active Partial Dispatch (In progress — ready for manager to dispatch remainder or halt)
+            sale_partial_active = Sale.objects.create(
+                tenant=tenant, shop=loc_shop1, attendant=attendant1,
+                cashier=cashier, shift=open_shift,
+                status='PENDING_DISPATCH',
+                payment_method='CASH',
+                amount_paid=Decimal('90.00'),
+                total=Decimal('90.00'),
+                subtotal=Decimal('90.00'),
+                sale_number=f'DEMO-SL-PARTIAL-{tenant.pk}-0001',
+                customer=customer_map.get(('Kwame Asante', loc_shop1.pk)),
+                is_dispatched=False,
+            )
+            Sale.objects.filter(pk=sale_partial_active.pk).update(created_at=now - timedelta(hours=4))
+            # Item 1: 10 pens @ 5.00 = 50.00. 5 dispatched, 5 remaining
+            SaleItem.objects.create(
+                tenant=tenant, sale=sale_partial_active, product=pen,
+                quantity=Decimal('10.00'), unit_price=Decimal('5.00'),
+                unit_cost=batch_pen.unit_cost, total=Decimal('50.00'),
+                dispatched_quantity=Decimal('5.00'),
+            )
+            # Item 2: 4 biscuits @ 10.00 = 40.00. 4 dispatched (fully dispatched)
+            SaleItem.objects.create(
+                tenant=tenant, sale=sale_partial_active, product=biscuit,
+                quantity=Decimal('4.00'), unit_price=Decimal('10.00'),
+                unit_cost=batch_biscuit.unit_cost, total=Decimal('40.00'),
+                dispatched_quantity=Decimal('4.00'),
+            )
+            # Record ledger entries for dispatch history timeline
+            ledg1 = InventoryLedger.objects.create(
+                tenant=tenant, product=pen, batch=batch_pen,
+                location=loc_shop1, quantity=Decimal('-5.00'),
+                unit_cost=batch_pen.unit_cost, transaction_type='SALE',
+                reference_type='Sale', reference_id=sale_partial_active.pk,
+                created_by=manager1, notes=f'Partial dispatch (pens) for {sale_partial_active.sale_number}',
+            )
+            InventoryLedger.objects.filter(pk=ledg1.pk).update(created_at=now - timedelta(hours=3))
+            ledg2 = InventoryLedger.objects.create(
+                tenant=tenant, product=biscuit, batch=batch_biscuit,
+                location=loc_shop1, quantity=Decimal('-4.00'),
+                unit_cost=batch_biscuit.unit_cost, transaction_type='SALE',
+                reference_type='Sale', reference_id=sale_partial_active.pk,
+                created_by=manager1, notes=f'Partial dispatch (biscuits) for {sale_partial_active.sale_number}',
+            )
+            InventoryLedger.objects.filter(pk=ledg2.pk).update(created_at=now - timedelta(hours=3))
+
+            # 2. Sale with PENDING Halt & Settle (Warning badges on Dashboard/Sales/Dispatches, locked modal)
+            sale_halt_pending = Sale.objects.create(
+                tenant=tenant, shop=loc_shop1, attendant=attendant1,
+                cashier=cashier, shift=open_shift,
+                status='PENDING_DISPATCH',
+                payment_method='CASH',
+                amount_paid=Decimal('100.00'),
+                total=Decimal('100.00'),
+                subtotal=Decimal('100.00'),
+                sale_number=f'DEMO-SL-HALT-PENDING-{tenant.pk}-0002',
+                customer=None,
+                customer_name='Walk-in Customer (Kwaku)',
+                is_dispatched=False,
+            )
+            Sale.objects.filter(pk=sale_halt_pending.pk).update(created_at=now - timedelta(hours=5))
+            SaleItem.objects.create(
+                tenant=tenant, sale=sale_halt_pending, product=biscuit,
+                quantity=Decimal('10.00'), unit_price=Decimal('10.00'),
+                unit_cost=batch_biscuit.unit_cost, total=Decimal('100.00'),
+                dispatched_quantity=Decimal('4.00'),
+            )
+            ledg_hp = InventoryLedger.objects.create(
+                tenant=tenant, product=biscuit, batch=batch_biscuit,
+                location=loc_shop1, quantity=Decimal('-4.00'),
+                unit_cost=batch_biscuit.unit_cost, transaction_type='SALE',
+                reference_type='Sale', reference_id=sale_halt_pending.pk,
+                created_by=manager1, notes=f'Partial dispatch for {sale_halt_pending.sale_number}',
+            )
+            InventoryLedger.objects.filter(pk=ledg_hp.pk).update(created_at=now - timedelta(hours=4))
+
+            RefundRequest.objects.create(
+                tenant=tenant,
+                sale=sale_halt_pending,
+                requested_by=manager1,
+                reason='Customer vehicle ran out of space after loading 4 pieces. Requested halt & cash refund for 6 remaining items.',
+                status='PENDING',
+                is_partial_halt=True,
+                refund_amount=Decimal('60.00'),
+                debt_reduction_amount=Decimal('0.00'),
+                dispatched_total=Decimal('40.00'),
+            )
+
+            # 3. Sale with APPROVED Halt & Settle (Awaiting Cash Payout — "Pay Cash" button for Cashier)
+            sale_halt_approved = Sale.objects.create(
+                tenant=tenant, shop=loc_shop1, attendant=attendant1,
+                cashier=cashier, shift=closed_shift_1,
+                status='COMPLETED',
+                payment_method='CASH',
+                amount_paid=Decimal('50.00'),
+                total=Decimal('50.00'),
+                subtotal=Decimal('50.00'),
+                sale_number=f'DEMO-SL-HALT-APPROVED-{tenant.pk}-0003',
+                customer=None,
+                customer_name='Walk-in Customer (Sister Mansa)',
+                is_dispatched=True,
+                dispatched_by=manager1,
+                dispatched_at=now - timedelta(days=1),
+            )
+            Sale.objects.filter(pk=sale_halt_approved.pk).update(created_at=now - timedelta(days=1, hours=2))
+            SaleItem.objects.create(
+                tenant=tenant, sale=sale_halt_approved, product=biscuit,
+                quantity=Decimal('5.00'), unit_price=Decimal('10.00'),
+                unit_cost=batch_biscuit.unit_cost, total=Decimal('50.00'),
+                dispatched_quantity=Decimal('5.00'),
+            )
+            RefundRequest.objects.create(
+                tenant=tenant,
+                sale=sale_halt_approved,
+                requested_by=manager1,
+                reason='Customer requested halt of remaining 5 items. Accountant approved cash refund.',
+                status='APPROVED',
+                is_partial_halt=True,
+                refund_amount=Decimal('50.00'),
+                debt_reduction_amount=Decimal('0.00'),
+                dispatched_total=Decimal('50.00'),
+                refund_method='CASH',
+                payout_status='PENDING',  # Cashier sees "Pay Cash" button on refund requests page!
+                reviewed_by=accountant,
+                reviewed_at=now - timedelta(hours=5),
+            )
+
+            # 4. Sale with APPROVED Halt & Settle (Registered Customer Debt Reduction)
+            kwame = customer_map.get(('Kwame Asante', loc_shop1.pk))
+            sale_debt_halt = Sale.objects.create(
+                tenant=tenant, shop=loc_shop1, attendant=attendant1,
+                cashier=cashier, shift=closed_shift_1,
+                status='COMPLETED',
+                payment_method='CREDIT',
+                amount_paid=Decimal('0.00'),
+                total=Decimal('40.00'),
+                subtotal=Decimal('40.00'),
+                sale_number=f'DEMO-SL-HALT-DEBT-{tenant.pk}-0004',
+                customer=kwame,
+                is_dispatched=True,
+                dispatched_by=manager1,
+                dispatched_at=now - timedelta(days=2),
+            )
+            Sale.objects.filter(pk=sale_debt_halt.pk).update(created_at=now - timedelta(days=2, hours=1))
+            SaleItem.objects.create(
+                tenant=tenant, sale=sale_debt_halt, product=pen,
+                quantity=Decimal('8.00'), unit_price=Decimal('5.00'),
+                unit_cost=batch_pen.unit_cost, total=Decimal('40.00'),
+                dispatched_quantity=Decimal('8.00'),
+            )
+            RefundRequest.objects.create(
+                tenant=tenant,
+                sale=sale_debt_halt,
+                requested_by=manager1,
+                reason='Customer only wanted 8 pens out of 20 ordered. Remainder canceled; customer credit debt reduced by 60.00.',
+                status='APPROVED',
+                is_partial_halt=True,
+                refund_amount=Decimal('0.00'),
+                debt_reduction_amount=Decimal('60.00'),
+                dispatched_total=Decimal('40.00'),
+                refund_method='ACCOUNT_CREDIT',
+                payout_status='PAID',
+                paid_by=accountant,
+                reviewed_by=accountant,
+                reviewed_at=now - timedelta(days=2),
+            )
+
+            # 5. Sale with REJECTED Halt & Settle (Dispatch unlocked & ready to resume)
+            sale_halt_rejected = Sale.objects.create(
+                tenant=tenant, shop=loc_shop1, attendant=attendant1,
+                cashier=cashier, shift=open_shift,
+                status='PENDING_DISPATCH',
+                payment_method='CASH',
+                amount_paid=Decimal('80.00'),
+                total=Decimal('80.00'),
+                subtotal=Decimal('80.00'),
+                sale_number=f'DEMO-SL-HALT-REJECTED-{tenant.pk}-0005',
+                customer=customer_map.get(('Ama Serwah', loc_shop1.pk)),
+                is_dispatched=False,
+            )
+            Sale.objects.filter(pk=sale_halt_rejected.pk).update(created_at=now - timedelta(hours=6))
+            SaleItem.objects.create(
+                tenant=tenant, sale=sale_halt_rejected, product=pen,
+                quantity=Decimal('16.00'), unit_price=Decimal('5.00'),
+                unit_cost=batch_pen.unit_cost, total=Decimal('80.00'),
+                dispatched_quantity=Decimal('6.00'),
+            )
+            RefundRequest.objects.create(
+                tenant=tenant,
+                sale=sale_halt_rejected,
+                requested_by=manager1,
+                reason='Customer hesitated about remaining items.',
+                status='REJECTED',
+                is_partial_halt=True,
+                refund_amount=Decimal('50.00'),
+                debt_reduction_amount=Decimal('0.00'),
+                dispatched_total=Decimal('30.00'),
+                rejection_reason='Customer confirmed they will collect remainder this afternoon. Dispatch resumed.',
+                reviewed_by=accountant,
+                reviewed_at=now - timedelta(hours=1),
+            )
+
         # --------------------------------------------------------------------
         # ECashWithdrawals (completed + pending)
         # --------------------------------------------------------------------
@@ -827,39 +1058,51 @@ class Command(BaseCommand):
         )
 
         # --------------------------------------------------------------------
-        # RefundRequests
+        # Standard Workflow Full RefundRequests
         # --------------------------------------------------------------------
         refundable = [s for s in completed_sales if s.status == 'COMPLETED']
-        if len(refundable) >= 2:
+        if len(refundable) >= 3:
+            # 1. PENDING full refund
             pending_sale = refundable[0]
             req_by_1 = cashier if (is_strict and pending_sale.shop == loc_shop1 and cashier) else (manager1 if pending_sale.shop == loc_shop1 else manager2)
             RefundRequest.objects.create(
                 tenant=tenant,
                 sale=pending_sale,
                 requested_by=req_by_1,
-                reason='Customer returned item — wrong size (demo).',
+                reason='Customer returned unopened goods — wrong specifications (demo).',
                 status='PENDING',
+                is_partial_halt=False,
+                refund_amount=pending_sale.total,
             )
+            # 2. APPROVED full refund
             approved_sale = refundable[1]
             req_by_2 = cashier if (is_strict and approved_sale.shop == loc_shop1 and cashier) else (manager1 if approved_sale.shop == loc_shop1 else manager2)
             RefundRequest.objects.create(
                 tenant=tenant,
                 sale=approved_sale,
                 requested_by=req_by_2,
-                reason='Damaged goods returned by customer (demo).',
+                reason='Damaged goods returned by customer during warranty window.',
                 status='APPROVED',
+                is_partial_halt=False,
+                refund_amount=approved_sale.total,
+                refund_method='CASH',
+                payout_status='PAID',
+                paid_by=accountant,
                 reviewed_by=accountant,
                 reviewed_at=now - timedelta(days=2),
             )
-        if len(refundable) >= 3:
+            # 3. REJECTED full refund
             rejected_sale = refundable[2]
             req_by_3 = cashier if (is_strict and rejected_sale.shop == loc_shop1 and cashier) else (manager1 if rejected_sale.shop == loc_shop1 else manager2)
             RefundRequest.objects.create(
                 tenant=tenant,
                 sale=rejected_sale,
                 requested_by=req_by_3,
-                reason='Customer changed mind after 14 days.',
+                reason='Customer changed mind after 30 days of purchase.',
                 status='REJECTED',
+                is_partial_halt=False,
+                refund_amount=rejected_sale.total,
+                rejection_reason='Policy limit exceeded (maximum 14 days for returns).',
                 reviewed_by=accountant,
                 reviewed_at=now - timedelta(days=7),
             )

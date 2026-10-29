@@ -230,9 +230,26 @@ class Shift(TenantModel):
         return qs.aggregate(total=Sum('amount'))['total'] or Decimal('0')
     
     @property
+    def credit_payouts(self):
+        """Total cash paid out to customers from their credit balance during this shift."""
+        from apps.customers.models import CustomerTransaction
+        from django.db.models import Q
+        qs = CustomerTransaction.objects.filter(
+            tenant=self.tenant,
+            performed_by=self.attendant,
+            transaction_type='DEBIT',
+            created_at__gte=self.start_time
+        ).filter(
+            Q(description__icontains='Credit payout') | Q(description__icontains='payout to customer')
+        )
+        if self.end_time:
+            qs = qs.filter(created_at__lte=self.end_time)
+        return qs.aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
+    @property
     def expected_cash(self):
-        """Expected cash = opening + cash sales + payments on account."""
-        return self.opening_cash + self.total_sales + self.payments_on_account
+        """Expected cash = opening + cash sales + payments on account - credit payouts."""
+        return self.opening_cash + self.total_sales + self.payments_on_account - self.credit_payouts
     
     @property
     def cash_variance(self):
@@ -508,6 +525,25 @@ class Sale(TenantModel):
             dispatched_quantity__lt=models.F('quantity')
         ).exists()
 
+    @property
+    def has_pending_refund(self):
+        """True when this sale has an unapproved refund or halt request."""
+        if hasattr(self, '_has_pending_refund'):
+            return bool(self._has_pending_refund)
+        return self.refund_requests.filter(status='PENDING').exists()
+
+    @property
+    def has_pending_halt(self):
+        """True when this sale has a pending partial halt request."""
+        if hasattr(self, '_has_pending_halt'):
+            return bool(self._has_pending_halt)
+        return self.refund_requests.filter(status='PENDING', is_partial_halt=True).exists()
+
+    @property
+    def pending_refund_request(self):
+        """Return the pending RefundRequest instance, if any."""
+        return self.refund_requests.filter(status='PENDING').first()
+
 
     def complete(self, amount_paid, payment_method='CASH', paystack_ref='', cashier=None):
         """Process payment and conditionally complete/dispatch the sale based on workflow."""
@@ -734,6 +770,86 @@ class Sale(TenantModel):
         self.notes = f"REFUNDED: {reason}" if reason else "REFUNDED"
         self.save()
 
+    def halt_and_settle(self, user=None, refund_req=None, refund_method='CASH'):
+        """
+        Halt an ongoing partial dispatch in the Strict Sales Workflow and settle the sale
+        to match the actual dispatched quantities. Undispatched quantities are cancelled;
+        no inventory return is created because undispatched goods were never deducted.
+        """
+        from django.db import transaction as db_transaction
+        from django.utils import timezone as tz
+
+        if self.status != 'PENDING_DISPATCH':
+            raise ValidationError(f"Cannot halt dispatch for sale in {self.status} status.")
+
+        with db_transaction.atomic():
+            # 1. Truncate items to actual dispatched quantities
+            for item in list(self.items.all()):
+                if item.dispatched_quantity <= Decimal('0'):
+                    item.delete()
+                elif item.dispatched_quantity < item.quantity:
+                    item.quantity = item.dispatched_quantity
+                    item.save()
+
+            # 2. Recalculate totals from surviving items
+            self.calculate_totals()
+
+            # 3. Adjust amount_paid if cash/fund refund is given
+            refund_amt = refund_req.refund_amount if refund_req else Decimal('0.00')
+            debt_reduction = refund_req.debt_reduction_amount if refund_req else Decimal('0.00')
+
+            if refund_amt > Decimal('0.00'):
+                self.amount_paid = max(Decimal('0.00'), self.amount_paid - refund_amt)
+
+            # 4. Finalize sale status to COMPLETED and mark dispatched
+            self.status = 'COMPLETED'
+            self.is_dispatched = True
+            self.dispatched_at = tz.now()
+            self.dispatched_by = user or self.dispatched_by
+            ref_num = refund_req.refund_number if refund_req else 'Partial Refund'
+            halt_note = f"[Halted & Settled via {ref_num}]"
+            self.notes = f"{self.notes}\n{halt_note}".strip() if self.notes else halt_note
+            self.save()
+
+            # 5. Customer balance adjustment if registered customer
+            if self.customer:
+                from apps.customers.models import CustomerTransaction
+                # A. Debt reduction (cancelling credit debt for undispatched goods)
+                if debt_reduction > Decimal('0.00'):
+                    balance_before = self.customer.current_balance
+                    self.customer.current_balance -= debt_reduction
+                    self.customer.save()
+
+                    CustomerTransaction.objects.create(
+                        tenant=self.tenant,
+                        customer=self.customer,
+                        transaction_type='CREDIT',
+                        amount=debt_reduction,
+                        reference_id=self.sale_number,
+                        balance_before=balance_before,
+                        balance_after=self.customer.current_balance,
+                        description=f"Debt reduction for halted undispatched items ({self.sale_number})",
+                        performed_by=user or self.attendant
+                    )
+
+                # B. If refund_method is ACCOUNT_CREDIT, credit the refund amount to customer account
+                if refund_method == 'ACCOUNT_CREDIT' and refund_amt > Decimal('0.00'):
+                    balance_before = self.customer.current_balance
+                    self.customer.current_balance -= refund_amt
+                    self.customer.save()
+
+                    CustomerTransaction.objects.create(
+                        tenant=self.tenant,
+                        customer=self.customer,
+                        transaction_type='CREDIT',
+                        amount=refund_amt,
+                        reference_id=self.sale_number,
+                        balance_before=balance_before,
+                        balance_after=self.customer.current_balance,
+                        description=f"Account credit refund for halted undispatched items ({self.sale_number})",
+                        performed_by=user or self.attendant
+                    )
+
 
 class SaleItem(TenantModel):
     """
@@ -830,6 +946,16 @@ class RefundRequest(TenantModel):
         ('APPROVED', 'Approved'),
         ('REJECTED', 'Rejected'),
     ]
+    REFUND_METHOD_CHOICES = [
+        ('CASH', 'Cashier Till (Cash)'),
+        ('MOMO', 'Mobile Money'),
+        ('ECASH', 'E-Cash'),
+        ('ACCOUNT_CREDIT', 'Customer Account Credit'),
+    ]
+    PAYOUT_STATUS_CHOICES = [
+        ('PENDING', 'Pending Payout'),
+        ('PAID', 'Paid / Completed'),
+    ]
 
     refund_number = models.CharField(max_length=30, blank=True)
     sale = models.ForeignKey(
@@ -844,6 +970,51 @@ class RefundRequest(TenantModel):
     )
     reason = models.TextField(help_text="Reason for the refund")
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='PENDING')
+
+    is_partial_halt = models.BooleanField(
+        default=False,
+        help_text="True if this is a halt/settlement of undispatched goods in strict workflow"
+    )
+    refund_amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text="Amount of money/funds to be returned to customer"
+    )
+    debt_reduction_amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text="Amount by which customer credit debt is reduced"
+    )
+    dispatched_total = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text="Total value of goods dispatched before halt"
+    )
+    refund_method = models.CharField(
+        max_length=20,
+        blank=True,
+        choices=REFUND_METHOD_CHOICES,
+        default='CASH',
+        help_text="Method selected by Accountant to pay the refund"
+    )
+    payout_status = models.CharField(
+        max_length=20,
+        choices=PAYOUT_STATUS_CHOICES,
+        default='PAID',
+        help_text="Payout status (PENDING if cashier needs to dispense cash, PAID once completed)"
+    )
+    paid_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='refunds_paid_out',
+        help_text="Cashier or accountant who executed the payout"
+    )
+    paid_at = models.DateTimeField(null=True, blank=True)
 
     reviewed_by = models.ForeignKey(
         User,
@@ -882,11 +1053,11 @@ class RefundRequest(TenantModel):
             self.refund_number = f"RFD{today}{num:04d}"
         super().save(*args, **kwargs)
 
-    def approve(self, approver):
+    def approve(self, approver, refund_method=None):
         """
         Approve the refund request.
-        Executes Sale.refund(), applies the correct financial adjustment,
-        and notifies the shop manager who requested it.
+        For partial halt in strict workflow: settles the sale to dispatched items and handles refund method.
+        For full refund: executes Sale.refund() and applies financial adjustment.
         """
         from django.db import transaction as db_transaction
         from django.utils import timezone as tz
@@ -898,11 +1069,43 @@ class RefundRequest(TenantModel):
             sale = self.sale
             tenant = self.tenant
 
-            # 1. Execute the formal sale refund (inventory return, customer balance reversal)
-            sale.refund(reason=self.reason, user=approver)
+            method = refund_method or self.refund_method or 'CASH'
+            self.refund_method = method
 
-            # 2. Apply financial adjustment
-            self._apply_financial_adjustment(approver)
+            if self.is_partial_halt:
+                # Settle the sale to actual dispatched items
+                sale.halt_and_settle(user=approver, refund_req=self, refund_method=method)
+
+                # Process payout according to refund method
+                if method in ('ECASH', 'MOMO') and self.refund_amount > Decimal('0.00'):
+                    from apps.accounting.models import DigitalFundWithdrawal
+                    DigitalFundWithdrawal.objects.create(
+                        tenant=tenant,
+                        shop=sale.shop,
+                        accountant=approver,
+                        amount=-abs(self.refund_amount),
+                        fund_source=method,
+                        notes=f"Partial refund reversal: Sale {sale.sale_number} [{self.refund_number}]"
+                    )
+                    self.payout_status = 'PAID'
+                    self.paid_by = approver
+                    self.paid_at = tz.now()
+                elif method == 'ACCOUNT_CREDIT' or self.refund_amount <= Decimal('0.00'):
+                    self.payout_status = 'PAID'
+                    self.paid_by = approver
+                    self.paid_at = tz.now()
+                else:  # CASH
+                    # Needs cash payout by the cashier
+                    self.payout_status = 'PENDING'
+            else:
+                # 1. Execute the formal sale refund (inventory return, customer balance reversal)
+                sale.refund(reason=self.reason, user=approver)
+
+                # 2. Apply financial adjustment
+                self._apply_financial_adjustment(approver)
+                self.payout_status = 'PAID'
+                self.paid_by = approver
+                self.paid_at = tz.now()
 
             # 3. Mark request approved
             self.status = 'APPROVED'
@@ -912,13 +1115,15 @@ class RefundRequest(TenantModel):
 
         # 4. Notify the shop manager who submitted the request
         from apps.notifications.models import Notification
+        refund_type_str = "Partial Refund & Settle" if self.is_partial_halt else "Refund"
+        amt_display = f"{tenant.currency_symbol}{self.refund_amount}" if self.is_partial_halt else f"{tenant.currency_symbol}{sale.total}"
         Notification.objects.create(
             tenant=tenant,
             user=self.requested_by,
-            title="Refund Approved",
+            title=f"{refund_type_str} Approved",
             message=(
                 f"Your refund request {self.refund_number} for Sale "
-                f"{sale.sale_number} ({tenant.currency_symbol}{sale.total}) "
+                f"{sale.sale_number} ({amt_display}) "
                 f"has been approved by {approver.get_full_name() or approver.email}. "
                 f"Reason: {self.reason}"
             ),

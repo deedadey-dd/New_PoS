@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load static %}
 
 {% block title %}Dashboard - {{ current_tenant.name|default:"POS System" }}{% endblock %}
 
@@ -291,6 +292,17 @@
                                     <a href="#" class="fw-bold text-decoration-none manager-sale-detail-btn" data-sale-id="{{ sale.id }}">
                                         {{ sale.sale_number }}
                                     </a>
+                                    {% if sale.has_pending_refund %}
+                                        {% if sale.has_pending_halt %}
+                                        <span class="badge bg-warning text-dark border border-warning ms-1" data-bs-toggle="tooltip" title="Halt &amp; Settle pending Accountant approval">
+                                            <i class="bi bi-clock-history me-1"></i>Halt Pending
+                                        </span>
+                                        {% else %}
+                                        <span class="badge bg-warning text-dark border border-warning ms-1" data-bs-toggle="tooltip" title="Refund request pending Accountant approval">
+                                            <i class="bi bi-clock-history me-1"></i>Refund Pending
+                                        </span>
+                                        {% endif %}
+                                    {% endif %}
                                 </td>
                                 <td>{{ sale.completed_at|date:"M d, Y H:i" }}</td>
                                 <td>
@@ -311,12 +323,21 @@
                                 <td>{% if sale.attendant %}{{ sale.attendant.get_full_name|default:sale.attendant.email }}{% else %}-{% endif %}</td>
                                 <td class="text-end fw-bold">{{ currency_symbol }}{{ sale.total|floatformat:"2g" }}</td>
                                 <td class="text-center">
+                                    {% if sale.has_pending_refund %}
+                                    <button type="button" 
+                                            class="btn btn-sm btn-warning text-dark open-dispatch-modal rounded-pill px-3"
+                                            data-sale-id="{{ sale.id }}"
+                                            data-sale-number="{{ sale.sale_number }}">
+                                        <i class="bi bi-clock-history me-1"></i>Pending Approval
+                                    </button>
+                                    {% else %}
                                     <button type="button" 
                                             class="btn btn-sm btn-success open-dispatch-modal rounded-pill px-3"
                                             data-sale-id="{{ sale.id }}"
                                             data-sale-number="{{ sale.sale_number }}">
                                         <i class="bi bi-box-seam me-1"></i>Dispatch Goods
                                     </button>
+                                    {% endif %}
                                 </td>
                             </tr>
                             {% endfor %}
@@ -364,6 +385,17 @@
                                     <a href="#" class="fw-bold text-decoration-none manager-sale-detail-btn" data-sale-id="{{ sale.id }}">
                                         {{ sale.sale_number }}
                                     </a>
+                                    {% if sale.has_pending_refund %}
+                                        {% if sale.has_pending_halt %}
+                                        <span class="badge bg-warning text-dark border border-warning ms-1" data-bs-toggle="tooltip" title="Halt &amp; Settle pending Accountant approval">
+                                            <i class="bi bi-clock-history me-1"></i>Halt Pending
+                                        </span>
+                                        {% else %}
+                                        <span class="badge bg-warning text-dark border border-warning ms-1" data-bs-toggle="tooltip" title="Refund request pending Accountant approval">
+                                            <i class="bi bi-clock-history me-1"></i>Refund Pending
+                                        </span>
+                                        {% endif %}
+                                    {% endif %}
                                 </td>
                                 <td>{{ sale.dispatched_at|date:"M d, Y H:i" }}</td>
                                 <td>
@@ -504,6 +536,17 @@
                                     <a href="#" class="fw-bold text-decoration-none manager-sale-detail-btn" data-sale-id="{{ sale.id }}">
                                         {{ sale.sale_number }}
                                     </a>
+                                    {% if sale.has_pending_refund %}
+                                        {% if sale.has_pending_halt %}
+                                        <span class="badge bg-warning text-dark border border-warning ms-1" data-bs-toggle="tooltip" title="Halt &amp; Settle pending Accountant approval">
+                                            <i class="bi bi-clock-history me-1"></i>Halt Pending
+                                        </span>
+                                        {% else %}
+                                        <span class="badge bg-warning text-dark border border-warning ms-1" data-bs-toggle="tooltip" title="Refund request pending Accountant approval">
+                                            <i class="bi bi-clock-history me-1"></i>Refund Pending
+                                        </span>
+                                        {% endif %}
+                                    {% endif %}
                                 </td>
                                 <td>{{ sale.completed_at|date:"M d, Y H:i"|default:sale.created_at|date:"M d, Y H:i" }}</td>
                                 <td>
@@ -584,6 +627,7 @@
     </div>
 </div>
 
+<script src="{% static 'js/partial_dispatch.js' %}"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     const currencySymbol = "{{ currency_symbol }}";
@@ -635,6 +679,18 @@ document.addEventListener('DOMContentLoaded', function () {
                             _dispatchSaleItems = data.items;
                             window._dispatchHistory = data.dispatch_history;
                             window._allowPartialDispatch = data.allow_partial_dispatch !== false;
+                            window._saleHasPendingRefund = data.has_pending_refund;
+                            window._salePendingRefundInfo = data.pending_refund_info;
+
+                            if (data.has_pending_refund) {
+                                modalDispatchBtn.classList.replace('btn-success', 'btn-warning');
+                                modalDispatchBtn.classList.add('text-dark');
+                                modalDispatchBtn.innerHTML = '<i class="bi bi-clock-history me-1"></i>Dispatch (Pending Approval)';
+                            } else {
+                                modalDispatchBtn.classList.replace('btn-warning', 'btn-success');
+                                modalDispatchBtn.classList.remove('text-dark');
+                                modalDispatchBtn.innerHTML = '<i class="bi bi-send me-1"></i>Dispatch Goods';
+                            }
                         } else {
                             modalDispatchBtn.style.display = 'none';
                         }
@@ -684,6 +740,19 @@ document.addEventListener('DOMContentLoaded', function () {
         html += '<p class="mb-2">' + getStatusBadge(data.status_code, data.status) + '</p>';
         html += '</div>';
         html += '</div>';
+
+        if (data.has_pending_refund) {
+            const rInfo = data.pending_refund_info || {};
+            const rType = rInfo.is_partial_halt ? 'Halt & Settle' : 'Refund';
+            const rNum = rInfo.refund_number ? `(${rInfo.refund_number})` : '';
+            html += `<div class="alert alert-warning py-2 mb-3 d-flex align-items-center justify-content-between border border-warning rounded-3">
+                <div>
+                    <div class="fw-bold text-dark"><i class="bi bi-clock-history text-warning me-2 fs-5"></i>${rType} Request Pending Approval</div>
+                    <div class="small text-muted">Request ${rNum} is currently awaiting review by the Accountant.</div>
+                </div>
+                <span class="badge bg-warning text-dark border border-warning">Pending Approval</span>
+            </div>`;
+        }
 
         // Details row
         html += '<div class="row mb-3 py-2 bg-light rounded">';
@@ -761,40 +830,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
         contentEl.innerHTML = html;
     }
-
-    if (modalDispatchBtn) {
-        modalDispatchBtn.addEventListener('click', function() {
-            const saleId = this.dataset.saleId;
-            const saleNumber = this.dataset.saleNumber;
-            if (confirm(`Are you sure you want to dispatch goods for sale ${saleNumber}?`)) {
-                const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
-                fetch(`/sales/api/sales/${saleId}/dispatch/`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': csrfToken
-                    }
-                })
-                .then(response => {
-                    if (!response.ok) {
-                        return response.json().then(err => { throw new Error(err.error || 'Dispatch failed') });
-                    }
-                    return response.json();
-                })
-                .then(res => {
-                    if (res.waybill_url) {
-                        window.open(res.waybill_url, '_blank');
-                    }
-                    location.reload();
-                })
-                .catch(err => {
-                    alert(err.message);
-                });
-            }
-        });
-    }
-
-    {% include 'sales/partials/partial_dispatch_js.html' %}
 });
 </script>
 {% endif %}

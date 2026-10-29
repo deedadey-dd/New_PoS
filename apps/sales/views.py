@@ -14,8 +14,9 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from django.utils.decorators import method_decorator
-from django.db import transaction
+from django.db import models, transaction
 from django.utils import timezone
+from django.core.exceptions import ValidationError
 
 from .models import Sale, SaleItem, Shift, ShopSettings
 from apps.inventory.models import Product, ShopPrice
@@ -604,10 +605,19 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
         
         user = self.request.user
         role_name = user.role.name if user.role else None
+        from django.db.models import Exists, OuterRef
+        from .models import RefundRequest
         
         queryset = Sale.objects.filter(
             tenant=user.tenant
-        ).select_related('shop', 'attendant').order_by('-created_at')
+        ).select_related('shop', 'attendant', 'customer').annotate(
+            _has_pending_refund=Exists(
+                RefundRequest.objects.filter(sale=OuterRef('pk'), status='PENDING')
+            ),
+            _has_pending_halt=Exists(
+                RefundRequest.objects.filter(sale=OuterRef('pk'), status='PENDING', is_partial_halt=True)
+            )
+        ).order_by('-created_at')
         
         # For shop-based users (Shop Manager, Attendant), filter by their shop
         # Auditors, Accountants, and Admins see all shops by default
@@ -656,6 +666,13 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
         if payment:
             queryset = queryset.filter(payment_method=payment)
             
+        # Refund status filter
+        refund_status = self.request.GET.get('refund_status')
+        if refund_status == 'pending':
+            queryset = queryset.filter(_has_pending_refund=True)
+        elif refund_status == 'pending_halt':
+            queryset = queryset.filter(_has_pending_halt=True)
+
         # Dispatch status filter
         dispatch_status = self.request.GET.get('dispatch_status')
         if dispatch_status == 'pending':
@@ -754,6 +771,7 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
         context['selected_status'] = self.request.GET.get('status', '')
         context['selected_payment'] = self.request.GET.get('payment', '')
         context['selected_dispatch_status'] = self.request.GET.get('dispatch_status', '')
+        context['selected_refund_status'] = self.request.GET.get('refund_status', '')
         context['q'] = self.request.GET.get('q', '')
         
         # Build sale_provider_map for the sales on this page
@@ -972,6 +990,16 @@ def api_sale_detail(request, pk_or_number):
         'items': items,
         'dispatch_history': dispatch_history,
         'ecash_metadata': ecash_metadata,
+        'has_pending_refund': sale.refund_requests.filter(status='PENDING').exists(),
+        'pending_refund_info': {
+            'id': sale.refund_requests.filter(status='PENDING').first().id,
+            'refund_number': sale.refund_requests.filter(status='PENDING').first().refund_number,
+            'is_partial_halt': sale.refund_requests.filter(status='PENDING').first().is_partial_halt,
+            'refund_amount': str(sale.refund_requests.filter(status='PENDING').first().refund_amount),
+            'debt_reduction_amount': str(sale.refund_requests.filter(status='PENDING').first().debt_reduction_amount),
+            'reason': sale.refund_requests.filter(status='PENDING').first().reason,
+            'created_at': sale.refund_requests.filter(status='PENDING').first().created_at.strftime('%b %d, %Y %H:%M'),
+        } if sale.refund_requests.filter(status='PENDING').exists() else None,
     }
     return JsonResponse(data)
 
@@ -1085,6 +1113,7 @@ def api_approve_refund(request, pk):
     Approve a pending RefundRequest.
     Only Accountants and Admins can call this endpoint.
     """
+    import json
     from .models import RefundRequest
 
     tenant = request.user.tenant
@@ -1096,16 +1125,60 @@ def api_approve_refund(request, pk):
     refund_req = get_object_or_404(RefundRequest, pk=pk, tenant=tenant)
 
     try:
-        refund_req.approve(request.user)
+        data = json.loads(request.body) if request.body else {}
+    except Exception:
+        data = {}
+    refund_method = data.get('refund_method')
+
+    try:
+        refund_req.approve(request.user, refund_method=refund_method)
         return JsonResponse({
             'success': True,
             'message': (
                 f'Refund {refund_req.refund_number} approved. '
-                f'Sale {refund_req.sale.sale_number} has been refunded.'
+                f'Sale {refund_req.sale.sale_number} has been settled.'
             ),
         })
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@login_required
+@require_POST
+def api_payout_refund(request, pk):
+    """
+    Cashier executes cash payout for an approved refund request.
+    Only Shop Cashiers, Shop Managers, and Admins can call this endpoint.
+    """
+    from .models import RefundRequest
+
+    tenant = request.user.tenant
+    role_name = request.user.role.name if request.user.role else None
+
+    if role_name not in ['SHOP_CASHIER', 'SHOP_MANAGER', 'ADMIN']:
+        return JsonResponse({'success': False, 'error': 'Only cashiers, managers, and admins can payout refunds.'}, status=403)
+
+    refund_req = get_object_or_404(RefundRequest, pk=pk, tenant=tenant)
+
+    if refund_req.status != 'APPROVED':
+        return JsonResponse({'success': False, 'error': 'Refund request must be approved before payout.'}, status=400)
+
+    if refund_req.payout_status == 'PAID':
+        return JsonResponse({'success': False, 'error': 'This refund has already been paid out.'}, status=400)
+
+    if role_name in ['SHOP_CASHIER', 'SHOP_MANAGER'] and refund_req.sale.shop != request.user.location:
+        return JsonResponse({'success': False, 'error': 'You can only process payouts for your own shop.'}, status=403)
+
+    refund_req.payout_status = 'PAID'
+    refund_req.paid_by = request.user
+    refund_req.paid_at = timezone.now()
+    refund_req.save(update_fields=['payout_status', 'paid_by', 'paid_at'])
+
+    return JsonResponse({
+        'success': True,
+        'message': f'Payout of {tenant.currency_symbol}{refund_req.refund_amount} recorded successfully.',
+        'payout_number': refund_req.refund_number,
+    })
 
 
 @login_required
@@ -1170,7 +1243,7 @@ class RefundRequestListView(LoginRequiredMixin, ListView):
         tenant = user.tenant
 
         qs = RefundRequest.objects.filter(tenant=tenant).select_related(
-            'sale', 'sale__shop', 'requested_by', 'reviewed_by'
+            'sale', 'sale__shop', 'sale__customer', 'requested_by', 'reviewed_by'
         )
 
         if role_name == 'SHOP_MANAGER':
@@ -1632,6 +1705,10 @@ def api_dispatch_sale(request, pk):
     if sale.is_dispatched:
         return JsonResponse({'error': 'This sale has already been fully dispatched.'}, status=400)
 
+    from .models import RefundRequest
+    if RefundRequest.objects.filter(sale=sale, status='PENDING').exists():
+        return JsonResponse({'error': 'Cannot dispatch goods while a refund or halt request is pending Accountant approval.'}, status=400)
+
     # Parse requested dispatch quantities
     try:
         body = json.loads(request.body) if request.body else {}
@@ -1747,6 +1824,217 @@ def api_dispatch_sale(request, pk):
         return JsonResponse({'error': str(e)}, status=400)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=400)
+
+
+@login_required
+@require_POST
+def api_halt_and_request_refund(request, pk):
+    """
+    Halt further dispatch of a partially dispatched sale in Strict Sales Workflow,
+    and submit a partial refund / debt reduction request for Accountant approval.
+    Only Shop Managers and Admins can initiate this.
+    """
+    import json
+    from decimal import Decimal
+    from django.db.models import F
+    from .models import RefundRequest
+
+    tenant = request.user.tenant
+    if not tenant.use_strict_sales_workflow:
+        return JsonResponse({'error': 'Strict sales workflow is not enabled for this tenant.'}, status=400)
+
+    role_name = request.user.role.name if request.user.role else None
+    if role_name not in ['SHOP_MANAGER', 'ADMIN']:
+        return JsonResponse({'error': 'Only shop managers and admins can halt dispatches.'}, status=403)
+
+    sale = get_object_or_404(
+        Sale,
+        pk=pk,
+        tenant=tenant,
+        status='PENDING_DISPATCH'
+    )
+
+    if role_name == 'SHOP_MANAGER' and sale.shop != request.user.location:
+        return JsonResponse({'error': 'You can only manage sales for your own shop.'}, status=403)
+
+    if RefundRequest.objects.filter(sale=sale, status='PENDING').exists():
+        return JsonResponse({'error': 'A refund request for this sale is already pending approval.'}, status=400)
+
+    # Check if there are undispatched items to halt
+    has_undispatched = sale.items.filter(dispatched_quantity__lt=F('quantity')).exists()
+    if not has_undispatched:
+        return JsonResponse({'error': 'All items in this sale have already been dispatched.'}, status=400)
+
+    try:
+        body = json.loads(request.body) if request.body else {}
+    except Exception:
+        body = {}
+    reason = body.get('reason', 'Customer halted remaining dispatch').strip() or 'Customer halted remaining dispatch'
+
+    # Calculate dispatched value vs undispatched value
+    dispatched_total = Decimal('0.00')
+    for item in sale.items.all():
+        if item.quantity > Decimal('0') and item.dispatched_quantity > Decimal('0'):
+            effective_price = item.total / item.quantity
+            dispatched_item_val = (effective_price * item.dispatched_quantity).quantize(Decimal('0.01'))
+            dispatched_total += dispatched_item_val
+
+    undispatched_total = max(Decimal('0.00'), sale.total - dispatched_total)
+
+    # Determine cash refund vs debt reduction
+    if sale.amount_paid > dispatched_total:
+        refund_amount = sale.amount_paid - dispatched_total
+        debt_reduction_amount = max(Decimal('0.00'), sale.total - sale.amount_paid)
+    else:
+        refund_amount = Decimal('0.00')
+        debt_reduction_amount = undispatched_total
+
+    try:
+        with transaction.atomic():
+            refund_req = RefundRequest.objects.create(
+                tenant=tenant,
+                sale=sale,
+                requested_by=request.user,
+                reason=reason,
+                status='PENDING',
+                is_partial_halt=True,
+                dispatched_total=dispatched_total,
+                refund_amount=refund_amount,
+                debt_reduction_amount=debt_reduction_amount,
+                refund_method='CASH' if sale.payment_method == 'CASH' else ('MOMO' if sale.payment_method == 'MOMO' else ('ECASH' if sale.payment_method == 'ECASH' else 'ACCOUNT_CREDIT')),
+                payout_status='PENDING' if refund_amount > Decimal('0.00') else 'PAID'
+            )
+
+            # Notify accountants and admins
+            from apps.core.models import User
+            from apps.notifications.models import Notification
+            approvers = User.objects.filter(
+                tenant=tenant,
+                role__name__in=['ACCOUNTANT', 'ADMIN'],
+                is_active=True
+            )
+            for approver in approvers:
+                Notification.objects.create(
+                    tenant=tenant,
+                    user=approver,
+                    title="Partial Refund Request Awaiting Approval",
+                    message=(
+                        f"{request.user.get_full_name() or request.user.email} has requested to halt dispatch "
+                        f"and refund Sale {sale.sale_number} at {sale.shop.name}. "
+                        f"Dispatched: {tenant.currency_symbol}{dispatched_total}, "
+                        f"Refund Owed: {tenant.currency_symbol}{refund_amount}, "
+                        f"Debt Reduction: {tenant.currency_symbol}{debt_reduction_amount}. "
+                        f"Reason: {reason[:120]}"
+                    ),
+                    notification_type='SYSTEM',
+                    reference_type='RefundRequest',
+                    reference_id=refund_req.pk,
+                )
+
+        return JsonResponse({
+            'success': True,
+            'refund_id': refund_req.pk,
+            'refund_number': refund_req.refund_number,
+            'dispatched_total': str(dispatched_total),
+            'undispatched_total': str(undispatched_total),
+            'refund_amount': str(refund_amount),
+            'debt_reduction_amount': str(debt_reduction_amount),
+            'message': (
+                f'Dispatch halted. Refund request {refund_req.refund_number} submitted for accountant approval '
+                f'(Refund: {tenant.currency_symbol}{refund_amount}, Debt reduction: {tenant.currency_symbol}{debt_reduction_amount}).'
+            ),
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@login_required
+@require_POST
+def api_customer_credit_payout(request, pk):
+    """
+    Cashier dispenses cash to a registered customer who has available credit (store credit).
+    Reduces customer credit balance (brings balance closer to 0) and records cash payout on shift.
+    Works for both standard and strict workflows.
+    """
+    import json
+    from decimal import Decimal, InvalidOperation
+    from apps.customers.models import Customer, CustomerTransaction
+
+    tenant = request.user.tenant
+    role_name = request.user.role.name if request.user.role else None
+
+    if role_name not in ['SHOP_CASHIER', 'SHOP_MANAGER', 'ADMIN', 'ACCOUNTANT']:
+        return JsonResponse({'success': False, 'error': 'You do not have permission to payout customer credit.'}, status=403)
+
+    customer = get_object_or_404(Customer, pk=pk, tenant=tenant)
+
+    # In our database, negative current_balance means the customer has credit with the store.
+    if customer.current_balance >= Decimal('0.00'):
+        return JsonResponse({
+            'success': False,
+            'error': f'Customer {customer.name} has no available credit balance to withdraw (Current balance: {tenant.currency_symbol}{customer.current_balance}).'
+        }, status=400)
+
+    available_credit = abs(customer.current_balance)
+
+    try:
+        body = json.loads(request.body) if request.body else {}
+    except Exception:
+        body = request.POST
+
+    try:
+        amount = Decimal(str(body.get('amount', '0')))
+    except (InvalidOperation, ValueError):
+        return JsonResponse({'success': False, 'error': 'Invalid payout amount.'}, status=400)
+
+    if amount <= Decimal('0.00'):
+        return JsonResponse({'success': False, 'error': 'Payout amount must be greater than zero.'}, status=400)
+
+    if amount > available_credit:
+        return JsonResponse({
+            'success': False,
+            'error': f'Payout amount ({tenant.currency_symbol}{amount}) exceeds available credit ({tenant.currency_symbol}{available_credit}).'
+        }, status=400)
+
+    notes = body.get('notes', '').strip()
+
+    try:
+        with transaction.atomic():
+            balance_before = customer.current_balance
+            customer.current_balance += amount  # increases balance (less negative)
+            customer.save()
+
+            txn_desc = f"Credit payout to customer (CASH){': ' + notes if notes else ''}"
+            txn = CustomerTransaction.objects.create(
+                tenant=tenant,
+                customer=customer,
+                transaction_type='DEBIT',
+                amount=amount,
+                description=txn_desc,
+                reference_id=f"CPAY-{customer.pk}-{timezone.now().strftime('%Y%m%d%H%M%S')}",
+                balance_before=balance_before,
+                balance_after=customer.current_balance,
+                performed_by=request.user
+            )
+
+        if request.headers.get('x-requested-with') == 'XMLHttpRequest' or (request.content_type and 'application/json' in request.content_type):
+            return JsonResponse({
+                'success': True,
+                'transaction_id': txn.pk,
+                'amount_paid': str(amount),
+                'new_balance': str(customer.current_balance),
+                'remaining_credit': str(abs(customer.current_balance) if customer.current_balance < Decimal('0.00') else Decimal('0.00')),
+                'message': f'Credit payout of {tenant.currency_symbol}{amount} to {customer.name} completed successfully.'
+            })
+        from django.contrib import messages
+        messages.success(request, f'Credit payout of {tenant.currency_symbol}{amount} to {customer.name} completed successfully.')
+        return redirect('customers:customer_detail', pk=customer.pk)
+    except Exception as e:
+        if request.headers.get('x-requested-with') == 'XMLHttpRequest' or (request.content_type and 'application/json' in request.content_type):
+            return JsonResponse({'success': False, 'error': str(e)}, status=400)
+        from django.contrib import messages
+        messages.error(request, str(e))
+        return redirect('customers:customer_detail', pk=customer.pk)
 
 
 

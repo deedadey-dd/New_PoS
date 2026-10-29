@@ -194,6 +194,15 @@ def tenant_context(request):
                     fund_source='CASH'
                 ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
 
+                # Customer credit cash payouts by user
+                credit_payouts = CustomerTransaction.objects.filter(
+                    tenant=tenant,
+                    performed_by=user,
+                    transaction_type='DEBIT'
+                ).filter(
+                    Q(description__icontains='Credit payout') | Q(description__icontains='payout to customer')
+                ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
                 context['cash_on_hand'] = max(Decimal('0'), (
                     received
                     - sent
@@ -201,6 +210,7 @@ def tenant_context(request):
                     + customer_payments
                     + open_shift_opening_cash
                     - banked_cash
+                    - credit_payouts
                 ))
         
         # Add total credit debt for managers/admin

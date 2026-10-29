@@ -2,6 +2,7 @@
 {% load sort_tags %}
 {% load core_filters %}
 {% load humanize %}
+{% load static %}
 
 {% block title %}Sales History{% endblock %}
 
@@ -172,6 +173,14 @@
                     <option value="PENDING" {% if selected_status == 'PENDING' %}selected{% endif %}>Pending</option>
                 </select>
             </div>
+            <div class="col-md-2">
+                <label class="form-label">Refund / Halt</label>
+                <select name="refund_status" class="form-select">
+                    <option value="">All</option>
+                    <option value="pending" {% if selected_refund_status == 'pending' %}selected{% endif %}>Pending Any Refund</option>
+                    <option value="pending_halt" {% if selected_refund_status == 'pending_halt' %}selected{% endif %}>Pending Halt & Settle</option>
+                </select>
+            </div>
             <div class="col-md-2 d-flex align-items-end gap-2">
                 <button type="submit" class="btn btn-primary flex-grow-1">
                     <i class="bi bi-filter me-1"></i>Filter
@@ -314,6 +323,19 @@
                             {% else %}
                             <span class="badge bg-secondary">{{ sale.get_status_display }}</span>
                             {% endif %}
+                            {% if sale.has_pending_refund %}
+                                <div class="mt-1">
+                                    {% if sale.has_pending_halt %}
+                                    <span class="badge bg-warning text-dark border border-warning" data-bs-toggle="tooltip" title="Halt & partial refund awaiting Accountant approval">
+                                        <i class="bi bi-stop-circle me-1"></i>Halt Pending
+                                    </span>
+                                    {% else %}
+                                    <span class="badge bg-warning text-dark border border-warning" data-bs-toggle="tooltip" title="Refund request awaiting Accountant approval">
+                                        <i class="bi bi-clock-history me-1"></i>Refund Pending
+                                    </span>
+                                    {% endif %}
+                                </div>
+                            {% endif %}
                         </td>
                         <td class="text-end">
                             {% if role_name == 'SHOP_CASHIER' %}
@@ -327,19 +349,35 @@
                                     </button>
                                 {% elif sale.status == 'COMPLETED' or sale.status == 'PENDING_DISPATCH' %}
                                     {% if current_tenant.enable_refunds %}
+                                        {% if sale.has_pending_refund %}
+                                        <button class="btn btn-sm btn-outline-secondary me-1 disabled" data-bs-toggle="tooltip" title="Refund request already pending Accountant approval">
+                                            <i class="bi bi-clock-history me-1"></i>Pending
+                                        </button>
+                                        {% else %}
                                         <button class="btn btn-sm btn-outline-warning me-1 inline-refund-btn" 
                                                 data-sale-id="{{ sale.id }}" 
                                                 data-sale-number="{{ sale.sale_number }}">Refund</button>
+                                        {% endif %}
                                     {% endif %}
                                 {% endif %}
                             {% elif role_name == 'SHOP_MANAGER' and request.user.tenant.use_strict_sales_workflow %}
                                 {% if sale.status == 'PENDING_DISPATCH' %}
+                                    {% if sale.has_pending_refund %}
+                                    <button type="button" 
+                                            class="btn btn-sm btn-warning text-dark open-dispatch-modal me-1 rounded-pill px-3"
+                                            data-sale-id="{{ sale.id }}"
+                                            data-sale-number="{{ sale.sale_number }}"
+                                            data-bs-toggle="tooltip" title="Refund or Halt awaiting Accountant approval">
+                                        <i class="bi bi-clock-history me-1"></i>Pending Approval
+                                    </button>
+                                    {% else %}
                                     <button type="button" 
                                             class="btn btn-sm btn-success open-dispatch-modal me-1 rounded-pill px-3"
                                             data-sale-id="{{ sale.id }}"
                                             data-sale-number="{{ sale.sale_number }}">
                                         <i class="bi bi-box-seam me-1"></i>Dispatch Goods
                                     </button>
+                                    {% endif %}
                                 {% elif sale.is_dispatched %}
                                     <a href="{% url 'sales:sale_waybill' sale.pk %}" class="btn btn-sm btn-outline-secondary me-1"
                                         target="_blank" data-bs-toggle="tooltip" title="View Waybill">
@@ -427,66 +465,8 @@
     </div>
 </div>
 
-{% if role_name == 'SHOP_MANAGER' and request.user.tenant.use_strict_sales_workflow %}
-<!-- Partial Dispatch Modal -->
-<div class="modal fade" id="partialDispatchModal" tabindex="-1" aria-labelledby="partialDispatchModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg">
-        <div class="modal-content rounded-4 border-0 shadow">
-            <div class="modal-header border-0 pb-0 bg-success bg-opacity-10">
-                <h5 class="modal-title fw-bold text-success" id="partialDispatchModalLabel">
-                    <i class="bi bi-send-fill me-2"></i>Dispatch Goods
-                    <small class="text-muted fw-normal ms-2 fs-6" id="dispatchModalSaleNumber"></small>
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <div class="alert alert-info py-2 mb-3 d-flex align-items-center gap-2">
-                    <i class="bi bi-info-circle-fill"></i>
-                <span>Review the items below. Click <strong>Full Dispatch</strong> to release all remaining items, or adjust quantities and click <strong>Partial Dispatch</strong> to release only some items now.</span>
-                </div>
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <h6 class="mb-0 fw-bold">Items</h6>
-                    <div class="form-check form-switch mb-0" id="showDispatchedToggleContainer" style="display:none!important;">
-                        <input class="form-check-input" type="checkbox" id="showDispatchedToggle">
-                        <label class="form-check-label small text-muted" for="showDispatchedToggle">Show fully dispatched items</label>
-                    </div>
-                </div>
-                <div class="table-responsive">
-                    <table class="table table-sm align-middle" id="dispatchItemsTable">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Product</th>
-                                <th class="text-center">Ordered</th>
-                                <th class="text-center">Dispatched</th>
-                                <th class="text-center">Remaining</th>
-                                <th class="text-center" style="min-width:120px;">Dispatch Now</th>
-                            </tr>
-                        </thead>
-                        <tbody id="dispatchItemsBody"></tbody>
-                    </table>
-                </div>
-                <!-- Dispatch History -->
-                <div id="dispatchHistorySection" class="mt-3" style="display:none;">
-                    <hr class="my-2">
-                    <div class="d-flex align-items-center mb-2">
-                        <i class="bi bi-clock-history text-secondary me-2"></i>
-                        <h6 class="mb-0 fw-bold text-secondary">Dispatch History</h6>
-                    </div>
-                    <div id="dispatchHistoryBody"></div>
-                </div>
-            </div>
-            <div class="modal-footer gap-2">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-success" id="fullDispatchBtn">
-                    <i class="bi bi-check2-all me-1"></i>Full Dispatch
-                </button>
-                <button type="button" class="btn btn-outline-primary" id="partialDispatchSubmitBtn">
-                    <i class="bi bi-send me-1"></i>Partial Dispatch
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
+{% if role_name in 'SHOP_MANAGER,ADMIN' and request.user.tenant.use_strict_sales_workflow %}
+{% include 'sales/partials/partial_dispatch_modal.html' %}
 {% endif %}
 
 <!-- Payment Modal -->
@@ -570,10 +550,51 @@
     </div>
 </div>
 {% endif %}
+
+<!-- Sale Refund Request Modal -->
+<div class="modal fade" id="saleRefundModal" tabindex="-1" aria-labelledby="saleRefundModalLabel" aria-hidden="true" style="z-index: 1065;">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-4 border-0 shadow">
+            <div class="modal-header border-0 pb-0 bg-danger bg-opacity-10">
+                <h5 class="modal-title fw-bold text-danger" id="saleRefundModalLabel">
+                    <i class="bi bi-arrow-counterclockwise me-2"></i>Request Sale Refund
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex align-items-center justify-content-between mb-3 p-2 bg-light rounded-3">
+                    <span class="text-muted small">Sale Invoice:</span>
+                    <span class="fw-bold font-monospace text-dark" id="saleRefundModalNumber">-</span>
+                </div>
+                <p class="text-muted small mb-3">
+                    Please provide the reason for requesting a refund. The request will be submitted to the Accountant for review and approval.
+                </p>
+                <div class="mb-3">
+                    <label for="saleRefundReasonInput" class="form-label fw-semibold">
+                        Reason for Refund <span class="text-danger">*</span>
+                    </label>
+                    <textarea class="form-control" id="saleRefundReasonInput" rows="3" 
+                              placeholder="Enter reason for requesting this refund..." required></textarea>
+                    <div class="invalid-feedback" id="saleRefundReasonFeedback" style="display:none;">
+                        A reason is required to process a refund request.
+                    </div>
+                </div>
+                <div id="saleRefundErrorAlert" class="alert alert-danger py-2 small mb-0 d-none"></div>
+            </div>
+            <div class="modal-footer border-0 gap-2">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger fw-bold" id="confirmSaleRefundBtn">
+                    <i class="bi bi-send me-1"></i>Submit Refund Request
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
 <script src="https://js.paystack.co/v1/inline.js"></script>
+<script src="{% static 'js/partial_dispatch.js' %}"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const modal = new bootstrap.Modal(document.getElementById('saleDetailModal'));
@@ -612,6 +633,18 @@ document.addEventListener('DOMContentLoaded', function() {
                             _dispatchSaleItems = data.items;  // store for modal
                             window._dispatchHistory = data.dispatch_history;
                             window._allowPartialDispatch = data.allow_partial_dispatch !== false;
+                            window._saleHasPendingRefund = data.has_pending_refund;
+                            window._salePendingRefundInfo = data.pending_refund_info;
+
+                            if (data.has_pending_refund) {
+                                dispatchBtn.classList.replace('btn-success', 'btn-warning');
+                                dispatchBtn.classList.add('text-dark');
+                                dispatchBtn.innerHTML = '<i class="bi bi-clock-history me-1"></i>Dispatch (Pending Approval)';
+                            } else {
+                                dispatchBtn.classList.replace('btn-warning', 'btn-success');
+                                dispatchBtn.classList.remove('text-dark');
+                                dispatchBtn.innerHTML = '<i class="bi bi-send me-1"></i>Dispatch Goods';
+                            }
                         } else {
                             dispatchBtn.style.display = 'none';
                         }
@@ -632,8 +665,16 @@ document.addEventListener('DOMContentLoaded', function() {
                     
                     const refundBtn = document.getElementById('saleDetailRefundBtn');
                     if (refundBtn) {
-                        if (data.status_code === 'COMPLETED' || data.status_code === 'PENDING_DISPATCH') {
+                        if (data.has_pending_refund) {
                             refundBtn.style.display = 'inline-block';
+                            refundBtn.disabled = true;
+                            refundBtn.className = 'btn btn-secondary';
+                            refundBtn.innerHTML = '<i class="bi bi-clock-history me-1"></i>Refund Pending Approval';
+                        } else if (data.status_code === 'COMPLETED' || data.status_code === 'PENDING_DISPATCH') {
+                            refundBtn.style.display = 'inline-block';
+                            refundBtn.disabled = false;
+                            refundBtn.className = 'btn btn-warning text-dark';
+                            refundBtn.innerHTML = '<i class="bi bi-arrow-counterclockwise me-1"></i>Request Refund';
                             refundBtn.dataset.saleId = saleId;
                             refundBtn.dataset.saleNumber = data.sale_number;
                         } else {
@@ -686,6 +727,19 @@ document.addEventListener('DOMContentLoaded', function() {
         html += '<p class="mb-2">' + getStatusBadge(data.status_code, data.status) + '</p>';
         html += '</div>';
         html += '</div>';
+
+        if (data.has_pending_refund) {
+            const rInfo = data.pending_refund_info || {};
+            const rType = rInfo.is_partial_halt ? 'Halt & Settle' : 'Refund';
+            const rNum = rInfo.refund_number ? `(${rInfo.refund_number})` : '';
+            html += `<div class="alert alert-warning py-2 mb-3 d-flex align-items-center justify-content-between border border-warning rounded-3">
+                <div>
+                    <div class="fw-bold text-dark"><i class="bi bi-clock-history text-warning me-2 fs-5"></i>${rType} Request Pending Approval</div>
+                    <div class="small text-muted">Request ${rNum} is currently awaiting review by the Accountant.</div>
+                </div>
+                <span class="badge bg-warning text-dark border border-warning">Pending Approval</span>
+            </div>`;
+        }
 
         // Details row
         html += '<div class="row mb-3 py-2 bg-light rounded">';
@@ -809,9 +863,6 @@ document.addEventListener('DOMContentLoaded', function() {
         contentEl.innerHTML = html;
     }
 
-    {% include 'sales/partials/partial_dispatch_js.html' %}
-
-
     const refundBtn = document.getElementById('saleDetailRefundBtn');
     if (refundBtn) {
         refundBtn.addEventListener('click', function() {
@@ -831,15 +882,62 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
+    let pendingRefundSaleId = null;
+
     function handleRefundRequest(saleId, saleNumber) {
-        const reason = prompt('Please enter a reason for refunding sale ' + saleNumber + ':');
-        if (reason !== null) {
-            if (reason.trim() === '') {
-                alert('A reason is required.');
+        pendingRefundSaleId = saleId;
+        const modalEl = document.getElementById('saleRefundModal');
+        if (!modalEl) return;
+
+        const numEl = document.getElementById('saleRefundModalNumber');
+        const reasonInput = document.getElementById('saleRefundReasonInput');
+        const feedback = document.getElementById('saleRefundReasonFeedback');
+        const errAlert = document.getElementById('saleRefundErrorAlert');
+
+        if (numEl) numEl.textContent = '#' + saleNumber;
+        if (reasonInput) {
+            reasonInput.value = '';
+            reasonInput.classList.remove('is-invalid');
+        }
+        if (feedback) feedback.style.display = 'none';
+        if (errAlert) {
+            errAlert.classList.add('d-none');
+            errAlert.textContent = '';
+        }
+
+        const modalInstance = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+        modalInstance.show();
+    }
+
+    const confirmSaleRefundBtn = document.getElementById('confirmSaleRefundBtn');
+    if (confirmSaleRefundBtn) {
+        confirmSaleRefundBtn.addEventListener('click', function() {
+            if (!pendingRefundSaleId) return;
+
+            const reasonInput = document.getElementById('saleRefundReasonInput');
+            const feedback = document.getElementById('saleRefundReasonFeedback');
+            const errAlert = document.getElementById('saleRefundErrorAlert');
+            const reason = reasonInput ? reasonInput.value.trim() : '';
+
+            if (!reason) {
+                if (reasonInput) {
+                    reasonInput.classList.add('is-invalid');
+                    reasonInput.focus();
+                }
+                if (feedback) feedback.style.display = 'block';
                 return;
             }
+
+            if (reasonInput) reasonInput.classList.remove('is-invalid');
+            if (feedback) feedback.style.display = 'none';
+            if (errAlert) errAlert.classList.add('d-none');
+
+            confirmSaleRefundBtn.disabled = true;
+            const originalHtml = confirmSaleRefundBtn.innerHTML;
+            confirmSaleRefundBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Submitting...';
+
             const csrfToken = '{{ csrf_token }}';
-            fetch('/sales/api/' + saleId + '/refund/', {
+            fetch('/sales/api/' + pendingRefundSaleId + '/refund/', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -854,13 +952,27 @@ document.addEventListener('DOMContentLoaded', function() {
                 return response.json();
             })
             .then(function(res) {
-                alert(res.message || 'Sale refunded successfully.');
-                location.reload();
+                const modalEl = document.getElementById('saleRefundModal');
+                if (modalEl) {
+                    const modalInstance = bootstrap.Modal.getInstance(modalEl);
+                    if (modalInstance) modalInstance.hide();
+                }
+                if (window.showAppToast) {
+                    window.showAppToast(res.message || 'Refund request submitted successfully.', 'success');
+                }
+                setTimeout(() => location.reload(), 900);
             })
             .catch(function(err) {
-                alert(err.message);
+                confirmSaleRefundBtn.disabled = false;
+                confirmSaleRefundBtn.innerHTML = originalHtml;
+                if (errAlert) {
+                    errAlert.textContent = err.message;
+                    errAlert.classList.remove('d-none');
+                } else if (window.showAppToast) {
+                    window.showAppToast(err.message, 'danger');
+                }
             });
-        }
+        });
     }
 
     // Payment Logic

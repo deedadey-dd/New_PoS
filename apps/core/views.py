@@ -402,11 +402,24 @@ class DashboardView(LoginRequiredMixin, View):
                 ).count()
 
                 # Pending Dispatches
+                from django.db.models import Exists, OuterRef
+                from apps.sales.models import RefundRequest
+
+                refund_pending_subquery = Exists(
+                    RefundRequest.objects.filter(sale=OuterRef('pk'), status='PENDING')
+                )
+                halt_pending_subquery = Exists(
+                    RefundRequest.objects.filter(sale=OuterRef('pk'), status='PENDING', is_partial_halt=True)
+                )
+
                 context['pending_dispatches'] = Sale.objects.filter(
                     tenant=user.tenant,
                     shop=user.location,
                     status='PENDING_DISPATCH'
-                ).select_related('customer', 'attendant').order_by('-created_at')[:10]
+                ).select_related('customer', 'attendant').annotate(
+                    _has_pending_refund=refund_pending_subquery,
+                    _has_pending_halt=halt_pending_subquery
+                ).order_by('-created_at')[:10]
                 context['pending_dispatches_count'] = Sale.objects.filter(
                     tenant=user.tenant,
                     shop=user.location,
@@ -418,7 +431,10 @@ class DashboardView(LoginRequiredMixin, View):
                     tenant=user.tenant,
                     shop=user.location,
                     status__in=['COMPLETED', 'PENDING_DISPATCH']
-                ).select_related('customer', 'attendant', 'dispatched_by').order_by('-created_at')[:10]
+                ).select_related('customer', 'attendant', 'dispatched_by').annotate(
+                    _has_pending_refund=refund_pending_subquery,
+                    _has_pending_halt=halt_pending_subquery
+                ).order_by('-created_at')[:10]
 
                 # Recent Sales (Any status except pending)
                 context['recent_sales'] = Sale.objects.filter(
@@ -426,6 +442,9 @@ class DashboardView(LoginRequiredMixin, View):
                     shop=user.location
                 ).exclude(status='PENDING').select_related(
                     'customer', 'attendant'
+                ).annotate(
+                    _has_pending_refund=refund_pending_subquery,
+                    _has_pending_halt=halt_pending_subquery
                 ).order_by('-created_at')[:10]
         
         return render(request, self.template_name, context)

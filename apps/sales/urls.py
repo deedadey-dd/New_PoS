@@ -35,9 +35,12 @@ urlpatterns = [
     path('api/<int:pk>/refund/', views.api_refund_sale, name='api_refund_sale'),
     path('api/refund-requests/<int:pk>/approve/', views.api_approve_refund, name='api_approve_refund'),
     path('api/refund-requests/<int:pk>/reject/', views.api_reject_refund, name='api_reject_refund'),
+    path('api/refund-requests/<int:pk>/payout/', views.api_payout_refund, name='api_payout_refund'),
     path('refund-requests/', views.RefundRequestListView.as_view(), name='refund_request_list'),
     path('api/invoices/<int:pk>/pay/', views.api_pay_invoice, name='api_pay_invoice'),
     path('api/sales/<int:pk>/dispatch/', views.api_dispatch_sale, name='api_dispatch_sale'),
+    path('api/sales/<int:pk>/halt-dispatch/', views.api_halt_and_request_refund, name='api_halt_and_request_refund'),
+    path('api/customers/<int:pk>/credit-payout/', views.api_customer_credit_payout, name='api_customer_credit_payout'),
     
     # E-Cash Payment
     path('api/ecash/initialize/', views.initialize_ecash_payment, name='initialize_ecash_payment'),
