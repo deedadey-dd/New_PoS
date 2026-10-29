@@ -1069,32 +1069,86 @@ class RefundRequest(TenantModel):
             sale = self.sale
             tenant = self.tenant
 
-            method = refund_method or self.refund_method or 'CASH'
+            if refund_method:
+                method = refund_method
+            elif self.refund_method and self.refund_method != 'CASH':
+                method = self.refund_method
+            else:
+                method = 'CASH' if tenant.refund_always_cash else sale.payment_method
             self.refund_method = method
 
             if self.is_partial_halt:
                 # Settle the sale to actual dispatched items
                 sale.halt_and_settle(user=approver, refund_req=self, refund_method=method)
 
+                orig_pay_method = sale.payment_method
                 # Process payout according to refund method
-                if method in ('ECASH', 'MOMO') and self.refund_amount > Decimal('0.00'):
-                    from apps.accounting.models import DigitalFundWithdrawal
-                    DigitalFundWithdrawal.objects.create(
-                        tenant=tenant,
-                        shop=sale.shop,
-                        accountant=approver,
-                        amount=-abs(self.refund_amount),
-                        fund_source=method,
-                        notes=f"Partial refund reversal: Sale {sale.sale_number} [{self.refund_number}]"
-                    )
+                if method == 'MOMO':
+                    if orig_pay_method != 'MOMO' and self.refund_amount > Decimal('0.00'):
+                        # Cross-payment: Customer paid via non-Momo, but refund is disbursed via Momo.
+                        # Deduct Momo balance via positive DigitalFundWithdrawal.
+                        from apps.accounting.models import DigitalFundWithdrawal
+                        DigitalFundWithdrawal.objects.create(
+                            tenant=tenant,
+                            shop=sale.shop,
+                            accountant=approver,
+                            amount=abs(self.refund_amount),
+                            fund_source='MOMO',
+                            notes=f"Partial refund payout (Cross-payment): Sale {sale.sale_number} [{self.refund_number}]"
+                        )
+                    # Note: For same-method MOMO (orig_pay_method == 'MOMO'), sale.halt_and_settle already
+                    # reduced sale.amount_paid by self.refund_amount, which automatically drops the shop's
+                    # momo_sales aggregation. No DigitalFundWithdrawal should be created (a negative entry
+                    # would negate the reduction).
                     self.payout_status = 'PAID'
                     self.paid_by = approver
                     self.paid_at = tz.now()
+
+                elif method == 'ECASH':
+                    if self.refund_amount > Decimal('0.00'):
+                        from apps.payments.models import ECashLedger
+                        ECashLedger.objects.create(
+                            tenant=tenant,
+                            transaction_type='REFUND',
+                            amount=-abs(self.refund_amount),
+                            reference_type='RefundRequest',
+                            reference_id=self.pk,
+                            shop=sale.shop,
+                            created_by=approver,
+                            notes=f"Partial refund: Sale {sale.sale_number} [{self.refund_number}]"
+                        )
+                    self.payout_status = 'PAID'
+                    self.paid_by = approver
+                    self.paid_at = tz.now()
+
                 elif method == 'ACCOUNT_CREDIT' or self.refund_amount <= Decimal('0.00'):
+                    if orig_pay_method == 'MOMO' and self.refund_amount > Decimal('0.00'):
+                        # Store credit given; restore MOMO balance since digital money didn't leave shop
+                        from apps.accounting.models import DigitalFundWithdrawal
+                        DigitalFundWithdrawal.objects.create(
+                            tenant=tenant,
+                            shop=sale.shop,
+                            accountant=approver,
+                            amount=-abs(self.refund_amount),
+                            fund_source='MOMO',
+                            notes=f"Refund reversal (Store credit): Sale {sale.sale_number} [{self.refund_number}]"
+                        )
                     self.payout_status = 'PAID'
                     self.paid_by = approver
                     self.paid_at = tz.now()
+
                 else:  # CASH
+                    if orig_pay_method == 'MOMO' and self.refund_amount > Decimal('0.00'):
+                        # Customer paid via MOMO, but cashier pays cash from till: restore MOMO balance
+                        from apps.accounting.models import DigitalFundWithdrawal
+                        DigitalFundWithdrawal.objects.create(
+                            tenant=tenant,
+                            shop=sale.shop,
+                            accountant=approver,
+                            amount=-abs(self.refund_amount),
+                            fund_source='MOMO',
+                            notes=f"Refund reversal (Cross-payment): Sale {sale.sale_number} [{self.refund_number}]"
+                        )
                     # Needs cash payout by the cashier
                     self.payout_status = 'PENDING'
             else:
@@ -1166,12 +1220,25 @@ class RefundRequest(TenantModel):
 
         pay_method = sale.payment_method
         always_cash = tenant.refund_always_cash
+        refund_method = self.refund_method
 
         # Since sale.status becomes REFUNDED, the sale's amount_paid is automatically
         # excluded from the shop's cash_sales, ecash_sales, or momo_sales aggregations.
         # This naturally drops the balance of whatever the original payment method was.
 
-        if always_cash and pay_method in ('ECASH', 'MOMO'):
+        if refund_method == 'ECASH' and pay_method == 'ECASH':
+            from apps.payments.models import ECashLedger
+            ECashLedger.objects.create(
+                tenant=tenant,
+                transaction_type='REFUND',
+                amount=-abs(paid_amount),
+                reference_type='RefundRequest',
+                reference_id=self.pk,
+                shop=shop,
+                created_by=approver,
+                notes=f"Refund: Sale {sale.sale_number} [{self.refund_number}]"
+            )
+        elif refund_method != pay_method and refund_method == 'CASH' and pay_method in ('ECASH', 'MOMO'):
             # The sale was digital, but we are paying back in physical cash.
             # 1. Restore the digital balance (because excluding the sale artificially dropped it)
             DigitalFundWithdrawal.objects.create(
@@ -1204,6 +1271,19 @@ class RefundRequest(TenantModel):
                     confirmed_at=timezone.now(),
                     confirmed_by=approver,
                 )
+        elif refund_method != pay_method and refund_method == 'MOMO' and pay_method in ('CASH', 'MIXED'):
+            # Customer paid in cash, but refund is paid out from MOMO wallet.
+            DigitalFundWithdrawal.objects.create(
+                tenant=tenant,
+                shop=shop,
+                accountant=approver,
+                amount=abs(paid_amount),
+                fund_source='MOMO',
+                notes=(
+                    f"Refund payout (Cross-payment): Sale {sale.sale_number} "
+                    f"[{self.refund_number}]"
+                ),
+            )
 
     def reject(self, approver, rejection_reason=''):
         """Reject the refund request and notify the shop manager."""

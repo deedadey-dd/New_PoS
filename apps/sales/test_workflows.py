@@ -1950,3 +1950,107 @@ class WorkflowIntegrationTests(TestCase):
         self.assertEqual(item.dispatched_quantity, Decimal("8.00"))
         self.assertTrue(sale.is_dispatched)
         self.assertEqual(sale.status, "COMPLETED")
+
+    def test_22_strict_partial_dispatch_halt_momo_refund_updates_navbar_balance(self):
+        """
+        Verify that in strict workflow, when a partial dispatch is halted and settled with a MOMO refund:
+        1. Customer buys 10 items @ 10.00 = 100.00 via MOMO.
+        2. Manager partially dispatches 4 items (40.00). 6 items undispatched (60.00).
+        3. Manager halts dispatch and requests refund of 60.00.
+        4. Accountant approves refund with refund_method='MOMO'.
+        5. Sale settles to total 40.00, amount_paid 40.00, status COMPLETED.
+        6. Cashier navbar momo_balance drops by exactly 60.00 (from 100.00 to 40.00).
+        7. No erroneous negative DigitalFundWithdrawal is created that would negate the deduction.
+        8. Payout status is immediately PAID (fulfilled via MoMo wallet).
+        """
+        import json
+        from apps.sales.models import RefundRequest
+        from apps.accounting.models import DigitalFundWithdrawal
+
+        self.tenant.use_strict_sales_workflow = True
+        self.tenant.allow_momo_payments = True
+        self.tenant.save()
+
+        # Attendant creates and completes MOMO sale for 10 items
+        sale = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.attendant_user,
+            cashier=self.cashier_user,
+            total=Decimal("100.00"),
+            amount_paid=Decimal("100.00"),
+            payment_method="MOMO",
+            status="PENDING_DISPATCH"
+        )
+        item = SaleItem.objects.create(
+            tenant=self.tenant,
+            sale=sale,
+            product=self.product,
+            batch=self.shop_batch,
+            quantity=Decimal("10.00"),
+            unit_price=Decimal("10.00"),
+            dispatched_quantity=Decimal("0.00")
+        )
+
+        # Verify initial cashier Momo balance
+        ctx_cashier_before = self.get_navbar_context(self.cashier_user)
+        self.assertEqual(ctx_cashier_before['momo_balance'], Decimal("100.00"))
+
+        # 1. Partial dispatch of 4 units
+        self.client.force_login(self.manager_user)
+        disp_resp = self.client.post(
+            f"/sales/api/sales/{sale.pk}/dispatch/",
+            data=json.dumps({'items': [{'sale_item_id': item.pk, 'qty': 4}]}),
+            content_type='application/json'
+        )
+        self.assertEqual(disp_resp.status_code, 200)
+
+        # 2. Manager halts dispatch and requests refund
+        halt_resp = self.client.post(
+            f"/sales/api/sales/{sale.pk}/halt-dispatch/",
+            data=json.dumps({'reason': 'Halt remaining items and refund via MoMo'}),
+            content_type='application/json'
+        )
+        self.assertEqual(halt_resp.status_code, 200)
+
+        refund_req = RefundRequest.objects.get(sale=sale, status='PENDING')
+        self.assertTrue(refund_req.is_partial_halt)
+        self.assertEqual(refund_req.refund_amount, Decimal("60.00"))
+
+        # 3. Accountant approves refund selecting MOMO
+        self.client.force_login(self.accountant_user)
+        approve_resp = self.client.post(
+            f"/sales/api/refund-requests/{refund_req.pk}/approve/",
+            data=json.dumps({'refund_method': 'MOMO'}),
+            content_type='application/json'
+        )
+        self.assertEqual(approve_resp.status_code, 200)
+
+        # 4. Verify sale settled
+        sale.refresh_from_db()
+        self.assertEqual(sale.status, 'COMPLETED')
+        self.assertEqual(sale.total, Decimal("40.00"))
+        self.assertEqual(sale.amount_paid, Decimal("40.00"))
+
+        # 5. Verify refund request payout status
+        refund_req.refresh_from_db()
+        self.assertEqual(refund_req.status, 'APPROVED')
+        self.assertEqual(refund_req.refund_method, 'MOMO')
+        self.assertEqual(refund_req.payout_status, 'PAID')
+        self.assertEqual(refund_req.paid_by, self.accountant_user)
+
+        # 6. Verify NO negative DigitalFundWithdrawal was created that would cancel out deduction
+        buggy_dfw = DigitalFundWithdrawal.objects.filter(
+            shop=self.shop_location,
+            fund_source='MOMO',
+            notes__icontains=refund_req.refund_number
+        ).first()
+        self.assertIsNone(buggy_dfw, "No DigitalFundWithdrawal should be created for same-method MOMO refunds")
+
+        # 7. CRITICAL: Cashier navbar momo_balance must be exactly 40.00 (100.00 - 60.00)
+        ctx_cashier_after = self.get_navbar_context(self.cashier_user)
+        self.assertEqual(ctx_cashier_after['momo_balance'], Decimal("40.00"))
+
+        # Also verify Shop Manager navbar momo_balance is 40.00
+        ctx_manager_after = self.get_navbar_context(self.manager_user)
+        self.assertEqual(ctx_manager_after['momo_balance'], Decimal("40.00"))
