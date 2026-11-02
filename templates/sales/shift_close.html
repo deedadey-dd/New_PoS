@@ -45,6 +45,20 @@
                     <span class="text-warning fw-semibold">{{ currency_symbol }}{{ credit_sales|floatformat:"2g" }}</span>
                 </div>
 
+                {% if refund_payouts > 0 %}
+                <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+                    <span class="text-danger"><i class="bi bi-dash-circle me-1"></i>Refund Payouts (Cash)</span>
+                    <span class="text-danger fw-semibold">-{{ currency_symbol }}{{ refund_payouts|floatformat:"2g" }}</span>
+                </div>
+                {% endif %}
+
+                {% if momo_refund_payouts > 0 %}
+                <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+                    <span class="text-danger"><i class="bi bi-dash-circle me-1"></i>Refund Payouts (Local Momo)</span>
+                    <span class="text-danger fw-semibold">-{{ currency_symbol }}{{ momo_refund_payouts|floatformat:"2g" }}</span>
+                </div>
+                {% endif %}
+
                 <!-- Totals -->
                 <div
                     class="d-flex justify-content-between align-items-center py-2 border-bottom bg-light px-2 rounded mt-2">
@@ -57,7 +71,7 @@
                     <span class="fw-bold">Expected Cash</span>
                     <span class="fw-bold fs-4">{{ currency_symbol }}{{ expected_cash|floatformat:"2g" }}</span>
                 </div>
-                <small class="text-muted d-block text-center mt-1">(Opening Cash + Cash Sales + Payments on Account)</small>
+                <small class="text-muted d-block text-center mt-1">(Opening Cash + Cash Sales + Payments on Account{% if refund_payouts > 0 %} - Cash Refunds{% endif %})</small>
 
                 <hr class="my-4">
 

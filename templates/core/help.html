@@ -140,6 +140,14 @@
             </a>
         </div>
         <div class="col-md-3 mb-3">
+            <a href="#refunds" class="card shadow-sm text-decoration-none h-100">
+                <div class="card-body text-center">
+                    <i class="bi bi-arrow-counterclockwise fs-1 mb-2 text-danger"></i>
+                    <h5 class="text-dark">Refunds &amp; Halt</h5>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-3 mb-3">
             <a href="#discounts" class="card shadow-sm text-decoration-none h-100">
                 <div class="card-body text-center">
                     <i class="bi bi-percent fs-1 mb-2" style="color: #7c3aed;"></i>
@@ -957,6 +965,50 @@
                         <h6><i class="bi bi-gear me-1"></i>Shop-Level Partial Dispatch Setting</h6>
                         <p class="small mb-0">Admins can disable partial dispatch on a per-shop basis. Go to <strong>Settings → Locations → Edit Shop</strong> and toggle <strong>"Allow Partial Dispatch"</strong>. When disabled, the Dispatch Goods modal will only show the <strong>Full Dispatch</strong> button, enforcing a single complete release of all items.</p>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Refunds & Settlements -->
+    <div class="card shadow-sm mb-4" id="refunds">
+        <div class="card-header text-white bg-danger">
+            <h4 class="mb-0"><i class="bi bi-arrow-counterclockwise me-2"></i>Refunds &amp; Settlements</h4>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <h5><i class="bi bi-shield-lock me-2 text-primary"></i>3-Step Refund Workflow</h5>
+                    <p>To prevent unauthorized cash movement and preserve financial reconciliation, refunds follow strict separation of duties:</p>
+                    <ol>
+                        <li><strong>Step 1: Request (Shop Manager)</strong>:
+                            <ul>
+                                <li>Submitted from <strong>Sales History</strong> with a mandatory justification reason.</li>
+                                <li><strong>Halt &amp; Settle Partial Dispatch</strong>: In strict workflow mode, managers can halt partially dispatched sales. Items already dispatched stay sold, undispatched items return to inventory, and overpayments automatically generate refund requests (or reduce credit debt).</li>
+                            </ul>
+                        </li>
+                        <li><strong>Step 2: Approval (Accountant / Admin)</strong>:
+                            <ul>
+                                <li>Accountants audit the request under <strong>Sales → Refund Requests</strong> and select the refund channel (Cash, MoMo, E-Cash).</li>
+                                <li><strong>Safety Rule</strong>: Approval authorizes the payout but <em>does not deduct cash from the till</em>.</li>
+                            </ul>
+                        </li>
+                        <li><strong>Step 3: Disbursement (Cashier / Admin)</strong>:
+                            <ul>
+                                <li>Cashiers click <strong>Disburse Refund</strong> to physically pay out the customer. Deductions from cash till or digital wallets happen exclusively at this step.</li>
+                            </ul>
+                        </li>
+                    </ol>
+                </div>
+                <div class="col-md-6">
+                    <h5><i class="bi bi-cash-stack me-2 text-danger"></i>Till Safeguards &amp; Reporting</h5>
+                    <ul>
+                        <li><strong>Insufficient Till Balance Warning</strong>: If the cashier's drawer or wallet balance is less than the payout amount, an application modal warns of the shortfall before proceeding.</li>
+                        <li><strong>Negative Balances</strong>: The system supports till deficits when payouts exceed daily collections, displaying negative figures in high-visibility red badges (e.g. <code>-GH₵50.00</code>).</li>
+                        <li><strong>Cashier Accountability</strong>: The disbursing cashier's identity and timestamp are permanently recorded (<code>paid_by</code>, <code>paid_at</code>).</li>
+                        <li><strong>Cash History Integration</strong>: Outflow metrics, exports, and a dedicated <em>Cash Refunds</em> tab detail all disbursed refunds.</li>
+                        <li><strong>End of Day Reconciliation</strong>: Cash refunds are subtracted from <code>expected_cash</code> in the daily reconciliation review, preventing false till shortage variances.</li>
+                    </ul>
                 </div>
             </div>
         </div>

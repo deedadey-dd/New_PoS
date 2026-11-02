@@ -144,11 +144,20 @@
                     </div>
                 </div>
             </div>
-            <div class="col-md-12 mt-4">
+            <div class="col-md-6 mt-4">
                 <div class="card border-0 shadow-sm rounded-4 h-100">
                     <div class="card-body">
                         <div class="text-muted small text-uppercase fw-bold mb-2">Bank Transfers Executed</div>
                         <h3 class="mb-0 text-success">{{ currency_symbol }}{{ bank_transfers_made|floatformat:2|intcomma }}</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6 mt-4">
+                <div class="card border-0 shadow-sm rounded-4 h-100">
+                    <div class="card-body">
+                        <div class="text-muted small text-uppercase fw-bold mb-2">Refunds Disbursed</div>
+                        <h3 class="mb-0 text-danger">{{ currency_symbol }}{{ refunds_disbursed_total|floatformat:2|intcomma }}</h3>
+                        <p class="text-muted small mt-1 mb-0">Cash paid out: {{ currency_symbol }}{{ refunds_disbursed_cash|floatformat:2|intcomma }}</p>
                     </div>
                 </div>
             </div>
@@ -223,6 +232,16 @@
             </div>
             
             <div class="col-md-6 col-lg-4 mt-4">
+                <div class="card border-0 shadow-sm rounded-4 h-100">
+                    <div class="card-body">
+                        <div class="text-muted small text-uppercase fw-bold mb-2">Shop Refunds Disbursed</div>
+                        <h3 class="mb-0 text-danger">{{ currency_symbol }}{{ shop_refunds_disbursed_total|floatformat:2|intcomma }}</h3>
+                        <p class="text-muted small mt-1 mb-0">Cash: {{ currency_symbol }}{{ shop_refunds_disbursed_cash|floatformat:2|intcomma }}</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6 col-lg-4 mt-4">
                 {% if current_tenant.use_strict_sales_workflow %}
                 <div class="card border-0 shadow-sm rounded-4 h-100">
                     <div class="card-body">
@@ -272,6 +291,15 @@
                     <div class="card-body">
                         <div class="text-muted small text-uppercase fw-bold mb-2">Digital Funds Withdrawn</div>
                         <h3 class="mb-0 text-danger">{{ currency_symbol }}{{ digital_funds_withdrawn|floatformat:2|intcomma }}</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6 col-lg-3 mt-3 mt-lg-0">
+                <div class="card border-0 shadow-sm rounded-4 h-100">
+                    <div class="card-body">
+                        <div class="text-muted small text-uppercase fw-bold mb-2">Refunds Disbursed</div>
+                        <h3 class="mb-0 text-danger">{{ currency_symbol }}{{ refunds_disbursed_total|floatformat:2|intcomma }}</h3>
+                        <p class="text-muted small mt-1 mb-0">Cash: {{ currency_symbol }}{{ refunds_disbursed_cash|floatformat:2|intcomma }}</p>
                     </div>
                 </div>
             </div>

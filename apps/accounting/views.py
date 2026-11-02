@@ -382,6 +382,18 @@ class AccountantDashboardView(LoginRequiredMixin, View):
             
             pending_deposits_count = pending_deposits_agg['count'] or 0
             pending_deposits_total = pending_deposits_agg['total'] or Decimal('0')
+
+            from apps.sales.models import RefundRequest
+            pending_refunds = RefundRequest.objects.filter(
+                tenant=tenant,
+                sale__shop=user.location,
+                status='APPROVED',
+                payout_status='PENDING',
+                refund_amount__gt=Decimal('0.00')
+            ).select_related('sale', 'requested_by', 'reviewed_by').order_by('-reviewed_at')
+            pending_refunds_agg = pending_refunds.aggregate(total=Sum('refund_amount'), count=Count('id'))
+            pending_refunds_count = pending_refunds_agg['count'] or 0
+            pending_refunds_total = pending_refunds_agg['total'] or Decimal('0.00')
             
             from apps.payments.models import ShopPaymentAssignment, PaymentProviderConfig
             
@@ -439,6 +451,9 @@ class AccountantDashboardView(LoginRequiredMixin, View):
                 'today_sales_total': today_sales_total,
                 'pending_deposits_count': pending_deposits_count,
                 'pending_deposits_total': pending_deposits_total,
+                'pending_refunds': pending_refunds[:5],
+                'pending_refunds_count': pending_refunds_count,
+                'pending_refunds_total': pending_refunds_total,
                 'shop': user.location,
                 'available_providers': unique_providers,
             }
@@ -3049,10 +3064,45 @@ class CashHistoryView(LoginRequiredMixin, ListView):
         context['total_customer_cash'] = cust_qs.aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
         context['customer_cash_count'] = cust_qs.count()
 
-        # Net cash inflow and balance
+        # ---- Cash refund payouts ----
+        from apps.sales.models import RefundRequest
+        refund_qs = RefundRequest.objects.filter(
+            tenant=user.tenant,
+            payout_status='PAID',
+            refund_method='CASH'
+        ).select_related('sale', 'sale__shop', 'sale__customer', 'paid_by').order_by('-paid_at')
+        if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER', 'SHOP_ATTENDANT']:
+            if user.location:
+                refund_qs = refund_qs.filter(sale__shop=user.location)
+            else:
+                refund_qs = refund_qs.filter(paid_by=user)
+        if shop_id and role_name in ['ACCOUNTANT', 'AUDITOR', 'ADMIN']:
+            refund_qs = refund_qs.filter(sale__shop_id=shop_id)
+        if date_from:
+            try:
+                refund_qs = refund_qs.filter(
+                    paid_at__date__gte=datetime.strptime(date_from, '%Y-%m-%d').date()
+                )
+            except ValueError:
+                pass
+        if date_to:
+            try:
+                refund_qs = refund_qs.filter(
+                    paid_at__date__lte=datetime.strptime(date_to, '%Y-%m-%d').date()
+                )
+            except ValueError:
+                pass
+
+        context['cash_refund_payouts'] = refund_qs[:20]
+        context['total_cash_refunds'] = refund_qs.aggregate(total=Sum('refund_amount'))['total'] or Decimal('0.00')
+        context['cash_refunds_count'] = refund_qs.count()
+
+        # Net cash inflow, outflow and balance
         total_inflow = context['total_cash_sales'] + context['total_customer_cash']
+        total_outflow = context['total_transferred'] + context['total_cash_refunds']
         context['total_cash_inflow'] = total_inflow
-        context['net_cash_balance'] = total_inflow - context['total_transferred']
+        context['total_cash_outflow'] = total_outflow
+        context['net_cash_balance'] = total_inflow - total_outflow
 
         # ---- Permissions ----
         if getattr(user.tenant, 'use_strict_sales_workflow', False):
@@ -3122,6 +3172,42 @@ class CashHistoryExportView(LoginRequiredMixin, View):
                 method,
                 amount
             ])
+
+        # Include cash refund payouts in export
+        from apps.sales.models import RefundRequest
+        rf_qs = RefundRequest.objects.filter(
+            tenant=user.tenant,
+            payout_status='PAID',
+            refund_method='CASH'
+        ).select_related('sale', 'sale__shop', 'paid_by')
+        if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER', 'SHOP_ATTENDANT']:
+            if user.location:
+                rf_qs = rf_qs.filter(sale__shop=user.location)
+            else:
+                rf_qs = rf_qs.filter(paid_by=user)
+        if shop_id and role_name in ['ACCOUNTANT', 'AUDITOR', 'ADMIN']:
+            rf_qs = rf_qs.filter(sale__shop_id=shop_id)
+        if date_from:
+            try:
+                rf_qs = rf_qs.filter(paid_at__date__gte=datetime.strptime(date_from, '%Y-%m-%d').date())
+            except ValueError:
+                pass
+        if date_to:
+            try:
+                rf_qs = rf_qs.filter(paid_at__date__lte=datetime.strptime(date_to, '%Y-%m-%d').date())
+            except ValueError:
+                pass
+
+        for rf in rf_qs:
+            rows.append([
+                rf.paid_at.strftime("%Y-%m-%d %H:%M") if rf.paid_at else rf.created_at.strftime("%Y-%m-%d %H:%M"),
+                rf.refund_number or (f"Sale {rf.sale.sale_number}" if rf.sale else '-'),
+                rf.paid_by.get_full_name() or rf.paid_by.email if rf.paid_by else 'Cashier',
+                rf.sale.shop.name if rf.sale and rf.sale.shop else '-',
+                'Cash Refund',
+                -float(rf.refund_amount)
+            ])
+        rows.sort(key=lambda r: r[0], reverse=True)
 
         export_format = request.GET.get('format', 'excel')
         if export_format == 'pdf':

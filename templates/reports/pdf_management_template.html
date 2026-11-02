@@ -318,6 +318,10 @@
             <td>Customer payments / expenses</td>
             <td class="text-right" style="font-weight: bold;">{{ report.currency_symbol }} {{ report.customer_payments|floatformat:2|intcomma }} / {{ report.currency_symbol }} {{ report.expenses|floatformat:2|intcomma }}</td>
         </tr>
+        <tr>
+            <td>Refunds disbursed (Cash / Total)</td>
+            <td class="text-right" style="font-weight: bold;"><span style="color: #dc2626;">-{{ report.currency_symbol }} {{ report.refunds_disbursed_cash|floatformat:2|intcomma }}</span> / {{ report.currency_symbol }} {{ report.total_refunds_disbursed|floatformat:2|intcomma }}</td>
+        </tr>
         <tr class="row-highlight">
             <td>Funds sent to bank</td>
             <td class="text-right" style="color: #2563eb;">{{ report.currency_symbol }} {{ report.funds_to_bank|floatformat:2|intcomma }}</td>

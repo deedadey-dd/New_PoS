@@ -36,6 +36,23 @@
         {% endif %}
     </div>
 
+    {% if pending_payout_count > 0 and role_name in 'SHOP_CASHIER,ADMIN' and selected_status != 'PENDING_PAYOUT' %}
+    <div class="alert alert-warning border-0 shadow-sm rounded-4 p-3 mb-4 d-flex justify-content-between align-items-center">
+        <div class="d-flex align-items-center gap-3">
+            <div class="rounded-circle bg-warning text-dark p-2 d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;">
+                <i class="bi bi-wallet2 fs-5"></i>
+            </div>
+            <div>
+                <h6 class="fw-bold mb-0 text-dark">{{ pending_payout_count }} Approved Refund{{ pending_payout_count|pluralize }} Awaiting Cashier Disbursement</h6>
+                <small class="text-muted">Funds authorized by accountant — awaiting cashier to dispense money to customer</small>
+            </div>
+        </div>
+        <a href="?status=PENDING_PAYOUT" class="btn btn-warning fw-bold rounded-pill px-3 shadow-sm">
+            <i class="bi bi-funnel me-1"></i>View Awaiting Payout ({{ pending_payout_count }})
+        </a>
+    </div>
+    {% endif %}
+
     <!-- Filters -->
     <div class="card mb-4 border-0 shadow-sm">
         <div class="card-body">
@@ -44,7 +61,8 @@
                     <label class="form-label fw-medium">Status</label>
                     <select name="status" class="form-select" onchange="this.form.submit()">
                         <option value="" {% if not selected_status %}selected{% endif %}>All</option>
-                        <option value="PENDING" {% if selected_status == 'PENDING' %}selected{% endif %}>Pending</option>
+                        <option value="PENDING" {% if selected_status == 'PENDING' %}selected{% endif %}>Pending Approval</option>
+                        <option value="PENDING_PAYOUT" {% if selected_status == 'PENDING_PAYOUT' %}selected{% endif %}>Awaiting Disbursement {% if pending_payout_count > 0 %}({{ pending_payout_count }}){% endif %}</option>
                         <option value="APPROVED" {% if selected_status == 'APPROVED' %}selected{% endif %}>Approved</option>
                         <option value="REJECTED" {% if selected_status == 'REJECTED' %}selected{% endif %}>Rejected</option>
                     </select>
@@ -101,7 +119,7 @@
                             <th>Requested By</th>
                             <th>Date</th>
                             <th>Status</th>
-                            {% if role_name in 'ACCOUNTANT ADMIN' %}
+                            {% if role_name in 'ACCOUNTANT,ADMIN,SHOP_CASHIER' %}
                             <th class="text-center pe-4">Actions</th>
                             {% endif %}
                         </tr>
@@ -191,16 +209,28 @@
                                     </span>
                                     {% if rr.payout_status == 'PENDING' %}
                                     <span class="badge bg-warning text-dark d-block mt-1" style="font-size: 0.7rem;">
-                                        <i class="bi bi-cash me-1"></i>Pending Payout
+                                        <i class="bi bi-clock-history me-1"></i>Awaiting Cashier Payout
                                     </span>
                                     {% elif rr.payout_status == 'PAID' and rr.refund_amount > 0 %}
                                     <span class="badge bg-success bg-opacity-25 text-success d-block mt-1" style="font-size: 0.7rem;">
-                                        <i class="bi bi-check-all me-1"></i>Paid Out
+                                        <i class="bi bi-check-all me-1"></i>Disbursed ({{ rr.get_refund_method_display }})
                                     </span>
                                     {% endif %}
-                                    <div class="text-muted small mt-1">
-                                        by {% if rr.reviewed_by %}{{ rr.reviewed_by.get_full_name|default:rr.reviewed_by.email }}{% else %}-{% endif %}<br>
-                                        {{ rr.reviewed_at|date:"M d, Y h:i A" }}
+                                    <div class="text-muted small mt-1" style="font-size: 0.72rem;">
+                                        <span><strong>Approved:</strong> {% if rr.reviewed_by %}{{ rr.reviewed_by.get_full_name|default:rr.reviewed_by.email }}{% else %}-{% endif %}</span><br>
+                                        <small class="text-muted">{{ rr.reviewed_at|date:"M d, Y h:i A" }}</small>
+                                        {% if rr.payout_status == 'PAID' and rr.paid_by %}
+                                        <div class="mt-1 pt-1 border-top border-secondary border-opacity-10">
+                                            <span class="text-dark"><strong>Disbursed by:</strong> {{ rr.paid_by.get_full_name|default:rr.paid_by.email }}</span><br>
+                                            <small class="text-muted">{{ rr.paid_at|date:"M d, Y h:i A" }}</small>
+                                            {% if rr.shift %}
+                                            <span class="badge bg-light text-secondary border mt-1 d-block" style="font-size: 0.65rem;">Shift #{{ rr.shift.id }}</span>
+                                            {% endif %}
+                                            {% if rr.payout_notes %}
+                                            <small class="text-secondary d-block fst-italic mt-1">{{ rr.payout_notes }}</small>
+                                            {% endif %}
+                                        </div>
+                                        {% endif %}
                                     </div>
                                 {% elif rr.status == 'REJECTED' %}
                                     <span class="badge bg-danger">
@@ -228,12 +258,18 @@
                                         <i class="bi bi-x-lg me-1"></i>Reject
                                     </button>
                                 </div>
-                                {% elif rr.status == 'APPROVED' and rr.payout_status == 'PENDING' and rr.refund_amount > 0 and role_name in 'SHOP_CASHIER,SHOP_MANAGER,ADMIN' %}
-                                <button class="btn btn-sm btn-primary btn-payout-refund"
+                                {% elif rr.status == 'APPROVED' and rr.payout_status == 'PENDING' and rr.refund_amount > 0 and role_name in 'SHOP_CASHIER,ADMIN' %}
+                                <button class="btn btn-sm btn-primary shadow-sm btn-disburse-refund"
                                     data-refund-id="{{ rr.pk }}"
                                     data-refund-number="{{ rr.refund_number }}"
-                                    data-amount="{{ rr.refund_amount }}">
-                                    <i class="bi bi-cash-stack me-1"></i>Pay Cash
+                                    data-sale-number="{{ rr.sale.sale_number }}"
+                                    data-amount="{{ rr.refund_amount|floatformat:'2' }}"
+                                    data-method="{{ rr.refund_method }}"
+                                    data-method-display="{{ rr.get_refund_method_display }}"
+                                    data-customer="{% if rr.sale.customer %}{{ rr.sale.customer.name }}{% elif rr.sale.customer_name %}{{ rr.sale.customer_name }}{% else %}Walk-in Customer{% endif %}"
+                                    data-approved-by="{% if rr.reviewed_by %}{{ rr.reviewed_by.get_full_name|default:rr.reviewed_by.email }}{% else %}Accountant{% endif %}"
+                                    data-reason="{{ rr.reason|escape }}">
+                                    <i class="bi {% if rr.refund_method == 'MOMO' %}bi-phone{% elif rr.refund_method == 'ECASH' %}bi-credit-card{% else %}bi-cash-stack{% endif %} me-1"></i>Disburse Refund
                                 </button>
                                 {% else %}
                                 <span class="text-muted small">—</span>
@@ -568,6 +604,148 @@
                         <i class="bi bi-x-lg me-1"></i>Confirm Rejection
                     </button>
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Disburse Refund Modal (Cashier) -->
+<div class="modal fade" id="disburseModal" tabindex="-1" aria-labelledby="disburseModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content rounded-4 border-0 shadow">
+            <div class="modal-header border-0 pb-0 bg-primary bg-opacity-10">
+                <div class="d-flex align-items-center">
+                    <h5 class="modal-title fw-bold text-primary mb-0" id="disburseModalLabel">
+                        <i class="bi bi-wallet2 me-2"></i>Disburse Refund Payout
+                    </h5>
+                    <span id="disburse-method-badge" class="badge bg-primary ms-2"></span>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <input type="hidden" id="disburse-refund-id">
+
+                <!-- Alert error box if payout fails -->
+                <div class="alert alert-danger py-2 small mb-3 d-none" id="disburse-error-alert"></div>
+
+                <!-- Refund Details Summary Card -->
+                <div class="card border rounded-3 mb-3 bg-light bg-opacity-50">
+                    <div class="card-body p-3">
+                        <div class="row g-2 text-sm">
+                            <div class="col-sm-6">
+                                <span class="text-muted small d-block">Refund Number</span>
+                                <span class="fw-bold font-monospace" id="disburse-refund-number"></span>
+                            </div>
+                            <div class="col-sm-6">
+                                <span class="text-muted small d-block">Sale Number</span>
+                                <span class="fw-bold font-monospace" id="disburse-sale-number"></span>
+                            </div>
+                            <div class="col-sm-6">
+                                <span class="text-muted small d-block">Customer</span>
+                                <span class="fw-bold text-dark" id="disburse-customer"></span>
+                            </div>
+                            <div class="col-sm-6">
+                                <span class="text-muted small d-block">Approved By</span>
+                                <span class="fw-bold text-dark" id="disburse-approved-by"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Amount to Disburse & Till Balance Overview -->
+                <div class="row g-2 mb-3">
+                    <div class="col-sm-6">
+                        <div class="p-3 border rounded-3 bg-success bg-opacity-10 border-success-subtle h-100 d-flex flex-column justify-content-between">
+                            <div>
+                                <span class="text-uppercase small fw-bold text-success d-block">Amount to Disburse</span>
+                                <span class="fs-2 fw-bold text-success" id="disburse-amount-display"></span>
+                            </div>
+                            <span class="badge bg-success px-2 py-1 mt-2 align-self-start small" id="disburse-fund-source-display">
+                                <i class="bi bi-cash me-1"></i>Cashier Till
+                            </span>
+                        </div>
+                    </div>
+                    <div class="col-sm-6">
+                        <div class="p-3 border rounded-3 bg-light h-100 d-flex flex-column justify-content-between" id="disburse-balance-card">
+                            <div>
+                                <span class="text-uppercase small fw-bold text-muted d-block">Your Current <span id="disburse-balance-source-label">Till</span> Balance</span>
+                                <span class="fs-2 fw-bold text-dark" id="disburse-current-balance-display"></span>
+                            </div>
+                            <span class="badge px-2 py-1 mt-2 align-self-start small" id="disburse-balance-status-badge">
+                                Checking...
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Insufficient Balance Warning Banner -->
+                <div class="alert alert-warning border border-warning shadow-sm rounded-3 p-3 mb-3 d-none" id="disburse-balance-warning-banner">
+                    <div class="d-flex align-items-start gap-2">
+                        <i class="bi bi-exclamation-triangle-fill text-warning fs-3 flex-shrink-0"></i>
+                        <div class="w-100">
+                            <div class="fw-bold text-dark fs-6 mb-1">Insufficient Till Balance Warning</div>
+                            <div class="small text-muted mb-2" id="disburse-balance-warning-text">
+                                Your available balance is less than the refund amount.
+                            </div>
+                            <div class="form-check p-2 bg-white rounded border border-warning-subtle">
+                                <input class="form-check-input ms-0 me-2" type="checkbox" id="acknowledge-balance-shortfall">
+                                <label class="form-check-label small fw-bold text-dark" for="acknowledge-balance-shortfall">
+                                    I acknowledge that my till/wallet balance is less than the refund amount and confirm that I want to disburse.
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Disbursing Cashier Identity -->
+                <div class="p-3 border rounded-3 bg-white mb-3">
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                        <i class="bi bi-person-badge text-primary fs-5"></i>
+                        <span class="fw-bold small text-uppercase text-muted">Disbursing Cashier (You)</span>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="fw-bold text-dark fs-6">{{ request.user.get_full_name|default:request.user.email }}</span>
+                            <span class="text-muted small d-block">Role: {{ role_name|default:"Cashier" }}</span>
+                        </div>
+                        {% if active_shift %}
+                        <span class="badge bg-primary bg-opacity-10 text-primary border border-primary-subtle px-3 py-2">
+                            <i class="bi bi-clock-history me-1"></i>Active Shift #{{ active_shift.id }}
+                        </span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- MoMo / Electronic Reference (conditional) -->
+                <div class="mb-3" id="disburse-reference-container">
+                    <label class="form-label fw-bold small text-muted text-uppercase mb-1" for="disburse-transaction-ref">
+                        <i class="bi bi-hash me-1"></i>Transaction Reference / MoMo ID
+                    </label>
+                    <input type="text" class="form-control" id="disburse-transaction-ref"
+                        placeholder="e.g. MTN/Voda transaction ID or phone number (optional)">
+                    <div class="form-text small">Enter mobile money transaction ID or reference if applicable.</div>
+                </div>
+
+                <!-- Notes / Receipt -->
+                <div class="mb-3">
+                    <label class="form-label fw-bold small text-muted text-uppercase mb-1" for="disburse-notes">
+                        <i class="bi bi-pencil me-1"></i>Disbursement Notes (Optional)
+                    </label>
+                    <input type="text" class="form-control" id="disburse-notes"
+                        placeholder="e.g. Cash handed to customer at counter">
+                </div>
+
+                <!-- Notice -->
+                <div class="alert alert-warning alert-permanent py-2 small mb-0 d-flex align-items-center gap-2">
+                    <i class="bi bi-shield-check text-warning fs-5"></i>
+                    <span>Confirming will record that you (<strong>{{ request.user.get_full_name|default:request.user.email }}</strong>) disbursed this refund from your till. This movement will be accounted for in your shift report.</span>
+                </div>
+            </div>
+            <div class="modal-footer border-0 d-flex justify-content-end gap-2">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary fw-bold px-4" id="confirm-disburse-btn">
+                    <i class="bi bi-check2-circle me-1"></i>Disburse Refund
+                </button>
             </div>
         </div>
     </div>
@@ -1072,13 +1250,21 @@
             if (data.success) {
                 location.reload();
             } else {
-                alert('Error: ' + (data.error || 'Unknown error'));
+                if (typeof window.showAppToast === 'function') {
+                    window.showAppToast(data.error || 'Unknown error', 'danger', 'Approval Error');
+                } else {
+                    alert('Error: ' + (data.error || 'Unknown error'));
+                }
                 btn.disabled = false;
                 btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Confirm Approval';
             }
         })
         .catch(err => {
-            alert('Request error: ' + err);
+            if (typeof window.showAppToast === 'function') {
+                window.showAppToast('Request error: ' + err, 'danger', 'Request Failed');
+            } else {
+                alert('Request error: ' + err);
+            }
             btn.disabled = false;
             btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Confirm Approval';
         });
@@ -1115,44 +1301,221 @@
             if (data.success) {
                 location.reload();
             } else {
-                alert('Error: ' + (data.error || 'Unknown error'));
+                if (typeof window.showAppToast === 'function') {
+                    window.showAppToast(data.error || 'Unknown error', 'danger', 'Rejection Error');
+                } else {
+                    alert('Error: ' + (data.error || 'Unknown error'));
+                }
                 btn.disabled = false;
                 btn.innerHTML = '<i class="bi bi-x-lg me-1"></i>Confirm Rejection';
             }
         })
         .catch(err => {
-            alert('Request error: ' + err);
+            if (typeof window.showAppToast === 'function') {
+                window.showAppToast('Request error: ' + err, 'danger', 'Request Failed');
+            } else {
+                alert('Request error: ' + err);
+            }
             btn.disabled = false;
             btn.innerHTML = '<i class="bi bi-x-lg me-1"></i>Confirm Rejection';
         });
     });
 
-    // ── Cash Payout (Cashier) ──────────────────────────────────────
-    document.querySelectorAll('.btn-payout-refund').forEach(btn => {
-        btn.addEventListener('click', () => {
-            if (!confirm(`Confirm cash payout of ${currencySymbol}${parseFloat(btn.dataset.amount).toFixed(2)} for refund ${btn.dataset.refundNumber}?`)) return;
-            btn.disabled = true;
-            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Paying...';
-            fetch(`/sales/api/refund-requests/${btn.dataset.refundId}/payout/`, {
+    // ── Cashier Balances ───────────────────────────────────────────
+    const cashierCashBalance = parseFloat("{{ cashier_effective_cash|default:cash_on_hand|default:'0' }}".replace(/,/g, '')) || 0;
+    const cashierMomoBalance = parseFloat("{{ momo_balance|default:'0' }}".replace(/,/g, '')) || 0;
+    const cashierEcashBalance = parseFloat("{{ ecash_balance|default:'0' }}".replace(/,/g, '')) || 0;
+
+    function getCashierBalanceForMethod(method) {
+        if (method === 'MOMO') {
+            return { balance: cashierMomoBalance, name: 'Mobile Money' };
+        } else if (method === 'ECASH') {
+            return { balance: cashierEcashBalance, name: 'E-Cash' };
+        } else {
+            return { balance: cashierCashBalance, name: 'Cash Till' };
+        }
+    }
+
+    function openDisburseModal(refundId, refundNumber, saleNumber, amount, amountNum, method, methodDisplay, customer, approvedBy, balInfo, isInsufficient) {
+        const modalEl = document.getElementById('disburseModal');
+        modalEl.dataset.currentMethod = method;
+        modalEl.dataset.amountNum = amountNum;
+
+        safelyShowModal(modalEl, function() {
+            document.getElementById('disburse-refund-id').value = refundId;
+            document.getElementById('disburse-refund-number').textContent = refundNumber;
+            document.getElementById('disburse-sale-number').textContent = saleNumber;
+            document.getElementById('disburse-customer').textContent = customer;
+            document.getElementById('disburse-approved-by').textContent = approvedBy;
+            document.getElementById('disburse-amount-display').textContent = currencySymbol + amount;
+            document.getElementById('disburse-method-badge').textContent = methodDisplay;
+            document.getElementById('disburse-fund-source-display').textContent = methodDisplay;
+
+            // Balance & Shortfall Indicators
+            const balanceCard = document.getElementById('disburse-balance-card');
+            const balanceDisplay = document.getElementById('disburse-current-balance-display');
+            const balanceLabel = document.getElementById('disburse-balance-source-label');
+            const balanceBadge = document.getElementById('disburse-balance-status-badge');
+            const warningBanner = document.getElementById('disburse-balance-warning-banner');
+            const warningText = document.getElementById('disburse-balance-warning-text');
+            const ackCheckbox = document.getElementById('acknowledge-balance-shortfall');
+
+            if (balanceLabel) balanceLabel.textContent = balInfo.name;
+            if (balanceDisplay) balanceDisplay.textContent = currencySymbol + balInfo.balance.toFixed(2);
+
+            if (isInsufficient) {
+                const shortfall = (amountNum - balInfo.balance).toFixed(2);
+                if (balanceCard) balanceCard.className = 'p-3 border rounded-3 bg-danger bg-opacity-10 border-danger-subtle h-100 d-flex flex-column justify-content-between';
+                if (balanceDisplay) balanceDisplay.className = 'fs-2 fw-bold text-danger';
+                if (balanceBadge) {
+                    balanceBadge.className = 'badge bg-danger px-2 py-1 mt-2 align-self-start small';
+                    balanceBadge.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>Shortfall: ' + currencySymbol + shortfall;
+                }
+                if (warningText) {
+                    warningText.innerHTML = `Your available <strong>${balInfo.name}</strong> balance is <strong class="text-danger">${currencySymbol}${balInfo.balance.toFixed(2)}</strong>, which is less than the required refund amount of <strong class="text-dark">${currencySymbol}${amountNum.toFixed(2)}</strong> (Shortfall: <strong class="text-danger">${currencySymbol}${shortfall}</strong>).`;
+                }
+                if (warningBanner) warningBanner.classList.remove('d-none');
+                if (ackCheckbox) ackCheckbox.checked = false;
+            } else {
+                if (balanceCard) balanceCard.className = 'p-3 border rounded-3 bg-light h-100 d-flex flex-column justify-content-between';
+                if (balanceDisplay) balanceDisplay.className = 'fs-2 fw-bold text-success';
+                if (balanceBadge) {
+                    balanceBadge.className = 'badge bg-success bg-opacity-25 text-success px-2 py-1 mt-2 align-self-start small';
+                    balanceBadge.innerHTML = '<i class="bi bi-check-circle me-1"></i>Sufficient Balance';
+                }
+                if (warningBanner) warningBanner.classList.add('d-none');
+                if (ackCheckbox) ackCheckbox.checked = true;
+            }
+
+            // Clear inputs and error
+            document.getElementById('disburse-transaction-ref').value = '';
+            document.getElementById('disburse-notes').value = '';
+            const errAlert = document.getElementById('disburse-error-alert');
+            errAlert.classList.add('d-none');
+            errAlert.textContent = '';
+
+            const confirmBtn = document.getElementById('confirm-disburse-btn');
+            confirmBtn.disabled = false;
+            confirmBtn.innerHTML = '<i class="bi bi-check2-circle me-1"></i>Disburse Refund (' + methodDisplay + ')';
+        });
+    }
+
+    // ── Cashier Disbursement Modal ─────────────────────────────────
+    document.addEventListener('click', function(e) {
+        const btn = e.target.closest('.btn-disburse-refund');
+        if (!btn) return;
+        e.preventDefault();
+
+        const refundId = btn.dataset.refundId;
+        const refundNumber = btn.dataset.refundNumber;
+        const saleNumber = btn.dataset.saleNumber;
+        const amount = parseFloat(btn.dataset.amount || 0).toFixed(2);
+        const amountNum = parseFloat(amount) || 0;
+        const method = btn.dataset.method || 'CASH';
+        const methodDisplay = btn.dataset.methodDisplay || method;
+        const customer = btn.dataset.customer || 'Walk-in Customer';
+        const approvedBy = btn.dataset.approvedBy || 'Accountant';
+
+        const balInfo = getCashierBalanceForMethod(method);
+        const isInsufficient = balInfo.balance < amountNum;
+
+        const doOpenModal = function() {
+            openDisburseModal(refundId, refundNumber, saleNumber, amount, amountNum, method, methodDisplay, customer, approvedBy, balInfo, isInsufficient);
+        };
+
+        // If Cashier's balance is less than the amount to refund, show warning modal before allowing them to proceed
+        if (isInsufficient) {
+            const shortfall = (amountNum - balInfo.balance).toFixed(2);
+            const warnTitle = '<i class="bi bi-exclamation-triangle-fill text-warning me-2"></i>Insufficient Till Balance Warning';
+            const warnMessage = `
+                <div class="alert alert-warning border border-warning shadow-sm rounded-3 py-2 px-3 mb-2 small">
+                    <div class="fw-bold text-dark mb-1">Your available ${balInfo.name} balance is insufficient.</div>
+                    <div class="d-flex justify-content-between text-muted">
+                        <span>Current ${balInfo.name} Balance:</span>
+                        <strong class="text-danger">${currencySymbol}${balInfo.balance.toFixed(2)}</strong>
+                    </div>
+                    <div class="d-flex justify-content-between text-muted">
+                        <span>Required Refund Amount:</span>
+                        <strong class="text-dark">${currencySymbol}${amountNum.toFixed(2)}</strong>
+                    </div>
+                    <div class="d-flex justify-content-between border-top border-warning-subtle pt-1 mt-1">
+                        <span class="fw-semibold text-dark">Shortfall:</span>
+                        <strong class="text-danger">${currencySymbol}${shortfall}</strong>
+                    </div>
+                </div>
+                <p class="text-secondary small mb-0">Are you sure you want to proceed with disbursing this refund?</p>
+            `;
+
+            if (typeof window.showAppConfirm === 'function') {
+                window.showAppConfirm(
+                    warnMessage,
+                    doOpenModal,
+                    warnTitle,
+                    'btn-warning text-dark fw-bold',
+                    'Proceed Anyway'
+                );
+                return;
+            }
+        }
+
+        doOpenModal();
+    });
+
+    const confirmDisburseBtn = document.getElementById('confirm-disburse-btn');
+    if (confirmDisburseBtn) {
+        confirmDisburseBtn.addEventListener('click', () => {
+            const modalEl = document.getElementById('disburseModal');
+            const refundId = document.getElementById('disburse-refund-id').value;
+            const transactionRef = document.getElementById('disburse-transaction-ref').value.trim();
+            const payoutNotes = document.getElementById('disburse-notes').value.trim();
+            const errAlert = document.getElementById('disburse-error-alert');
+            const ackCheckbox = document.getElementById('acknowledge-balance-shortfall');
+
+            const currentMethod = modalEl?.dataset.currentMethod || 'CASH';
+            const amountNum = parseFloat(modalEl?.dataset.amountNum || 0);
+            const balInfo = getCashierBalanceForMethod(currentMethod);
+            const isInsufficient = balInfo.balance < amountNum;
+
+            if (isInsufficient && (!ackCheckbox || !ackCheckbox.checked)) {
+                errAlert.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-1"></i><strong>Insufficient Till Balance:</strong> Please check the acknowledgment box above to confirm disbursing with insufficient balance before proceeding.';
+                errAlert.classList.remove('d-none');
+                if (ackCheckbox) ackCheckbox.focus();
+                return;
+            }
+
+            confirmDisburseBtn.disabled = true;
+            confirmDisburseBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Processing...';
+            errAlert.classList.add('d-none');
+
+            fetch(`/sales/api/refund-requests/${refundId}/payout/`, {
                 method: 'POST',
-                headers: { 'X-CSRFToken': csrfToken }
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
+                },
+                body: JSON.stringify({
+                    transaction_reference: transactionRef,
+                    payout_notes: payoutNotes
+                })
             })
             .then(r => r.json())
             .then(data => {
                 if (data.success) {
                     location.reload();
                 } else {
-                    alert('Error: ' + (data.error || 'Failed to process payout.'));
-                    btn.disabled = false;
-                    btn.innerHTML = '<i class="bi bi-cash-stack me-1"></i>Pay Cash';
+                    errAlert.textContent = data.error || 'Failed to process payout.';
+                    errAlert.classList.remove('d-none');
+                    confirmDisburseBtn.disabled = false;
+                    confirmDisburseBtn.innerHTML = '<i class="bi bi-check2-circle me-1"></i>Disburse Refund';
                 }
             })
             .catch(err => {
-                alert('Network error: ' + err);
-                btn.disabled = false;
-                btn.innerHTML = '<i class="bi bi-cash-stack me-1"></i>Pay Cash';
+                errAlert.textContent = 'Network error: ' + err;
+                errAlert.classList.remove('d-none');
+                confirmDisburseBtn.disabled = false;
+                confirmDisburseBtn.innerHTML = '<i class="bi bi-check2-circle me-1"></i>Disburse Refund';
             });
         });
-    });
+    }
 </script>
 {% endblock %}

@@ -104,6 +104,18 @@
             <span>Cash Sales:</span>
             <span>+ {{ current_tenant.currency_symbol|default:'$' }}{{ shift.total_sales|floatformat:"2g" }}</span>
         </div>
+        {% if shift.refund_payouts > 0 %}
+        <div class="totals-row" style="color: #c00;">
+            <span>Cash Refunds:</span>
+            <span>- {{ current_tenant.currency_symbol|default:'$' }}{{ shift.refund_payouts|floatformat:"2g" }}</span>
+        </div>
+        {% endif %}
+        {% if shift.momo_refund_payouts > 0 %}
+        <div class="totals-row" style="color: #666;">
+            <span>Local Momo Refunds:</span>
+            <span>- {{ current_tenant.currency_symbol|default:'$' }}{{ shift.momo_refund_payouts|floatformat:"2g" }}</span>
+        </div>
+        {% endif %}
         <div class="totals-row total">
             <span>Expected Cash:</span>
             <span>{{ current_tenant.currency_symbol|default:'$' }}{{ shift.expected_cash|floatformat:"2g" }}</span>

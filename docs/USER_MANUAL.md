@@ -7,17 +7,18 @@
 3. [User Roles & Permissions](#user-roles--permissions)
 4. [Dashboard](#dashboard)
 5. [Point of Sale (POS)](#point-of-sale-pos)
-6. [Inventory Management](#inventory-management)
-7. [Stock Transfers](#stock-transfers)
-8. [Stock Requests](#stock-requests)
-9. [Customer Management](#customer-management)
-10. [Cash Management](#cash-management)
-11. [Reports & Analytics](#reports--analytics)
-12. [Tracking & Audit Features](#tracking--audit-features)
-13. [Notifications](#notifications)
-14. [Settings & Administration](#settings--administration)
-15. [Subscription Management](#subscription-management)
-16. [Troubleshooting](#troubleshooting)
+6. [Refund Management & Dispatch Halt](#refund-management--dispatch-halt)
+7. [Inventory Management](#inventory-management)
+8. [Stock Transfers](#stock-transfers)
+9. [Stock Requests](#stock-requests)
+10. [Customer Management](#customer-management)
+11. [Cash Management](#cash-management)
+12. [Reports & Analytics](#reports--analytics)
+13. [Tracking & Audit Features](#tracking--audit-features)
+14. [Notifications](#notifications)
+15. [Settings & Administration](#settings--administration)
+16. [Subscription Management](#subscription-management)
+17. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -185,6 +186,69 @@ At the end of your shift:
 3. The system will compare with expected cash
 4. Any discrepancy will be highlighted
 5. Click **Close Shift**
+
+---
+
+## Refund Management & Dispatch Halt
+
+The POS system enforces a multi-tier separation-of-duties workflow for refund requests to guarantee financial integrity and accountability:
+
+```
+┌─────────────────────────┐       ┌─────────────────────────┐       ┌─────────────────────────┐
+│     SHOP MANAGER        │       │   ACCOUNTANT / ADMIN    │       │     CASHIER / ADMIN     │
+│  (Submits Refund /      │ ───►  │  (Reviews & Approves    │ ───►  │  (Disburses Funds from  │
+│   Halts Partial Order)  │       │   Authorization)        │       │   Till or Wallet)       │
+└─────────────────────────┘       └─────────────────────────┘       └─────────────────────────┘
+```
+
+### 1. Requesting a Refund (Shop Manager)
+
+Shop Managers can initiate refunds from **Sales History** or the **Sale Detail** view:
+- **Full Refund**: For standard completed sales where the customer is returning goods or cancelling the transaction.
+- **Reason Requirement**: A mandatory note explaining why the refund is being initiated.
+
+### 2. Strict Workflow: Partial Dispatch Halt & Settle
+
+In strict sales mode (Order → Payment → Dispatch), orders may be partially fulfilled if the shop lacks sufficient stock or the customer chooses to take only a portion of the items:
+1. When an order is in `PENDING_DISPATCH` state with items remaining, the Shop Manager can click **Halt & Settle Dispatch**.
+2. **Automatic Stock & Financial Reconciliation**:
+   - Items already dispatched remain permanently sold.
+   - Undispatched quantities are marked as not dispatched and their reserved ledger allocations are freed.
+   - The value of goods dispatched is calculated (`dispatched_total`).
+3. **Customer Balance Settlement**:
+   - **Customer Paid in Excess (Cash / MoMo / E-Cash)**: If the customer paid more than the dispatched value, a `RefundRequest` is generated automatically for the difference (`paid - dispatched_total`).
+   - **Customer Bought on Credit**: If the sale was on credit or partially unpaid, the customer's outstanding balance/debt is automatically reduced by the value of undispatched goods (`debt_reduction_amount`).
+
+### 3. Refund Approval (Accountant & Admin)
+
+Accountants and Admins review refund requests at `/sales/refund-requests/`:
+- **Verification**: Review the original invoice, requesting manager, reason, breakdown of dispatched goods, and customer details.
+- **Select Payment Method**: Select whether the refund should be paid out via **Cash**, **Mobile Money (MoMo)**, or **E-Cash**.
+- **Important**: Approving a refund authorizes the payout but **DOES NOT deduct funds** from the till or cash drawers. Financial deductions occur solely upon disbursement.
+
+### 4. Cashier Refund Disbursement & Till Safeguards
+
+Cashiers and Admins execute the payout to the customer:
+1. Open the **Refund Requests** menu from the sidebar or Cashier Dashboard (`/sales/refund-requests/`).
+2. Approved refunds ready for payout will display a green **Disburse Refund** button.
+3. **Till Balance Safeguard**:
+   - Before completing disbursement, the system checks the cashier's current cash drawer or wallet balance.
+   - If the balance is less than the refund amount, a modal warning appears displaying the current till balance, refund amount, and resulting shortfall before allowing confirmation.
+4. **Negative Balances**:
+   - When payouts exceed total intake, drawer and wallet balances transition cleanly into negative amounts (rendered in high-visibility red badges, e.g. `-GH₵50.00`).
+5. **Permanent Audit Trail**:
+   - The system records the disbursing cashier (`paid_by`), execution timestamp (`paid_at`), and transitions status to `PAID`.
+   - Cashiers can view their disbursement history in the Cashier Dashboard and daily reports.
+
+### 5. Refunds in Reports & Cash History
+
+- **Cash History**:
+  - Cash refunds appear as distinct cash outflows with their own summary metric card (`Total Cash Refunds`).
+  - Cash refund line items are exported in both Excel and PDF statements.
+  - A dedicated **Cash Refunds** tab lists all disbursed refunds with refund number, original sale, customer, disbursing cashier, and amount.
+- **End of Day Reports (Details & Executive Management Overview)**:
+  - Cash refunds are grouped into **Financial Movements**.
+  - **Reconciliation Integrity**: Cash refunds are deducted from `expected_cash` (`opening_float + cash_sales + customer_payments - expenditures - funds_to_bank - funds_to_accountant - cash_refunds`). This ensures drawer reconciliations match physical till counts without false shortages.
 
 ---
 

@@ -112,8 +112,8 @@
                     </li>
                     {% endif %}
 
-                    <!-- Sales Menu (Shop Manager, Accountant, Auditor, Admin) -->
-                    {% if role_name == 'SHOP_MANAGER' or role_name == 'ACCOUNTANT' or role_name == 'AUDITOR' or role_name == 'ADMIN' %}
+                    <!-- Sales Menu (Shop Manager, Accountant, Auditor, Admin, Cashier) -->
+                    {% if role_name == 'SHOP_MANAGER' or role_name == 'ACCOUNTANT' or role_name == 'AUDITOR' or role_name == 'ADMIN' or role_name == 'SHOP_CASHIER' %}
                     <li class="nav-item">
                         <a class="nav-link text-white d-flex justify-content-between align-items-center {% if 'sales' in request.path and 'payment=PENDING_INVOICE' not in request.get_full_path or 'price-history' in request.path %}active{% endif %}"
                             data-bs-toggle="collapse" href="#salesMenu" role="button"
@@ -124,13 +124,15 @@
                         <div class="collapse {% if 'sales' in request.path and 'payment=PENDING_INVOICE' not in request.get_full_path or 'price-history' in request.path %}show{% endif %}"
                             data-bs-parent="#sidebarAccordion" id="salesMenu">
                             <ul class="nav flex-column ms-3 border-start border-secondary ps-2">
+                                {% if role_name in 'SHOP_MANAGER,ACCOUNTANT,AUDITOR,ADMIN' %}
                                 <li class="nav-item">
                                     <a class="nav-link text-white-50 py-1 {% if 'report' in request.path and 'sales' in request.path %}text-white{% endif %}"
                                         href="{% url 'sales:shop_sales_report' %}">
                                         <i class="bi bi-graph-up me-1"></i>Sales Report
                                     </a>
                                 </li>
-                                {% if role_name == 'SHOP_MANAGER' or role_name == 'ACCOUNTANT' or role_name == 'AUDITOR' or role_name == 'ADMIN' %}
+                                {% endif %}
+                                {% if role_name in 'SHOP_MANAGER,ACCOUNTANT,AUDITOR,ADMIN,SHOP_CASHIER' %}
                                 <li class="nav-item">
                                     <a class="nav-link text-white-50 py-1 {% if '/sales/' in request.path and '/pos/' not in request.path and 'report' not in request.path and 'refund' not in request.path and 'dispatches' not in request.path %}text-white{% endif %}"
                                         href="{% url 'sales:sale_list' %}">
@@ -183,12 +185,14 @@
                                     </a>
                                 </li>
                                 {% endif %}
+                                {% if role_name in 'ACCOUNTANT,AUDITOR,ADMIN' %}
                                 <li class="nav-item border-top border-secondary mt-1 pt-1">
                                     <a class="nav-link text-white-50 py-1 {% if 'price-history' in request.path %}text-white{% endif %}"
                                         href="{% url 'accounting:price_history' %}">
                                         <i class="bi bi-tags me-1"></i>Price History
                                     </a>
                                 </li>
+                                {% endif %}
                             </ul>
                         </div>
                     </li>
@@ -253,7 +257,7 @@
                                     </a>
                                 </li>
                                 {% endif %}
-                                {% if role_name == 'ACCOUNTANT' or role_name == 'ADMIN' %}
+                                {% if role_name == 'ACCOUNTANT' or role_name == 'ADMIN' or role_name == 'SHOP_CASHIER' %}
                                 <li class="nav-item mt-1 pt-1 border-top border-secondary">
                                     <a class="nav-link text-white-50 py-1 d-flex justify-content-between align-items-center {% if 'bank' in request.path %}text-white{% endif %}"
                                         data-bs-toggle="collapse" href="#bankTransferSubMenu" role="button"
@@ -754,9 +758,9 @@
                     <!-- Cash on Hand Dropdown (exclude ADMIN) -->
                     {% if role_name == 'SHOP_ATTENDANT' or role_name == 'SHOP_MANAGER' or role_name == 'ACCOUNTANT' or role_name == 'SHOP_CASHIER' %}
                     <div class="dropdown me-3">
-                        <a href="#" class="text-decoration-none dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" title="Cash on Hand">
-                            <span class="badge bg-success fs-6">
-                                <i class="bi bi-cash me-1"></i>{{ currency_symbol }}{{ cash_on_hand|floatformat:"2g"|default:"0.00" }}
+                        <a href="#" class="text-decoration-none dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" title="{% if cash_on_hand < 0 %}Cash Deficit: {{ currency_symbol }}{{ cash_on_hand|floatformat:'2g' }}{% else %}Cash on Hand{% endif %}">
+                            <span class="badge {% if cash_on_hand < 0 %}bg-danger{% else %}bg-success{% endif %} fs-6">
+                                <i class="bi bi-cash me-1"></i>{% if cash_on_hand < 0 %}-{{ currency_symbol }}{{ cash_on_hand|stringformat:'.2f'|slice:'1:' }}{% else %}{{ currency_symbol }}{{ cash_on_hand|floatformat:"2g"|default:"0.00" }}{% endif %}
                             </span>
                         </a>
                         <ul class="dropdown-menu shadow">
@@ -778,10 +782,9 @@
                     {% if ecash_balance is not None and role_name in 'SHOP_MANAGER,ACCOUNTANT,SHOP_CASHIER' %}
                     <a href="{% if role_name == 'SHOP_MANAGER' or role_name == 'SHOP_CASHIER' %}{% url 'payments:shop_ecash_history' %}{% elif role_name == 'ACCOUNTANT' %}{% url 'payments:shop_ecash_list' %}{% else %}{% url 'payments:ecash_ledger' %}{% endif %}"
                         class="me-3 text-decoration-none"
-                        title="E-Cash Balance - Click to {% if role_name == 'ACCOUNTANT' %}withdraw{% else %}view history{% endif %}">
-                        <span class="badge bg-info fs-6">
-                            <i
-                                class="bi bi-credit-card me-1"></i>{{ currency_symbol }}{{ ecash_balance|floatformat:"2g"|default:"0.00" }}
+                        title="{% if ecash_balance < 0 %}E-Cash Deficit: {{ currency_symbol }}{{ ecash_balance|floatformat:'2g' }}{% else %}E-Cash Balance - Click to {% if role_name == 'ACCOUNTANT' %}withdraw{% else %}view history{% endif %}{% endif %}">
+                        <span class="badge {% if ecash_balance < 0 %}bg-danger{% else %}bg-info{% endif %} fs-6">
+                            <i class="bi bi-credit-card me-1"></i>{% if ecash_balance < 0 %}-{{ currency_symbol }}{{ ecash_balance|stringformat:'.2f'|slice:'1:' }}{% else %}{{ currency_symbol }}{{ ecash_balance|floatformat:"2g"|default:"0.00" }}{% endif %}
                         </span>
                     </a>
                     {% endif %}
@@ -789,9 +792,9 @@
                     <!-- Local Momo Shortcut (exclude ADMIN) -->
                     {% if role_name in 'SHOP_MANAGER,ACCOUNTANT,SHOP_CASHIER' and request.user.tenant.allow_momo_payments %}
                     <a href="{% if role_name == 'ACCOUNTANT' %}{% url 'accounting:shop_momo_list' %}{% else %}{% url 'accounting:shop_momo_history' %}{% endif %}" class="me-3 text-decoration-none"
-                        title="Local Momo {% if role_name == 'ACCOUNTANT' %}Withdrawals{% else %}History{% endif %}">
-                        <span class="badge text-dark fs-6" style="background-color: #eab308;">
-                            <i class="bi bi-phone me-1"></i>{{ currency_symbol }}{{ momo_balance|floatformat:"2g"|default:"0.00" }}
+                        title="{% if momo_balance < 0 %}Local Momo Deficit: {{ currency_symbol }}{{ momo_balance|floatformat:'2g' }}{% else %}Local Momo {% if role_name == 'ACCOUNTANT' %}Withdrawals{% else %}History{% endif %}{% endif %}">
+                        <span class="badge text-dark fs-6" style="{% if momo_balance < 0 %}background-color: #ef4444; color: #fff !important;{% else %}background-color: #eab308;{% endif %}">
+                            <i class="bi bi-phone me-1"></i>{% if momo_balance < 0 %}-{{ currency_symbol }}{{ momo_balance|stringformat:'.2f'|slice:'1:' }}{% else %}{{ currency_symbol }}{{ momo_balance|floatformat:"2g"|default:"0.00" }}{% endif %}
                         </span>
                     </a>
                     {% endif %}
@@ -1252,7 +1255,7 @@
 
     <!-- Global Application Confirmation Modal -->
     <div class="modal fade" id="appGlobalConfirmModal" tabindex="-1" aria-labelledby="appGlobalConfirmModalLabel" aria-hidden="true" style="z-index: 1095;">
-        <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content rounded-4 border-0 shadow">
                 <div class="modal-header border-0 pb-0 bg-light">
                     <h6 class="modal-title fw-bold text-dark" id="appGlobalConfirmModalLabel">Confirm Action</h6>

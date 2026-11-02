@@ -174,8 +174,14 @@
                             <a class="nav-link" href="#dispatch">Dispatch Management</a>
                             <a class="nav-link sub-link" href="#dispatch-how">How to Dispatch</a>
                             <a class="nav-link sub-link" href="#dispatch-partial">Partial Dispatch</a>
+                            <a class="nav-link sub-link" href="#dispatch-halt">Halt &amp; Settle Undispatched</a>
                             <a class="nav-link sub-link" href="#dispatch-history">Dispatch History</a>
                             <a class="nav-link sub-link" href="#dispatch-setting">Shop Setting</a>
+                            <a class="nav-link" href="#refunds">Refunds &amp; Settlements</a>
+                            <a class="nav-link sub-link" href="#refunds-request">Requesting Refunds</a>
+                            <a class="nav-link sub-link" href="#refunds-approval">Accountant Approval</a>
+                            <a class="nav-link sub-link" href="#refunds-disbursement">Cashier Disbursement</a>
+                            <a class="nav-link sub-link" href="#refunds-reporting">Reporting &amp; Reconciliation</a>
                             <a class="nav-link" href="#discounts">Discounts</a>
                             <a class="nav-link sub-link" href="#discount-types">Discount Types</a>
                             <a class="nav-link sub-link" href="#discount-usage">How to Apply</a>
@@ -678,6 +684,117 @@
                                 <li>Toggle the <strong>"Allow Partial Dispatch"</strong> switch</li>
                                 <li>Click <strong>Update Location</strong></li>
                             </ol>
+                        </div>
+                    </div>
+
+                    <h3 id="dispatch-halt" class="mt-4">Halt &amp; Settle Undispatched Goods</h3>
+                    <div class="card border-warning mb-4">
+                        <div class="card-body">
+                            <h5><i class="bi bi-stop-circle text-warning me-2"></i>Halting Partially Dispatched Invoices</h5>
+                            <p>In strict sales workflow mode, if a customer cannot or chooses not to collect the remaining items on a partially dispatched order, the Shop Manager can formally halt the dispatch.</p>
+                            <ul>
+                                <li><strong>Dispatched quantities remain sold</strong>: Products already handed over to the customer remain recorded as final sales.</li>
+                                <li><strong>Undispatched stock released</strong>: Uncollected items are released from the pending dispatch ledger, returning immediately to available shop stock.</li>
+                                <li><strong>Automated Customer Settlement</strong>:
+                                    <ul>
+                                        <li><em>Overpayment (Cash / MoMo / E-Cash)</em>: If customer payments exceed the value of dispatched goods, an automatic <strong>Refund Request</strong> is created for the excess balance.</li>
+                                        <li><em>Credit Sale Debt Reduction</em>: If the sale was on credit or unpaid, the customer's credit debt is automatically reduced by the value of undispatched goods.</li>
+                                    </ul>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Refunds & Settlements -->
+                <section id="refunds">
+                    <h2><i class="bi bi-arrow-counterclockwise me-2 text-danger"></i>Refunds &amp; Settlements</h2>
+
+                    <p class="lead">The POS implements a robust 3-stage separation-of-duties workflow for customer refunds to protect cash security and ensure complete auditability.</p>
+
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-4">
+                            <div class="card h-100 border-primary">
+                                <div class="card-body">
+                                    <div class="fw-bold text-primary mb-1">Stage 1: Request</div>
+                                    <h6 class="card-title">Shop Manager</h6>
+                                    <p class="small text-muted mb-0">Submits full refund or partial dispatch halt request with mandatory justification.</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card h-100 border-info">
+                                <div class="card-body">
+                                    <div class="fw-bold text-info mb-1">Stage 2: Approval</div>
+                                    <h6 class="card-title">Accountant / Admin</h6>
+                                    <p class="small text-muted mb-0">Audits the invoice and selects the refund payment method. <em>No funds are deducted at this stage.</em></p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card h-100 border-success">
+                                <div class="card-body">
+                                    <div class="fw-bold text-success mb-1">Stage 3: Disbursement</div>
+                                    <h6 class="card-title">Cashier / Admin</h6>
+                                    <p class="small text-muted mb-0">Pays out physical cash or mobile money. Deductions from till/wallet occur exclusively at this stage.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <h3 id="refunds-request">1. Requesting Refunds</h3>
+                    <div class="card mb-4">
+                        <div class="card-body">
+                            <p>Refunds can be initiated by the Shop Manager from <strong>Sales History</strong> or the <strong>Sale Detail</strong> page:</p>
+                            <ol>
+                                <li>Find the completed invoice and click <strong>Request Refund</strong>.</li>
+                                <li>Provide a detailed, mandatory <strong>Reason</strong> explaining the return or cancellation.</li>
+                                <li>Submit the request to queue it for Head Office review.</li>
+                            </ol>
+                        </div>
+                    </div>
+
+                    <h3 id="refunds-approval">2. Accountant &amp; Admin Approval</h3>
+                    <div class="card mb-4">
+                        <div class="card-body">
+                            <p>Head Office Accountants and Administrators review pending requests under <strong>Sales → Refund Requests</strong>:</p>
+                            <ul>
+                                <li>Review the original receipt, customer, items, and manager's reason.</li>
+                                <li>Designate the refund method: <strong>Cashier Till (Cash)</strong>, <strong>Mobile Money (MoMo)</strong>, or <strong>E-Cash</strong>.</li>
+                                <li>Click <strong>Approve</strong>. The request transitions to <em>Pending Payout</em>.</li>
+                            </ul>
+                            <div class="alert alert-info mb-0">
+                                <i class="bi bi-info-circle me-1"></i><strong>Key Security Rule:</strong> Approval authorizes the payout but <u>does not deduct cash from the till</u>. The physical disbursement must be executed by the cashier on duty.
+                            </div>
+                        </div>
+                    </div>
+
+                    <h3 id="refunds-disbursement">3. Cashier Disbursement &amp; Till Balance Safeguards</h3>
+                    <div class="card mb-4">
+                        <div class="card-body">
+                            <p>Cashiers disburse funds to customers directly from the <strong>Cashier Dashboard</strong> or <strong>Refund Requests</strong> menu:</p>
+                            <ol>
+                                <li>Locate approved requests displaying the green <strong>Disburse Refund</strong> button.</li>
+                                <li>Click <strong>Disburse Refund</strong>.</li>
+                                <li><strong>Insufficient Balance Safeguard</strong>: If the cashier's drawer or wallet balance is less than the payout amount, an application modal warns of the shortfall before permitting disbursement.</li>
+                                <li><strong>Negative Balance Support</strong>: If approved payouts exceed total daily intake, the till/wallet safely accepts the disbursement and renders the deficit in bold red (e.g. <code>-GH₵50.00</code>).</li>
+                                <li>Upon completion, the disbursing cashier's user ID and timestamp are permanently affixed to the record.</li>
+                            </ol>
+                        </div>
+                    </div>
+
+                    <h3 id="refunds-reporting">4. Financial Reporting &amp; Reconciliation</h3>
+                    <div class="card mb-4">
+                        <div class="card-body">
+                            <ul>
+                                <li><strong>Cash History</strong>: Cash refunds appear as distinct cash outflows with dedicated summary metrics, export entries, and a dedicated <em>Cash Refunds</em> table tab.</li>
+                                <li><strong>End of Day Management &amp; Details Reports</strong>: Refunds disbursed appear under <em>Financial Movements</em> and are subtracted from <code>expected_cash</code> in the daily reconciliation review:
+                                    <div class="p-2 bg-light rounded font-monospace small my-2">
+                                        expected_cash = opening_float + cash_sales + customer_payments - expenditures - funds_to_bank - funds_to_accountant - cash_refunds
+                                    </div>
+                                    This guarantees that daily shift closing cash counts match expected figures without false shortage discrepancies.
+                                </li>
+                            </ul>
                         </div>
                     </div>
                 </section>

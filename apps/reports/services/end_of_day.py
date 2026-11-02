@@ -6,7 +6,7 @@ from decimal import Decimal
 from django.db.models import Sum, Count, Q
 from django.utils import timezone
 
-from apps.sales.models import Sale, SaleItem, Shift
+from apps.sales.models import Sale, SaleItem, Shift, RefundRequest
 from apps.inventory.models import InventoryLedger, Product
 from apps.accounting.models import CashTransfer, BankTransfer, ExpenditureItem
 from apps.customers.models import CustomerTransaction
@@ -154,6 +154,32 @@ def build_management_end_of_day_report(tenant, start_date, end_date, shop=None, 
 
     expenditures = ExpenditureItem.objects.filter(**exp_filter).aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
 
+    # Refunds disbursed
+    refund_filter = {
+        'tenant': tenant,
+        'payout_status': 'PAID',
+        'paid_at__date__gte': start_date,
+        'paid_at__date__lte': end_date,
+    }
+    if role_name == 'SHOP_ATTENDANT' and user:
+        refund_filter['sale__attendant'] = user
+    elif role_name == 'SHOP_CASHIER' and user:
+        refund_filter['paid_by'] = user
+    elif shop_filter_for_inventory:
+        refund_filter['sale__shop'] = shop_filter_for_inventory
+
+    refunds_disbursed_cash = RefundRequest.objects.filter(
+        **refund_filter, refund_method='CASH'
+    ).aggregate(t=Sum('refund_amount'))['t'] or Decimal('0.00')
+
+    refunds_disbursed_digital = RefundRequest.objects.filter(
+        **refund_filter, refund_method__in=['MOMO', 'ECASH']
+    ).aggregate(t=Sum('refund_amount'))['t'] or Decimal('0.00')
+
+    total_refunds_disbursed = RefundRequest.objects.filter(
+        **refund_filter
+    ).aggregate(t=Sum('refund_amount'))['t'] or Decimal('0.00')
+
     # 3. PRODUCT BREAKDOWN & DISPATCH
     items_agg = SaleItem.objects.filter(sale__in=sales).values(
         'product_id', 'product__name', 'product__category__name'
@@ -279,7 +305,7 @@ def build_management_end_of_day_report(tenant, start_date, end_date, shop=None, 
     else:
         # Full cash calculations
         expected_cash = (
-            opening_float + cash_sales + customer_payments - expenditures - funds_to_bank - funds_to_accountant
+            opening_float + cash_sales + customer_payments - expenditures - funds_to_bank - funds_to_accountant - refunds_disbursed_cash
         )
         variance = counted_closing_cash - expected_cash
         if variance == Decimal('0.00'):
@@ -527,6 +553,9 @@ def build_management_end_of_day_report(tenant, start_date, end_date, shop=None, 
         'sales_cash': cash_sales,
         'customer_payments': customer_payments,
         'expenses': expenditures,
+        'refunds_disbursed_cash': refunds_disbursed_cash,
+        'refunds_disbursed_digital': refunds_disbursed_digital,
+        'total_refunds_disbursed': total_refunds_disbursed,
         'funds_to_bank': funds_to_bank,
         'funds_to_accountant': funds_to_accountant,
         

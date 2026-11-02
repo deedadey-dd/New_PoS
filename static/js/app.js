@@ -49,8 +49,20 @@ document.addEventListener('DOMContentLoaded', function () {
         const bodyEl = document.getElementById('appGlobalConfirmModalBody');
         const btnEl = document.getElementById('appGlobalConfirmModalBtn');
 
-        if (titleEl) titleEl.textContent = title;
-        if (bodyEl) bodyEl.textContent = message;
+        if (titleEl) {
+            if (typeof title === 'string' && title.includes('<')) {
+                titleEl.innerHTML = title;
+            } else {
+                titleEl.textContent = title;
+            }
+        }
+        if (bodyEl) {
+            if (typeof message === 'string' && (message.includes('<') || message.includes('\n'))) {
+                bodyEl.innerHTML = message.includes('<') ? message : message.replace(/\n/g, '<br>');
+            } else {
+                bodyEl.textContent = message;
+            }
+        }
         if (btnEl) {
             btnEl.className = 'btn btn-sm fw-semibold ' + confirmClass;
             btnEl.textContent = confirmText;
@@ -58,8 +70,23 @@ document.addEventListener('DOMContentLoaded', function () {
             btnEl.parentNode.replaceChild(newBtn, btnEl);
             newBtn.addEventListener('click', function () {
                 const modalInstance = bootstrap.Modal.getInstance(modalEl);
-                if (modalInstance) modalInstance.hide();
-                onConfirm();
+                if (modalInstance) {
+                    let executed = false;
+                    const cleanup = function () {
+                        modalEl.removeEventListener('hidden.bs.modal', cleanup);
+                        if (!executed) {
+                            executed = true;
+                            if (typeof onConfirm === 'function') onConfirm();
+                        }
+                    };
+                    modalEl.addEventListener('hidden.bs.modal', cleanup);
+                    setTimeout(function () {
+                        cleanup();
+                    }, 350);
+                    modalInstance.hide();
+                } else {
+                    if (typeof onConfirm === 'function') onConfirm();
+                }
             });
         }
 

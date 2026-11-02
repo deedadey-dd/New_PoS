@@ -6,7 +6,7 @@ from django.db.models import Sum, Count, Q
 from decimal import Decimal
 from datetime import datetime
 
-from apps.sales.models import Sale, SaleItem
+from apps.sales.models import Sale, SaleItem, RefundRequest
 from apps.customers.models import CustomerTransaction
 from apps.accounting.models import CashTransfer, BankTransfer, ExpenditureItem
 from apps.payments.models import ECashLedger
@@ -113,6 +113,23 @@ class EndOfDaySummaryView(LoginRequiredMixin, View):
                     **date_filter,
                     accountant=user
                 ).aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
+
+                summary_context['refunds_disbursed_cash'] = RefundRequest.objects.filter(
+                    tenant=tenant,
+                    paid_by=user,
+                    payout_status='PAID',
+                    refund_method='CASH',
+                    paid_at__date__gte=start_date,
+                    paid_at__date__lte=end_date
+                ).aggregate(t=Sum('refund_amount'))['t'] or Decimal('0.00')
+
+                summary_context['refunds_disbursed_total'] = RefundRequest.objects.filter(
+                    tenant=tenant,
+                    paid_by=user,
+                    payout_status='PAID',
+                    paid_at__date__gte=start_date,
+                    paid_at__date__lte=end_date
+                ).aggregate(t=Sum('refund_amount'))['t'] or Decimal('0.00')
     
             # ---------------------------------------------------------
             # SHOP MANAGER OR ACCOUNTANT VIEWING SHOP SUMMARY
@@ -181,6 +198,24 @@ class EndOfDaySummaryView(LoginRequiredMixin, View):
                             created_at__date__gte=start_date,
                             created_at__date__lte=end_date
                         ).aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
+
+                    # Refund payouts in this shop
+                    summary_context['shop_refunds_disbursed_cash'] = RefundRequest.objects.filter(
+                        tenant=tenant,
+                        sale__shop=shop,
+                        payout_status='PAID',
+                        refund_method='CASH',
+                        paid_at__date__gte=start_date,
+                        paid_at__date__lte=end_date
+                    ).aggregate(t=Sum('refund_amount'))['t'] or Decimal('0.00')
+
+                    summary_context['shop_refunds_disbursed_total'] = RefundRequest.objects.filter(
+                        tenant=tenant,
+                        sale__shop=shop,
+                        payout_status='PAID',
+                        paid_at__date__gte=start_date,
+                        paid_at__date__lte=end_date
+                    ).aggregate(t=Sum('refund_amount'))['t'] or Decimal('0.00')
     
             # ---------------------------------------------------------
             # OVERALL VIEW FOR ACCOUNTANT, ADMIN, AUDITOR
@@ -212,6 +247,21 @@ class EndOfDaySummaryView(LoginRequiredMixin, View):
                     **date_filter,
                     accountant=user
                 ).aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
+
+                summary_context['refunds_disbursed_cash'] = RefundRequest.objects.filter(
+                    tenant=tenant,
+                    payout_status='PAID',
+                    refund_method='CASH',
+                    paid_at__date__gte=start_date,
+                    paid_at__date__lte=end_date
+                ).aggregate(t=Sum('refund_amount'))['t'] or Decimal('0.00')
+
+                summary_context['refunds_disbursed_total'] = RefundRequest.objects.filter(
+                    tenant=tenant,
+                    payout_status='PAID',
+                    paid_at__date__gte=start_date,
+                    paid_at__date__lte=end_date
+                ).aggregate(t=Sum('refund_amount'))['t'] or Decimal('0.00')
     
                 summary_context['expenditures_disbursed'] = ExpenditureItem.objects.filter(
                     request__tenant=tenant,
@@ -570,6 +620,28 @@ class EndOfDayDetailsView(LoginRequiredMixin, View):
 
         expenditures = ExpenditureItem.objects.filter(**exp_filter).aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
 
+        # Refunds Disbursed
+        refund_filter = {
+            'tenant': tenant,
+            'payout_status': 'PAID',
+            'paid_at__date__gte': start_date,
+            'paid_at__date__lte': end_date,
+        }
+        if role_name == 'SHOP_ATTENDANT':
+            refund_filter['sale__attendant'] = user
+        elif role_name == 'SHOP_CASHIER':
+            refund_filter['paid_by'] = user
+        elif shop_filter_for_inventory:
+            refund_filter['sale__shop'] = shop_filter_for_inventory
+
+        refunds_disbursed_cash = RefundRequest.objects.filter(
+            **refund_filter, refund_method='CASH'
+        ).aggregate(t=Sum('refund_amount'))['t'] or Decimal('0.00')
+
+        refunds_disbursed_total = RefundRequest.objects.filter(
+            **refund_filter
+        ).aggregate(t=Sum('refund_amount'))['t'] or Decimal('0.00')
+
         summary = {
             'shop_total_sales': shop_total_sales_value,
             'shop_total_sales_value': shop_total_sales_value,
@@ -596,6 +668,10 @@ class EndOfDayDetailsView(LoginRequiredMixin, View):
             'expenditures': expenditures,
             'shop_expenditures': expenditures,
             'expenditures_disbursed': expenditures,
+            'refunds_disbursed_cash': refunds_disbursed_cash,
+            'shop_refunds_disbursed_cash': refunds_disbursed_cash,
+            'refunds_disbursed_total': refunds_disbursed_total,
+            'shop_refunds_disbursed_total': refunds_disbursed_total,
             'payments_breakdown': payments_breakdown,
         }
         context = {

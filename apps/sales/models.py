@@ -199,12 +199,12 @@ class Shift(TenantModel):
     
     @property
     def total_sales(self):
-        """Total cash sales during this shift."""
+        """Total cash sales during this shift (including completed sales later refunded, offset by refund_payouts)."""
         cash_total = self.sales.filter(
-            status__in=['COMPLETED', 'PENDING_DISPATCH'], payment_method='CASH'
+            status__in=['COMPLETED', 'PENDING_DISPATCH', 'REFUNDED'], payment_method='CASH'
         ).aggregate(t=Sum('total'))['t'] or Decimal('0')
         mixed_total = self.sales.filter(
-            status__in=['COMPLETED', 'PENDING_DISPATCH'], payment_method='MIXED'
+            status__in=['COMPLETED', 'PENDING_DISPATCH', 'REFUNDED'], payment_method='MIXED'
         ).aggregate(t=Sum('amount_paid'))['t'] or Decimal('0')
         return cash_total + mixed_total
         
@@ -247,9 +247,70 @@ class Shift(TenantModel):
         return qs.aggregate(total=Sum('amount'))['total'] or Decimal('0')
 
     @property
+    def refund_payouts(self):
+        """Total cash refunds disbursed by this attendant during this shift."""
+        linked = self.refund_requests_paid.filter(
+            payout_status='PAID',
+            refund_method='CASH'
+        ).aggregate(total=Sum('refund_amount'))['total'] or Decimal('0.00')
+        if linked > Decimal('0.00'):
+            return linked
+        from apps.sales.models import RefundRequest
+        qs = RefundRequest.objects.filter(
+            tenant=self.tenant,
+            paid_by=self.attendant,
+            payout_status='PAID',
+            refund_method='CASH',
+            paid_at__gte=self.start_time
+        )
+        if self.end_time:
+            qs = qs.filter(paid_at__lte=self.end_time)
+        return qs.aggregate(total=Sum('refund_amount'))['total'] or Decimal('0.00')
+
+    @property
+    def momo_refund_payouts(self):
+        """Total momo refunds disbursed by this attendant during this shift."""
+        linked = self.refund_requests_paid.filter(
+            payout_status='PAID',
+            refund_method='MOMO'
+        ).aggregate(total=Sum('refund_amount'))['total'] or Decimal('0.00')
+        if linked > Decimal('0.00'):
+            return linked
+        from apps.sales.models import RefundRequest
+        qs = RefundRequest.objects.filter(
+            tenant=self.tenant,
+            paid_by=self.attendant,
+            payout_status='PAID',
+            refund_method='MOMO',
+            paid_at__gte=self.start_time
+        )
+        if self.end_time:
+            qs = qs.filter(paid_at__lte=self.end_time)
+        return qs.aggregate(total=Sum('refund_amount'))['total'] or Decimal('0.00')
+
+    @property
+    def total_refunds_disbursed(self):
+        """Total of all refunds disbursed during this shift."""
+        linked = self.refund_requests_paid.filter(
+            payout_status='PAID'
+        ).aggregate(total=Sum('refund_amount'))['total'] or Decimal('0.00')
+        if linked > Decimal('0.00'):
+            return linked
+        from apps.sales.models import RefundRequest
+        qs = RefundRequest.objects.filter(
+            tenant=self.tenant,
+            paid_by=self.attendant,
+            payout_status='PAID',
+            paid_at__gte=self.start_time
+        )
+        if self.end_time:
+            qs = qs.filter(paid_at__lte=self.end_time)
+        return qs.aggregate(total=Sum('refund_amount'))['total'] or Decimal('0.00')
+
+    @property
     def expected_cash(self):
-        """Expected cash = opening + cash sales + payments on account - credit payouts."""
-        return self.opening_cash + self.total_sales + self.payments_on_account - self.credit_payouts
+        """Expected cash = opening + cash sales + payments on account - credit payouts - cash refunds."""
+        return self.opening_cash + self.total_sales + self.payments_on_account - self.credit_payouts - self.refund_payouts
     
     @property
     def cash_variance(self):
@@ -1003,8 +1064,8 @@ class RefundRequest(TenantModel):
     payout_status = models.CharField(
         max_length=20,
         choices=PAYOUT_STATUS_CHOICES,
-        default='PAID',
-        help_text="Payout status (PENDING if cashier needs to dispense cash, PAID once completed)"
+        default='PENDING',
+        help_text="Payout status (PENDING if cashier needs to dispense funds, PAID once completed)"
     )
     paid_by = models.ForeignKey(
         User,
@@ -1015,6 +1076,18 @@ class RefundRequest(TenantModel):
         help_text="Cashier or accountant who executed the payout"
     )
     paid_at = models.DateTimeField(null=True, blank=True)
+    shift = models.ForeignKey(
+        'sales.Shift',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='refund_requests_paid',
+        help_text="Cashier shift during which this refund was disbursed"
+    )
+    payout_notes = models.TextField(
+        blank=True,
+        help_text="Notes, transaction reference, or receipt number recorded upon disbursement"
+    )
 
     reviewed_by = models.ForeignKey(
         User,
@@ -1051,6 +1124,9 @@ class RefundRequest(TenantModel):
             else:
                 num = 1
             self.refund_number = f"RFD{today}{num:04d}"
+        if not self.is_partial_halt and (not self.refund_amount or self.refund_amount <= Decimal('0.00')):
+            if self.sale_id and hasattr(self, 'sale') and self.sale:
+                self.refund_amount = self.sale.amount_paid if (self.sale.amount_paid and self.sale.amount_paid > Decimal('0.00')) else self.sale.total
         super().save(*args, **kwargs)
 
     def approve(self, approver, refund_method=None):
@@ -1077,53 +1153,18 @@ class RefundRequest(TenantModel):
                 method = 'CASH' if tenant.refund_always_cash else sale.payment_method
             self.refund_method = method
 
-            if self.is_partial_halt:
-                # Settle the sale to actual dispatched items
-                sale.halt_and_settle(user=approver, refund_req=self, refund_method=method)
+            if not self.is_partial_halt and (self.refund_amount is None or self.refund_amount <= Decimal('0.00')):
+                if sale.amount_paid and sale.amount_paid > Decimal('0.00'):
+                    self.refund_amount = sale.amount_paid
+                elif sale.payment_method != 'CREDIT' and sale.total > Decimal('0.00'):
+                    self.refund_amount = sale.total
 
-                orig_pay_method = sale.payment_method
-                # Process payout according to refund method
-                if method == 'MOMO':
-                    if orig_pay_method != 'MOMO' and self.refund_amount > Decimal('0.00'):
-                        # Cross-payment: Customer paid via non-Momo, but refund is disbursed via Momo.
-                        # Deduct Momo balance via positive DigitalFundWithdrawal.
-                        from apps.accounting.models import DigitalFundWithdrawal
-                        DigitalFundWithdrawal.objects.create(
-                            tenant=tenant,
-                            shop=sale.shop,
-                            accountant=approver,
-                            amount=abs(self.refund_amount),
-                            fund_source='MOMO',
-                            notes=f"Partial refund payout (Cross-payment): Sale {sale.sale_number} [{self.refund_number}]"
-                        )
-                    # Note: For same-method MOMO (orig_pay_method == 'MOMO'), sale.halt_and_settle already
-                    # reduced sale.amount_paid by self.refund_amount, which automatically drops the shop's
-                    # momo_sales aggregation. No DigitalFundWithdrawal should be created (a negative entry
-                    # would negate the reduction).
-                    self.payout_status = 'PAID'
-                    self.paid_by = approver
-                    self.paid_at = tz.now()
-
-                elif method == 'ECASH':
-                    if self.refund_amount > Decimal('0.00'):
-                        from apps.payments.models import ECashLedger
-                        ECashLedger.objects.create(
-                            tenant=tenant,
-                            transaction_type='REFUND',
-                            amount=-abs(self.refund_amount),
-                            reference_type='RefundRequest',
-                            reference_id=self.pk,
-                            shop=sale.shop,
-                            created_by=approver,
-                            notes=f"Partial refund: Sale {sale.sale_number} [{self.refund_number}]"
-                        )
-                    self.payout_status = 'PAID'
-                    self.paid_by = approver
-                    self.paid_at = tz.now()
-
-                elif method == 'ACCOUNT_CREDIT' or self.refund_amount <= Decimal('0.00'):
+            if method == 'ACCOUNT_CREDIT' or self.refund_amount <= Decimal('0.00'):
+                # Customer account credit / debt cancellation only - no physical cashier funds leave shop
+                if self.is_partial_halt:
+                    sale.halt_and_settle(user=approver, refund_req=self, refund_method=method)
+                    orig_pay_method = sale.payment_method
                     if orig_pay_method == 'MOMO' and self.refund_amount > Decimal('0.00'):
-                        # Store credit given; restore MOMO balance since digital money didn't leave shop
                         from apps.accounting.models import DigitalFundWithdrawal
                         DigitalFundWithdrawal.objects.create(
                             tenant=tenant,
@@ -1133,41 +1174,27 @@ class RefundRequest(TenantModel):
                             fund_source='MOMO',
                             notes=f"Refund reversal (Store credit): Sale {sale.sale_number} [{self.refund_number}]"
                         )
-                    self.payout_status = 'PAID'
-                    self.paid_by = approver
-                    self.paid_at = tz.now()
+                else:
+                    sale.refund(reason=self.reason, user=approver)
+                    self._apply_financial_adjustment(approver)
 
-                else:  # CASH
-                    if orig_pay_method == 'MOMO' and self.refund_amount > Decimal('0.00'):
-                        # Customer paid via MOMO, but cashier pays cash from till: restore MOMO balance
-                        from apps.accounting.models import DigitalFundWithdrawal
-                        DigitalFundWithdrawal.objects.create(
-                            tenant=tenant,
-                            shop=sale.shop,
-                            accountant=approver,
-                            amount=-abs(self.refund_amount),
-                            fund_source='MOMO',
-                            notes=f"Refund reversal (Cross-payment): Sale {sale.sale_number} [{self.refund_number}]"
-                        )
-                    # Needs cash payout by the cashier
-                    self.payout_status = 'PENDING'
-            else:
-                # 1. Execute the formal sale refund (inventory return, customer balance reversal)
-                sale.refund(reason=self.reason, user=approver)
-
-                # 2. Apply financial adjustment
-                self._apply_financial_adjustment(approver)
                 self.payout_status = 'PAID'
                 self.paid_by = approver
                 self.paid_at = tz.now()
+            else:
+                # CASH, MOMO, ECASH: Approved by accountant, awaiting cashier payout disbursement.
+                # Crucial: NO fund deductions occur upon approval.
+                self.payout_status = 'PENDING'
+                self.paid_by = None
+                self.paid_at = None
 
-            # 3. Mark request approved
+            # Mark request approved
             self.status = 'APPROVED'
             self.reviewed_by = approver
             self.reviewed_at = tz.now()
             self.save()
 
-        # 4. Notify the shop manager who submitted the request
+        # Notify the shop manager who submitted the request
         from apps.notifications.models import Notification
         refund_type_str = "Partial Refund & Settle" if self.is_partial_halt else "Refund"
         amt_display = f"{tenant.currency_symbol}{self.refund_amount}" if self.is_partial_halt else f"{tenant.currency_symbol}{sale.total}"
@@ -1180,6 +1207,105 @@ class RefundRequest(TenantModel):
                 f"{sale.sale_number} ({amt_display}) "
                 f"has been approved by {approver.get_full_name() or approver.email}. "
                 f"Reason: {self.reason}"
+            ),
+            notification_type='SYSTEM',
+            reference_type='RefundRequest',
+            reference_id=self.pk,
+        )
+
+    def execute_payout(self, disburser, shift=None, transaction_reference='', payout_notes=''):
+        """
+        Cashier or Admin dispenses the payout funds (CASH, MOMO, ECASH).
+        This effectively executes the deductions from the various fund sources
+        and finalizes the sale settlement / refund.
+        """
+        from django.db import transaction as db_transaction
+        from django.utils import timezone as tz
+
+        if self.status != 'APPROVED':
+            raise ValidationError("Refund request must be approved before payout.")
+        if self.payout_status == 'PAID':
+            raise ValidationError("This refund has already been paid out.")
+
+        with db_transaction.atomic():
+            sale = self.sale
+            tenant = self.tenant
+            method = self.refund_method
+
+            # 1. Execute the financial adjustments and sale status settlement
+            if self.is_partial_halt:
+                # Settle the sale to actual dispatched items and reduce amount_paid
+                sale.halt_and_settle(user=disburser, refund_req=self, refund_method=method)
+
+                orig_pay_method = sale.payment_method
+                if method == 'MOMO' and orig_pay_method != 'MOMO' and self.refund_amount > Decimal('0.00'):
+                    from apps.accounting.models import DigitalFundWithdrawal
+                    DigitalFundWithdrawal.objects.create(
+                        tenant=tenant,
+                        shop=sale.shop,
+                        accountant=disburser,
+                        amount=abs(self.refund_amount),
+                        fund_source='MOMO',
+                        notes=f"Partial refund payout by cashier (Cross-payment): Sale {sale.sale_number} [{self.refund_number}]"
+                    )
+                elif method == 'CASH' and orig_pay_method == 'MOMO' and self.refund_amount > Decimal('0.00'):
+                    from apps.accounting.models import DigitalFundWithdrawal
+                    DigitalFundWithdrawal.objects.create(
+                        tenant=tenant,
+                        shop=sale.shop,
+                        accountant=disburser,
+                        amount=-abs(self.refund_amount),
+                        fund_source='MOMO',
+                        notes=f"Refund reversal (Cross-payment): Sale {sale.sale_number} [{self.refund_number}]"
+                    )
+                elif method == 'ECASH' and self.refund_amount > Decimal('0.00'):
+                    from apps.payments.models import ECashLedger
+                    ECashLedger.objects.create(
+                        tenant=tenant,
+                        transaction_type='REFUND',
+                        amount=-abs(self.refund_amount),
+                        reference_type='RefundRequest',
+                        reference_id=self.pk,
+                        shop=sale.shop,
+                        created_by=disburser,
+                        notes=f"Partial refund disbursed by cashier: Sale {sale.sale_number} [{self.refund_number}]"
+                    )
+            else:
+                # Full sale refund: return inventory & customer debt reversal
+                sale.refund(reason=self.reason, user=disburser)
+                # Financial bucket deductions (CashTransfer / DigitalFundWithdrawal / ECashLedger)
+                self._apply_financial_adjustment(disburser)
+
+            # 2. Record disbursement metadata
+            combined_notes = []
+            if transaction_reference:
+                combined_notes.append(f"Ref: {transaction_reference}")
+            if payout_notes:
+                combined_notes.append(payout_notes)
+            notes_str = " | ".join(combined_notes)
+
+            self.payout_status = 'PAID'
+            self.paid_by = disburser
+            self.paid_at = tz.now()
+            if shift:
+                self.shift = shift
+            if notes_str:
+                self.payout_notes = notes_str
+            self.save()
+
+        # 4. Notify the shop manager who submitted the request
+        from apps.notifications.models import Notification
+        refund_type_str = "Partial Refund & Settle" if self.is_partial_halt else "Refund"
+        amt_display = f"{tenant.currency_symbol}{self.refund_amount}" if self.is_partial_halt else f"{tenant.currency_symbol}{sale.total}"
+        Notification.objects.create(
+            tenant=tenant,
+            user=self.requested_by,
+            title=f"{refund_type_str} Disbursed",
+            message=(
+                f"Your refund request {self.refund_number} for Sale "
+                f"{sale.sale_number} ({amt_display}) "
+                f"has been disbursed by {disburser.get_full_name() or disburser.email}. "
+                f"Method: {self.get_refund_method_display()}"
             ),
             notification_type='SYSTEM',
             reference_type='RefundRequest',

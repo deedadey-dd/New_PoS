@@ -354,6 +354,13 @@
                             <span class="text-danger">{{ report.currency_symbol }} {{ report.expenses|floatformat:2|intcomma }}</span>
                         </span>
                     </div>
+                    <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+                        <span class="text-muted small fw-medium">Refunds disbursed (Cash / Total)</span>
+                        <span class="fw-bold text-dark">
+                            <span class="text-danger">-{{ report.currency_symbol }} {{ report.refunds_disbursed_cash|floatformat:2|intcomma }}</span> / 
+                            <span class="text-muted">{{ report.currency_symbol }} {{ report.total_refunds_disbursed|floatformat:2|intcomma }}</span>
+                        </span>
+                    </div>
                     <div class="d-flex justify-content-between align-items-center py-2 border-bottom bg-light bg-opacity-50 px-2 rounded">
                         <span class="text-dark small fw-bold">Funds sent to bank</span>
                         <span class="fw-bold text-primary">{{ report.currency_symbol }} {{ report.funds_to_bank|floatformat:2|intcomma }}</span>

@@ -13,15 +13,19 @@ This directory contains documentation for the POS System.
 ### For Shop Staff
 - Opening/Closing Shifts → See [Point of Sale section](USER_MANUAL.md#point-of-sale-pos)
 - Making Sales → See [Making a Sale](USER_MANUAL.md#making-a-sale)
+- Disbursing Approved Refunds (Cashier) → See [Cashier Refund Disbursement](USER_MANUAL.md#cashier-refund-disbursement)
 
 ### For Managers
 - Inventory Management → See [Inventory Management](USER_MANUAL.md#inventory-management)
 - Stock Transfers → See [Stock Transfers](USER_MANUAL.md#stock-transfers)
+- Refund Requests & Halt & Settle → See [Refund Management & Dispatch Halt](USER_MANUAL.md#refund-management--dispatch-halt)
 - Reports → See [Reports & Analytics](USER_MANUAL.md#reports--analytics)
 
-### For Admins
+### For Accountants & Admins
 - User Management → See [Settings & Administration](USER_MANUAL.md#settings--administration)
 - System Configuration → See [Settings & Administration](USER_MANUAL.md#settings--administration)
+- Approving Refund Requests → See [Refund Approval](USER_MANUAL.md#refund-approval-accountant--admin)
+- End of Day Reconciliation & Cash History → See [Refunds in Reports & Cash History](USER_MANUAL.md#refunds-in-reports--cash-history)
 
 ## In-App Help
 

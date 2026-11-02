@@ -123,7 +123,7 @@ def tenant_context(request):
                     fund_source='CASH'
                 ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
                 
-                context['cash_on_hand'] = max(Decimal('0'), cash_sales_val + customer_payments + floats_received - deposits - expenditures - banked_cash)
+                context['cash_on_hand'] = cash_sales_val + customer_payments + floats_received - deposits - expenditures - banked_cash
             else:
                 # Per-user Cash Tracking (Strict Sales Workflow & Individual Roles)
                 # Transfers IN: Confirmed deposits received by user
@@ -203,15 +203,24 @@ def tenant_context(request):
                     Q(description__icontains='Credit payout') | Q(description__icontains='payout to customer')
                 ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
 
-                context['cash_on_hand'] = max(Decimal('0'), (
+                from apps.sales.models import RefundRequest
+                refund_cash_payouts = RefundRequest.objects.filter(
+                    tenant=tenant,
+                    paid_by=user,
+                    payout_status='PAID',
+                    refund_method='CASH'
+                ).aggregate(total=Sum('refund_amount'))['total'] or Decimal('0')
+
+                base_cash = max(
+                    Decimal('0'),
                     received
                     - sent
                     + own_sales
                     + customer_payments
                     + open_shift_opening_cash
                     - banked_cash
-                    - credit_payouts
-                ))
+                )
+                context['cash_on_hand'] = base_cash - credit_payouts - refund_cash_payouts
         
         # Add total credit debt for managers/admin
         if role_name in ['SHOP_MANAGER', 'ADMIN', 'ACCOUNTANT', 'SHOP_CASHIER']:

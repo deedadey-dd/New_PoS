@@ -1099,10 +1099,14 @@ class WorkflowIntegrationTests(TestCase):
         )
         self.assertEqual(rr_cash.status, "PENDING")
 
-        # Accountant approves
+        # Accountant approves (authorizes refund, no fund deduction yet)
         rr_cash.approve(self.accountant_user)
-
         self.assertEqual(rr_cash.status, "APPROVED")
+        self.assertEqual(rr_cash.payout_status, "PENDING")
+
+        # Admin executes payout (fund deduction takes effect)
+        rr_cash.execute_payout(self.admin_user)
+        self.assertEqual(rr_cash.payout_status, "PAID")
         sale_cash.refresh_from_db()
         self.assertEqual(sale_cash.status, "REFUNDED")
 
@@ -1145,8 +1149,12 @@ class WorkflowIntegrationTests(TestCase):
 
         # Admin approves
         rr_momo.approve(self.admin_user)
-
         self.assertEqual(rr_momo.status, "APPROVED")
+        self.assertEqual(rr_momo.payout_status, "PENDING")
+
+        # Admin executes payout
+        rr_momo.execute_payout(self.admin_user)
+        self.assertEqual(rr_momo.payout_status, "PAID")
         sale_momo.refresh_from_db()
         self.assertEqual(sale_momo.status, "REFUNDED")
 
@@ -1197,6 +1205,10 @@ class WorkflowIntegrationTests(TestCase):
             reason="Cross payment test"
         )
         rr_ecash.approve(self.admin_user)
+        self.assertEqual(rr_ecash.status, "APPROVED")
+        self.assertEqual(rr_ecash.payout_status, "PENDING")
+        rr_ecash.execute_payout(self.admin_user)
+        self.assertEqual(rr_ecash.payout_status, "PAID")
         
         # Cross payment MUST create both an EXPENDITURE and a DigitalFundWithdrawal restoration
         exp_ct = CashTransfer.objects.filter(
@@ -1540,7 +1552,7 @@ class WorkflowIntegrationTests(TestCase):
         self.assertTrue(refund_req.is_partial_halt)
         self.assertEqual(refund_req.refund_amount, Decimal("50.00"))
 
-        # 3. Accountant approves refund
+        # 3. Accountant approves refund (authorizes, leaves payout pending)
         self.client.force_login(self.accountant_user)
         approve_resp = self.client.post(
             f"/sales/api/refund-requests/{refund_req.pk}/approve/",
@@ -1548,6 +1560,19 @@ class WorkflowIntegrationTests(TestCase):
             content_type='application/json'
         )
         self.assertEqual(approve_resp.status_code, 200)
+
+        refund_req.refresh_from_db()
+        self.assertEqual(refund_req.status, 'APPROVED')
+        self.assertEqual(refund_req.payout_status, 'PENDING')
+
+        # 4. Cashier disburses payout (sale is settled and funds deducted)
+        self.client.force_login(self.cashier_user)
+        payout_resp = self.client.post(f"/sales/api/refund-requests/{refund_req.pk}/payout/")
+        self.assertEqual(payout_resp.status_code, 200)
+
+        refund_req.refresh_from_db()
+        self.assertEqual(refund_req.payout_status, 'PAID')
+        self.assertEqual(refund_req.paid_by, self.cashier_user)
 
         # Sale is now settled to 5 items and COMPLETED
         sale.refresh_from_db()
@@ -1563,18 +1588,6 @@ class WorkflowIntegrationTests(TestCase):
         # Crucial check: Inventory ledger entries must NOT change!
         ledger_count_after = InventoryLedger.objects.filter(reference_id=sale.pk).count()
         self.assertEqual(ledger_count_after, 1, "No phantom inventory movements should be generated!")
-
-        # 4. Cashier executes cash payout
-        refund_req.refresh_from_db()
-        self.assertEqual(refund_req.status, 'APPROVED')
-        self.assertEqual(refund_req.payout_status, 'PENDING')
-
-        self.client.force_login(self.cashier_user)
-        payout_resp = self.client.post(f"/sales/api/refund-requests/{refund_req.pk}/payout/")
-        self.assertEqual(payout_resp.status_code, 200)
-        refund_req.refresh_from_db()
-        self.assertEqual(refund_req.payout_status, 'PAID')
-        self.assertEqual(refund_req.paid_by, self.cashier_user)
 
     def test_17_strict_partial_dispatch_halt_registered_customer_credit(self):
         """
@@ -2026,20 +2039,72 @@ class WorkflowIntegrationTests(TestCase):
         )
         self.assertEqual(approve_resp.status_code, 200)
 
-        # 4. Verify sale settled
+        # 4. Verify right after accountant approval: funds are NOT deducted yet
+        sale.refresh_from_db()
+        self.assertEqual(sale.status, 'PENDING_DISPATCH')
+        self.assertEqual(sale.total, Decimal("100.00"))
+        self.assertEqual(sale.amount_paid, Decimal("100.00"))
+        ctx_cashier_mid = self.get_navbar_context(self.cashier_user)
+        self.assertEqual(ctx_cashier_mid['momo_balance'], Decimal("100.00"), "Approval must not deduct funds!")
+
+        # 5. Verify refund request status right after accountant approval:
+        # Payout status remains PENDING until Cashier dispenses payout
+        refund_req.refresh_from_db()
+        self.assertEqual(refund_req.status, 'APPROVED')
+        self.assertEqual(refund_req.refund_method, 'MOMO')
+        self.assertEqual(refund_req.payout_status, 'PENDING')
+        self.assertEqual(refund_req.reviewed_by, self.accountant_user)
+        self.assertIsNone(refund_req.paid_by)
+
+        # 6. Verify Shop Manager CANNOT disburse payout (Cashier and Admin only)
+        self.client.force_login(self.manager_user)
+        mgr_resp = self.client.post(
+            f"/sales/api/refund-requests/{refund_req.pk}/payout/",
+            data=json.dumps({}),
+            content_type='application/json'
+        )
+        self.assertEqual(mgr_resp.status_code, 403)
+
+        # 7. Cashier opens shift and assents/dispenses refund payout
+        from apps.sales.models import Shift
+        shift = Shift.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.cashier_user,
+            opening_cash=Decimal("50.00"),
+            status="OPEN"
+        )
+
+        self.client.force_login(self.cashier_user)
+        payout_resp = self.client.post(
+            f"/sales/api/refund-requests/{refund_req.pk}/payout/",
+            data=json.dumps({
+                'transaction_reference': 'TXN-MOMO-999',
+                'payout_notes': 'Sent by cashier via shop MoMo phone'
+            }),
+            content_type='application/json'
+        )
+        self.assertEqual(payout_resp.status_code, 200)
+
+        # 8. Verify sale is settled upon payout disbursement
         sale.refresh_from_db()
         self.assertEqual(sale.status, 'COMPLETED')
         self.assertEqual(sale.total, Decimal("40.00"))
         self.assertEqual(sale.amount_paid, Decimal("40.00"))
 
-        # 5. Verify refund request payout status
+        # Verify refund request is now PAID and linked to cashier and shift
         refund_req.refresh_from_db()
-        self.assertEqual(refund_req.status, 'APPROVED')
-        self.assertEqual(refund_req.refund_method, 'MOMO')
         self.assertEqual(refund_req.payout_status, 'PAID')
-        self.assertEqual(refund_req.paid_by, self.accountant_user)
+        self.assertEqual(refund_req.paid_by, self.cashier_user)
+        self.assertEqual(refund_req.shift, shift)
+        self.assertIn('Ref: TXN-MOMO-999', refund_req.payout_notes)
+        self.assertIn('Sent by cashier via shop MoMo phone', refund_req.payout_notes)
 
-        # 6. Verify NO negative DigitalFundWithdrawal was created that would cancel out deduction
+        # Verify shift accounts for the momo refund payout
+        self.assertEqual(shift.momo_refund_payouts, Decimal("60.00"))
+        self.assertEqual(shift.refund_payouts, Decimal("0.00"))
+
+        # 7. Verify NO negative DigitalFundWithdrawal was created that would cancel out deduction
         buggy_dfw = DigitalFundWithdrawal.objects.filter(
             shop=self.shop_location,
             fund_source='MOMO',
@@ -2047,10 +2112,96 @@ class WorkflowIntegrationTests(TestCase):
         ).first()
         self.assertIsNone(buggy_dfw, "No DigitalFundWithdrawal should be created for same-method MOMO refunds")
 
-        # 7. CRITICAL: Cashier navbar momo_balance must be exactly 40.00 (100.00 - 60.00)
+        # 8. CRITICAL: Cashier navbar momo_balance must be exactly 40.00 (100.00 - 60.00)
         ctx_cashier_after = self.get_navbar_context(self.cashier_user)
         self.assertEqual(ctx_cashier_after['momo_balance'], Decimal("40.00"))
 
         # Also verify Shop Manager navbar momo_balance is 40.00
         ctx_manager_after = self.get_navbar_context(self.manager_user)
         self.assertEqual(ctx_manager_after['momo_balance'], Decimal("40.00"))
+
+    def test_23_cashier_cash_refund_payout_deducts_shift_expected_cash(self):
+        """
+        Verify that when a Cash refund is disbursed by a cashier:
+        1. Accountant approves refund (status APPROVED, payout_status PENDING).
+        2. Cashier dispenses cash refund with active shift.
+        3. Shift.refund_payouts increases by the refund amount.
+        4. Shift.expected_cash is reduced so cashier cash count is balanced.
+        5. Cashier navbar cash_on_hand is accurately reduced.
+        """
+        import json
+        from apps.sales.models import Shift, RefundRequest
+
+        # Cashier starts shift with 100 opening cash
+        shift = Shift.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.cashier_user,
+            opening_cash=Decimal("100.00"),
+            status="OPEN"
+        )
+
+        # Cash sale of 100 made during shift
+        sale = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.cashier_user,
+            cashier=self.cashier_user,
+            shift=shift,
+            total=Decimal("100.00"),
+            amount_paid=Decimal("100.00"),
+            payment_method="CASH",
+            status="COMPLETED"
+        )
+
+        # Shift expected cash is 100 opening + 100 cash sales = 200
+        self.assertEqual(shift.expected_cash, Decimal("200.00"))
+
+        # Create refund request for 30.00 cash
+        refund_req = RefundRequest.objects.create(
+            tenant=self.tenant,
+            sale=sale,
+            refund_method='CASH',
+            refund_amount=Decimal("30.00"),
+            reason='Customer returned 1 item',
+            requested_by=self.manager_user,
+            status='PENDING',
+            payout_status='PENDING'
+        )
+
+        # Accountant approves refund
+        self.client.force_login(self.accountant_user)
+        approve_resp = self.client.post(
+            f"/sales/api/refund-requests/{refund_req.pk}/approve/",
+            data=json.dumps({'refund_method': 'CASH'}),
+            content_type='application/json'
+        )
+        self.assertEqual(approve_resp.status_code, 200)
+
+        refund_req.refresh_from_db()
+        self.assertEqual(refund_req.status, 'APPROVED')
+        self.assertEqual(refund_req.payout_status, 'PENDING')
+
+        # Cashier assents and dispenses the cash refund
+        self.client.force_login(self.cashier_user)
+        payout_resp = self.client.post(
+            f"/sales/api/refund-requests/{refund_req.pk}/payout/",
+            data=json.dumps({
+                'payout_notes': 'Paid in cash from drawer'
+            }),
+            content_type='application/json'
+        )
+        self.assertEqual(payout_resp.status_code, 200)
+
+        refund_req.refresh_from_db()
+        self.assertEqual(refund_req.payout_status, 'PAID')
+        self.assertEqual(refund_req.paid_by, self.cashier_user)
+        self.assertEqual(refund_req.shift, shift)
+
+        # Shift expected cash must now be 170.00 (200 - 30)
+        self.assertEqual(shift.refund_payouts, Decimal("30.00"))
+        self.assertEqual(shift.expected_cash, Decimal("170.00"))
+
+        # Cashier's cash_on_hand context must also deduct the refund payout
+        ctx = self.get_navbar_context(self.cashier_user)
+        self.assertEqual(ctx['cash_on_hand'], Decimal("70.00"))  # 100 sale - 30 refund

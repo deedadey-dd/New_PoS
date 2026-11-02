@@ -318,9 +318,9 @@ class ShiftCloseView(LoginRequiredMixin, View):
             is_active=True
         ).first()
         
-        # Calculate sales breakdown
+        # Calculate sales breakdown (include REFUNDED since collected cash is offset by refund_payouts)
         from django.db.models import Sum, Q
-        sales_qs = shift.sales.filter(status__in=['COMPLETED', 'PENDING_DISPATCH'])
+        sales_qs = shift.sales.filter(status__in=['COMPLETED', 'PENDING_DISPATCH', 'REFUNDED'])
         
         cash_sales = sales_qs.filter(payment_method='CASH').aggregate(
             total=Sum('total'))['total'] or Decimal('0')
@@ -335,17 +335,20 @@ class ShiftCloseView(LoginRequiredMixin, View):
         
         all_sales = sales_qs.aggregate(total=Sum('total'))['total'] or Decimal('0')
         payments_on_account = shift.payments_on_account
-        total_cash = shift.opening_cash + cash_sales + mixed_sales + payments_on_account
+        total_cash = shift.expected_cash
         
         return render(request, self.template_name, {
             'shift': shift,
-            'expected_cash': total_cash,  # Opening + Cash Sales portion + Payments
+            'expected_cash': total_cash,  # Opening + Cash Sales portion + Payments - Refunds
             'total_sales': all_sales,  # All sales
             'cash_sales': cash_sales + mixed_sales,  # Cash portion only
             'ecash_sales': ecash_sales,
             'momo_sales': momo_sales,
             'credit_sales': credit_sales,
             'payments_on_account': payments_on_account,
+            'credit_payouts': shift.credit_payouts,
+            'refund_payouts': shift.refund_payouts,
+            'momo_refund_payouts': shift.momo_refund_payouts,
             'shop_manager': shop_manager,
         })
     
@@ -467,9 +470,9 @@ class ShiftListView(LoginRequiredMixin, SortableMixin, ListView):
         
         role_name = self.request.user.role.name if self.request.user.role else ''
         
-        if role_name == 'ATTENDANT':
+        if role_name in ['ATTENDANT', 'SHOP_ATTENDANT']:
             qs = qs.filter(attendant=self.request.user)
-        elif role_name == 'SHOP_MANAGER':
+        elif role_name in ['SHOP_MANAGER', 'SHOP_CASHIER']:
             qs = qs.filter(shop=self.request.user.location)
             
         return qs
@@ -1147,16 +1150,19 @@ def api_approve_refund(request, pk):
 @require_POST
 def api_payout_refund(request, pk):
     """
-    Cashier executes cash payout for an approved refund request.
-    Only Shop Cashiers, Shop Managers, and Admins can call this endpoint.
+    Cashier or Admin executes payout (Cash, MoMo, ECash) for an approved refund request.
+    Only Cashiers and Admins can disburse refund payouts.
+    Effectively executes fund deductions from cashier till / wallets and finalizes sale settlement.
     """
-    from .models import RefundRequest
+    import json
+    from .models import RefundRequest, Shift
+    from django.utils import timezone
 
     tenant = request.user.tenant
     role_name = request.user.role.name if request.user.role else None
 
-    if role_name not in ['SHOP_CASHIER', 'SHOP_MANAGER', 'ADMIN']:
-        return JsonResponse({'success': False, 'error': 'Only cashiers, managers, and admins can payout refunds.'}, status=403)
+    if role_name not in ['SHOP_CASHIER', 'ADMIN']:
+        return JsonResponse({'success': False, 'error': 'Only cashiers and admins can disburse refund payouts.'}, status=403)
 
     refund_req = get_object_or_404(RefundRequest, pk=pk, tenant=tenant)
 
@@ -1166,18 +1172,43 @@ def api_payout_refund(request, pk):
     if refund_req.payout_status == 'PAID':
         return JsonResponse({'success': False, 'error': 'This refund has already been paid out.'}, status=400)
 
-    if role_name in ['SHOP_CASHIER', 'SHOP_MANAGER'] and refund_req.sale.shop != request.user.location:
+    if role_name == 'SHOP_CASHIER' and refund_req.sale.shop != request.user.location:
         return JsonResponse({'success': False, 'error': 'You can only process payouts for your own shop.'}, status=403)
 
-    refund_req.payout_status = 'PAID'
-    refund_req.paid_by = request.user
-    refund_req.paid_at = timezone.now()
-    refund_req.save(update_fields=['payout_status', 'paid_by', 'paid_at'])
+    try:
+        data = json.loads(request.body) if request.body else {}
+    except Exception:
+        data = {}
 
+    payout_notes = data.get('payout_notes', '').strip()
+    transaction_ref = data.get('transaction_reference', '').strip()
+
+    # Find active open shift for this user at this shop
+    active_shift = Shift.objects.filter(
+        tenant=tenant,
+        shop=refund_req.sale.shop,
+        attendant=request.user,
+        status='OPEN'
+    ).first()
+
+    # Execute payout: deducts fund sources and finalizes sale settlement
+    try:
+        refund_req.execute_payout(
+            disburser=request.user,
+            shift=active_shift,
+            transaction_reference=transaction_ref,
+            payout_notes=payout_notes
+        )
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+    cashier_name = request.user.get_full_name() or request.user.email
     return JsonResponse({
         'success': True,
-        'message': f'Payout of {tenant.currency_symbol}{refund_req.refund_amount} recorded successfully.',
+        'message': f'Payout of {tenant.currency_symbol}{refund_req.refund_amount} ({refund_req.get_refund_method_display()}) recorded successfully.',
         'payout_number': refund_req.refund_number,
+        'disbursed_by': cashier_name,
+        'paid_at': refund_req.paid_at.strftime('%b %d, %Y %I:%M %p') if refund_req.paid_at else '',
     })
 
 
@@ -1231,7 +1262,7 @@ class RefundRequestListView(LoginRequiredMixin, ListView):
         if not request.user.is_authenticated:
             return super().dispatch(request, *args, **kwargs)
         role_name = request.user.role.name if request.user.role else None
-        if role_name not in ['SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN', 'AUDITOR']:
+        if role_name not in ['SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN', 'AUDITOR', 'SHOP_CASHIER']:
             messages.error(request, 'You do not have permission to view refund requests.')
             return redirect('core:dashboard')
         return super().dispatch(request, *args, **kwargs)
@@ -1243,20 +1274,22 @@ class RefundRequestListView(LoginRequiredMixin, ListView):
         tenant = user.tenant
 
         qs = RefundRequest.objects.filter(tenant=tenant).select_related(
-            'sale', 'sale__shop', 'sale__customer', 'requested_by', 'reviewed_by'
+            'sale', 'sale__shop', 'sale__customer', 'requested_by', 'reviewed_by', 'paid_by', 'shift'
         )
 
-        if role_name == 'SHOP_MANAGER':
+        if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER'] and user.location:
             qs = qs.filter(sale__shop=user.location)
 
         # Filter by status
         status_filter = self.request.GET.get('status', '')
-        if status_filter:
+        if status_filter == 'PENDING_PAYOUT':
+            qs = qs.filter(status='APPROVED', payout_status='PENDING')
+        elif status_filter:
             qs = qs.filter(status=status_filter)
 
         # Filter by shop
         shop_id = self.request.GET.get('shop')
-        if shop_id and role_name != 'SHOP_MANAGER':
+        if shop_id and role_name not in ['SHOP_MANAGER', 'SHOP_CASHIER']:
             qs = qs.filter(sale__shop_id=shop_id)
 
         # Filter by attendant
@@ -1277,9 +1310,10 @@ class RefundRequestListView(LoginRequiredMixin, ListView):
         qs = qs.annotate(
             status_order=Case(
                 When(status='PENDING', then=0),
-                When(status='APPROVED', then=1),
-                When(status='REJECTED', then=2),
-                default=3,
+                When(status='APPROVED', payout_status='PENDING', then=1),
+                When(status='APPROVED', payout_status='PAID', then=2),
+                When(status='REJECTED', then=3),
+                default=4,
                 output_field=IntegerField(),
             )
         ).order_by('status_order', '-created_at')
@@ -1288,7 +1322,7 @@ class RefundRequestListView(LoginRequiredMixin, ListView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        from .models import RefundRequest
+        from .models import RefundRequest, Shift
         from apps.core.models import Location, User
         tenant = self.request.user.tenant
         role_name = self.request.user.role.name if self.request.user.role else None
@@ -1299,10 +1333,23 @@ class RefundRequestListView(LoginRequiredMixin, ListView):
         context['refund_always_cash'] = tenant.refund_always_cash
         
         context['shops'] = Location.objects.filter(tenant=tenant, location_type='SHOP')
-        if role_name == 'SHOP_MANAGER':
+        active_shift = None
+        if self.request.user.location:
+            active_shift = Shift.objects.filter(tenant=tenant, shop=self.request.user.location, attendant=self.request.user, status='OPEN').first()
+        if not active_shift:
+            active_shift = Shift.objects.filter(tenant=tenant, attendant=self.request.user, status='OPEN').first()
+        context['active_shift'] = active_shift
+        context['cashier_effective_cash'] = active_shift.expected_cash if active_shift else None
+
+        if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER'] and self.request.user.location:
             context['attendants'] = User.objects.filter(tenant=tenant, location=self.request.user.location, is_active=True).order_by('first_name', 'last_name')
         else:
             context['attendants'] = User.objects.filter(tenant=tenant, is_active=True).order_by('first_name', 'last_name')
+
+        payout_qs = RefundRequest.objects.filter(tenant=tenant, status='APPROVED', payout_status='PENDING', refund_amount__gt=Decimal('0.00'))
+        if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER'] and self.request.user.location:
+            payout_qs = payout_qs.filter(sale__shop=self.request.user.location)
+        context['pending_payout_count'] = payout_qs.count()
 
         context['selected_shop'] = self.request.GET.get('shop', '')
         context['selected_attendant'] = self.request.GET.get('attendant', '')
@@ -3249,7 +3296,7 @@ class CustomerFootprintView(LoginRequiredMixin, View):
     Supports sorting by name, transaction count, or total value.
     """
 
-    ALLOWED_ROLES = ['SHOP_MANAGER', 'ACCOUNTANT', 'AUDITOR', 'ADMIN']
+    ALLOWED_ROLES = ['SHOP_MANAGER', 'ACCOUNTANT', 'AUDITOR', 'ADMIN', 'SHOP_CASHIER']
 
     def get(self, request):
         from django.db.models import Count, Sum, Max
@@ -3278,8 +3325,8 @@ class CustomerFootprintView(LoginRequiredMixin, View):
             status__in=['COMPLETED', 'PENDING_DISPATCH']
         )
 
-        # Restrict shop managers to their own shop
-        if role_name == 'SHOP_MANAGER':
+        # Restrict shop managers and cashiers to their own shop
+        if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER']:
             qs = qs.filter(shop=user.location)
         elif shop_id:
             qs = qs.filter(shop_id=shop_id)
@@ -3375,7 +3422,7 @@ class CustomerFootprintView(LoginRequiredMixin, View):
         page_obj = paginator.get_page(request.GET.get('page'))
 
         # Shops for filter dropdown
-        if role_name == 'SHOP_MANAGER':
+        if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER']:
             shops = Location.objects.filter(id=user.location_id)
         else:
             shops = Location.objects.filter(tenant=tenant, location_type='SHOP')
