@@ -1,6 +1,7 @@
 {% extends 'base.html' %}
 {% load static %}
 {% load core_filters %}
+{% load humanize %}
 
 {% block title %}Confirm Digital Payments - {{ request.user.tenant.name }}{% endblock %}
 
@@ -163,7 +164,7 @@
                                             </a>
                                             {% endif %}
                                         </td>
-                                        <td class="text-end pe-4 fw-bold">{{ tx.amount|floatformat:2 }}</td>
+                                        <td class="text-end pe-4 fw-bold">{{ tx.amount|floatformat:2|intcomma }}</td>
                                         <td>
                                             {% if status_filter == 'confirmed' or tx.is_accountant_confirmed %}
                                                 <span class="badge bg-success">Confirmed</span>
@@ -265,6 +266,11 @@ document.addEventListener('DOMContentLoaded', function() {
     const totalDisplay = document.getElementById('selectedTotal');
     const confirmBtn = document.getElementById('confirmBtn');
     
+    function formatMoney(val) {
+        const num = parseFloat(val) || 0;
+        return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
     function calculateTotal() {
         let total = 0;
         let checkedCount = 0;
@@ -276,7 +282,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
         
-        totalDisplay.textContent = total.toFixed(2);
+        totalDisplay.textContent = formatMoney(total);
         confirmBtn.disabled = checkedCount === 0;
         
         // Update selectAll state
@@ -339,21 +345,21 @@ document.addEventListener('DOMContentLoaded', function() {
         data.items.forEach(function (item) {
             html += '<tr><td>' + item.product_name + '<br><small class="text-muted">' + item.sku + '</small></td>';
             html += '<td class="text-center">' + parseFloat(item.quantity) + '</td>';
-            html += '<td class="text-end">' + currencySymbol + parseFloat(item.unit_price).toFixed(2) + '</td>';
-            html += '<td class="text-end">' + currencySymbol + parseFloat(item.total).toFixed(2) + '</td></tr>';
+            html += '<td class="text-end">' + currencySymbol + formatMoney(item.unit_price) + '</td>';
+            html += '<td class="text-end">' + currencySymbol + formatMoney(item.total) + '</td></tr>';
         });
         html += '</tbody></table></div>';
         html += '<div class="border-top pt-2 mt-2">';
-        html += '<div class="d-flex justify-content-between mb-1"><span>Subtotal</span><span>' + currencySymbol + parseFloat(data.subtotal).toFixed(2) + '</span></div>';
+        html += '<div class="d-flex justify-content-between mb-1"><span>Subtotal</span><span>' + currencySymbol + formatMoney(data.subtotal) + '</span></div>';
         if (data.discount_amount) {
-            html += '<div class="d-flex justify-content-between mb-1 text-danger"><span>Discount</span><span>-' + currencySymbol + parseFloat(data.discount_amount).toFixed(2) + '</span></div>';
+            html += '<div class="d-flex justify-content-between mb-1 text-danger"><span>Discount</span><span>-' + currencySymbol + formatMoney(data.discount_amount) + '</span></div>';
         }
-        html += '<div class="d-flex justify-content-between fw-bold fs-5 border-top pt-2"><span>Total</span><span>' + currencySymbol + parseFloat(data.total).toFixed(2) + '</span></div>';
-        html += '<div class="d-flex justify-content-between mt-1 text-muted"><span>Amount Paid</span><span>' + currencySymbol + parseFloat(data.amount_paid).toFixed(2) + '</span></div>';
+        html += '<div class="d-flex justify-content-between fw-bold fs-5 border-top pt-2"><span>Total</span><span>' + currencySymbol + formatMoney(data.total) + '</span></div>';
+        html += '<div class="d-flex justify-content-between mt-1 text-muted"><span>Amount Paid</span><span>' + currencySymbol + formatMoney(data.amount_paid) + '</span></div>';
         if (data.overpayment_credited && parseFloat(data.overpayment_credited) > 0) {
-            html += '<div class="d-flex justify-content-between mt-1 text-info"><span>Overage (Credited to Account)</span><span>' + currencySymbol + parseFloat(data.overpayment_credited).toFixed(2) + '</span></div>';
+            html += '<div class="d-flex justify-content-between mt-1 text-info"><span>Overage (Credited to Account)</span><span>' + currencySymbol + formatMoney(data.overpayment_credited) + '</span></div>';
         } else if (data.change_given && parseFloat(data.change_given) > 0 && !data.customer) {
-            html += '<div class="d-flex justify-content-between mt-1 text-success"><span>Change</span><span>' + currencySymbol + parseFloat(data.change_given).toFixed(2) + '</span></div>';
+            html += '<div class="d-flex justify-content-between mt-1 text-success"><span>Change</span><span>' + currencySymbol + formatMoney(data.change_given) + '</span></div>';
         }
         html += '</div>';
         contentEl.innerHTML = html;
@@ -405,9 +411,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
             let balanceHtml;
             if (balance > 0) {
-                balanceHtml = '<span class="badge bg-danger fs-6">' + currencySymbol + balance.toFixed(2) + '</span> <small class="text-danger ms-1">Owes Shop</small>';
+                balanceHtml = '<span class="badge bg-danger fs-6">' + currencySymbol + formatMoney(balance) + '</span> <small class="text-danger ms-1">Owes Shop</small>';
             } else if (balance < 0) {
-                balanceHtml = '<span class="badge bg-success fs-6">' + currencySymbol + Math.abs(balance).toFixed(2) + '</span> <small class="text-success ms-1">Credit</small>';
+                balanceHtml = '<span class="badge bg-success fs-6">' + currencySymbol + formatMoney(Math.abs(balance)) + '</span> <small class="text-success ms-1">Credit</small>';
             } else {
                 balanceHtml = '<span class="badge bg-secondary">No Balance</span>';
             }

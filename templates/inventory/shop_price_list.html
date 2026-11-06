@@ -75,6 +75,9 @@
 <div class="card mb-4">
     <div class="card-body">
         <form method="get" class="row g-3">
+            {% if not is_uniform and shop %}
+            <input type="hidden" name="shop" value="{{ shop.pk }}">
+            {% endif %}
             <div class="col-md-6">
                 <div class="input-group position-relative">
                     <span class="input-group-text"><i class="bi bi-search"></i></span>
@@ -122,7 +125,16 @@
                     {% for p in products %}
                     <tr>
                         <td>
-                            <strong>{{ p.product.name }}</strong><br>
+                            <a href="javascript:void(0)"
+                               class="text-decoration-none fw-bold text-primary d-inline-flex align-items-center gap-1 product-price-history-trigger"
+                               data-product-id="{{ p.product.pk }}"
+                               data-product-name="{{ p.product.name }}"
+                               data-product-sku="{{ p.product.sku }}"
+                               data-history-url="{% url 'inventory:api_shop_price_history' p.product.pk %}"
+                               title="Click to view price change history chart & details">
+                                <span>{{ p.product.name }}</span>
+                                <i class="bi bi-graph-up-arrow small opacity-75"></i>
+                            </a><br>
                             <small class="text-muted">{{ p.product.sku }}</small>
                         </td>
                         <td>{{ p.product.category.name|default:"-" }}</td>
@@ -143,20 +155,31 @@
                             {% endif %}
                         </td>
                         <td>
-                            {% if is_read_only %}
-                                <button class="btn btn-sm btn-secondary" disabled>
-                                    <i class="bi bi-lock"></i> Locked
+                            <div class="d-inline-flex gap-1 align-items-center">
+                                <button type="button"
+                                    class="btn btn-sm btn-outline-info product-price-history-trigger"
+                                    data-product-id="{{ p.product.pk }}"
+                                    data-product-name="{{ p.product.name }}"
+                                    data-product-sku="{{ p.product.sku }}"
+                                    data-history-url="{% url 'inventory:api_shop_price_history' p.product.pk %}"
+                                    title="View Price History">
+                                    <i class="bi bi-clock-history"></i>
                                 </button>
-                            {% else %}
-                                <a href="{% url 'inventory:shop_price_set' p.product.pk %}{% if not is_uniform and shop %}?shop={{ shop.pk }}{% endif %}"
-                                    class="btn btn-sm {% if p.has_price %}btn-outline-primary{% else %}btn-primary{% endif %}">
-                                    {% if p.has_price %}
-                                    <i class="bi bi-pencil"></i> Edit
-                                    {% else %}
-                                    <i class="bi bi-plus"></i> Set Price
-                                    {% endif %}
-                                </a>
-                            {% endif %}
+                                {% if is_read_only %}
+                                    <button class="btn btn-sm btn-secondary" disabled>
+                                        <i class="bi bi-lock"></i> Locked
+                                    </button>
+                                {% else %}
+                                    <a href="{% url 'inventory:shop_price_set' p.product.pk %}{% if not is_uniform and shop %}?shop={{ shop.pk }}{% endif %}"
+                                        class="btn btn-sm {% if p.has_price %}btn-outline-primary{% else %}btn-primary{% endif %}">
+                                        {% if p.has_price %}
+                                        <i class="bi bi-pencil"></i> Edit
+                                        {% else %}
+                                        <i class="bi bi-plus"></i> Set Price
+                                        {% endif %}
+                                    </a>
+                                {% endif %}
+                            </div>
                         </td>
                     </tr>
                     {% endfor %}
@@ -172,68 +195,561 @@
         {% endif %}
     </div>
 </div>
+
+<!-- Product Price Change History Modal -->
+<div class="modal fade" id="productPriceHistoryModal" tabindex="-1" aria-labelledby="productPriceHistoryModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow-lg rounded-4">
+            <div class="modal-header bg-light border-bottom-0 pb-3">
+                <div>
+                    <h5 class="modal-title fw-bold mb-1" id="productPriceHistoryModalLabel">
+                        <i class="bi bi-graph-up-arrow text-primary me-2"></i>
+                        <span id="phModalProductName">Product Price History</span>
+                    </h5>
+                    <div class="d-flex flex-wrap align-items-center gap-2 small text-muted">
+                        <span>SKU: <strong class="font-monospace text-dark" id="phModalProductSku">-</strong></span>
+                        <span>&bull;</span>
+                        <span>Category: <strong class="text-dark" id="phModalProductCategory">-</strong></span>
+                        <span>&bull;</span>
+                        <span class="badge bg-primary-subtle text-primary rounded-pill" id="phModalModeBadge">
+                            {% if is_uniform %}Uniform Global Pricing{% else %}Shop-Specific Pricing{% endif %}
+                        </span>
+                    </div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body pt-3">
+                <!-- Filters Bar -->
+                <div class="card border bg-light-subtle rounded-3 mb-3">
+                    <div class="card-body p-3">
+                        <div class="row g-2 align-items-end">
+                            <div class="col-12 col-lg-4">
+                                <label class="form-label small text-muted fw-semibold mb-1">Quick Period</label>
+                                <div class="btn-group btn-group-sm w-100" role="group" aria-label="Quick Date Range">
+                                    <button type="button" class="btn btn-outline-secondary ph-range-btn active" data-range="all">All</button>
+                                    <button type="button" class="btn btn-outline-secondary ph-range-btn" data-range="7d">7D</button>
+                                    <button type="button" class="btn btn-outline-secondary ph-range-btn" data-range="30d">30D</button>
+                                    <button type="button" class="btn btn-outline-secondary ph-range-btn" data-range="90d">90D</button>
+                                    <button type="button" class="btn btn-outline-secondary ph-range-btn" data-range="1y">1Y</button>
+                                </div>
+                            </div>
+                            <div class="col-6 col-lg-2">
+                                <label class="form-label small text-muted fw-semibold mb-1">From Date</label>
+                                <input type="date" id="phDateFrom" class="form-control form-control-sm">
+                            </div>
+                            <div class="col-6 col-lg-2">
+                                <label class="form-label small text-muted fw-semibold mb-1">To Date</label>
+                                <input type="date" id="phDateTo" class="form-control form-control-sm">
+                            </div>
+                            {% if not is_uniform %}
+                            <div class="col-8 col-lg-2" id="phShopFilterWrap">
+                                <label class="form-label small text-muted fw-semibold mb-1">Shop</label>
+                                <select id="phShopSelect" class="form-select form-select-sm">
+                                    <option value="all">All Shops</option>
+                                    {% for s in shops %}
+                                    <option value="{{ s.id }}" {% if shop and shop.id == s.id %}selected{% endif %}>{{ s.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            {% endif %}
+                            <div class="col-4 col-lg-2 d-flex gap-1">
+                                <button type="button" id="phApplyFilterBtn" class="btn btn-sm btn-primary flex-grow-1">
+                                    <i class="bi bi-funnel me-1"></i>Apply
+                                </button>
+                                <button type="button" id="phResetFilterBtn" class="btn btn-sm btn-outline-secondary" title="Reset Filters">
+                                    <i class="bi bi-arrow-counterclockwise"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Summary KPI Row -->
+                <div class="row g-2 mb-3">
+                    <div class="col-6 col-md-3">
+                        <div class="p-2 px-3 rounded-3 border bg-white">
+                            <span class="text-muted small d-block">Default Catalog Price</span>
+                            <strong class="fs-6 text-dark" id="phSummaryDefault">-</strong>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="p-2 px-3 rounded-3 border bg-white">
+                            <span class="text-muted small d-block">Current Selling Price</span>
+                            <strong class="fs-6 text-success" id="phSummaryCurrent">-</strong>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="p-2 px-3 rounded-3 border bg-white">
+                            <span class="text-muted small d-block">Min / Max in Period</span>
+                            <strong class="fs-6 text-primary" id="phSummaryMinMax">-</strong>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="p-2 px-3 rounded-3 border bg-white">
+                            <span class="text-muted small d-block">Total Price Changes</span>
+                            <strong class="fs-6 text-dark" id="phSummaryCount">0</strong>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Loading Spinner -->
+                <div id="phLoadingState" class="text-center py-5 d-none">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <p class="text-muted small mt-2 mb-0">Loading price change history...</p>
+                </div>
+
+                <!-- Content Container -->
+                <div id="phContentState">
+                    <!-- Price Trend Chart Card -->
+                    <div class="card border rounded-3 mb-3">
+                        <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+                            <span class="fw-semibold small text-uppercase text-muted">
+                                <i class="bi bi-activity me-1 text-primary"></i>Price Trend Chart
+                            </span>
+                            <span class="small text-muted" id="phChartSubtitle">Chronological progression</span>
+                        </div>
+                        <div class="card-body p-3">
+                            <div id="phChartWrapper" style="position: relative; height: 260px; width: 100%;">
+                                <canvas id="phPriceChartCanvas"></canvas>
+                                <div id="phSvgFallbackChart" class="w-100 h-100 d-none"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Detailed History Table Card -->
+                    <div class="card border rounded-3">
+                        <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+                            <span class="fw-semibold small text-uppercase text-muted">
+                                <i class="bi bi-table me-1 text-primary"></i>Detailed Price Change Log
+                            </span>
+                            <span class="badge bg-secondary-subtle text-secondary rounded-pill" id="phTableBadge">0 records</span>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="table-responsive" style="max-height: 320px;">
+                                <table class="table table-hover table-sm align-middle mb-0">
+                                    <thead class="table-light sticky-top">
+                                        <tr>
+                                            <th class="ps-3" style="width: 45px;">#</th>
+                                            <th>Date & Time</th>
+                                            {% if not is_uniform %}
+                                            <th>Shop</th>
+                                            {% endif %}
+                                            <th class="text-end">Previous / Ref Price</th>
+                                            <th class="text-end">New Selling Price</th>
+                                            <th class="text-end">Change / Variance</th>
+                                            <th class="text-center pe-3">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="phHistoryTableBody">
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer border-top-0 pt-0">
+                <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endif %}
+{% endblock %}
 
 {% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         const searchInput = document.getElementById('productSearch');
         const suggestionsDiv = document.getElementById('searchSuggestions');
         let debounceTimer;
 
-        // Auto-suggestion logic
-        searchInput.addEventListener('input', function () {
-            clearTimeout(debounceTimer);
-            const query = this.value.trim();
+        if (searchInput && suggestionsDiv) {
+            searchInput.addEventListener('input', function () {
+                clearTimeout(debounceTimer);
+                const query = this.value.trim();
 
-            if (query.length < 2) {
-                suggestionsDiv.style.display = 'none';
+                if (query.length < 2) {
+                    suggestionsDiv.style.display = 'none';
+                    return;
+                }
+
+                debounceTimer = setTimeout(() => {
+                    fetch(`{% url 'inventory:api_product_search' %}?q=${encodeURIComponent(query)}`)
+                        .then(response => response.json())
+                        .then(data => {
+                            suggestionsDiv.innerHTML = '';
+                            if (data.results && data.results.length > 0) {
+                                data.results.forEach(product => {
+                                    const a = document.createElement('a');
+                                    a.href = `?q=${encodeURIComponent(product.text)}`;
+                                    a.className = 'dropdown-item py-2';
+                                    a.innerHTML = `
+                                    <div class="d-flex justify-content-between">
+                                        <strong>${product.text}</strong>
+                                    </div>
+                                `;
+                                    suggestionsDiv.appendChild(a);
+                                });
+                                suggestionsDiv.style.display = 'block';
+                            } else {
+                                suggestionsDiv.style.display = 'none';
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error fetching suggestions:', error);
+                            suggestionsDiv.style.display = 'none';
+                        });
+                }, 300);
+            });
+
+            document.addEventListener('click', function (e) {
+                if (!searchInput.contains(e.target) && !suggestionsDiv.contains(e.target)) {
+                    suggestionsDiv.style.display = 'none';
+                }
+            });
+
+            searchInput.addEventListener('focus', function() {
+                if (this.value.trim().length >= 2 && suggestionsDiv.innerHTML.trim() !== '') {
+                    suggestionsDiv.style.display = 'block';
+                }
+            });
+        }
+
+        // ============ Product Price Change History Modal Logic ============
+        const currencySymbol = "{{ currency_symbol|default:'$' }}";
+        const isUniformMode = {{ is_uniform|yesno:"true,false" }};
+        const defaultShopId = "{{ shop.id|default:'' }}";
+        const modalEl = document.getElementById('productPriceHistoryModal');
+        if (!modalEl) return;
+
+        const priceModal = new bootstrap.Modal(modalEl);
+        let activeHistoryUrl = '';
+        let activeRange = 'all';
+        let priceChartInstance = null;
+
+        function formatMoney(val) {
+            const num = parseFloat(val);
+            if (isNaN(num)) return '-';
+            return currencySymbol + num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function renderSvgFallbackChart(container, chartData, defaultPrice) {
+            container.innerHTML = '';
+            const datasets = chartData.datasets || [];
+            const allPoints = [];
+            datasets.forEach(ds => {
+                (ds.points || []).forEach(p => allPoints.push(p));
+            });
+
+            if (allPoints.length === 0) {
+                container.innerHTML = `
+                    <div class="d-flex flex-column align-items-center justify-content-center h-100 text-muted">
+                        <i class="bi bi-bar-chart-line fs-2 mb-1 opacity-50"></i>
+                        <span class="small">No price change points in the selected period. Default price: ${formatMoney(defaultPrice)}</span>
+                    </div>`;
                 return;
             }
 
-            debounceTimer = setTimeout(() => {
-                fetch(`{% url 'inventory:api_product_search' %}?q=${encodeURIComponent(query)}`)
-                    .then(response => response.json())
-                    .then(data => {
-                        suggestionsDiv.innerHTML = '';
-                        if (data.results.length > 0) {
-                            data.results.forEach(product => {
-                                const a = document.createElement('a');
-                                a.href = `?q=${encodeURIComponent(product.text)}`;
-                                a.className = 'dropdown-item py-2';
-                                a.innerHTML = `
-                                <div class="d-flex justify-content-between">
-                                    <strong>${product.text}</strong>
-                                </div>
-                            `;
-                                suggestionsDiv.appendChild(a);
-                            });
-                            suggestionsDiv.style.display = 'block';
-                        } else {
-                            suggestionsDiv.style.display = 'none';
+            const width = container.clientWidth || 720;
+            const height = 240;
+            const padL = 65, padR = 25, padT = 20, padB = 45;
+            const plotW = Math.max(100, width - padL - padR);
+            const plotH = Math.max(80, height - padT - padB);
+
+            const prices = allPoints.map(p => p.price);
+            let minP = Math.min(...prices);
+            let maxP = Math.max(...prices);
+            if (minP === maxP) {
+                minP = Math.max(0, minP * 0.9);
+                maxP = maxP * 1.1 || 10;
+            } else {
+                const margin = (maxP - minP) * 0.12;
+                minP = Math.max(0, minP - margin);
+                maxP = maxP + margin;
+            }
+
+            const colors = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed', '#0891b2'];
+            let svgContent = `<svg viewBox="0 0 ${width} ${height}" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">`;
+
+            // Grid lines
+            for (let i = 0; i <= 4; i++) {
+                const y = padT + (plotH * i) / 4;
+                const val = maxP - ((maxP - minP) * i) / 4;
+                svgContent += `<line x1="${padL}" y1="${y}" x2="${width - padR}" y2="${y}" stroke="#e5e7eb" stroke-dasharray="3,3" />`;
+                svgContent += `<text x="${padL - 8}" y="${y + 4}" text-anchor="end" font-size="11" fill="#6b7280">${formatMoney(val)}</text>`;
+            }
+
+            datasets.forEach((ds, dsIdx) => {
+                const pts = ds.points || [];
+                if (pts.length === 0) return;
+                const color = colors[dsIdx % colors.length];
+                const coords = pts.map((pt, idx) => {
+                    const x = pts.length === 1 ? padL + plotW / 2 : padL + (idx / (pts.length - 1)) * plotW;
+                    const y = padT + plotH - ((pt.price - minP) / (maxP - minP)) * plotH;
+                    return { x, y, pt };
+                });
+
+                if (coords.length > 1) {
+                    const polyPoints = coords.map(c => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ');
+                    svgContent += `<polyline fill="none" stroke="${color}" stroke-width="2.5" points="${polyPoints}" />`;
+                }
+
+                coords.forEach((c, idx) => {
+                    svgContent += `<circle cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" r="4.5" fill="${color}" stroke="#fff" stroke-width="1.5">
+                        <title>${ds.label}: ${formatMoney(c.pt.price)} (${c.pt.label})</title>
+                    </circle>`;
+                    if (idx === 0 || idx === coords.length - 1 || coords.length <= 6) {
+                        svgContent += `<text x="${c.x.toFixed(1)}" y="${height - 12}" text-anchor="middle" font-size="10" fill="#6b7280">${c.pt.date_short}</text>`;
+                    }
+                });
+            });
+
+            svgContent += `</svg>`;
+            container.innerHTML = svgContent;
+        }
+
+        function renderChart(data) {
+            const canvas = document.getElementById('phPriceChartCanvas');
+            const svgFallback = document.getElementById('phSvgFallbackChart');
+            const datasets = (data.chart && data.chart.datasets) || [];
+            const hasPoints = datasets.some(ds => (ds.points || []).length > 0);
+
+            if (priceChartInstance) {
+                priceChartInstance.destroy();
+                priceChartInstance = null;
+            }
+
+            if (typeof window.Chart !== 'undefined' && hasPoints) {
+                canvas.classList.remove('d-none');
+                svgFallback.classList.add('d-none');
+                const palette = [
+                    { border: '#2563eb', bg: 'rgba(37, 99, 235, 0.12)' },
+                    { border: '#16a34a', bg: 'rgba(22, 163, 74, 0.12)' },
+                    { border: '#d97706', bg: 'rgba(217, 119, 6, 0.12)' },
+                    { border: '#dc2626', bg: 'rgba(220, 38, 38, 0.12)' },
+                    { border: '#7c3aed', bg: 'rgba(124, 58, 237, 0.12)' }
+                ];
+
+                const labels = data.chart.labels || [];
+                const chartJsDatasets = datasets.map((ds, idx) => {
+                    const color = palette[idx % palette.length];
+                    // Map points by label when multiple shops exist
+                    const pointMap = {};
+                    (ds.points || []).forEach(p => { pointMap[p.label] = p.price; });
+                    const alignedData = labels.map(lbl => (lbl in pointMap ? pointMap[lbl] : null));
+                    return {
+                        label: ds.label,
+                        data: alignedData,
+                        borderColor: color.border,
+                        backgroundColor: color.bg,
+                        borderWidth: 2.5,
+                        pointRadius: 4,
+                        pointHoverRadius: 6,
+                        fill: datasets.length === 1,
+                        spanGaps: true,
+                        tension: 0.25
+                    };
+                });
+
+                priceChartInstance = new window.Chart(canvas.getContext('2d'), {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: chartJsDatasets
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: { mode: 'index', intersect: false },
+                        plugins: {
+                            legend: { display: datasets.length > 1, position: 'top' },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(ctx) {
+                                        return `${ctx.dataset.label}: ${formatMoney(ctx.parsed.y)}`;
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                ticks: {
+                                    callback: function(value) { return formatMoney(value); }
+                                }
+                            }
                         }
-                    })
-                    .catch(error => {
-                        console.error('Error fetching suggestions:', error);
-                        suggestionsDiv.style.display = 'none';
-                    });
-            }, 300);
+                    }
+                });
+            } else {
+                canvas.classList.add('d-none');
+                svgFallback.classList.remove('d-none');
+                renderSvgFallbackChart(svgFallback, data.chart || {}, data.summary ? data.summary.default_price : 0);
+            }
+        }
+
+        function renderTable(data) {
+            const tbody = document.getElementById('phHistoryTableBody');
+            const records = data.records || [];
+            const colSpan = isUniformMode ? 6 : 7;
+            document.getElementById('phTableBadge').textContent = `${records.length} record${records.length === 1 ? '' : 's'}`;
+
+            if (records.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="${colSpan}" class="text-center py-4 text-muted">
+                            <i class="bi bi-clock-history fs-4 d-block mb-1 opacity-50"></i>
+                            No price changes recorded for the selected filters.
+                        </td>
+                    </tr>`;
+                return;
+            }
+
+            tbody.innerHTML = records.map(r => {
+                let changeBadge = '';
+                if (r.change_amount > 0) {
+                    changeBadge = `<span class="badge bg-success-subtle text-success border border-success-subtle">
+                        <i class="bi bi-arrow-up-right me-1"></i>+${formatMoney(r.change_amount)} (+${r.change_pct.toFixed(1)}%)
+                    </span>`;
+                } else if (r.change_amount < 0) {
+                    changeBadge = `<span class="badge bg-danger-subtle text-danger border border-danger-subtle">
+                        <i class="bi bi-arrow-down-right me-1"></i>-${formatMoney(Math.abs(r.change_amount))} (${r.change_pct.toFixed(1)}%)
+                    </span>`;
+                } else {
+                    changeBadge = `<span class="badge bg-secondary-subtle text-secondary">No Change (0.0%)</span>`;
+                }
+
+                const prevLabel = r.is_initial
+                    ? `<span class="text-muted" title="Compared against Default Catalog Price">${formatMoney(r.reference_price)} <small class="badge bg-light text-muted border">Default</small></span>`
+                    : `<span class="text-muted">${formatMoney(r.previous_price)}</span>`;
+
+                const statusBadge = r.is_active
+                    ? `<span class="badge bg-success">Active</span>`
+                    : `<span class="badge bg-secondary-subtle text-secondary">Superseded</span>`;
+
+                const shopCol = !isUniformMode
+                    ? `<td><i class="bi bi-shop text-muted me-1"></i>${r.shop_name}</td>`
+                    : '';
+
+                return `
+                    <tr>
+                        <td class="ps-3 text-muted small">${r.index}</td>
+                        <td>
+                            <div class="fw-medium">${r.date_short}</div>
+                            <div class="text-muted small">${r.time_short}</div>
+                        </td>
+                        ${shopCol}
+                        <td class="text-end">${prevLabel}</td>
+                        <td class="text-end fw-bold ${r.is_active ? 'text-success' : 'text-dark'}">${formatMoney(r.selling_price)}</td>
+                        <td class="text-end">${changeBadge}</td>
+                        <td class="text-center pe-3">${statusBadge}</td>
+                    </tr>`;
+            }).join('');
+        }
+
+        function loadProductPriceHistory() {
+            if (!activeHistoryUrl) return;
+            const loadingEl = document.getElementById('phLoadingState');
+            const contentEl = document.getElementById('phContentState');
+            loadingEl.classList.remove('d-none');
+            contentEl.classList.add('opacity-50');
+
+            const params = new URLSearchParams();
+            const dateFrom = document.getElementById('phDateFrom').value;
+            const dateTo = document.getElementById('phDateTo').value;
+            const shopSelect = document.getElementById('phShopSelect');
+
+            if (dateFrom) params.set('date_from', dateFrom);
+            if (dateTo) params.set('date_to', dateTo);
+            if (!dateFrom && !dateTo && activeRange && activeRange !== 'all') {
+                params.set('range', activeRange);
+            }
+            if (!isUniformMode && shopSelect && shopSelect.value) {
+                params.set('shop', shopSelect.value);
+            }
+
+            fetch(`${activeHistoryUrl}?${params.toString()}`)
+                .then(res => res.json())
+                .then(data => {
+                    loadingEl.classList.add('d-none');
+                    contentEl.classList.remove('opacity-50');
+
+                    if (data.product) {
+                        document.getElementById('phModalProductName').textContent = data.product.name;
+                        document.getElementById('phModalProductSku').textContent = data.product.sku;
+                        document.getElementById('phModalProductCategory').textContent = data.product.category;
+                    }
+                    if (data.pricing_mode_display) {
+                        document.getElementById('phModalModeBadge').textContent = data.pricing_mode_display;
+                    }
+                    if (data.summary) {
+                        document.getElementById('phSummaryDefault').textContent = formatMoney(data.summary.default_price);
+                        document.getElementById('phSummaryCurrent').textContent = data.summary.current_price !== null
+                            ? formatMoney(data.summary.current_price)
+                            : 'Not Set';
+                        document.getElementById('phSummaryMinMax').textContent =
+                            `${formatMoney(data.summary.lowest_price)} / ${formatMoney(data.summary.highest_price)}`;
+                        document.getElementById('phSummaryCount').textContent = data.summary.total_changes;
+                    }
+
+                    renderChart(data);
+                    renderTable(data);
+                })
+                .catch(err => {
+                    loadingEl.classList.add('d-none');
+                    contentEl.classList.remove('opacity-50');
+                    console.error('Failed to load price history:', err);
+                });
+        }
+
+        document.querySelectorAll('.product-price-history-trigger').forEach(trigger => {
+            trigger.addEventListener('click', function () {
+                activeHistoryUrl = this.getAttribute('data-history-url');
+                document.getElementById('phModalProductName').textContent = this.getAttribute('data-product-name') || 'Product';
+                document.getElementById('phModalProductSku').textContent = this.getAttribute('data-product-sku') || '-';
+                priceModal.show();
+                loadProductPriceHistory();
+            });
         });
 
-        // Hide suggestions when clicking outside
-        document.addEventListener('click', function (e) {
-            if (searchInput && suggestionsDiv && !searchInput.contains(e.target) && !suggestionsDiv.contains(e.target)) {
-                suggestionsDiv.style.display = 'none';
-            }
+        document.querySelectorAll('.ph-range-btn').forEach(btn => {
+            btn.addEventListener('click', function () {
+                document.querySelectorAll('.ph-range-btn').forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                activeRange = this.getAttribute('data-range');
+                document.getElementById('phDateFrom').value = '';
+                document.getElementById('phDateTo').value = '';
+                loadProductPriceHistory();
+            });
         });
-        
-        // Show suggestions on focus if there's a query
-        searchInput.addEventListener('focus', function() {
-            if (this.value.trim().length >= 2 && suggestionsDiv.innerHTML.trim() !== '') {
-                suggestionsDiv.style.display = 'block';
+
+        document.getElementById('phApplyFilterBtn').addEventListener('click', function () {
+            if (document.getElementById('phDateFrom').value || document.getElementById('phDateTo').value) {
+                document.querySelectorAll('.ph-range-btn').forEach(b => b.classList.remove('active'));
             }
+            loadProductPriceHistory();
+        });
+
+        const shopSelectEl = document.getElementById('phShopSelect');
+        if (shopSelectEl) {
+            shopSelectEl.addEventListener('change', function () {
+                loadProductPriceHistory();
+            });
+        }
+
+        document.getElementById('phResetFilterBtn').addEventListener('click', function () {
+            document.getElementById('phDateFrom').value = '';
+            document.getElementById('phDateTo').value = '';
+            activeRange = 'all';
+            document.querySelectorAll('.ph-range-btn').forEach(b => {
+                b.classList.toggle('active', b.getAttribute('data-range') === 'all');
+            });
+            if (shopSelectEl) {
+                shopSelectEl.value = defaultShopId || 'all';
+            }
+            loadProductPriceHistory();
         });
     });
 </script>
-{% endblock %}
 {% endblock %}

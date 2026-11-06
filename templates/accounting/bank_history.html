@@ -32,7 +32,7 @@
         <h2 class="mb-1">
             <i class="bi bi-bank me-2 text-primary"></i>Bank Transfers History
         </h2>
-        <p class="text-muted mb-0">View all bank deposits made by accountants</p>
+        <p class="text-muted mb-0">View all bank deposits made by accountants and cashiers</p>
     </div>
     <div class="d-flex gap-2">
         <div class="dropdown">
@@ -159,12 +159,12 @@
                 </select>
             </div>
             <div class="col-md-2">
-                <label class="form-label text-muted fw-semibold small text-uppercase">User</label>
+                <label class="form-label text-muted fw-semibold small text-uppercase">Sender / Deposited By</label>
                 <select name="user" class="form-select bg-light border-0">
-                    <option value="">All Users</option>
+                    <option value="">All Senders</option>
                     {% for u in users %}
                     <option value="{{ u.pk }}" {% if selected_user == u.pk|stringformat:"i" %}selected{% endif %}>
-                        {% if u %}{{ u.get_full_name|default:u.email }}{% else %}-{% endif %}
+                        {% if u %}{{ u.get_full_name|default:u.email }}{% if u.role %} ({{ u.role.get_name_display }}){% endif %}{% else %}-{% endif %}
                     </option>
                     {% endfor %}
                 </select>
@@ -208,8 +208,10 @@
             <table class="table table-hover align-middle mb-0">
                 <thead class="table-light">
                     <tr>
-                        <th class="ps-4">{% sort_link "Date" "created_at" %}</th>
-                        <th>Accountant</th>
+                        <th class="ps-4" style="width: 50px;">#</th>
+                        <th>{% sort_link "Ref / Serial #" "receipt_number" %}</th>
+                        <th>{% sort_link "Date" "created_at" %}</th>
+                        <th>{% sort_link "Sender / Deposited By" "accountant__first_name" %}</th>
                         <th>Fund Source</th>
                         <th>Platform</th>
                         <th>Teller Name</th>
@@ -220,12 +222,54 @@
                 </thead>
                 <tbody>
                     {% for transfer in bank_transfers %}
+                    {% with serial_no=transfer.receipt_number|default:"" %}
                     <tr>
-                        <td class="ps-4">
+                        <td class="ps-4 text-muted small">
+                            {% if is_paginated %}{{ page_obj.start_index|add:forloop.counter0 }}{% else %}{{ forloop.counter }}{% endif %}
+                        </td>
+                        <td>
+                            <button type="button"
+                                    class="btn btn-link p-0 text-decoration-none fw-semibold font-monospace text-primary preview-bank-transfer-btn"
+                                    data-serial="{% if serial_no %}{{ serial_no }}{% else %}BT-{{ transfer.pk|stringformat:'04d' }}{% endif %}"
+                                    data-date="{{ transfer.created_at|date:'M d, Y H:i' }}"
+                                    data-sender="{% if transfer.accountant %}{{ transfer.accountant.get_full_name|default:transfer.accountant.email }}{% else %}-{% endif %}"
+                                    data-role="{% if transfer.accountant and transfer.accountant.role %}{{ transfer.accountant.role.get_name_display }}{% else %}-{% endif %}"
+                                    data-shop="{% if transfer.accountant and transfer.accountant.location %}{{ transfer.accountant.location.name }}{% else %}Head Office / All Shops{% endif %}"
+                                    data-fund-source="{{ transfer.get_fund_source_display }}"
+                                    data-fund-code="{{ transfer.fund_source }}"
+                                    data-platform="{% if transfer.provider_config %}{{ transfer.provider_config.nickname }} ({{ transfer.provider_config.get_provider_display }}){% else %}-{% endif %}"
+                                    data-teller="{{ transfer.teller_name|default:'-' }}"
+                                    data-notes="{{ transfer.notes|default:'No additional notes recorded.' }}"
+                                    data-amount="{{ current_tenant.currency_symbol|default:'$' }}{{ transfer.amount|floatformat:2|intcomma }}"
+                                    data-receipt-url="{% url 'accounting:bank_transfer_receipt' transfer.pk %}">
+                                <i class="bi bi-hash me-1"></i>{% if serial_no %}{{ serial_no }}{% else %}BT-{{ transfer.pk|stringformat:"04d" }}{% endif %}
+                            </button>
+                        </td>
+                        <td>
                             <div class="fw-medium">{{ transfer.created_at|date:"M d, Y" }}</div>
                             <div class="text-muted small">{{ transfer.created_at|date:"H:i" }}</div>
                         </td>
-                        <td>{% if transfer.accountant %}{{ transfer.accountant.get_full_name|default:transfer.accountant.email }}{% else %}-{% endif %}</td>
+                        <td>
+                            {% if transfer.accountant %}
+                                <div class="fw-medium">{{ transfer.accountant.get_full_name|default:transfer.accountant.email }}</div>
+                                <div class="d-flex align-items-center gap-1 mt-1 flex-wrap">
+                                    {% if transfer.accountant.role %}
+                                        {% if transfer.accountant.role.name == 'SHOP_CASHIER' %}
+                                            <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle rounded-pill" style="font-size: 0.7rem;">Cashier</span>
+                                        {% elif transfer.accountant.role.name == 'ACCOUNTANT' %}
+                                            <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill" style="font-size: 0.7rem;">Accountant</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary-subtle text-secondary rounded-pill" style="font-size: 0.7rem;">{{ transfer.accountant.role.get_name_display }}</span>
+                                        {% endif %}
+                                    {% endif %}
+                                    {% if transfer.accountant.location %}
+                                        <span class="text-muted small" style="font-size: 0.75rem;"><i class="bi bi-shop me-1"></i>{{ transfer.accountant.location.name }}</span>
+                                    {% endif %}
+                                </div>
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
                         <td>
                             {% if transfer.fund_source == 'CASH' %}
                                 <span class="badge bg-success"><i class="bi bi-cash me-1"></i>Cash</span>
@@ -248,20 +292,40 @@
                             {{ transfer.notes|default:"-" }}
                         </td>
                         <td class="text-end pe-4 fw-bold text-success">
-                            +{{ current_tenant.currency_symbol|default:'$' }}{{ transfer.amount|floatformat:"2g" }}
+                            +{{ current_tenant.currency_symbol|default:'$' }}{{ transfer.amount|floatformat:2|intcomma }}
                         </td>
                         <td class="text-end pe-4">
-                            <a href="{% url 'accounting:bank_transfer_receipt' transfer.pk %}" class="btn btn-sm btn-outline-info" data-bs-toggle="tooltip" title="Print Receipt">
-                                <i class="bi bi-printer"></i>
-                            </a>
+                            <div class="d-inline-flex gap-1">
+                                <button type="button"
+                                        class="btn btn-sm btn-outline-primary preview-bank-transfer-btn"
+                                        title="Preview Transfer Details"
+                                        data-serial="{% if serial_no %}{{ serial_no }}{% else %}BT-{{ transfer.pk|stringformat:'04d' }}{% endif %}"
+                                        data-date="{{ transfer.created_at|date:'M d, Y H:i' }}"
+                                        data-sender="{% if transfer.accountant %}{{ transfer.accountant.get_full_name|default:transfer.accountant.email }}{% else %}-{% endif %}"
+                                        data-role="{% if transfer.accountant and transfer.accountant.role %}{{ transfer.accountant.role.get_name_display }}{% else %}-{% endif %}"
+                                        data-shop="{% if transfer.accountant and transfer.accountant.location %}{{ transfer.accountant.location.name }}{% else %}Head Office / All Shops{% endif %}"
+                                        data-fund-source="{{ transfer.get_fund_source_display }}"
+                                        data-fund-code="{{ transfer.fund_source }}"
+                                        data-platform="{% if transfer.provider_config %}{{ transfer.provider_config.nickname }} ({{ transfer.provider_config.get_provider_display }}){% else %}-{% endif %}"
+                                        data-teller="{{ transfer.teller_name|default:'-' }}"
+                                        data-notes="{{ transfer.notes|default:'No additional notes recorded.' }}"
+                                        data-amount="{{ current_tenant.currency_symbol|default:'$' }}{{ transfer.amount|floatformat:2|intcomma }}"
+                                        data-receipt-url="{% url 'accounting:bank_transfer_receipt' transfer.pk %}">
+                                    <i class="bi bi-eye"></i>
+                                </button>
+                                <a href="{% url 'accounting:bank_transfer_receipt' transfer.pk %}" class="btn btn-sm btn-outline-info" data-bs-toggle="tooltip" title="Print Receipt">
+                                    <i class="bi bi-printer"></i>
+                                </a>
+                            </div>
                         </td>
                     </tr>
+                    {% endwith %}
                     {% empty %}
                     <tr>
-                        <td colspan="8" class="text-center py-5 text-muted">
+                        <td colspan="10" class="text-center py-5 text-muted">
                             <i class="bi bi-bank display-4 d-block mb-3 text-secondary opacity-50"></i>
                             <h5>No Bank Transfers Found</h5>
-                            <p class="mb-0">You have not made any bank transfers matching the selected filters.</p>
+                            <p class="mb-0">No bank transfers match the selected filters.</p>
                         </td>
                     </tr>
                     {% endfor %}
@@ -274,6 +338,66 @@
         {% include 'includes/audit_pagination.html' %}
     </div>
     {% endif %}
+</div>
+
+<!-- Bank Transfer Preview Modal -->
+<div class="modal fade" id="bankTransferPreviewModal" tabindex="-1" aria-labelledby="bankTransferPreviewModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg rounded-4">
+            <div class="modal-header border-bottom-0 pb-0">
+                <div>
+                    <h5 class="modal-title fw-bold" id="bankTransferPreviewModalLabel">
+                        <i class="bi bi-bank2 text-primary me-2"></i>Bank Transfer Details
+                    </h5>
+                    <p class="text-muted small mb-0">Reference: <span id="btModalSerial" class="font-monospace fw-semibold text-dark"></span></p>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body pt-3">
+                <div class="p-3 rounded-4 bg-success-subtle text-center mb-3 border border-success-subtle">
+                    <span class="text-uppercase small fw-semibold text-success d-block">Amount Deposited</span>
+                    <h3 class="fw-bold text-success mb-0" id="btModalAmount"></h3>
+                    <span class="badge bg-success mt-1" id="btModalFundSource"></span>
+                </div>
+                <div class="row g-3 small">
+                    <div class="col-6">
+                        <span class="text-muted d-block">Date & Time</span>
+                        <span class="fw-semibold text-dark" id="btModalDate"></span>
+                    </div>
+                    <div class="col-6">
+                        <span class="text-muted d-block">Serial / Receipt #</span>
+                        <span class="fw-semibold font-monospace text-dark" id="btModalSerialCopy"></span>
+                    </div>
+                    <div class="col-6">
+                        <span class="text-muted d-block">Sender / Deposited By</span>
+                        <span class="fw-semibold text-dark" id="btModalSender"></span>
+                    </div>
+                    <div class="col-6">
+                        <span class="text-muted d-block">Role & Location</span>
+                        <span class="fw-semibold text-dark"><span id="btModalRole"></span> &bull; <span id="btModalShop"></span></span>
+                    </div>
+                    <div class="col-6">
+                        <span class="text-muted d-block">Bank Teller Name</span>
+                        <span class="fw-semibold text-dark" id="btModalTeller"></span>
+                    </div>
+                    <div class="col-6">
+                        <span class="text-muted d-block">E-Cash Platform</span>
+                        <span class="fw-semibold text-dark" id="btModalPlatform"></span>
+                    </div>
+                    <div class="col-12">
+                        <span class="text-muted d-block mb-1">Notes / Remarks</span>
+                        <div class="p-2 rounded-3 bg-light border text-dark" id="btModalNotes" style="min-height: 48px; white-space: pre-wrap;"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer border-top-0 pt-0">
+                <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">Close</button>
+                <a href="#" id="btModalPrintBtn" class="btn btn-primary rounded-pill px-4">
+                    <i class="bi bi-printer me-1"></i>Print Receipt
+                </a>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -294,6 +418,30 @@ document.addEventListener('DOMContentLoaded', function() {
     fundSourceSelect.addEventListener('change', toggleProviderFilter);
     // Initial check on page load
     toggleProviderFilter();
+
+    // Preview Modal Handler
+    const previewModalEl = document.getElementById('bankTransferPreviewModal');
+    if (previewModalEl) {
+        const previewModal = new bootstrap.Modal(previewModalEl);
+        document.querySelectorAll('.preview-bank-transfer-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                const serial = this.getAttribute('data-serial') || '-';
+                document.getElementById('btModalSerial').textContent = serial;
+                document.getElementById('btModalSerialCopy').textContent = serial;
+                document.getElementById('btModalAmount').textContent = '+' + (this.getAttribute('data-amount') || '');
+                document.getElementById('btModalFundSource').textContent = this.getAttribute('data-fund-source') || '-';
+                document.getElementById('btModalDate').textContent = this.getAttribute('data-date') || '-';
+                document.getElementById('btModalSender').textContent = this.getAttribute('data-sender') || '-';
+                document.getElementById('btModalRole').textContent = this.getAttribute('data-role') || '-';
+                document.getElementById('btModalShop').textContent = this.getAttribute('data-shop') || '-';
+                document.getElementById('btModalTeller').textContent = this.getAttribute('data-teller') || '-';
+                document.getElementById('btModalPlatform').textContent = this.getAttribute('data-platform') || '-';
+                document.getElementById('btModalNotes').textContent = this.getAttribute('data-notes') || '-';
+                document.getElementById('btModalPrintBtn').setAttribute('href', this.getAttribute('data-receipt-url') || '#');
+                previewModal.show();
+            });
+        });
+    }
 });
 </script>
 {% endblock %}

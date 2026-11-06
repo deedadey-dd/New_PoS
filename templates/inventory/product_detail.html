@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load humanize %}
 
 {% block title %}{{ product.name }} - {{ current_tenant.name }}{% endblock %}
 
@@ -39,10 +40,10 @@
                     <dd class="col-7">{{ product.get_unit_of_measure_display }}</dd>
 
                     <dt class="col-5">Price</dt>
-                    <dd class="col-7">{{ currency_symbol }}{{ product.default_selling_price|floatformat:"2g" }}</dd>
+                    <dd class="col-7">{{ currency_symbol }}{{ product.default_selling_price|floatformat:2|intcomma }}</dd>
 
                     <dt class="col-5">Reorder Level</dt>
-                    <dd class="col-7">{{ product.reorder_level }}</dd>
+                    <dd class="col-7">{{ product.reorder_level|floatformat:2|intcomma }}</dd>
 
                     <dt class="col-5">Status</dt>
                     <dd class="col-7">
@@ -87,7 +88,7 @@
                                 </span>
                             </td>
                             <td class="text-end">
-                                <strong>{{ stock.total_stock }}</strong> {{ product.get_unit_of_measure_display }}
+                                <strong>{{ stock.total_stock|floatformat:2|intcomma }}</strong> {{ product.get_unit_of_measure_display }}
                             </td>
                         </tr>
                         {% endfor %}
@@ -127,8 +128,8 @@
                             <a href="{% url 'inventory:batch_detail' batch.pk %}">{{ batch.batch_number }}</a>
                         </td>
                         <td>{{ batch.location.name }}</td>
-                        <td class="text-end">{{ batch.current_quantity }}</td>
-                        <td class="text-end">{{ currency_symbol }}{{ batch.unit_cost|floatformat:"2g" }}</td>
+                        <td class="text-end">{{ batch.current_quantity|floatformat:2|intcomma }}</td>
+                        <td class="text-end">{{ currency_symbol }}{{ batch.unit_cost|floatformat:2|intcomma }}</td>
                         <td>
                             {% if batch.expiry_date %}
                             {{ batch.expiry_date }}
@@ -180,7 +181,7 @@
                         </td>
                         <td>{{ entry.location.name }}</td>
                         <td class="text-end">
-                            {% if entry.quantity > 0 %}+{% endif %}{{ entry.quantity }}
+                            {% if entry.quantity > 0 %}+{% endif %}{{ entry.quantity|floatformat:2|intcomma }}
                         </td>
                         <td>{{ entry.notes|truncatewords:5 }}</td>
                         <td>{% if entry.created_by %}{{ entry.created_by.get_full_name|default:entry.created_by.email }}{% else %}-{% endif %}</td>

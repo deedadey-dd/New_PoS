@@ -3244,7 +3244,9 @@ class BankHistoryListView(LoginRequiredMixin, SortableMixin, ListView):
         user = self.request.user
         role_name = user.role.name if user.role else None
         
-        qs = BankTransfer.objects.filter(tenant=user.tenant)
+        qs = BankTransfer.objects.filter(tenant=user.tenant).select_related(
+            'accountant', 'accountant__role', 'accountant__location', 'provider_config'
+        )
         if role_name not in ['SUPER_ADMIN', 'ADMIN', 'AUDITOR', 'ACCOUNTANT']:
             qs = qs.filter(accountant=user)
             
@@ -3274,6 +3276,16 @@ class BankHistoryListView(LoginRequiredMixin, SortableMixin, ListView):
         
     def get_ordering(self):
         sort_by = self.request.GET.get('sort', '-created_at')
+        allowed_sorts = [
+            'created_at', '-created_at',
+            'receipt_number', '-receipt_number',
+            'accountant__first_name', '-accountant__first_name',
+            'fund_source', '-fund_source',
+            'teller_name', '-teller_name',
+            'amount', '-amount',
+        ]
+        if sort_by not in allowed_sorts:
+            sort_by = '-created_at'
         return [sort_by]
 
     def get_context_data(self, **kwargs):
@@ -3300,9 +3312,9 @@ class BankHistoryListView(LoginRequiredMixin, SortableMixin, ListView):
             context['shops'] = Location.objects.filter(tenant=user.tenant, location_type='SHOP', is_active=True).order_by('name')
             context['users'] = User.objects.filter(
                 tenant=user.tenant, 
-                role__name__in=['SHOP_CASHIER', 'ACCOUNTANT', 'ADMIN'], 
+                role__name__in=['SHOP_CASHIER', 'SHOP_ATTENDANT', 'ACCOUNTANT', 'ADMIN'], 
                 is_active=True
-            ).order_by('first_name', 'email')
+            ).select_related('role', 'location').order_by('first_name', 'email')
             context['selected_shop'] = self.request.GET.get('shop', '')
             context['selected_user'] = self.request.GET.get('user', '')
         
@@ -3311,7 +3323,7 @@ class BankHistoryListView(LoginRequiredMixin, SortableMixin, ListView):
             transfers_count=Count('id'),
             cash_banked=Sum('amount', filter=Q(fund_source='CASH')),
             ecash_banked=Sum('amount', filter=Q(fund_source='ECASH')),
-            momo_banked=Sum('amount', filter=Q(fund_source='SHOP_MOMO')),
+            momo_banked=Sum('amount', filter=Q(fund_source__in=['MOMO', 'SHOP_MOMO'])),
         )
         context['total_deposited'] = bank_agg['total_deposited'] or Decimal('0.00')
         context['transfers_count'] = bank_agg['transfers_count'] or 0
@@ -3329,7 +3341,9 @@ class BankHistoryExportView(LoginRequiredMixin, View):
         user = request.user
         role_name = user.role.name if user.role else None
         
-        qs = BankTransfer.objects.filter(tenant=user.tenant)
+        qs = BankTransfer.objects.filter(tenant=user.tenant).select_related(
+            'accountant', 'accountant__role', 'accountant__location', 'provider_config'
+        )
         if role_name not in ['SUPER_ADMIN', 'ADMIN', 'AUDITOR', 'ACCOUNTANT']:
             qs = qs.filter(accountant=user)
             
@@ -3359,13 +3373,21 @@ class BankHistoryExportView(LoginRequiredMixin, View):
         qs = qs.order_by(sort_by)
         
         export_format = request.GET.get('format', 'excel')
-        headers = ['Date', 'Accountant', 'Fund Source', 'Platform', 'Teller Name', 'Notes', 'Amount']
+        headers = ['#', 'Ref / Serial #', 'Date', 'Sender / Deposited By', 'Role', 'Shop', 'Fund Source', 'Platform', 'Teller Name', 'Notes', 'Amount']
         rows = []
-        for bt in qs:
-            provider = bt.provider_config.provider.name if bt.provider_config else ''
+        for idx, bt in enumerate(qs, start=1):
+            provider = f"{bt.provider_config.nickname} ({bt.provider_config.get_provider_display()})" if bt.provider_config else '-'
+            sender_name = bt.accountant.get_full_name() or bt.accountant.email
+            sender_role = bt.accountant.role.get_name_display() if bt.accountant and bt.accountant.role else '-'
+            sender_shop = bt.accountant.location.name if bt.accountant and bt.accountant.location else '-'
+            serial_ref = bt.receipt_number or f"BT-{bt.pk:04d}"
             rows.append([
+                idx,
+                serial_ref,
                 bt.created_at.strftime('%Y-%m-%d %H:%M'),
-                bt.accountant.get_full_name() or bt.accountant.email,
+                sender_name,
+                sender_role,
+                sender_shop,
                 bt.get_fund_source_display(),
                 provider,
                 bt.teller_name,

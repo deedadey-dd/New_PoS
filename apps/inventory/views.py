@@ -128,7 +128,7 @@ class ProductListView(LoginRequiredMixin, SortableMixin, ListView):
         return None
     
     def get_queryset(self):
-        from django.db.models import Sum, Subquery, OuterRef, Value, IntegerField, Case, When
+        from django.db.models import Sum, Subquery, OuterRef, Value, IntegerField, Case, When, F
         from django.db.models.functions import Coalesce
         from decimal import Decimal
         from .models import InventoryLedger, FavoriteProduct
@@ -151,8 +151,15 @@ class ProductListView(LoginRequiredMixin, SortableMixin, ListView):
         category = self.request.GET.get('category')
         if category:
             queryset = queryset.filter(category_id=category)
+
+        # Active/Inactive status filter
+        active_status = self.request.GET.get('status')
+        if active_status == 'active':
+            queryset = queryset.filter(is_active=True)
+        elif active_status == 'inactive':
+            queryset = queryset.filter(is_active=False)
         
-        # Annotate total_stock for sorting
+        # Annotate total_stock for sorting and filtering
         user_location = user.location
         user_location_type = None
         
@@ -177,6 +184,26 @@ class ProductListView(LoginRequiredMixin, SortableMixin, ListView):
         queryset = queryset.annotate(
             total_stock=Coalesce(Subquery(stock_subquery), Decimal('0.00'))
         )
+
+        # Stock status filter (out_of_stock, low_stock, needs_reorder, in_stock, available)
+        stock_status = self.request.GET.get('stock_status')
+        low_stock_q = (
+            Q(reorder_level__gt=0, total_stock__gt=0, total_stock__lte=F('reorder_level')) |
+            Q(reorder_level__lte=0, total_stock__gt=0, total_stock__lt=Decimal('10.00'))
+        )
+        if stock_status == 'out_of_stock':
+            queryset = queryset.filter(total_stock__lte=Decimal('0.00'))
+        elif stock_status == 'low_stock':
+            queryset = queryset.filter(low_stock_q)
+        elif stock_status == 'needs_reorder':
+            queryset = queryset.filter(Q(total_stock__lte=Decimal('0.00')) | low_stock_q)
+        elif stock_status == 'in_stock':
+            queryset = queryset.filter(
+                Q(reorder_level__gt=0, total_stock__gt=F('reorder_level')) |
+                Q(reorder_level__lte=0, total_stock__gte=Decimal('10.00'))
+            )
+        elif stock_status == 'available':
+            queryset = queryset.filter(total_stock__gt=Decimal('0.00'))
         
         # Annotate favorites: is_favorite = 1 for favorites, 0 for others
         effective_location = self._get_user_location()
@@ -281,20 +308,30 @@ class ProductListView(LoginRequiredMixin, SortableMixin, ListView):
         context['summary_total_products'] = filtered_products.count()
         context['summary_active_categories'] = Category.objects.filter(tenant=user.tenant, is_active=True).count()
         
-        # Calculate total stock units and low stock count for current view
+        # Calculate total stock units and low/out of stock counts for current view
         stock_map = context['stock_by_product']
         total_units = Decimal('0.00')
         low_stock_count = 0
+        out_of_stock_count = 0
+        low_stock_only_count = 0
         for p in filtered_products:
             qty = stock_map.get(p.id, Decimal('0.00'))
-            if qty is not None:
-                total_units += Decimal(str(qty))
-            reorder_lvl = getattr(p, 'reorder_level', 5) or 5
-            if qty is None or Decimal(str(qty)) <= Decimal(str(reorder_lvl)):
+            qty_dec = Decimal(str(qty)) if qty is not None else Decimal('0.00')
+            total_units += qty_dec
+            reorder_lvl = getattr(p, 'reorder_level', Decimal('0.00')) or Decimal('0.00')
+            if qty_dec <= Decimal('0.00'):
+                out_of_stock_count += 1
+                low_stock_count += 1
+            elif (reorder_lvl > 0 and qty_dec <= reorder_lvl) or (reorder_lvl <= 0 and qty_dec < Decimal('10.00')):
+                low_stock_only_count += 1
                 low_stock_count += 1
                 
         context['summary_total_units'] = total_units
         context['summary_low_stock_count'] = low_stock_count
+        context['summary_out_of_stock_count'] = out_of_stock_count
+        context['summary_low_stock_only_count'] = low_stock_only_count
+        context['selected_stock_status'] = self.request.GET.get('stock_status', '')
+        context['selected_status'] = self.request.GET.get('status', '')
         
         return context
 
@@ -1794,8 +1831,12 @@ class ShopPriceListView(LoginRequiredMixin, View):
                     tenant=tenant, pk=shop_id, location_type='SHOP'
                 ).first()
                 
+        all_shops = Location.objects.filter(
+            tenant=tenant, location_type='SHOP', is_active=True
+        ).order_by('name')
         context = {
             'shop': shop, 
+            'shops': all_shops,
             'mode': mode,
             'is_read_only': is_read_only,
             'is_uniform': mode == 'ACCOUNTANT_UNIFORM'
@@ -1805,11 +1846,8 @@ class ShopPriceListView(LoginRequiredMixin, View):
         # but we need to fetch the current prices from SOME shop (since they are uniform).
         # Or we can just get the first active shop to pull prices from.
         if mode == 'ACCOUNTANT_UNIFORM':
-            shop = Location.objects.filter(tenant=tenant, location_type='SHOP', is_active=True).first()
+            shop = all_shops.first()
         elif not shop:
-            context['shops'] = Location.objects.filter(
-                tenant=tenant, location_type='SHOP', is_active=True
-            )
             return render(request, self.template_name, context)
         
         # Get all active products
@@ -2045,6 +2083,239 @@ class ShopPriceSetView(LoginRequiredMixin, View):
             messages.success(request, f'Price for "{product.name}" at {shop.name} set to {request.user.tenant.currency_symbol}{selling_price}')
             
         return redirect('inventory:shop_price_list')
+
+
+@login_required
+def api_shop_price_history(request, pk):
+    """
+    Return JSON price change history (chart series + detailed table records)
+    for a product in /inventory/shop-prices/.
+    Supports filtering by date (date_from, date_to, range) and by shop
+    (when tenant.pricing_control_mode != 'ACCOUNTANT_UNIFORM').
+    """
+    from datetime import datetime, timedelta
+    from django.utils import timezone
+
+    user = request.user
+    role_name = user.role.name if user.role else None
+    if role_name not in ['SHOP_MANAGER', 'ADMIN', 'ACCOUNTANT', 'AUDITOR']:
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+
+    tenant = user.tenant
+    product = get_object_or_404(Product.objects.select_related('category'), pk=pk, tenant=tenant)
+    mode = tenant.pricing_control_mode
+    is_uniform = (mode == 'ACCOUNTANT_UNIFORM')
+
+    shop_param = request.GET.get('shop', '').strip()
+    date_from_str = request.GET.get('date_from', '').strip()
+    date_to_str = request.GET.get('date_to', '').strip()
+    range_param = request.GET.get('range', '').strip()
+
+    all_shops = list(
+        Location.objects.filter(tenant=tenant, location_type='SHOP', is_active=True).order_by('name')
+    )
+
+    qs = ShopPrice.objects.filter(
+        tenant=tenant,
+        product=product
+    ).select_related('location').order_by('created_at', 'id')
+
+    raw_records = list(qs)
+
+    # Build chronological history with previous_price and variance tracked accurately
+    entries = []
+    if is_uniform:
+        # Group simultaneous global price updates across shops into single global events
+        seen_buckets = set()
+        prev_price = None
+        for sp in raw_records:
+            bucket_key = (sp.created_at.strftime('%Y-%m-%d %H:%M'), str(sp.selling_price))
+            if bucket_key in seen_buckets:
+                continue
+            seen_buckets.add(bucket_key)
+            curr_price = float(sp.selling_price)
+            ref_prev = prev_price if prev_price is not None else float(product.default_selling_price)
+            change_amt = curr_price - ref_prev
+            change_pct = ((change_amt / ref_prev) * 100.0) if ref_prev > 0 else 0.0
+            entries.append({
+                'id': sp.id,
+                'created_at': sp.created_at,
+                'created_date': sp.created_at.date(),
+                'date_display': sp.created_at.strftime('%b %d, %Y %H:%M'),
+                'date_short': sp.created_at.strftime('%b %d, %Y'),
+                'time_short': sp.created_at.strftime('%H:%M'),
+                'effective_from': sp.effective_from.strftime('%b %d, %Y %H:%M') if sp.effective_from else sp.created_at.strftime('%b %d, %Y %H:%M'),
+                'shop_id': None,
+                'shop_name': 'All Shops (Global)',
+                'previous_price': prev_price,
+                'reference_price': ref_prev,
+                'is_initial': prev_price is None,
+                'selling_price': curr_price,
+                'change_amount': round(change_amt, 2),
+                'change_pct': round(change_pct, 2),
+                'is_active': sp.is_active,
+            })
+            prev_price = curr_price
+    else:
+        prev_by_shop = {}
+        for sp in raw_records:
+            loc_id = sp.location_id
+            loc_name = sp.location.name if sp.location else 'Unknown Shop'
+            prev_price = prev_by_shop.get(loc_id)
+            curr_price = float(sp.selling_price)
+            ref_prev = prev_price if prev_price is not None else float(product.default_selling_price)
+            change_amt = curr_price - ref_prev
+            change_pct = ((change_amt / ref_prev) * 100.0) if ref_prev > 0 else 0.0
+            entries.append({
+                'id': sp.id,
+                'created_at': sp.created_at,
+                'created_date': sp.created_at.date(),
+                'date_display': sp.created_at.strftime('%b %d, %Y %H:%M'),
+                'date_short': sp.created_at.strftime('%b %d, %Y'),
+                'time_short': sp.created_at.strftime('%H:%M'),
+                'effective_from': sp.effective_from.strftime('%b %d, %Y %H:%M') if sp.effective_from else sp.created_at.strftime('%b %d, %Y %H:%M'),
+                'shop_id': loc_id,
+                'shop_name': loc_name,
+                'previous_price': prev_price,
+                'reference_price': ref_prev,
+                'is_initial': prev_price is None,
+                'selling_price': curr_price,
+                'change_amount': round(change_amt, 2),
+                'change_pct': round(change_pct, 2),
+                'is_active': sp.is_active,
+            })
+            prev_by_shop[loc_id] = curr_price
+
+        if shop_param and shop_param != 'all':
+            try:
+                target_shop_id = int(shop_param)
+                entries = [e for e in entries if e['shop_id'] == target_shop_id]
+            except ValueError:
+                pass
+
+    # Apply date filters
+    today = timezone.now().date()
+    parsed_from = None
+    parsed_to = None
+
+    if date_from_str:
+        try:
+            parsed_from = datetime.strptime(date_from_str, '%Y-%m-%d').date()
+        except ValueError:
+            pass
+    elif range_param in ['7d', '30d', '90d', '1y']:
+        days_map = {'7d': 7, '30d': 30, '90d': 90, '1y': 365}
+        parsed_from = today - timedelta(days=days_map[range_param])
+
+    if date_to_str:
+        try:
+            parsed_to = datetime.strptime(date_to_str, '%Y-%m-%d').date()
+        except ValueError:
+            pass
+
+    filtered = []
+    for e in entries:
+        if parsed_from and e['created_date'] < parsed_from:
+            continue
+        if parsed_to and e['created_date'] > parsed_to:
+            continue
+        filtered.append(e)
+
+    # Prepare serializable records (newest first for the table)
+    table_records = []
+    for idx, e in enumerate(reversed(filtered), start=1):
+        table_records.append({
+            'index': idx,
+            'id': e['id'],
+            'date_display': e['date_display'],
+            'date_short': e['date_short'],
+            'time_short': e['time_short'],
+            'effective_from': e['effective_from'],
+            'shop_id': e['shop_id'],
+            'shop_name': e['shop_name'],
+            'previous_price': e['previous_price'],
+            'reference_price': e['reference_price'],
+            'is_initial': e['is_initial'],
+            'selling_price': e['selling_price'],
+            'change_amount': e['change_amount'],
+            'change_pct': e['change_pct'],
+            'is_active': e['is_active'],
+        })
+
+    # Prepare chart datasets (chronological oldest -> newest)
+    chart_datasets = []
+    chart_labels = []
+    if is_uniform or (shop_param and shop_param != 'all'):
+        label_name = 'All Shops (Global)' if is_uniform else next(
+            (s.name for s in all_shops if str(s.id) == str(shop_param)), 'Selected Shop'
+        )
+        points = []
+        for e in filtered:
+            lbl = e['date_display']
+            chart_labels.append(lbl)
+            points.append({
+                'label': lbl,
+                'date_short': e['date_short'],
+                'price': e['selling_price'],
+                'shop': e['shop_name'],
+                'change_amount': e['change_amount'],
+            })
+        chart_datasets.append({
+            'label': label_name,
+            'data': [p['price'] for p in points],
+            'points': points,
+        })
+    else:
+        # Group by shop for multi-shop comparison
+        by_shop = {}
+        for e in filtered:
+            lbl = e['date_display']
+            if lbl not in chart_labels:
+                chart_labels.append(lbl)
+            by_shop.setdefault(e['shop_name'], []).append({
+                'label': lbl,
+                'date_short': e['date_short'],
+                'price': e['selling_price'],
+                'shop': e['shop_name'],
+                'change_amount': e['change_amount'],
+            })
+        for s_name, pts in by_shop.items():
+            chart_datasets.append({
+                'label': s_name,
+                'data': [p['price'] for p in pts],
+                'points': pts,
+            })
+
+    prices_list = [e['selling_price'] for e in filtered]
+    active_prices = [e['selling_price'] for e in entries if e['is_active']]
+    current_price = active_prices[-1] if active_prices else (prices_list[-1] if prices_list else None)
+
+    return JsonResponse({
+        'product': {
+            'id': product.id,
+            'name': product.name,
+            'sku': product.sku or '-',
+            'category': product.category.name if product.category else '-',
+            'default_price': float(product.default_selling_price),
+        },
+        'is_uniform': is_uniform,
+        'pricing_mode': mode,
+        'pricing_mode_display': tenant.get_pricing_control_mode_display(),
+        'selected_shop': shop_param,
+        'shops': [{'id': s.id, 'name': s.name} for s in all_shops],
+        'summary': {
+            'default_price': float(product.default_selling_price),
+            'current_price': current_price,
+            'lowest_price': min(prices_list) if prices_list else float(product.default_selling_price),
+            'highest_price': max(prices_list) if prices_list else float(product.default_selling_price),
+            'total_changes': len(filtered),
+        },
+        'chart': {
+            'labels': chart_labels,
+            'datasets': chart_datasets,
+        },
+        'records': table_records,
+    })
 
 
 class ProductTemplateDownloadView(LoginRequiredMixin, View):

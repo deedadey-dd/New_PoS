@@ -42,6 +42,7 @@ urlpatterns = [
     # Shop Pricing (for Shop Managers)
     path('shop-prices/', views.ShopPriceListView.as_view(), name='shop_price_list'),
     path('shop-prices/<int:pk>/set/', views.ShopPriceSetView.as_view(), name='shop_price_set'),
+    path('api/shop-prices/<int:pk>/history/', views.api_shop_price_history, name='api_shop_price_history'),
     path('price-changes/', views.PriceChangeCenterView.as_view(), name='price_change_center'),
     
     # Product Bundles

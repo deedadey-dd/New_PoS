@@ -156,9 +156,16 @@
                     <div>
                         <span class="text-muted small fw-semibold text-uppercase d-block mb-1">Low / Out of Stock</span>
                         <h4 class="fw-bold mb-0 {% if summary_low_stock_count > 0 %}text-danger{% else %}text-muted{% endif %}">{{ summary_low_stock_count|intcomma }}</h4>
-                        <span class="badge bg-danger-subtle text-danger rounded-pill mt-1" style="font-size: 0.72rem;">
-                            Needs Reorder
-                        </span>
+                        <div class="d-flex flex-wrap gap-1 mt-1">
+                            <a href="?stock_status=out_of_stock{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}"
+                               class="badge bg-danger-subtle text-danger text-decoration-none rounded-pill" style="font-size: 0.7rem;" title="Filter Out of Stock">
+                                {{ summary_out_of_stock_count|default:0 }} Out
+                            </a>
+                            <a href="?stock_status=low_stock{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}"
+                               class="badge bg-warning-subtle text-warning-emphasis text-decoration-none rounded-pill" style="font-size: 0.7rem;" title="Filter Low on Stock">
+                                {{ summary_low_stock_only_count|default:0 }} Low
+                            </a>
+                        </div>
                     </div>
                     <div class="summary-icon-box bg-danger-subtle text-danger">
                         <i class="bi bi-exclamation-octagon-fill"></i>
@@ -175,20 +182,19 @@
 <!-- Filters -->
 <div class="card mb-4">
     <div class="card-body">
-        <form method="get" class="row g-3" id="searchForm">
-            {% csrf_token %}
-            <div class="col-md-6">
+        <form method="get" class="row g-3 align-items-center" id="searchForm">
+            <div class="col-md-4">
                 <div class="input-group position-relative">
                     <span class="input-group-text"><i class="bi bi-search"></i></span>
                     <input type="text" name="search" id="productSearch" class="form-control"
-                        placeholder="Search products..." value="{{ request.GET.search }}" autocomplete="off">
+                        placeholder="Search products by name or SKU..." value="{{ request.GET.search }}" autocomplete="off">
                     <!-- Autocomplete dropdown -->
                     <div id="searchSuggestions" class="dropdown-menu w-100"
                         style="display: none; max-height: 300px; overflow-y: auto;">
                     </div>
                 </div>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <select name="category" class="form-select">
                     <option value="">All Categories</option>
                     {% for cat in categories %}
@@ -198,8 +204,25 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-md-2">
-                <button type="submit" class="btn btn-outline-primary w-100">Filter</button>
+            <div class="col-md-3">
+                <select name="stock_status" class="form-select">
+                    <option value="">All Stock Levels</option>
+                    <option value="out_of_stock" {% if selected_stock_status == 'out_of_stock' %}selected{% endif %}>Out of Stock (0)</option>
+                    <option value="low_stock" {% if selected_stock_status == 'low_stock' %}selected{% endif %}>Low on Stock</option>
+                    <option value="needs_reorder" {% if selected_stock_status == 'needs_reorder' %}selected{% endif %}>Low or Out of Stock (Needs Reorder)</option>
+                    <option value="in_stock" {% if selected_stock_status == 'in_stock' %}selected{% endif %}>In Stock (Healthy)</option>
+                    <option value="available" {% if selected_stock_status == 'available' %}selected{% endif %}>Available (&gt; 0)</option>
+                </select>
+            </div>
+            <div class="col-md-2 d-flex gap-2">
+                <button type="submit" class="btn btn-primary flex-grow-1">
+                    <i class="bi bi-funnel me-1"></i>Filter
+                </button>
+                {% if request.GET.search or request.GET.category or request.GET.stock_status or request.GET.status %}
+                <a href="{% url 'inventory:product_list' %}" class="btn btn-outline-secondary" title="Clear Filters">
+                    <i class="bi bi-x-lg"></i>
+                </a>
+                {% endif %}
             </div>
         </form>
     </div>
@@ -267,14 +290,14 @@
                             {% with qty=stock_by_product|default_if_none:0 %}
                             {% with product_qty=qty|get_item:product.pk %}
                             <span
-                                class="badge {% if product_qty == 0 or product_qty == None %}bg-danger{% elif product_qty < 10 %}bg-warning text-dark{% else %}bg-success{% endif %}">
-                                {{ product_qty|default:0 }}
+                                class="badge {% if product_qty == 0 or product_qty == None or product_qty < 0 %}bg-danger{% elif product.reorder_level > 0 and product_qty <= product.reorder_level %}bg-warning text-dark{% elif product.reorder_level <= 0 and product_qty < 10 %}bg-warning text-dark{% else %}bg-success{% endif %}">
+                                {{ product_qty|default:0|floatformat:2|intcomma }}
                             </span>
                             {% endwith %}
                             {% endwith %}
                         </td>
                         <td>{{ product.get_unit_of_measure_display }}</td>
-                        <td class="text-end">{{ currency_symbol }}{{ product.default_selling_price|floatformat:"2g" }}</td>
+                        <td class="text-end">{{ currency_symbol }}{{ product.default_selling_price|floatformat:2|intcomma }}</td>
                         <td>
                             {% if product.is_active %}
                             <span class="badge bg-success">Active</span>
