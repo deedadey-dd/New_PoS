@@ -192,6 +192,11 @@
     border-bottom-width: 2px;
 }
 
+.table-dark th,
+.table thead.table-dark th {
+    color: #ffffff;
+}
+
 .table td {
     vertical-align: middle;
 }

@@ -156,6 +156,11 @@
         border-radius: 0.5rem;
         transition: all 0.15s ease;
     }
+
+    .mgmt-root .table thead.table-dark th {
+        background-color: var(--mgmt-navy) !important;
+        color: #ffffff !important;
+    }
 </style>
 {% endblock %}
 
@@ -672,14 +677,14 @@
             <table class="table table-hover align-middle mb-0" style="font-size: 1.15rem;">
                 <thead class="table-dark text-uppercase small" style="font-size: 0.98rem; letter-spacing: 0.05em;">
                     <tr>
-                        <th style="width: 50px;">#</th>
-                        <th>Product</th>
-                        <th class="text-center" style="width: 110px;">Sold</th>
-                        <th class="text-end" style="width: 140px;">Revenue ({{ report.currency_symbol }})</th>
+                        <th class="text-white" style="width: 50px; color: #ffffff !important;">#</th>
+                        <th class="text-white" style="color: #ffffff !important;">Product</th>
+                        <th class="text-center text-white" style="width: 110px; color: #ffffff !important;">Sold</th>
+                        <th class="text-end text-white" style="width: 140px; color: #ffffff !important;">Revenue ({{ report.currency_symbol }})</th>
                         {% if report.use_strict_sales_workflow %}
-                            <th class="text-center" style="width: 110px;">Disp.</th>
+                            <th class="text-center text-white" style="width: 110px; color: #ffffff !important;">Disp.</th>
                         {% endif %}
-                        <th class="text-end" style="width: 120px;">Stock</th>
+                        <th class="text-end text-white" style="width: 120px; color: #ffffff !important;">Stock</th>
                     </tr>
                 </thead>
                 <tbody>

@@ -63,8 +63,11 @@ def build_management_end_of_day_report(tenant, start_date, end_date, shop=None, 
     cash_sales = cash_sales_full + cash_sales_mixed
 
     ecash_sales = sales.filter(payment_method='ECASH').aggregate(t=Sum('total'))['t'] or Decimal('0.00')
-    momo_sales = sales.filter(payment_method='LOCAL_MOMO').aggregate(t=Sum('total'))['t'] or Decimal('0.00')
-    credit_sales = sales.filter(payment_method='CREDIT').aggregate(t=Sum('total'))['t'] or Decimal('0.00')
+    momo_sales = sales.filter(payment_method__in=['MOMO', 'LOCAL_MOMO']).aggregate(t=Sum('total'))['t'] or Decimal('0.00')
+    credit_sales_full = sales.filter(payment_method__in=['CREDIT', 'PENDING_INVOICE']).aggregate(t=Sum('total'))['t'] or Decimal('0.00')
+    mixed_sales_total = sales.filter(payment_method='MIXED').aggregate(t=Sum('total'))['t'] or Decimal('0.00')
+    mixed_credit = max(Decimal('0.00'), mixed_sales_total - cash_sales_mixed)
+    credit_sales = credit_sales_full + mixed_credit
 
     cash_share_percent = ((cash_sales / net_reported_sales) * Decimal('100.0')) if net_reported_sales > 0 else Decimal('0.0')
 
@@ -274,14 +277,41 @@ def build_management_end_of_day_report(tenant, start_date, end_date, shop=None, 
     has_full_shift_audit = False
     counted_closing_cash = None
     opening_float = None
+    shift_expected_cash = None
 
     if shifts_list and all(s.closing_cash is not None for s in shifts_list):
-        has_full_shift_audit = True
         opening_float = sum((s.opening_cash for s in shifts_list), Decimal('0.00'))
         counted_closing_cash = sum((s.closing_cash for s in shifts_list), Decimal('0.00'))
+        shift_sales_sum = sum((s.total_sales for s in shifts_list), Decimal('0.00'))
+        shift_expected_sum = sum((s.expected_cash for s in shifts_list), Decimal('0.00'))
+        # In strict workflow (or when sales occur outside attendant shifts), an empty attendant shift
+        # with 0 closing cash and 0 shift sales does not represent the cashier's till count.
+        if is_strict_workflow and shift_sales_sum == Decimal('0.00') and counted_closing_cash == Decimal('0.00') and cash_sales > Decimal('0.00'):
+            has_full_shift_audit = False
+        else:
+            has_full_shift_audit = True
+            # If shifts recorded their own sales, use the shifts' true expected till cash
+            # (which equals Opening Float + Shift Cash Sales + Cash Account Payments - Cash Payouts/Refunds).
+            if shift_sales_sum > Decimal('0.00') or cash_sales == Decimal('0.00'):
+                shift_expected_cash = shift_expected_sum
+            else:
+                cash_customer_payments = CustomerTransaction.objects.filter(
+                    **ct_filter
+                ).filter(
+                    Q(description__icontains='(CASH)') |
+                    Q(description__icontains='Overpayment') |
+                    Q(description__icontains='Change from Sale') |
+                    Q(description='Payment on account')
+                ).aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
+                cash_bank_transfers = BankTransfer.objects.filter(
+                    **bt_filter, fund_source='CASH'
+                ).aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
+                shift_expected_cash = (
+                    opening_float + cash_sales + cash_customer_payments - expenditures - (cash_to_bank + cash_bank_transfers) - funds_to_accountant
+                )
 
     reconciliation_status = 'INSUFFICIENT_DATA'
-    reconciliation_badge_class = 'badge-warning text-dark'
+    reconciliation_badge_class = 'bg-warning text-dark'
     reconciliation_label = 'INSUFFICIENT DATA'
     bank_over_sales_diff = Decimal('0.00')
 
@@ -299,25 +329,36 @@ def build_management_end_of_day_report(tenant, start_date, end_date, shop=None, 
             )
         else:
             reconciliation_text = (
+                f"Cash sales collected: {currency_symbol} {cash_sales:,.2f} "
+                f"(Customer payments: {currency_symbol} {customer_payments:,.2f}, "
+                f"Cash refunds: {currency_symbol} {refunds_disbursed_cash:,.2f}, "
+                f"Expenses: {currency_symbol} {expenditures:,.2f}, "
+                f"Banked: {currency_symbol} {funds_to_bank:,.2f}, "
+                f"To Accountant: {currency_symbol} {funds_to_accountant:,.2f}). "
                 "Opening cash, prior-period collections, transfers and closing cash count are not provided; "
                 "variance cannot be established."
             )
     else:
-        # Full cash calculations
-        expected_cash = (
-            opening_float + cash_sales + customer_payments - expenditures - funds_to_bank - funds_to_accountant - refunds_disbursed_cash
-        )
+        expected_cash = shift_expected_cash
         variance = counted_closing_cash - expected_cash
         if variance == Decimal('0.00'):
             reconciliation_status = 'RECONCILED'
             reconciliation_label = 'RECONCILED'
-            reconciliation_badge_class = 'badge-success text-white'
-            reconciliation_text = "All cash collections, bank transfers, and counted till closing balances match expected ledger totals."
+            reconciliation_badge_class = 'bg-success text-white'
+            reconciliation_text = (
+                f"All closed shift till counts match expected shift cash "
+                f"(Counted: {currency_symbol} {counted_closing_cash:,.2f} vs. Expected: {currency_symbol} {expected_cash:,.2f}; "
+                f"Opening Float: {currency_symbol} {opening_float:,.2f})."
+            )
         else:
             reconciliation_status = 'VARIANCE'
             reconciliation_label = 'VARIANCE DETECTED'
-            reconciliation_badge_class = 'badge-danger text-white'
-            reconciliation_text = f"Counted till cash deviates from expected cash by {currency_symbol} {abs(variance):,.2f} ({'Overage' if variance > 0 else 'Shortage'})."
+            reconciliation_badge_class = 'bg-danger text-white'
+            reconciliation_text = (
+                f"Counted till cash ({currency_symbol} {counted_closing_cash:,.2f}) deviates from expected shift cash "
+                f"({currency_symbol} {expected_cash:,.2f}, including Opening Float of {currency_symbol} {opening_float:,.2f}) "
+                f"by {currency_symbol} {abs(variance):,.2f} ({'Overage' if variance > 0 else 'Shortage'})."
+            )
 
     # 5. DAILY CONTROL CHECKS
     product_rows_count = len(sorted_products)
