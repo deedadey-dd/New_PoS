@@ -45,14 +45,24 @@ def build_management_end_of_day_report(tenant, start_date, end_date, shop=None, 
     # 1. SALES AGGREGATIONS
     sales_agg = sales.aggregate(
         total_rev=Sum('total'),
+        subtotal_rev=Sum('subtotal'),
+        discount_sum=Sum('discount_amount'),
+        tax_sum=Sum('tax_amount'),
         inv_count=Count('id', distinct=True)
     )
     net_reported_sales = sales_agg['total_rev'] or Decimal('0.00')
+    invoice_subtotal_sum = sales_agg['subtotal_rev'] or Decimal('0.00')
+    invoice_discount_sum = sales_agg['discount_sum'] or Decimal('0.00')
+    invoice_tax_sum = sales_agg['tax_sum'] or Decimal('0.00')
     invoice_count = sales_agg['inv_count'] or 0
 
-    items_sold_qty = SaleItem.objects.filter(sale__in=sales).aggregate(
-        q=Sum('quantity')
-    )['q'] or Decimal('0')
+    items_agg_totals = SaleItem.objects.filter(sale__in=sales).aggregate(
+        q=Sum('quantity'),
+        item_disc=Sum('discount_amount')
+    )
+    items_sold_qty = items_agg_totals['q'] or Decimal('0')
+    line_item_discount_sum = items_agg_totals['item_disc'] or Decimal('0.00')
+    total_discounts_applied = invoice_discount_sum + line_item_discount_sum
 
     avg_ticket = (net_reported_sales / Decimal(invoice_count)) if invoice_count > 0 else Decimal('0.00')
     items_per_invoice = (items_sold_qty / Decimal(invoice_count)) if invoice_count > 0 else Decimal('0.00')
@@ -463,8 +473,43 @@ def build_management_end_of_day_report(tenant, start_date, end_date, shop=None, 
     product_rows_count = len(sorted_products)
     product_revenue_sum = sum((p['revenue'] for p in sorted_products), Decimal('0.00'))
     product_qty_sum = sum((p['qty_sold'] for p in sorted_products), Decimal('0'))
+    net_line_item_revenue = product_revenue_sum - invoice_discount_sum + invoice_tax_sum
+    sales_product_revenue_diff = net_reported_sales - net_line_item_revenue
 
-    sales_product_match = (product_revenue_sum == net_reported_sales and product_qty_sum == items_sold_qty)
+    sales_product_match = (net_line_item_revenue == net_reported_sales and product_qty_sum == items_sold_qty)
+
+    if sales_product_match:
+        if invoice_discount_sum > Decimal('0.00') or invoice_tax_sum > Decimal('0.00'):
+            control_check_status_text = (
+                f"Sales and product breakdown match after invoice adjustments "
+                f"(Line-item subtotal: {currency_symbol} {product_revenue_sum:,.2f} "
+                f"- Invoice discounts: {currency_symbol} {invoice_discount_sum:,.2f} "
+                f"+ Tax: {currency_symbol} {invoice_tax_sum:,.2f} "
+                f"= Net invoice total: {currency_symbol} {net_reported_sales:,.2f})."
+            )
+        elif reconciliation_status == 'RECONCILED':
+            control_check_status_text = (
+                "Sales and product breakdown match. Closed shift till counts and cashier sign-off are reconciled."
+            )
+        else:
+            control_check_status_text = (
+                "Sales and product breakdown match. Deposit origin, counted till cash and cashier sign-off remain unverified."
+            )
+    else:
+        control_check_status_text = (
+            f"Attention: Net invoice total ({currency_symbol} {net_reported_sales:,.2f}) differs from net line-item total "
+            f"({currency_symbol} {net_line_item_revenue:,.2f}: Line-item sum {currency_symbol} {product_revenue_sum:,.2f} "
+            f"- Invoice discounts {currency_symbol} {invoice_discount_sum:,.2f} + Tax {currency_symbol} {invoice_tax_sum:,.2f}) "
+            f"by {currency_symbol} {abs(sales_product_revenue_diff):,.2f}."
+        )
+
+    control_check_operating_note = (
+        f"Period adjustments summary — Invoice discounts: {currency_symbol} {invoice_discount_sum:,.2f} | "
+        f"Line-item discounts: {currency_symbol} {line_item_discount_sum:,.2f} | "
+        f"Tax collected: {currency_symbol} {invoice_tax_sum:,.2f} | "
+        f"Refunds disbursed: {currency_symbol} {total_refunds_disbursed:,.2f} "
+        f"(Cash: {currency_symbol} {refunds_disbursed_cash:,.2f}, Digital: {currency_symbol} {refunds_disbursed_digital:,.2f})."
+    )
 
     # 6. MERCHANDISING / PRODUCT PERFORMANCE
     # Top revenue SKU
@@ -711,7 +756,16 @@ def build_management_end_of_day_report(tenant, start_date, end_date, shop=None, 
         'product_rows_count': product_rows_count,
         'product_revenue_sum': product_revenue_sum,
         'product_qty_sum': product_qty_sum,
+        'invoice_subtotal_sum': invoice_subtotal_sum,
+        'invoice_discount_sum': invoice_discount_sum,
+        'line_item_discount_sum': line_item_discount_sum,
+        'total_discounts_applied': total_discounts_applied,
+        'invoice_tax_sum': invoice_tax_sum,
+        'net_line_item_revenue': net_line_item_revenue,
+        'sales_product_revenue_diff': sales_product_revenue_diff,
         'sales_product_match': sales_product_match,
+        'control_check_status_text': control_check_status_text,
+        'control_check_operating_note': control_check_operating_note,
         
         # Section 2: Merchandising / Product Performance
         'top_revenue_sku': top_revenue_sku,

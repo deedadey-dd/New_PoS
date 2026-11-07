@@ -348,17 +348,13 @@
         </tr>
     </table>
     <div style="font-size: 10pt; color: #334155; margin-bottom: 3px;">
-        Product rows: {{ report.product_rows_count }} | Product revenue sum: {{ report.currency_symbol }} {{ report.product_revenue_sum|floatformat:2|intcomma }} | Quantity sum: {{ report.product_qty_sum|floatformat:0|intcomma }}.
+        Product rows: {{ report.product_rows_count }} | Product revenue sum: {{ report.currency_symbol }} {{ report.product_revenue_sum|floatformat:2|intcomma }}{% if report.invoice_discount_sum > 0 %} | Invoice discounts: -{{ report.currency_symbol }} {{ report.invoice_discount_sum|floatformat:2|intcomma }}{% endif %}{% if report.invoice_tax_sum > 0 %} | Tax: +{{ report.currency_symbol }} {{ report.invoice_tax_sum|floatformat:2|intcomma }}{% endif %}{% if report.invoice_discount_sum > 0 or report.invoice_tax_sum > 0 %} | Net invoice total: {{ report.currency_symbol }} {{ report.net_reported_sales|floatformat:2|intcomma }}{% endif %} | Quantity sum: {{ report.product_qty_sum|floatformat:0|intcomma }}.
     </div>
     <div style="font-size: 10pt; color: #0f172a; font-weight: bold; margin-bottom: 3px;">
-        {% if report.sales_product_match %}
-        Sales and product breakdown match. Deposit origin, counted till cash and cashier sign-off remain unverified.
-        {% else %}
-        Discrepancy detected between invoice total and product breakdown sum.
-        {% endif %}
+        {{ report.control_check_status_text }}
     </div>
     <div style="font-size: 9.5pt; color: #64748b; font-style: italic;">
-        Operating note: no historical comparison or refund / discount / tax totals appear in the source report.
+        {{ report.control_check_operating_note }}
     </div>
 
 

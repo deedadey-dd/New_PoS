@@ -420,24 +420,39 @@
                     <div class="col-md-8">
                         <div class="small text-muted mb-2">
                             <strong>Product rows:</strong> {{ report.product_rows_count }} | 
-                            <strong>Product revenue sum:</strong> {{ report.currency_symbol }} {{ report.product_revenue_sum|floatformat:2|intcomma }} | 
-                            <strong>Quantity sum:</strong> {{ report.product_qty_sum|floatformat:0|intcomma }}.
+                            <strong>Product revenue sum:</strong> {{ report.currency_symbol }} {{ report.product_revenue_sum|floatformat:2|intcomma }}
+                            {% if report.invoice_discount_sum > 0 %}
+                                | <strong>Invoice discounts:</strong> <span class="text-danger">-{{ report.currency_symbol }} {{ report.invoice_discount_sum|floatformat:2|intcomma }}</span>
+                            {% endif %}
+                            {% if report.invoice_tax_sum > 0 %}
+                                | <strong>Tax:</strong> +{{ report.currency_symbol }} {{ report.invoice_tax_sum|floatformat:2|intcomma }}
+                            {% endif %}
+                            {% if report.invoice_discount_sum > 0 or report.invoice_tax_sum > 0 %}
+                                | <strong>Net invoice total:</strong> {{ report.currency_symbol }} {{ report.net_reported_sales|floatformat:2|intcomma }}
+                            {% endif %}
+                            | <strong>Quantity sum:</strong> {{ report.product_qty_sum|floatformat:0|intcomma }}.
                         </div>
                         <div class="small text-dark fw-medium mb-1">
                             {% if report.sales_product_match %}
-                                <i class="bi bi-check-circle-fill text-success me-1"></i>Sales and product breakdown match. Deposit origin, counted till cash and cashier sign-off remain unverified.
+                                <i class="bi bi-check-circle-fill text-success me-1"></i>{{ report.control_check_status_text }}
                             {% else %}
-                                <i class="bi bi-exclamation-triangle-fill text-danger me-1"></i>Attention: Discrepancy observed between invoice aggregate and line-item totals.
+                                <i class="bi bi-exclamation-triangle-fill text-danger me-1"></i>{{ report.control_check_status_text }}
                             {% endif %}
                         </div>
                         <div class="small text-muted fst-italic">
-                            Operating note: no historical comparison or refund / discount / tax totals appear in the source report.
+                            {{ report.control_check_operating_note }}
                         </div>
                     </div>
                     <div class="col-md-4 text-md-end d-flex flex-column justify-content-center">
-                        <span class="badge bg-light text-muted border py-2 px-3 align-self-md-end">
+                        {% if report.sales_product_match %}
+                        <span class="badge bg-success-subtle text-success border border-success-subtle py-2 px-3 align-self-md-end">
                             <i class="bi bi-fingerprint me-1"></i>Audit Check Validated
                         </span>
+                        {% else %}
+                        <span class="badge bg-danger-subtle text-danger border border-danger-subtle py-2 px-3 align-self-md-end">
+                            <i class="bi bi-exclamation-octagon me-1"></i>Review Required
+                        </span>
+                        {% endif %}
                     </div>
                 </div>
             </div>
@@ -736,6 +751,39 @@
                     {% endfor %}
                 </tbody>
                 <tfoot class="table-light fw-bold" style="border-top: 2px solid #0f172a;">
+                    {% if report.invoice_discount_sum > 0 or report.invoice_tax_sum > 0 %}
+                    <tr class="text-muted small">
+                        <td colspan="2" class="text-uppercase tracking-wider">Line-Item Subtotal</td>
+                        <td class="text-center text-dark">{{ report.product_qty_sum|floatformat:0|intcomma }}</td>
+                        <td class="text-end text-dark">{{ report.product_revenue_sum|floatformat:2|intcomma }}</td>
+                        {% if report.use_strict_sales_workflow %}
+                            <td class="text-center text-muted">&mdash;</td>
+                        {% endif %}
+                        <td class="text-end text-muted">&mdash;</td>
+                    </tr>
+                    {% if report.invoice_discount_sum > 0 %}
+                    <tr class="text-danger small">
+                        <td colspan="2" class="text-uppercase tracking-wider">Less: Invoice Discounts</td>
+                        <td class="text-center">&mdash;</td>
+                        <td class="text-end">-{{ report.invoice_discount_sum|floatformat:2|intcomma }}</td>
+                        {% if report.use_strict_sales_workflow %}
+                            <td class="text-center text-muted">&mdash;</td>
+                        {% endif %}
+                        <td class="text-end text-muted">&mdash;</td>
+                    </tr>
+                    {% endif %}
+                    {% if report.invoice_tax_sum > 0 %}
+                    <tr class="text-muted small">
+                        <td colspan="2" class="text-uppercase tracking-wider">Add: Tax</td>
+                        <td class="text-center">&mdash;</td>
+                        <td class="text-end">+{{ report.invoice_tax_sum|floatformat:2|intcomma }}</td>
+                        {% if report.use_strict_sales_workflow %}
+                            <td class="text-center text-muted">&mdash;</td>
+                        {% endif %}
+                        <td class="text-end text-muted">&mdash;</td>
+                    </tr>
+                    {% endif %}
+                    {% endif %}
                     <tr>
                         <td colspan="2" class="text-uppercase tracking-wider text-success" style="font-size: 1.08rem;">
                             <i class="bi bi-check2-circle me-1"></i>Verified Total
