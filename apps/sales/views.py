@@ -318,20 +318,16 @@ class ShiftCloseView(LoginRequiredMixin, View):
             is_active=True
         ).first()
         
-        # Calculate sales breakdown (include REFUNDED since collected cash is offset by refund_payouts)
+        # Calculate sales breakdown using shift's collected sales
         from django.db.models import Sum, Q
-        sales_qs = shift.sales.filter(status__in=['COMPLETED', 'PENDING_DISPATCH', 'REFUNDED'])
+        sales_qs = shift._collected_sales_qs()
         
-        cash_sales = sales_qs.filter(payment_method='CASH').aggregate(
-            total=Sum('total'))['total'] or Decimal('0')
         ecash_sales = sales_qs.filter(payment_method='ECASH').aggregate(
             total=Sum('total'))['total'] or Decimal('0')
         momo_sales = sales_qs.filter(payment_method='MOMO').aggregate(
             total=Sum('total'))['total'] or Decimal('0')
         credit_sales = sales_qs.filter(payment_method='CREDIT').aggregate(
             total=Sum('total'))['total'] or Decimal('0')
-        mixed_sales = sales_qs.filter(payment_method='MIXED').aggregate(
-            total=Sum('amount_paid'))['total'] or Decimal('0')  # Only cash portion
         
         all_sales = sales_qs.aggregate(total=Sum('total'))['total'] or Decimal('0')
         payments_on_account = shift.payments_on_account
@@ -341,7 +337,7 @@ class ShiftCloseView(LoginRequiredMixin, View):
             'shift': shift,
             'expected_cash': total_cash,  # Opening + Cash Sales portion + Payments - Refunds
             'total_sales': all_sales,  # All sales
-            'cash_sales': cash_sales + mixed_sales,  # Cash portion only
+            'cash_sales': shift.total_sales,  # Cash portion only (consistent with expected_cash)
             'ecash_sales': ecash_sales,
             'momo_sales': momo_sales,
             'credit_sales': credit_sales,

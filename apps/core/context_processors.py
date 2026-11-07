@@ -207,6 +207,7 @@ def tenant_context(request):
                 refund_cash_payouts = RefundRequest.objects.filter(
                     tenant=tenant,
                     paid_by=user,
+                    status='APPROVED',
                     payout_status='PAID',
                     refund_method='CASH'
                 ).aggregate(total=Sum('refund_amount'))['total'] or Decimal('0')

@@ -117,6 +117,7 @@ class EndOfDaySummaryView(LoginRequiredMixin, View):
                 summary_context['refunds_disbursed_cash'] = RefundRequest.objects.filter(
                     tenant=tenant,
                     paid_by=user,
+                    status='APPROVED',
                     payout_status='PAID',
                     refund_method='CASH',
                     paid_at__date__gte=start_date,
@@ -126,6 +127,7 @@ class EndOfDaySummaryView(LoginRequiredMixin, View):
                 summary_context['refunds_disbursed_total'] = RefundRequest.objects.filter(
                     tenant=tenant,
                     paid_by=user,
+                    status='APPROVED',
                     payout_status='PAID',
                     paid_at__date__gte=start_date,
                     paid_at__date__lte=end_date
@@ -203,6 +205,7 @@ class EndOfDaySummaryView(LoginRequiredMixin, View):
                     summary_context['shop_refunds_disbursed_cash'] = RefundRequest.objects.filter(
                         tenant=tenant,
                         sale__shop=shop,
+                        status='APPROVED',
                         payout_status='PAID',
                         refund_method='CASH',
                         paid_at__date__gte=start_date,
@@ -212,6 +215,7 @@ class EndOfDaySummaryView(LoginRequiredMixin, View):
                     summary_context['shop_refunds_disbursed_total'] = RefundRequest.objects.filter(
                         tenant=tenant,
                         sale__shop=shop,
+                        status='APPROVED',
                         payout_status='PAID',
                         paid_at__date__gte=start_date,
                         paid_at__date__lte=end_date
@@ -250,6 +254,7 @@ class EndOfDaySummaryView(LoginRequiredMixin, View):
 
                 summary_context['refunds_disbursed_cash'] = RefundRequest.objects.filter(
                     tenant=tenant,
+                    status='APPROVED',
                     payout_status='PAID',
                     refund_method='CASH',
                     paid_at__date__gte=start_date,
@@ -258,6 +263,7 @@ class EndOfDaySummaryView(LoginRequiredMixin, View):
 
                 summary_context['refunds_disbursed_total'] = RefundRequest.objects.filter(
                     tenant=tenant,
+                    status='APPROVED',
                     payout_status='PAID',
                     paid_at__date__gte=start_date,
                     paid_at__date__lte=end_date
@@ -547,7 +553,15 @@ class EndOfDayDetailsView(LoginRequiredMixin, View):
         elif shop_filter_for_inventory:
             ct_filter['customer__shop'] = shop_filter_for_inventory
 
-        customer_payments = CustomerTransaction.objects.filter(**ct_filter).aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
+        customer_payments = CustomerTransaction.objects.filter(
+            **ct_filter
+        ).exclude(
+            description__istartswith='Refund:'
+        ).exclude(
+            description__icontains='Debt reduction'
+        ).exclude(
+            description__icontains='Store credit'
+        ).aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
 
         # 6. Funds Transferred to Accountant
         acc_transfer_filter = {
@@ -623,6 +637,7 @@ class EndOfDayDetailsView(LoginRequiredMixin, View):
         # Refunds Disbursed
         refund_filter = {
             'tenant': tenant,
+            'status': 'APPROVED',
             'payout_status': 'PAID',
             'paid_at__date__gte': start_date,
             'paid_at__date__lte': end_date,

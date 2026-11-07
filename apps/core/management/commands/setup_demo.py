@@ -1034,6 +1034,12 @@ class Command(BaseCommand):
                 reviewed_at=now - timedelta(hours=1),
             )
 
+        # Sync closed demo shifts' closing_cash to their actual expected_cash
+        closed_shift_1.closing_cash = closed_shift_1.expected_cash
+        closed_shift_1.save(update_fields=['closing_cash'])
+        closed_shift_2.closing_cash = closed_shift_2.expected_cash
+        closed_shift_2.save(update_fields=['closing_cash'])
+
         # --------------------------------------------------------------------
         # ECashWithdrawals (completed + pending)
         # --------------------------------------------------------------------

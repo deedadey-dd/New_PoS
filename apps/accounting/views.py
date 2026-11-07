@@ -3068,6 +3068,7 @@ class CashHistoryView(LoginRequiredMixin, ListView):
         from apps.sales.models import RefundRequest
         refund_qs = RefundRequest.objects.filter(
             tenant=user.tenant,
+            status='APPROVED',
             payout_status='PAID',
             refund_method='CASH'
         ).select_related('sale', 'sale__shop', 'sale__customer', 'paid_by').order_by('-paid_at')
@@ -3177,6 +3178,7 @@ class CashHistoryExportView(LoginRequiredMixin, View):
         from apps.sales.models import RefundRequest
         rf_qs = RefundRequest.objects.filter(
             tenant=user.tenant,
+            status='APPROVED',
             payout_status='PAID',
             refund_method='CASH'
         ).select_related('sale', 'sale__shop', 'paid_by')

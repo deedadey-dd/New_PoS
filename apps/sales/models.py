@@ -197,21 +197,79 @@ class Shift(TenantModel):
     def __str__(self):
         return f"Shift {self.pk} - {self.attendant.get_full_name()} at {self.shop.name}"
     
+    def _disbursed_refunds_qs(self, refund_method=None):
+        """Queryset of approved, disbursed RefundRequests for this shift."""
+        from apps.sales.models import RefundRequest
+        from django.db.models import Q
+        time_q = Q(shift__isnull=True, paid_by=self.attendant, paid_at__gte=self.start_time)
+        if self.end_time:
+            time_q &= Q(paid_at__lte=self.end_time)
+        qs = RefundRequest.objects.filter(
+            tenant=self.tenant,
+            status='APPROVED',
+            payout_status='PAID',
+        ).filter(Q(shift=self) | time_q)
+        if refund_method:
+            qs = qs.filter(refund_method=refund_method)
+        return qs
+
+    def _collected_sales_qs(self):
+        """
+        Sales on this shift where payment was actually collected by this shift's attendant/cashier.
+        Only includes REFUNDED sales if they were offset by a cash RefundRequest in this shift
+        or refunded after this shift had already closed.
+        """
+        from apps.sales.models import RefundRequest
+        from django.db.models import Q
+        base_qs = self.sales.filter(
+            Q(cashier=self.attendant) | Q(cashier__isnull=True)
+        )
+        in_shift_cash_refund_sale_ids = set(
+            self._disbursed_refunds_qs(refund_method='CASH').values_list('sale_id', flat=True)
+        )
+        post_shift_refund_sale_ids = set()
+        if self.end_time:
+            post_shift_refund_sale_ids = set(
+                RefundRequest.objects.filter(
+                    tenant=self.tenant,
+                    sale__shift=self,
+                    status='APPROVED',
+                    payout_status='PAID',
+                    paid_at__gt=self.end_time,
+                ).values_list('sale_id', flat=True)
+            )
+        valid_refunded_ids = in_shift_cash_refund_sale_ids | post_shift_refund_sale_ids
+        return base_qs.filter(
+            Q(status__in=['COMPLETED', 'PENDING_DISPATCH']) |
+            Q(status='REFUNDED', id__in=valid_refunded_ids)
+        )
+
     @property
     def total_sales(self):
-        """Total cash sales during this shift (including completed sales later refunded, offset by refund_payouts)."""
-        cash_total = self.sales.filter(
-            status__in=['COMPLETED', 'PENDING_DISPATCH', 'REFUNDED'], payment_method='CASH'
+        """Total cash sales collected during this shift (offset by refund_payouts for same-shift cash refunds)."""
+        from django.db.models import Q
+        sales_qs = self._collected_sales_qs()
+        cash_total = sales_qs.filter(
+            payment_method='CASH'
         ).aggregate(t=Sum('total'))['t'] or Decimal('0')
-        mixed_total = self.sales.filter(
-            status__in=['COMPLETED', 'PENDING_DISPATCH', 'REFUNDED'], payment_method='MIXED'
+        mixed_total = sales_qs.filter(
+            payment_method='MIXED'
         ).aggregate(t=Sum('amount_paid'))['t'] or Decimal('0')
-        return cash_total + mixed_total
+        # For partial-halt refunds (is_partial_halt=True), Sale.halt_and_settle() already reduced
+        # sale.total and sale.amount_paid in-place by refund_amount. When that partial refund is
+        # also disbursed in cash during this shift (subtracted in self.refund_payouts), add back
+        # the partial refund amount here so it is not deducted twice from expected_cash.
+        partial_halt_addback = self._disbursed_refunds_qs(refund_method='CASH').filter(
+            is_partial_halt=True,
+            sale__in=sales_qs.filter(payment_method__in=['CASH', 'MIXED'])
+        ).aggregate(t=Sum('refund_amount'))['t'] or Decimal('0')
+        return cash_total + mixed_total + partial_halt_addback
         
     @property
     def payments_on_account(self):
         """Total cash payments received on account during this shift."""
         from apps.customers.models import CustomerTransaction
+        from apps.sales.models import Sale
         from django.db.models import Q
         qs = CustomerTransaction.objects.filter(
             tenant=self.tenant,
@@ -223,9 +281,22 @@ class Shift(TenantModel):
             Q(description__icontains='Overpayment') |
             Q(description__icontains='Change from Sale') |
             Q(description='Payment on account')
+        ).exclude(
+            description__icontains='ECASH'
+        ).exclude(
+            description__icontains='MOMO'
         )
         if self.end_time:
             qs = qs.filter(created_at__lte=self.end_time)
+
+        # Exclude overpayments/change from sales that were directly refunded without a cash RefundRequest
+        excluded_sale_numbers = set(
+            self.sales.filter(status='REFUNDED').exclude(
+                id__in=self._collected_sales_qs().values_list('id', flat=True)
+            ).values_list('sale_number', flat=True)
+        )
+        if excluded_sale_numbers:
+            qs = qs.exclude(reference_id__in=excluded_sale_numbers)
             
         return qs.aggregate(total=Sum('amount'))['total'] or Decimal('0')
     
@@ -249,63 +320,23 @@ class Shift(TenantModel):
     @property
     def refund_payouts(self):
         """Total cash refunds disbursed by this attendant during this shift."""
-        linked = self.refund_requests_paid.filter(
-            payout_status='PAID',
-            refund_method='CASH'
-        ).aggregate(total=Sum('refund_amount'))['total'] or Decimal('0.00')
-        if linked > Decimal('0.00'):
-            return linked
-        from apps.sales.models import RefundRequest
-        qs = RefundRequest.objects.filter(
-            tenant=self.tenant,
-            paid_by=self.attendant,
-            payout_status='PAID',
-            refund_method='CASH',
-            paid_at__gte=self.start_time
-        )
-        if self.end_time:
-            qs = qs.filter(paid_at__lte=self.end_time)
-        return qs.aggregate(total=Sum('refund_amount'))['total'] or Decimal('0.00')
+        return self._disbursed_refunds_qs(refund_method='CASH').aggregate(
+            total=Sum('refund_amount')
+        )['total'] or Decimal('0.00')
 
     @property
     def momo_refund_payouts(self):
         """Total momo refunds disbursed by this attendant during this shift."""
-        linked = self.refund_requests_paid.filter(
-            payout_status='PAID',
-            refund_method='MOMO'
-        ).aggregate(total=Sum('refund_amount'))['total'] or Decimal('0.00')
-        if linked > Decimal('0.00'):
-            return linked
-        from apps.sales.models import RefundRequest
-        qs = RefundRequest.objects.filter(
-            tenant=self.tenant,
-            paid_by=self.attendant,
-            payout_status='PAID',
-            refund_method='MOMO',
-            paid_at__gte=self.start_time
-        )
-        if self.end_time:
-            qs = qs.filter(paid_at__lte=self.end_time)
-        return qs.aggregate(total=Sum('refund_amount'))['total'] or Decimal('0.00')
+        return self._disbursed_refunds_qs(refund_method='MOMO').aggregate(
+            total=Sum('refund_amount')
+        )['total'] or Decimal('0.00')
 
     @property
     def total_refunds_disbursed(self):
         """Total of all refunds disbursed during this shift."""
-        linked = self.refund_requests_paid.filter(
-            payout_status='PAID'
-        ).aggregate(total=Sum('refund_amount'))['total'] or Decimal('0.00')
-        if linked > Decimal('0.00'):
-            return linked
-        from apps.sales.models import RefundRequest
-        qs = RefundRequest.objects.filter(
-            tenant=self.tenant,
-            paid_by=self.attendant,
-            payout_status='PAID',
-            paid_at__gte=self.start_time
-        )
-        if self.end_time:
-            qs = qs.filter(paid_at__lte=self.end_time)
-        return qs.aggregate(total=Sum('refund_amount'))['total'] or Decimal('0.00')
+        return self._disbursed_refunds_qs().aggregate(
+            total=Sum('refund_amount')
+        )['total'] or Decimal('0.00')
 
     @property
     def expected_cash(self):
@@ -617,6 +648,14 @@ class Sale(TenantModel):
         self.amount_paid = Decimal(str(amount_paid))
         self.payment_method = payment_method
         self.cashier = cashier or self.attendant
+        if cashier and cashier != self.attendant:
+            cashier_shift = Shift.objects.filter(
+                tenant=self.tenant,
+                attendant=cashier,
+                status='OPEN'
+            ).first()
+            if cashier_shift:
+                self.shift = cashier_shift
         
         if payment_method == 'ECASH':
             self.paystack_reference = paystack_ref
@@ -641,7 +680,7 @@ class Sale(TenantModel):
                     reference_id=self.sale_number,
                     balance_before=balance_before,
                     balance_after=self.customer.current_balance,
-                    performed_by=self.attendant
+                    performed_by=self.cashier
                 )
         else:
             # Partial payment - credit sale

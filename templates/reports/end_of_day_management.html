@@ -391,9 +391,27 @@
                         {{ report.reconciliation_label }}
                     </span>
                 </div>
-                <p class="mb-0 text-dark small leading-relaxed" style="color: #78350f;">
+                <p class="mb-2 text-dark small leading-relaxed" style="color: #78350f;">
                     {{ report.reconciliation_text }}
                 </p>
+                {% if report.reconciliation_breakdown %}
+                <div class="d-flex flex-wrap gap-3 pt-2 mt-2 border-top small" style="border-color: rgba(146, 64, 14, 0.2) !important; color: #78350f;">
+                    {% if report.reconciliation_breakdown.has_shift_audit %}
+                    <span><strong>Opening Float:</strong> {{ report.currency_symbol }} {{ report.reconciliation_breakdown.opening_float|floatformat:2|intcomma }}</span>
+                    <span><strong>+ Shift Cash Sales:</strong> {{ report.currency_symbol }} {{ report.reconciliation_breakdown.cash_sales|floatformat:2|intcomma }}</span>
+                    <span><strong>+ Account Cash:</strong> {{ report.currency_symbol }} {{ report.reconciliation_breakdown.cash_customer_payments|floatformat:2|intcomma }}</span>
+                    <span><strong>- Cash Refunds:</strong> {{ report.currency_symbol }} {{ report.reconciliation_breakdown.cash_refunds|floatformat:2|intcomma }}</span>
+                    <span><strong>= Expected Till:</strong> {{ report.currency_symbol }} {{ report.reconciliation_breakdown.expected_cash|floatformat:2|intcomma }}</span>
+                    <span><strong>| Counted Till:</strong> {{ report.currency_symbol }} {{ report.reconciliation_breakdown.counted_cash|floatformat:2|intcomma }}</span>
+                    {% else %}
+                    <span><strong>Cash Sales:</strong> {{ report.currency_symbol }} {{ report.reconciliation_breakdown.cash_sales|floatformat:2|intcomma }}</span>
+                    <span><strong>+ Customer Cash:</strong> {{ report.currency_symbol }} {{ report.reconciliation_breakdown.cash_customer_payments|floatformat:2|intcomma }}</span>
+                    <span><strong>- Cash Refunds:</strong> {{ report.currency_symbol }} {{ report.reconciliation_breakdown.cash_refunds|floatformat:2|intcomma }}</span>
+                    <span><strong>- Expenses:</strong> {{ report.currency_symbol }} {{ report.reconciliation_breakdown.expenses|floatformat:2|intcomma }}</span>
+                    <span><strong>- Banked / To Accountant:</strong> {{ report.currency_symbol }} {{ report.reconciliation_breakdown.funds_to_bank|floatformat:2|intcomma }} / {{ report.currency_symbol }} {{ report.reconciliation_breakdown.funds_to_accountant|floatformat:2|intcomma }}</span>
+                    {% endif %}
+                </div>
+                {% endif %}
             </div>
 
             <div class="card mgmt-card p-4">

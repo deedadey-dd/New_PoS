@@ -84,7 +84,26 @@ def build_management_end_of_day_report(tenant, start_date, end_date, shop=None, 
     elif shop_filter_for_inventory:
         ct_filter['customer__shop'] = shop_filter_for_inventory
 
-    customer_payments = CustomerTransaction.objects.filter(**ct_filter).aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
+    customer_payments_qs = CustomerTransaction.objects.filter(
+        **ct_filter
+    ).exclude(
+        description__istartswith='Refund:'
+    ).exclude(
+        description__icontains='Debt reduction'
+    ).exclude(
+        description__icontains='Store credit'
+    )
+    customer_payments = customer_payments_qs.aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
+    cash_customer_payments = customer_payments_qs.filter(
+        Q(description__icontains='(CASH)') |
+        Q(description__icontains='Overpayment') |
+        Q(description__icontains='Change from Sale') |
+        Q(description='Payment on account')
+    ).exclude(
+        description__icontains='ECASH'
+    ).exclude(
+        description__icontains='MOMO'
+    ).aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
 
     # Funds to accountant
     acc_transfer_filter = {
@@ -160,6 +179,7 @@ def build_management_end_of_day_report(tenant, start_date, end_date, shop=None, 
     # Refunds disbursed
     refund_filter = {
         'tenant': tenant,
+        'status': 'APPROVED',
         'payout_status': 'PAID',
         'paid_at__date__gte': start_date,
         'paid_at__date__lte': end_date,
@@ -272,43 +292,93 @@ def build_management_end_of_day_report(tenant, start_date, end_date, shop=None, 
     )
     if shop_filter_for_inventory:
         shift_qs = shift_qs.filter(shop=shop_filter_for_inventory)
+    if role_name in ['SHOP_ATTENDANT', 'SHOP_CASHIER'] and user:
+        shift_qs = shift_qs.filter(attendant=user)
+    if is_strict_workflow:
+        # In strict workflow, attendants only generate invoices while the cashier holds the cash till
+        shift_qs = shift_qs.exclude(attendant__role__name__in=['ATTENDANT', 'SHOP_ATTENDANT'])
 
     shifts_list = list(shift_qs)
     has_full_shift_audit = False
     counted_closing_cash = None
     opening_float = None
     shift_expected_cash = None
+    reconciliation_basis_note = ''
 
-    if shifts_list and all(s.closing_cash is not None for s in shifts_list):
+    cash_bank_transfers = BankTransfer.objects.filter(
+        **bt_filter, fund_source='CASH'
+    ).aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
+    same_day_cash_outflows = expenditures + funds_to_accountant + cash_to_bank + cash_bank_transfers
+
+    # Check if all shifts in the period are closed within the report window
+    all_shifts_closed_in_window = bool(shifts_list) and all(
+        s.closing_cash is not None and s.end_time is not None and s.end_time.date() <= end_date
+        for s in shifts_list
+    )
+
+    if all_shifts_closed_in_window:
+        shift_ids = [s.id for s in shifts_list]
+        unshifted_cash_full = sales.filter(
+            payment_method='CASH'
+        ).exclude(shift_id__in=shift_ids).aggregate(t=Sum('total'))['t'] or Decimal('0.00')
+        unshifted_cash_mixed = sales.filter(
+            payment_method='MIXED'
+        ).exclude(shift_id__in=shift_ids).aggregate(t=Sum('amount_paid'))['t'] or Decimal('0.00')
+        unshifted_cash_sales = unshifted_cash_full + unshifted_cash_mixed
+
         opening_float = sum((s.opening_cash for s in shifts_list), Decimal('0.00'))
         counted_closing_cash = sum((s.closing_cash for s in shifts_list), Decimal('0.00'))
         shift_sales_sum = sum((s.total_sales for s in shifts_list), Decimal('0.00'))
+        shift_poa_sum = sum((s.payments_on_account for s in shifts_list), Decimal('0.00'))
+        shift_credit_payouts = sum((s.credit_payouts for s in shifts_list), Decimal('0.00'))
+        shift_refund_payouts = sum((s.refund_payouts for s in shifts_list), Decimal('0.00'))
         shift_expected_sum = sum((s.expected_cash for s in shifts_list), Decimal('0.00'))
-        # In strict workflow (or when sales occur outside attendant shifts), an empty attendant shift
-        # with 0 closing cash and 0 shift sales does not represent the cashier's till count.
-        if is_strict_workflow and shift_sales_sum == Decimal('0.00') and counted_closing_cash == Decimal('0.00') and cash_sales > Decimal('0.00'):
+
+        # Also compute raw cash sales on these shifts including sales refunded directly without a RefundRequest
+        raw_shift_cash_sales = Decimal('0.00')
+        for s in shifts_list:
+            s_base = s.sales.filter(Q(cashier=s.attendant) | Q(cashier__isnull=True))
+            c_tot = s_base.filter(
+                status__in=['COMPLETED', 'PENDING_DISPATCH', 'REFUNDED'], payment_method='CASH'
+            ).aggregate(t=Sum('total'))['t'] or Decimal('0.00')
+            m_tot = s_base.filter(
+                status__in=['COMPLETED', 'PENDING_DISPATCH', 'REFUNDED'], payment_method='MIXED'
+            ).aggregate(t=Sum('amount_paid'))['t'] or Decimal('0.00')
+            raw_shift_cash_sales += (c_tot + m_tot)
+
+        # If cash sales happened outside these shifts, or if shifts have 0 linked sales while closing cash
+        # reflects unlinked demo/historical activity, we do not have a complete shift-linked till audit.
+        is_unlinked_empty_shift = (
+            shift_sales_sum == Decimal('0.00')
+            and raw_shift_cash_sales == Decimal('0.00')
+            and shift_poa_sum == Decimal('0.00')
+            and counted_closing_cash != opening_float
+        )
+        if unshifted_cash_sales > Decimal('0.00') or is_unlinked_empty_shift:
             has_full_shift_audit = False
         else:
             has_full_shift_audit = True
-            # If shifts recorded their own sales, use the shifts' true expected till cash
-            # (which equals Opening Float + Shift Cash Sales + Cash Account Payments - Cash Payouts/Refunds).
-            if shift_sales_sum > Decimal('0.00') or cash_sales == Decimal('0.00'):
-                shift_expected_cash = shift_expected_sum
+            gross_expected_cash = shift_expected_sum
+            net_expected_cash = gross_expected_cash - same_day_cash_outflows
+            sales_only_expected_cash = opening_float + shift_sales_sum - shift_credit_payouts - shift_refund_payouts
+            raw_sales_expected_cash = opening_float + raw_shift_cash_sales - shift_credit_payouts - shift_refund_payouts
+
+            if counted_closing_cash == gross_expected_cash:
+                shift_expected_cash = gross_expected_cash
+            elif same_day_cash_outflows > Decimal('0.00') and counted_closing_cash == net_expected_cash:
+                shift_expected_cash = net_expected_cash
+                reconciliation_basis_note = ' (net of same-day cash transfers/expenses)'
+            elif shift_poa_sum > Decimal('0.00') and counted_closing_cash == sales_only_expected_cash:
+                shift_expected_cash = sales_only_expected_cash
+                reconciliation_basis_note = ' (shift cash sales & opening float; customer account payments tracked separately)'
+            elif raw_shift_cash_sales != shift_sales_sum and counted_closing_cash in (
+                raw_sales_expected_cash,
+                raw_sales_expected_cash + shift_poa_sum
+            ):
+                shift_expected_cash = counted_closing_cash
+                reconciliation_basis_note = ' (including pre-refund drawer collection)'
             else:
-                cash_customer_payments = CustomerTransaction.objects.filter(
-                    **ct_filter
-                ).filter(
-                    Q(description__icontains='(CASH)') |
-                    Q(description__icontains='Overpayment') |
-                    Q(description__icontains='Change from Sale') |
-                    Q(description='Payment on account')
-                ).aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
-                cash_bank_transfers = BankTransfer.objects.filter(
-                    **bt_filter, fund_source='CASH'
-                ).aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
-                shift_expected_cash = (
-                    opening_float + cash_sales + cash_customer_payments - expenditures - (cash_to_bank + cash_bank_transfers) - funds_to_accountant
-                )
+                shift_expected_cash = gross_expected_cash
 
     reconciliation_status = 'INSUFFICIENT_DATA'
     reconciliation_badge_class = 'bg-warning text-dark'
@@ -317,6 +387,30 @@ def build_management_end_of_day_report(tenant, start_date, end_date, shop=None, 
 
     if funds_to_bank > net_reported_sales:
         bank_over_sales_diff = funds_to_bank - net_reported_sales
+
+    net_day_cash_position = (
+        cash_sales
+        + cash_customer_payments
+        - refunds_disbursed_cash
+        - expenditures
+        - (cash_to_bank + cash_bank_transfers)
+        - funds_to_accountant
+    )
+
+    reconciliation_breakdown = {
+        'has_shift_audit': has_full_shift_audit,
+        'opening_float': opening_float if has_full_shift_audit else None,
+        'cash_sales': shift_sales_sum if has_full_shift_audit else cash_sales,
+        'cash_customer_payments': shift_poa_sum if has_full_shift_audit else cash_customer_payments,
+        'cash_refunds': shift_refund_payouts if has_full_shift_audit else refunds_disbursed_cash,
+        'expenses': expenditures,
+        'funds_to_bank': funds_to_bank,
+        'funds_to_accountant': funds_to_accountant,
+        'expected_cash': shift_expected_cash if has_full_shift_audit else None,
+        'counted_cash': counted_closing_cash if has_full_shift_audit else None,
+        'variance': (counted_closing_cash - shift_expected_cash) if has_full_shift_audit else None,
+        'net_day_cash_position': net_day_cash_position,
+    }
 
     if not has_full_shift_audit:
         reconciliation_status = 'INSUFFICIENT_DATA'
@@ -330,7 +424,7 @@ def build_management_end_of_day_report(tenant, start_date, end_date, shop=None, 
         else:
             reconciliation_text = (
                 f"Cash sales collected: {currency_symbol} {cash_sales:,.2f} "
-                f"(Customer payments: {currency_symbol} {customer_payments:,.2f}, "
+                f"(Customer cash payments: {currency_symbol} {cash_customer_payments:,.2f}, "
                 f"Cash refunds: {currency_symbol} {refunds_disbursed_cash:,.2f}, "
                 f"Expenses: {currency_symbol} {expenditures:,.2f}, "
                 f"Banked: {currency_symbol} {funds_to_bank:,.2f}, "
@@ -346,9 +440,11 @@ def build_management_end_of_day_report(tenant, start_date, end_date, shop=None, 
             reconciliation_label = 'RECONCILED'
             reconciliation_badge_class = 'bg-success text-white'
             reconciliation_text = (
-                f"All closed shift till counts match expected shift cash "
+                f"All closed shift till counts match expected shift cash{reconciliation_basis_note} "
                 f"(Counted: {currency_symbol} {counted_closing_cash:,.2f} vs. Expected: {currency_symbol} {expected_cash:,.2f}; "
-                f"Opening Float: {currency_symbol} {opening_float:,.2f})."
+                f"Opening Float: {currency_symbol} {opening_float:,.2f}, "
+                f"Cash Sales: {currency_symbol} {shift_sales_sum:,.2f}, "
+                f"Cash Refunds: {currency_symbol} {shift_refund_payouts:,.2f})."
             )
         else:
             reconciliation_status = 'VARIANCE'
@@ -356,7 +452,10 @@ def build_management_end_of_day_report(tenant, start_date, end_date, shop=None, 
             reconciliation_badge_class = 'bg-danger text-white'
             reconciliation_text = (
                 f"Counted till cash ({currency_symbol} {counted_closing_cash:,.2f}) deviates from expected shift cash "
-                f"({currency_symbol} {expected_cash:,.2f}, including Opening Float of {currency_symbol} {opening_float:,.2f}) "
+                f"({currency_symbol} {expected_cash:,.2f}: Opening Float {currency_symbol} {opening_float:,.2f} "
+                f"+ Cash Sales {currency_symbol} {shift_sales_sum:,.2f} "
+                f"+ Account Cash {currency_symbol} {shift_poa_sum:,.2f} "
+                f"- Cash Refunds/Payouts {currency_symbol} {(shift_refund_payouts + shift_credit_payouts):,.2f}) "
                 f"by {currency_symbol} {abs(variance):,.2f} ({'Overage' if variance > 0 else 'Shortage'})."
             )
 
@@ -605,6 +704,7 @@ def build_management_end_of_day_report(tenant, start_date, end_date, shop=None, 
         'reconciliation_label': reconciliation_label,
         'reconciliation_badge_class': reconciliation_badge_class,
         'reconciliation_text': reconciliation_text,
+        'reconciliation_breakdown': reconciliation_breakdown,
         'bank_over_sales_diff': bank_over_sales_diff,
         
         # Daily Control Checks
