@@ -725,6 +725,41 @@ class ShopECashHistoryView(LoginRequiredMixin, SortableMixin, ListView):
                 tenant=tenant, location_type='SHOP', is_active=True
             ).order_by('name')
         
+        # Build lookup maps for sale and refund references
+        page_transactions = context.get('transactions', [])
+        sale_pks = [
+            tx.reference_id for tx in page_transactions
+            if tx.reference_type == 'Sale' and tx.reference_id
+        ]
+        refund_pks = [
+            tx.reference_id for tx in page_transactions
+            if tx.reference_type == 'RefundRequest' and tx.reference_id
+        ]
+
+        sale_number_map = {}
+        if sale_pks:
+            from apps.sales.models import Sale
+            for sale in Sale.objects.filter(
+                tenant=tenant,
+                pk__in=sale_pks
+            ).only('pk', 'sale_number'):
+                sale_number_map[sale.pk] = sale.sale_number
+        context['sale_number_map'] = sale_number_map
+
+        refund_map = {}
+        if refund_pks:
+            from apps.sales.models import RefundRequest
+            for rfd in RefundRequest.objects.filter(
+                tenant=tenant,
+                pk__in=refund_pks
+            ).select_related('sale'):
+                refund_map[rfd.pk] = {
+                    'refund_number': rfd.refund_number,
+                    'sale_id': rfd.sale_id,
+                    'sale_number': rfd.sale.sale_number if rfd.sale else None,
+                }
+        context['refund_map'] = refund_map
+        
         return context
 
 from django.views import View

@@ -240,12 +240,24 @@ Cashiers and Admins execute the payout to the customer:
    - The system records the disbursing cashier (`paid_by`), execution timestamp (`paid_at`), and transitions status to `PAID`.
    - Cashiers can view their disbursement history in the Cashier Dashboard and daily reports.
 
-### 5. Refunds in Reports & Cash History
+### 5. Refunds & Transaction Details in History Pages Across All Channels
 
-- **Cash History**:
+To ensure full audit transparency and convenient review, disbursed refunds appear across all relevant payment channel histories and exports. In addition, **clicking any transaction or refund reference opens a detailed modal** rather than immediately firing the browser print dialog:
+
+- **Cash History (`/accounting/cash-history/`)**:
   - Cash refunds appear as distinct cash outflows with their own summary metric card (`Total Cash Refunds`).
-  - Cash refund line items are exported in both Excel and PDF statements.
-  - A dedicated **Cash Refunds** tab lists all disbursed refunds with refund number, original sale, customer, disbursing cashier, and amount.
+  - Refunded sales remain visible in the **Cash Sales** tab with a high-visibility `Refunded` badge, while the payout appears in the **Cash Refunds** tab.
+  - Cash refund line items and refunded sales status are exported in both Excel and PDF statements, allowing inflows and outflows to reconcile to 0 net variance.
+  - Clicking any Sale reference or Refund reference opens the Sale Details modal with itemized lines, amounts, refund status, and a Print Receipt button.
+- **Mobile Money History (`/accounting/shop-momo/history/`)**:
+  - MoMo refunds are recorded as first-class transactions in both the web view and Excel/PDF exports with red `Refund` badges and negative amounts.
+  - Features dedicated summary metrics for **MoMo Refunds** count/amount and **Net MoMo Volume** (`Total MoMo - Refunds`).
+  - If MoMo payouts exceed gross intake, net volume cleanly displays as a negative balance in red.
+  - All sale and refund reference numbers open the transaction details modal with a Print Receipt button.
+- **Shop E-Cash History (`/payments/shops/history/` and `/accounting/shop-ecash/history/`)**:
+  - E-Cash refunds appear with red `Refund` badges, referencing the refund request number and original invoice.
+  - Outflows are deducted in the **Refunds** summary card and factored into **Net Volume**.
+  - All sale and refund reference links open the transaction details modal with the Print Receipt action.
 - **End of Day Reports (Details & Executive Management Overview)**:
   - Cash refunds are grouped into **Financial Movements**.
   - **Reconciliation Integrity**: Cash refunds are deducted from `expected_cash` (`opening_float + cash_sales + customer_payments - expenditures - funds_to_bank - funds_to_accountant - cash_refunds`). This ensures drawer reconciliations match physical till counts without false shortages.

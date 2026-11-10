@@ -2205,3 +2205,112 @@ class WorkflowIntegrationTests(TestCase):
         # Cashier's cash_on_hand context must also deduct the refund payout
         ctx = self.get_navbar_context(self.cashier_user)
         self.assertEqual(ctx['cash_on_hand'], Decimal("70.00"))  # 100 sale - 30 refund
+
+    def test_21_refund_button_hidden_while_awaiting_payout(self):
+        """
+        Verify that after an accountant approves a refund request:
+        1. sale.has_approved_pending_payout is True while awaiting cashier disbursement.
+        2. /sales/api/<id>/detail/ returns has_approved_pending_payout=True and approved_refund_info.
+        3. Attempting to request another refund via api_refund_sale returns 400 error.
+        4. Sale list view annotates _has_approved_pending_payout=True and filters by pending_payout.
+        5. Once cashier dispenses payout, has_approved_pending_payout resets to False and sale is REFUNDED.
+        """
+        import json
+        from apps.sales.models import RefundRequest
+
+        self.tenant.enable_refunds = True
+        self.tenant.save()
+
+        # 1. Attendant creates completed sale
+        sale = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.attendant_user,
+            cashier=self.cashier_user,
+            total=Decimal("120.00"),
+            amount_paid=Decimal("120.00"),
+            payment_method="CASH",
+            status="COMPLETED"
+        )
+        SaleItem.objects.create(
+            tenant=self.tenant,
+            sale=sale,
+            product=self.product,
+            batch=self.shop_batch,
+            quantity=Decimal("4.00"),
+            unit_price=Decimal("30.00"),
+            dispatched_quantity=Decimal("4.00")
+        )
+
+        # Initially no refund pending
+        self.assertFalse(sale.has_pending_refund)
+        self.assertFalse(sale.has_approved_pending_payout)
+
+        # 2. Manager requests refund
+        self.client.force_login(self.manager_user)
+        req_resp = self.client.post(
+            f"/sales/api/{sale.pk}/refund/",
+            data=json.dumps({'reason': 'Defective items'}),
+            content_type='application/json'
+        )
+        self.assertEqual(req_resp.status_code, 200)
+
+        sale.refresh_from_db()
+        self.assertTrue(sale.has_pending_refund)
+        self.assertFalse(sale.has_approved_pending_payout)
+
+        refund_req = RefundRequest.objects.get(sale=sale)
+        self.assertEqual(refund_req.status, 'PENDING')
+        self.assertEqual(refund_req.payout_status, 'PENDING')
+
+        # 3. Accountant approves refund
+        self.client.force_login(self.accountant_user)
+        appr_resp = self.client.post(
+            f"/sales/api/refund-requests/{refund_req.pk}/approve/",
+            data=json.dumps({'refund_method': 'CASH'}),
+            content_type='application/json'
+        )
+        self.assertEqual(appr_resp.status_code, 200)
+
+        sale.refresh_from_db()
+        self.assertFalse(sale.has_pending_refund)
+        self.assertTrue(sale.has_approved_pending_payout)
+        self.assertEqual(sale.status, 'COMPLETED')  # Not yet refunded until cashier disburses cash
+
+        # 4. Detail API check
+        detail_resp = self.client.get(f"/sales/api/{sale.pk}/detail/")
+        self.assertEqual(detail_resp.status_code, 200)
+        detail_data = detail_resp.json()
+        self.assertFalse(detail_data['has_pending_refund'])
+        self.assertTrue(detail_data['has_approved_pending_payout'])
+        self.assertIsNotNone(detail_data['approved_refund_info'])
+        self.assertEqual(detail_data['approved_refund_info']['refund_number'], refund_req.refund_number)
+
+        # 5. Duplicate refund request must be rejected
+        self.client.force_login(self.manager_user)
+        dup_resp = self.client.post(
+            f"/sales/api/{sale.pk}/refund/",
+            data=json.dumps({'reason': 'Try again'}),
+            content_type='application/json'
+        )
+        self.assertEqual(dup_resp.status_code, 400)
+        self.assertIn('awaiting cashier disbursement', dup_resp.json()['error'])
+
+        # 6. Sales list view check
+        list_resp = self.client.get("/sales/?refund_status=pending_payout")
+        self.assertEqual(list_resp.status_code, 200)
+        sales_in_list = list(list_resp.context['sales'])
+        self.assertTrue(any(s.pk == sale.pk for s in sales_in_list))
+
+        # 7. Cashier executes payout
+        self.client.force_login(self.cashier_user)
+        payout_resp = self.client.post(
+            f"/sales/api/refund-requests/{refund_req.pk}/payout/",
+            data=json.dumps({'payout_notes': 'Paid cash'}),
+            content_type='application/json'
+        )
+        self.assertEqual(payout_resp.status_code, 200)
+
+        sale.refresh_from_db()
+        self.assertFalse(sale.has_approved_pending_payout)
+        self.assertEqual(sale.status, 'REFUNDED')

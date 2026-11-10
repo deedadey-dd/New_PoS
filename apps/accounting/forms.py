@@ -208,6 +208,23 @@ class CashTransferForm(forms.ModelForm):
                     self.cash_on_hand = max(Decimal('0'), cash_sales_val + loc_customer_payments + floats_received - deposits - expenditures - banked_cash)
                 else:
                     # Strict workflow: Cash is tracked individually per user
+                    credit_payouts = CustomerTransaction.objects.filter(
+                        tenant=user.tenant,
+                        performed_by=user,
+                        transaction_type='DEBIT'
+                    ).filter(
+                        Q(description__icontains='Credit payout') | Q(description__icontains='payout to customer')
+                    ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
+                    from apps.sales.models import RefundRequest
+                    refund_cash_payouts = RefundRequest.objects.filter(
+                        tenant=user.tenant,
+                        paid_by=user,
+                        status='APPROVED',
+                        payout_status='PAID',
+                        refund_method='CASH'
+                    ).aggregate(total=Sum('refund_amount'))['total'] or Decimal('0')
+
                     self.cash_on_hand = max(Decimal('0'), (
                         received
                         - sent
@@ -215,6 +232,8 @@ class CashTransferForm(forms.ModelForm):
                         + customer_payments
                         + open_shift_opening_cash
                         - banked_cash
+                        - credit_payouts
+                        - refund_cash_payouts
                     ))
                 
                 # Shop managers and cashiers can send to accountants

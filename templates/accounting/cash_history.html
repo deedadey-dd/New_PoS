@@ -263,6 +263,9 @@
                                 {% else %}
                                   <span class="badge bg-success-light text-success">Cash</span>
                                 {% endif %}
+                                {% if sale.status == 'REFUNDED' %}
+                                  <span class="badge bg-danger-subtle text-danger ms-1">Refunded</span>
+                                {% endif %}
                               </td>
                               <td class="text-end pe-4">
                                 {% if sale.payment_method == 'MIXED' %}
@@ -442,10 +445,14 @@
                                 </div>
                               </td>
                               <td>
-                                <span class="badge bg-secondary-subtle text-secondary font-monospace">{{ rf.refund_number }}</span>
+                                <a href="#" class="text-decoration-none sale-detail-link" data-sale-id="{{ rf.sale.pk }}" title="View Transaction Details">
+                                  <span class="badge bg-secondary-subtle text-secondary font-monospace">{{ rf.refund_number }}</span>
+                                </a>
                               </td>
                               <td>
-                                <span class="fw-semibold text-primary font-monospace">{{ rf.sale.sale_number }}</span>
+                                <a href="#" class="text-decoration-none fw-semibold text-primary font-monospace sale-detail-link" data-sale-id="{{ rf.sale.pk }}" title="View Transaction Details">
+                                  {{ rf.sale.sale_number }}
+                                </a>
                               </td>
                               <td>
                                 {% if rf.sale.customer %}
@@ -581,7 +588,7 @@
                 <div id="saleDetailContent" style="display:none;"></div>
             </div>
             <div class="modal-footer">
-                <a href="#" class="btn btn-outline-info" id="saleDetailPrintBtn">
+                <a href="#" class="btn btn-primary" id="saleDetailPrintBtn" target="_blank">
                     <i class="bi bi-printer me-1"></i>Print Receipt
                 </a>
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
@@ -702,55 +709,88 @@ document.addEventListener('DOMContentLoaded', function() {
             if (saleModalInstance) saleModalInstance.show();
 
             fetch('/sales/api/' + saleId + '/detail/')
-                .then(function(response) { return response.json(); })
+                .then(function(response) {
+                    if (!response.ok) throw new Error('Network response was not ok');
+                    return response.json();
+                })
                 .then(function(data) {
+                    if (data.id || data.sale_id) {
+                        salePrintBtn.href = '/sales/' + (data.id || data.sale_id) + '/receipt/';
+                    }
                     renderSaleDetail(data);
                     saleLoadingEl.style.display = 'none';
                     saleContentEl.style.display = 'block';
                 })
                 .catch(function(err) {
-                    saleContentEl.innerHTML = '<div class="alert alert-danger">Failed to load sale details.</div>';
+                    saleContentEl.innerHTML = '<div class="alert alert-danger py-4 text-center"><i class="bi bi-exclamation-triangle fs-3 d-block mb-2"></i>Failed to load sale details.</div>';
                     saleLoadingEl.style.display = 'none';
                     saleContentEl.style.display = 'block';
                 });
         });
     });
 
+    function formatCurrency(val) {
+        const num = parseFloat(val);
+        if (isNaN(num)) return currencySymbol + '0.00';
+        return currencySymbol + num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
     function getStatusBadge(statusCode, statusDisplay) {
         const colors = {
             'COMPLETED': 'success',
             'VOIDED': 'danger',
             'PENDING': 'warning',
+            'PENDING_DISPATCH': 'info',
+            'REFUNDED': 'danger',
         };
         const color = colors[statusCode] || 'secondary';
-        return '<span class="badge bg-' + color + '">' + statusDisplay + '</span>';
+        return '<span class="badge bg-' + color + '">' + (statusDisplay || statusCode) + '</span>';
     }
 
     function getPaymentBadge(code, display) {
         const colors = {
             'CASH': 'success',
             'ECASH': 'primary',
+            'MOMO': 'info',
             'CREDIT': 'warning',
+            'MIXED': 'secondary',
         };
         const color = colors[code] || 'secondary';
-        return '<span class="badge bg-' + color + '">' + display + '</span>';
+        return '<span class="badge bg-' + color + '">' + (display || code) + '</span>';
     }
 
     function renderSaleDetail(data) {
         let html = '';
 
+        if (data.refunds && data.refunds.length > 0) {
+            data.refunds.forEach(function(rf) {
+                html += '<div class="alert alert-danger py-2 px-3 mb-3 d-flex justify-content-between align-items-center">';
+                html += '<div><strong><i class="bi bi-arrow-counterclockwise me-1"></i>Refund: ' + (rf.refund_number || 'Record') + '</strong>';
+                html += ' <span class="badge bg-danger-subtle text-danger ms-1">' + (rf.status || 'Processed') + '</span>';
+                if (rf.refund_method) {
+                    html += ' <span class="badge bg-secondary ms-1">' + rf.refund_method + '</span>';
+                }
+                if (rf.reason) {
+                    html += '<br><small class="text-muted">' + rf.reason + '</small>';
+                }
+                html += '</div>';
+                html += '<span class="fw-bold fs-6 text-danger">-' + formatCurrency(rf.refund_amount) + '</span>';
+                html += '</div>';
+            });
+        }
+
         html += '<div class="row mb-3">';
         html += '<div class="col-sm-6">';
         html += '<h6 class="text-muted mb-1">Sale Number</h6>';
-        html += '<p class="fw-bold fs-5 mb-2">' + data.sale_number + '</p>';
+        html += '<p class="fw-bold fs-5 mb-0 font-monospace text-primary">' + data.sale_number + '</p>';
         html += '</div>';
         html += '<div class="col-sm-6 text-sm-end">';
         html += '<h6 class="text-muted mb-1">Status</h6>';
-        html += '<p class="mb-2">' + getStatusBadge(data.status_code, data.status) + '</p>';
+        html += '<p class="mb-0">' + getStatusBadge(data.status_code, data.status) + '</p>';
         html += '</div>';
         html += '</div>';
 
-        html += '<div class="row mb-3 py-2 bg-light rounded">';
+        html += '<div class="row mb-3 py-2 bg-light rounded g-2">';
         html += '<div class="col-sm-4">';
         html += '<small class="text-muted d-block">Date</small>';
         html += '<span class="fw-medium">' + data.created_at + '</span>';
@@ -767,12 +807,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
         html += '<div class="row mb-3">';
         html += '<div class="col-sm-6">';
-        html += '<small class="text-muted d-block">Payment Method</small>';
+        html += '<small class="text-muted d-block mb-1">Payment Method</small>';
         html += getPaymentBadge(data.payment_method_code, data.payment_method);
         html += '</div>';
         if (data.customer) {
             html += '<div class="col-sm-6">';
-            html += '<small class="text-muted d-block">Customer</small>';
+            html += '<small class="text-muted d-block mb-1">Customer</small>';
             html += '<span class="fw-medium">' + data.customer + '</span>';
             if (data.customer_phone) {
                 html += '<br><small class="text-muted"><i class="bi bi-telephone me-1"></i>' + data.customer_phone + '</small>';
@@ -781,52 +821,56 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         html += '</div>';
 
-        html += '<h6 class="border-bottom pb-2 mb-0">Items</h6>';
-        html += '<div class="table-responsive">';
-        html += '<table class="table table-sm mb-0">';
+        html += '<h6 class="border-bottom pb-2 mb-2 fw-bold">Items</h6>';
+        html += '<div class="table-responsive mb-3">';
+        html += '<table class="table table-sm table-hover mb-0 align-middle">';
         html += '<thead class="table-light"><tr>';
         html += '<th>Product</th><th class="text-center">Qty</th>';
         html += '<th class="text-end">Price</th><th class="text-end">Total</th>';
         html += '</tr></thead><tbody>';
 
-        data.items.forEach(function(item) {
-            html += '<tr>';
-            html += '<td>' + item.product_name + '<br><small class="text-muted">' + item.sku + '</small></td>';
-            html += '<td class="text-center">' + parseFloat(item.quantity) + '</td>';
-            html += '<td class="text-end">' + currencySymbol + parseFloat(item.unit_price).toFixed(2) + '</td>';
-            html += '<td class="text-end">' + currencySymbol + parseFloat(item.total).toFixed(2) + '</td>';
-            html += '</tr>';
-        });
+        if (data.items && data.items.length > 0) {
+            data.items.forEach(function(item) {
+                html += '<tr>';
+                html += '<td><span class="fw-medium">' + item.product_name + '</span><br><small class="text-muted">' + item.sku + '</small></td>';
+                html += '<td class="text-center">' + parseFloat(item.quantity) + '</td>';
+                html += '<td class="text-end">' + formatCurrency(item.unit_price) + '</td>';
+                html += '<td class="text-end fw-semibold">' + formatCurrency(item.total) + '</td>';
+                html += '</tr>';
+            });
+        } else {
+            html += '<tr><td colspan="4" class="text-center text-muted py-2">No items listed</td></tr>';
+        }
 
         html += '</tbody></table></div>';
 
         html += '<div class="border-top pt-2 mt-2">';
         html += '<div class="d-flex justify-content-between mb-1">';
-        html += '<span>Subtotal</span><span>' + currencySymbol + parseFloat(data.subtotal).toFixed(2) + '</span>';
+        html += '<span class="text-muted">Subtotal</span><span>' + formatCurrency(data.subtotal) + '</span>';
         html += '</div>';
 
-        if (data.discount_amount) {
+        if (data.discount_amount && parseFloat(data.discount_amount) > 0) {
             html += '<div class="d-flex justify-content-between mb-1 text-danger">';
-            html += '<span>Discount</span><span>-' + currencySymbol + parseFloat(data.discount_amount).toFixed(2) + '</span>';
+            html += '<span>Discount</span><span>-' + formatCurrency(data.discount_amount) + '</span>';
             html += '</div>';
         }
-        if (data.tax_amount) {
+        if (data.tax_amount && parseFloat(data.tax_amount) > 0) {
             html += '<div class="d-flex justify-content-between mb-1">';
-            html += '<span>Tax</span><span>' + currencySymbol + parseFloat(data.tax_amount).toFixed(2) + '</span>';
+            html += '<span class="text-muted">Tax</span><span>' + formatCurrency(data.tax_amount) + '</span>';
             html += '</div>';
         }
 
         html += '<div class="d-flex justify-content-between fw-bold fs-5 border-top pt-2">';
-        html += '<span>Total</span><span>' + currencySymbol + parseFloat(data.total).toFixed(2) + '</span>';
+        html += '<span>Total</span><span class="text-primary">' + formatCurrency(data.total) + '</span>';
         html += '</div>';
 
         html += '<div class="d-flex justify-content-between mt-1 text-muted">';
-        html += '<span>Amount Paid</span><span>' + currencySymbol + parseFloat(data.amount_paid).toFixed(2) + '</span>';
+        html += '<span>Amount Paid</span><span class="fw-semibold text-dark">' + formatCurrency(data.amount_paid) + '</span>';
         html += '</div>';
 
         if (data.change_given && parseFloat(data.change_given) > 0) {
             html += '<div class="d-flex justify-content-between text-success">';
-            html += '<span>Change</span><span>' + currencySymbol + parseFloat(data.change_given).toFixed(2) + '</span>';
+            html += '<span>Change</span><span>' + formatCurrency(data.change_given) + '</span>';
             html += '</div>';
         }
 

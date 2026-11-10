@@ -158,7 +158,11 @@
                                data-sale-id="{{ sale.pk }}">
                                 {{ sale.sale_number }}
                             </a>
-                            {% if sale.has_pending_refund %}
+                            {% if sale.has_approved_pending_payout %}
+                                <span class="badge bg-info text-dark rounded-pill ms-1" style="font-size: 0.65rem;" data-bs-toggle="tooltip" title="Refund approved; awaiting cashier disbursement">
+                                    <i class="bi bi-cash-stack"></i> Awaiting Payout
+                                </span>
+                            {% elif sale.has_pending_refund %}
                                 <span class="badge bg-warning text-dark rounded-pill ms-1" style="font-size: 0.65rem;" data-bs-toggle="tooltip" title="Refund or Halt awaiting Accountant approval">
                                     <i class="bi bi-clock-history"></i> Pending
                                 </span>
@@ -188,7 +192,13 @@
                             {% else %}
                             <span class="badge bg-warning">Partially Dispatched</span>
                             {% endif %}
-                            {% if sale.has_pending_refund %}
+                            {% if sale.has_approved_pending_payout %}
+                                <div class="mt-1">
+                                    <span class="badge bg-info text-dark border border-info" data-bs-toggle="tooltip" title="Refund approved; awaiting cashier disbursement">
+                                        <i class="bi bi-cash-stack me-1"></i>Awaiting Payout
+                                    </span>
+                                </div>
+                            {% elif sale.has_pending_refund %}
                                 <div class="mt-1">
                                     {% if sale.has_pending_halt %}
                                     <span class="badge bg-warning text-dark border border-warning" data-bs-toggle="tooltip" title="Halt & partial refund awaiting Accountant approval">
@@ -321,13 +331,22 @@ document.addEventListener('DOMContentLoaded', function() {
                             window._dispatchHistory = data.dispatch_history;
                             window._saleHasPendingRefund = data.has_pending_refund;
                             window._salePendingRefundInfo = data.pending_refund_info;
+                            window._saleHasApprovedPendingPayout = data.has_approved_pending_payout;
+                            window._saleApprovedRefundInfo = data.approved_refund_info;
 
-                            if (data.has_pending_refund) {
+                            if (data.has_approved_pending_payout) {
+                                dispatchBtn.classList.replace('btn-success', 'btn-info');
+                                dispatchBtn.classList.replace('btn-warning', 'btn-info');
+                                dispatchBtn.classList.add('text-dark');
+                                dispatchBtn.innerHTML = '<i class="bi bi-cash-stack me-1"></i>Dispatch (Awaiting Payout)';
+                            } else if (data.has_pending_refund) {
                                 dispatchBtn.classList.replace('btn-success', 'btn-warning');
+                                dispatchBtn.classList.replace('btn-info', 'btn-warning');
                                 dispatchBtn.classList.add('text-dark');
                                 dispatchBtn.innerHTML = '<i class="bi bi-clock-history me-1"></i>Dispatch (Pending Approval)';
                             } else {
                                 dispatchBtn.classList.replace('btn-warning', 'btn-success');
+                                dispatchBtn.classList.replace('btn-info', 'btn-success');
                                 dispatchBtn.classList.remove('text-dark');
                                 dispatchBtn.innerHTML = '<i class="bi bi-send me-1"></i>Dispatch Goods';
                             }
@@ -382,7 +401,18 @@ document.addEventListener('DOMContentLoaded', function() {
         html += '</div>';
         html += '</div>';
 
-        if (data.has_pending_refund) {
+        if (data.has_approved_pending_payout) {
+            const rInfo = data.approved_refund_info || {};
+            const rType = rInfo.is_partial_halt ? 'Halt & Settle' : 'Refund';
+            const rNum = rInfo.refund_number ? `(${rInfo.refund_number})` : '';
+            html += `<div class="alert alert-info py-2 mb-3 d-flex align-items-center justify-content-between border border-info rounded-3">
+                <div>
+                    <div class="fw-bold text-dark"><i class="bi bi-cash-stack text-info me-2 fs-5"></i>${rType} Approved (Awaiting Payout)</div>
+                    <div class="small text-muted">Request ${rNum} has been approved by the Accountant and is awaiting disbursement by the Cashier.</div>
+                </div>
+                <span class="badge bg-info text-dark border border-info">Awaiting Payout</span>
+            </div>`;
+        } else if (data.has_pending_refund) {
             const rInfo = data.pending_refund_info || {};
             const rType = rInfo.is_partial_halt ? 'Halt & Settle' : 'Refund';
             const rNum = rInfo.refund_number ? `(${rInfo.refund_number})` : '';

@@ -2,7 +2,7 @@
 var _dispatchSaleItems = [];
 var _dispatchSaleId = null;
 
-function populateDispatchModal(items, allowPartial, hasPendingRefund, pendingRefundInfo) {
+function populateDispatchModal(items, allowPartial, hasPendingRefund, pendingRefundInfo, hasApprovedPendingPayout, approvedRefundInfo) {
     if (allowPartial === undefined) allowPartial = true;
 
     const tbody = document.getElementById('dispatchItemsBody');
@@ -16,7 +16,31 @@ function populateDispatchModal(items, allowPartial, hasPendingRefund, pendingRef
     const infoBanner = document.getElementById('dispatchInfoBanner');
     if (!tbody) return;
 
-    if (hasPendingRefund) {
+    if (hasApprovedPendingPayout) {
+        const isHalt = approvedRefundInfo && approvedRefundInfo.is_partial_halt;
+        const typeName = isHalt ? 'Halt & Settle' : 'Refund';
+        const refNum = approvedRefundInfo && approvedRefundInfo.refund_number ? `(${approvedRefundInfo.refund_number})` : '';
+        if (infoBanner && infoText) {
+            infoBanner.className = 'alert alert-info py-2 mb-3 d-flex align-items-center gap-2 border border-info';
+            infoText.innerHTML = `<i class="bi bi-cash-stack text-info me-1"></i>` +
+                `<strong>${typeName} Approved (Awaiting Payout):</strong> Sale has request <strong>${refNum}</strong> approved by the Accountant and awaiting Cashier disbursement. ` +
+                `Goods dispatch and further halt requests are locked.`;
+        }
+        if (haltBtn) {
+            haltBtn.disabled = true;
+            haltBtn.className = 'btn btn-secondary';
+            haltBtn.innerHTML = '<i class="bi bi-cash-stack me-1"></i>Awaiting Payout';
+            haltBtn.title = 'A refund request has been approved and is awaiting cashier disbursement.';
+        }
+        if (fullBtn) {
+            fullBtn.disabled = true;
+            fullBtn.title = 'Locked while refund payout is awaiting disbursement';
+        }
+        if (partialBtn) {
+            partialBtn.disabled = true;
+            partialBtn.title = 'Locked while refund payout is awaiting disbursement';
+        }
+    } else if (hasPendingRefund) {
         const isHalt = pendingRefundInfo && pendingRefundInfo.is_partial_halt;
         const typeName = isHalt ? 'Halt & Settle' : 'Refund';
         const refNum = pendingRefundInfo && pendingRefundInfo.refund_number ? `(${pendingRefundInfo.refund_number})` : '';
@@ -94,7 +118,7 @@ function populateDispatchModal(items, allowPartial, hasPendingRefund, pendingRef
                 dispatchNowCell = `<input type="number" class="form-control form-control-sm text-center dispatch-qty-input"
                                 data-item-id="${item.id}" data-max="${remaining}"
                                 min="0" max="${remaining}" step="1" value="0"
-                                ${hasPendingRefund ? 'disabled' : ''}
+                                ${(hasPendingRefund || hasApprovedPendingPayout) ? 'disabled' : ''}
                                 style="width:90px; margin: 0 auto;">`;
             } else {
                 dispatchNowCell = `<span class="fw-bold text-success">${remaining}</span>
@@ -257,7 +281,7 @@ function initPartialDispatch() {
                     _dispatchSaleId = saleId;
                     const snEl = document.getElementById('dispatchModalSaleNumber');
                     if (snEl) snEl.textContent = '#' + (saleNumber || '');
-                    populateDispatchModal(data.items, data.allow_partial_dispatch !== false, data.has_pending_refund, data.pending_refund_info);
+                    populateDispatchModal(data.items, data.allow_partial_dispatch !== false, data.has_pending_refund, data.pending_refund_info, data.has_approved_pending_payout, data.approved_refund_info);
                     populateDispatchHistory(data.dispatch_history || []);
                     const modalEl = document.getElementById('partialDispatchModal');
                     if (modalEl) {
@@ -285,7 +309,7 @@ function initPartialDispatch() {
             const snEl = document.getElementById('dispatchModalSaleNumber');
             if (snEl) snEl.textContent = '#' + (this.dataset.saleNumber || '');
             const allowPartial = window._allowPartialDispatch !== false;
-            populateDispatchModal(_dispatchSaleItems, allowPartial, window._saleHasPendingRefund, window._salePendingRefundInfo);
+            populateDispatchModal(_dispatchSaleItems, allowPartial, window._saleHasPendingRefund, window._salePendingRefundInfo, window._saleHasApprovedPendingPayout, window._saleApprovedRefundInfo);
             populateDispatchHistory(window._dispatchHistory || []);
             const saleDetailModal = document.getElementById('saleDetailModal');
             if (saleDetailModal) {

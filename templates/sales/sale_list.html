@@ -178,6 +178,8 @@
                 <select name="refund_status" class="form-select">
                     <option value="">All</option>
                     <option value="pending" {% if selected_refund_status == 'pending' %}selected{% endif %}>Pending Any Refund</option>
+                    <option value="pending_approval" {% if selected_refund_status == 'pending_approval' %}selected{% endif %}>Pending Approval</option>
+                    <option value="pending_payout" {% if selected_refund_status == 'pending_payout' %}selected{% endif %}>Awaiting Payout</option>
                     <option value="pending_halt" {% if selected_refund_status == 'pending_halt' %}selected{% endif %}>Pending Halt & Settle</option>
                 </select>
             </div>
@@ -337,7 +339,13 @@
                             {% else %}
                             <span class="badge bg-secondary">{{ sale.get_status_display }}</span>
                             {% endif %}
-                            {% if sale.has_pending_refund %}
+                            {% if sale.has_approved_pending_payout %}
+                                <div class="mt-1">
+                                    <span class="badge bg-info text-dark border border-info" data-bs-toggle="tooltip" title="Refund approved by Accountant; awaiting cashier disbursement">
+                                        <i class="bi bi-cash-stack me-1"></i>Awaiting Payout
+                                    </span>
+                                </div>
+                            {% elif sale.has_pending_refund %}
                                 <div class="mt-1">
                                     {% if sale.has_pending_halt %}
                                     <span class="badge bg-warning text-dark border border-warning" data-bs-toggle="tooltip" title="Halt & partial refund awaiting Accountant approval">
@@ -363,7 +371,11 @@
                                     </button>
                                 {% elif sale.status == 'COMPLETED' or sale.status == 'PENDING_DISPATCH' %}
                                     {% if current_tenant.enable_refunds %}
-                                        {% if sale.has_pending_refund %}
+                                        {% if sale.has_approved_pending_payout %}
+                                        <a href="{% url 'sales:refund_request_list' %}?status=PENDING_PAYOUT" class="btn btn-sm btn-outline-info me-1" data-bs-toggle="tooltip" title="Refund approved by Accountant; click to disburse payout">
+                                            <i class="bi bi-cash-stack me-1"></i>Disburse Payout
+                                        </a>
+                                        {% elif sale.has_pending_refund %}
                                         <button class="btn btn-sm btn-outline-secondary me-1 disabled" data-bs-toggle="tooltip" title="Refund request already pending Accountant approval">
                                             <i class="bi bi-clock-history me-1"></i>Pending
                                         </button>
@@ -376,7 +388,15 @@
                                 {% endif %}
                             {% elif role_name == 'SHOP_MANAGER' and request.user.tenant.use_strict_sales_workflow %}
                                 {% if sale.status == 'PENDING_DISPATCH' %}
-                                    {% if sale.has_pending_refund %}
+                                    {% if sale.has_approved_pending_payout %}
+                                    <button type="button" 
+                                            class="btn btn-sm btn-info text-dark open-dispatch-modal me-1 rounded-pill px-3"
+                                            data-sale-id="{{ sale.id }}"
+                                            data-sale-number="{{ sale.sale_number }}"
+                                            data-bs-toggle="tooltip" title="Refund approved by Accountant; awaiting cashier disbursement">
+                                        <i class="bi bi-cash-stack me-1"></i>Awaiting Payout
+                                    </button>
+                                    {% elif sale.has_pending_refund %}
                                     <button type="button" 
                                             class="btn btn-sm btn-warning text-dark open-dispatch-modal me-1 rounded-pill px-3"
                                             data-sale-id="{{ sale.id }}"
@@ -649,13 +669,22 @@ document.addEventListener('DOMContentLoaded', function() {
                             window._allowPartialDispatch = data.allow_partial_dispatch !== false;
                             window._saleHasPendingRefund = data.has_pending_refund;
                             window._salePendingRefundInfo = data.pending_refund_info;
+                            window._saleHasApprovedPendingPayout = data.has_approved_pending_payout;
+                            window._saleApprovedRefundInfo = data.approved_refund_info;
 
-                            if (data.has_pending_refund) {
+                            if (data.has_approved_pending_payout) {
+                                dispatchBtn.classList.replace('btn-success', 'btn-info');
+                                dispatchBtn.classList.replace('btn-warning', 'btn-info');
+                                dispatchBtn.classList.add('text-dark');
+                                dispatchBtn.innerHTML = '<i class="bi bi-cash-stack me-1"></i>Dispatch (Awaiting Payout)';
+                            } else if (data.has_pending_refund) {
                                 dispatchBtn.classList.replace('btn-success', 'btn-warning');
+                                dispatchBtn.classList.replace('btn-info', 'btn-warning');
                                 dispatchBtn.classList.add('text-dark');
                                 dispatchBtn.innerHTML = '<i class="bi bi-clock-history me-1"></i>Dispatch (Pending Approval)';
                             } else {
                                 dispatchBtn.classList.replace('btn-warning', 'btn-success');
+                                dispatchBtn.classList.replace('btn-info', 'btn-success');
                                 dispatchBtn.classList.remove('text-dark');
                                 dispatchBtn.innerHTML = '<i class="bi bi-send me-1"></i>Dispatch Goods';
                             }
@@ -679,7 +708,12 @@ document.addEventListener('DOMContentLoaded', function() {
                     
                     const refundBtn = document.getElementById('saleDetailRefundBtn');
                     if (refundBtn) {
-                        if (data.has_pending_refund) {
+                        if (data.has_approved_pending_payout) {
+                            refundBtn.style.display = 'inline-block';
+                            refundBtn.disabled = true;
+                            refundBtn.className = 'btn btn-info text-dark';
+                            refundBtn.innerHTML = '<i class="bi bi-cash-stack me-1"></i>Refund Approved (Awaiting Payout)';
+                        } else if (data.has_pending_refund) {
                             refundBtn.style.display = 'inline-block';
                             refundBtn.disabled = true;
                             refundBtn.className = 'btn btn-secondary';
@@ -742,7 +776,18 @@ document.addEventListener('DOMContentLoaded', function() {
         html += '</div>';
         html += '</div>';
 
-        if (data.has_pending_refund) {
+        if (data.has_approved_pending_payout) {
+            const rInfo = data.approved_refund_info || {};
+            const rType = rInfo.is_partial_halt ? 'Halt & Settle' : 'Refund';
+            const rNum = rInfo.refund_number ? `(${rInfo.refund_number})` : '';
+            html += `<div class="alert alert-info py-2 mb-3 d-flex align-items-center justify-content-between border border-info rounded-3">
+                <div>
+                    <div class="fw-bold text-dark"><i class="bi bi-cash-stack text-info me-2 fs-5"></i>${rType} Approved (Awaiting Payout)</div>
+                    <div class="small text-muted">Request ${rNum} has been approved by the Accountant and is awaiting disbursement by the Cashier.</div>
+                </div>
+                <span class="badge bg-info text-dark border border-info">Awaiting Payout</span>
+            </div>`;
+        } else if (data.has_pending_refund) {
             const rInfo = data.pending_refund_info || {};
             const rType = rInfo.is_partial_halt ? 'Halt & Settle' : 'Refund';
             const rNum = rInfo.refund_number ? `(${rInfo.refund_number})` : '';

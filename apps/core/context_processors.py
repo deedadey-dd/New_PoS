@@ -212,16 +212,20 @@ def tenant_context(request):
                     refund_method='CASH'
                 ).aggregate(total=Sum('refund_amount'))['total'] or Decimal('0')
 
-                base_cash = max(
-                    Decimal('0'),
+                total_cash = (
                     received
                     - sent
                     + own_sales
                     + customer_payments
                     + open_shift_opening_cash
                     - banked_cash
+                    - credit_payouts
+                    - refund_cash_payouts
                 )
-                context['cash_on_hand'] = base_cash - credit_payouts - refund_cash_payouts
+                if role_name == 'SHOP_ATTENDANT':
+                    context['cash_on_hand'] = max(Decimal('0'), total_cash)
+                else:
+                    context['cash_on_hand'] = total_cash
         
         # Add total credit debt for managers/admin
         if role_name in ['SHOP_MANAGER', 'ADMIN', 'ACCOUNTANT', 'SHOP_CASHIER']:

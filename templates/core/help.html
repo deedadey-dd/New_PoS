@@ -1006,7 +1006,7 @@
                         <li><strong>Insufficient Till Balance Warning</strong>: If the cashier's drawer or wallet balance is less than the payout amount, an application modal warns of the shortfall before proceeding.</li>
                         <li><strong>Negative Balances</strong>: The system supports till deficits when payouts exceed daily collections, displaying negative figures in high-visibility red badges (e.g. <code>-GH₵50.00</code>).</li>
                         <li><strong>Cashier Accountability</strong>: The disbursing cashier's identity and timestamp are permanently recorded (<code>paid_by</code>, <code>paid_at</code>).</li>
-                        <li><strong>Cash History Integration</strong>: Outflow metrics, exports, and a dedicated <em>Cash Refunds</em> tab detail all disbursed refunds.</li>
+                        <li><strong>Multi-Channel History Integration</strong>: Outflows and refunds appear across all channels (Cash History at <code>/accounting/cash-history/</code>, Mobile Money History at <code>/accounting/shop-momo/history/</code>, and E-Cash History at <code>/payments/shops/history/</code>) with dedicated metric cards and negative balance support.</li>
                         <li><strong>End of Day Reconciliation</strong>: Cash refunds are subtracted from <code>expected_cash</code> in the daily reconciliation review, preventing false till shortage variances.</li>
                     </ul>
                 </div>

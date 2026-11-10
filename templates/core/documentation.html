@@ -787,7 +787,9 @@
                     <div class="card mb-4">
                         <div class="card-body">
                             <ul>
-                                <li><strong>Cash History</strong>: Cash refunds appear as distinct cash outflows with dedicated summary metrics, export entries, and a dedicated <em>Cash Refunds</em> table tab.</li>
+                                <li><strong>Cash History (<code>/accounting/cash-history/</code>)</strong>: Cash refunds appear as distinct cash outflows with dedicated summary metrics, export entries, and a dedicated <em>Cash Refunds</em> table tab. Refunded sales remain in the Cash Sales view with a <em>Refunded</em> badge, ensuring inflows and outflows reconcile cleanly.</li>
+                                <li><strong>Mobile Money History (<code>/accounting/shop-momo/history/</code>)</strong>: MoMo refunds appear as first-class entries with red <em>Refund</em> badges and negative values in both web and export views, updating the <em>Net MoMo Volume</em> and <em>Refunds Disbursed</em> cards.</li>
+                                <li><strong>Shop E-Cash History (<code>/payments/shops/history/</code>)</strong>: E-Cash refunds display as red refund entries in the ledger, with deductions reflected in the <em>Refunds</em> card and <em>Net Volume</em>.</li>
                                 <li><strong>End of Day Management &amp; Details Reports</strong>: Refunds disbursed appear under <em>Financial Movements</em> and are subtracted from <code>expected_cash</code> in the daily reconciliation review:
                                     <div class="p-2 bg-light rounded font-monospace small my-2">
                                         expected_cash = opening_float + cash_sales + customer_payments - expenditures - funds_to_bank - funds_to_accountant - cash_refunds

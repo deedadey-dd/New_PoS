@@ -1949,7 +1949,7 @@ class ShopEcashHistoryView(LoginRequiredMixin, TemplateView):
         tenant = user.tenant
         shop = self._get_shop()
 
-        from apps.sales.models import Sale
+        from apps.sales.models import Sale, RefundRequest
         from apps.customers.models import CustomerTransaction
         from django.db.models import Sum
         from datetime import datetime
@@ -1958,7 +1958,7 @@ class ShopEcashHistoryView(LoginRequiredMixin, TemplateView):
             sales = Sale.objects.filter(
                 tenant=tenant,
                 shop=shop,
-                status__in=['COMPLETED', 'PENDING_DISPATCH'],
+                status__in=['COMPLETED', 'PENDING_DISPATCH', 'REFUNDED'],
                 payment_method='ECASH'
             ).select_related('shop', 'customer')
 
@@ -1968,6 +1968,8 @@ class ShopEcashHistoryView(LoginRequiredMixin, TemplateView):
                 transaction_type='CREDIT',
                 description__icontains='ECASH'
             ).select_related('performed_by__location', 'customer')
+
+            refunds = RefundRequest.channel_refunds(tenant=tenant, channel='ECASH', shop=shop)
 
             # Apply filters
             date_from = self.request.GET.get('date_from')
@@ -1980,6 +1982,7 @@ class ShopEcashHistoryView(LoginRequiredMixin, TemplateView):
                     date_from_parsed = datetime.strptime(date_from, '%Y-%m-%d').date()
                     sales = sales.filter(created_at__date__gte=date_from_parsed)
                     cts = cts.filter(created_at__date__gte=date_from_parsed)
+                    refunds = refunds.filter(paid_at__date__gte=date_from_parsed)
                 except ValueError:
                     pass
 
@@ -1988,6 +1991,7 @@ class ShopEcashHistoryView(LoginRequiredMixin, TemplateView):
                     date_to_parsed = datetime.strptime(date_to, '%Y-%m-%d').date()
                     sales = sales.filter(created_at__date__lte=date_to_parsed)
                     cts = cts.filter(created_at__date__lte=date_to_parsed)
+                    refunds = refunds.filter(paid_at__date__lte=date_to_parsed)
                 except ValueError:
                     pass
 
@@ -1996,6 +2000,7 @@ class ShopEcashHistoryView(LoginRequiredMixin, TemplateView):
                     min_val = Decimal(min_amount)
                     sales = sales.filter(amount_paid__gte=min_val)
                     cts = cts.filter(amount__gte=min_val)
+                    refunds = refunds.filter(refund_amount__gte=min_val)
                 except (ValueError, TypeError):
                     pass
 
@@ -2004,6 +2009,7 @@ class ShopEcashHistoryView(LoginRequiredMixin, TemplateView):
                     max_val = Decimal(max_amount)
                     sales = sales.filter(amount_paid__lte=max_val)
                     cts = cts.filter(amount__lte=max_val)
+                    refunds = refunds.filter(refund_amount__lte=max_val)
                 except (ValueError, TypeError):
                     pass
 
@@ -2037,8 +2043,8 @@ class ShopEcashHistoryView(LoginRequiredMixin, TemplateView):
             context['available_balance'] = available_balance
             context['shop'] = shop
 
-            # Combine sales + customer transactions
-            transactions = list(sales) + list(cts)
+            # Combine sales + customer transactions + refunds
+            transactions = list(sales) + list(cts) + list(refunds)
 
             # Sorting
             sort_by = self.request.GET.get('sort', 'created_at')
@@ -2047,18 +2053,20 @@ class ShopEcashHistoryView(LoginRequiredMixin, TemplateView):
 
             if sort_by == 'amount':
                 transactions.sort(
-                    key=lambda x: getattr(x, 'amount_paid', getattr(x, 'amount', 0)),
+                    key=lambda x: getattr(x, 'refund_amount', getattr(x, 'amount_paid', getattr(x, 'amount', 0))),
                     reverse=is_reverse
                 )
             elif sort_by == 'type':
                 transactions.sort(
-                    key=lambda x: 'Sale' if hasattr(x, 'sale_number') else 'Debt Payment',
+                    key=lambda x: 'Refund' if hasattr(x, 'refund_number') else ('Sale' if hasattr(x, 'sale_number') else 'Debt Payment'),
                     reverse=is_reverse
                 )
             elif sort_by == 'status':
-                transactions.sort(key=lambda x: x.is_accountant_confirmed, reverse=is_reverse)
+                transactions.sort(key=lambda x: True if hasattr(x, 'refund_number') else x.is_accountant_confirmed, reverse=is_reverse)
+            elif sort_by == 'reference':
+                transactions.sort(key=lambda x: getattr(x, 'refund_number', getattr(x, 'sale_number', str(getattr(x, 'customer', '')))), reverse=is_reverse)
             else:
-                transactions.sort(key=lambda x: x.created_at, reverse=is_reverse)
+                transactions.sort(key=lambda x: getattr(x, 'paid_at', None) or x.created_at, reverse=is_reverse)
 
             context['transactions'] = transactions
             context['date_from'] = date_from
@@ -2091,7 +2099,7 @@ class ShopEcashExportView(LoginRequiredMixin, View):
         return super().dispatch(request, *args, **kwargs)
 
     def get(self, request):
-        from apps.sales.models import Sale
+        from apps.sales.models import Sale, RefundRequest
         from apps.customers.models import CustomerTransaction
         from apps.core.models import Location
         from datetime import datetime
@@ -2114,11 +2122,12 @@ class ShopEcashExportView(LoginRequiredMixin, View):
             messages.error(request, 'Shop not found.')
             return redirect('accounting:shop_ecash_history')
 
-        sales = Sale.objects.filter(tenant=tenant, shop=shop, status__in=['COMPLETED', 'PENDING_DISPATCH'], payment_method='ECASH')
+        sales = Sale.objects.filter(tenant=tenant, shop=shop, status__in=['COMPLETED', 'PENDING_DISPATCH', 'REFUNDED'], payment_method='ECASH')
         cts = CustomerTransaction.objects.filter(
             tenant=tenant, performed_by__location=shop,
             transaction_type='CREDIT', description__icontains='ECASH'
         )
+        refunds = RefundRequest.channel_refunds(tenant=tenant, channel='ECASH', shop=shop)
 
         date_from = request.GET.get('date_from')
         date_to = request.GET.get('date_to')
@@ -2133,14 +2142,18 @@ class ShopEcashExportView(LoginRequiredMixin, View):
 
         if date_from:
             try:
-                sales = sales.filter(created_at__date__gte=datetime.strptime(date_from, '%Y-%m-%d').date())
-                cts = cts.filter(created_at__date__gte=datetime.strptime(date_from, '%Y-%m-%d').date())
+                date_from_parsed = datetime.strptime(date_from, '%Y-%m-%d').date()
+                sales = sales.filter(created_at__date__gte=date_from_parsed)
+                cts = cts.filter(created_at__date__gte=date_from_parsed)
+                refunds = refunds.filter(paid_at__date__gte=date_from_parsed)
             except ValueError:
                 pass
         if date_to:
             try:
-                sales = sales.filter(created_at__date__lte=datetime.strptime(date_to, '%Y-%m-%d').date())
-                cts = cts.filter(created_at__date__lte=datetime.strptime(date_to, '%Y-%m-%d').date())
+                date_to_parsed = datetime.strptime(date_to, '%Y-%m-%d').date()
+                sales = sales.filter(created_at__date__lte=date_to_parsed)
+                cts = cts.filter(created_at__date__lte=date_to_parsed)
+                refunds = refunds.filter(paid_at__date__lte=date_to_parsed)
             except ValueError:
                 pass
 
@@ -2149,7 +2162,7 @@ class ShopEcashExportView(LoginRequiredMixin, View):
         for s in sales.order_by('-created_at'):
             rows.append([
                 s.created_at.strftime('%Y-%m-%d %H:%M') if s.created_at else '',
-                'E-Cash Sale',
+                'E-Cash Sale (Refunded)' if s.status == 'REFUNDED' else 'E-Cash Sale',
                 s.sale_number,
                 float(s.amount_paid),
                 'Yes' if s.is_accountant_confirmed else 'No',
@@ -2161,6 +2174,14 @@ class ShopEcashExportView(LoginRequiredMixin, View):
                 str(ct.customer) if ct.customer else '',
                 float(ct.amount),
                 'Yes' if ct.is_accountant_confirmed else 'No',
+            ])
+        for rf in refunds.order_by('-paid_at'):
+            rows.append([
+                rf.paid_at.strftime('%Y-%m-%d %H:%M') if rf.paid_at else rf.created_at.strftime('%Y-%m-%d %H:%M'),
+                'E-Cash Refund',
+                rf.refund_number or (f"Sale {rf.sale.sale_number}" if rf.sale else '-'),
+                -float(rf.refund_amount),
+                'Yes' if rf.payout_status == 'PAID' else 'No',
             ])
 
         wb = create_export_workbook('E-Cash History', headers, rows)
@@ -2208,15 +2229,16 @@ class ShopMomoHistoryView(LoginRequiredMixin, TemplateView):
         tenant = user.tenant
         shop = self._get_shop()
         
-        from apps.sales.models import Sale
+        from apps.sales.models import Sale, RefundRequest
         from apps.customers.models import CustomerTransaction
-        from django.db.models import Sum, Q
+        from django.db.models import Sum, Q, Count
         from datetime import datetime
         from decimal import Decimal
         from apps.accounting.models import DigitalFundWithdrawal
 
-        sales = Sale.objects.filter(tenant=tenant, status__in=['COMPLETED', 'PENDING_DISPATCH'], payment_method='MOMO').select_related('shop', 'customer')
+        sales = Sale.objects.filter(tenant=tenant, status__in=['COMPLETED', 'PENDING_DISPATCH', 'REFUNDED'], payment_method='MOMO').select_related('shop', 'customer')
         cts = CustomerTransaction.objects.filter(tenant=tenant, transaction_type='CREDIT', description__icontains='MOMO').select_related('performed_by__location', 'customer')
+        refunds = RefundRequest.channel_refunds(tenant=tenant, channel='MOMO', shop=shop)
         
         if shop:
             sales = sales.filter(shop=shop)
@@ -2233,6 +2255,7 @@ class ShopMomoHistoryView(LoginRequiredMixin, TemplateView):
                 date_from_parsed = datetime.strptime(date_from, '%Y-%m-%d').date()
                 sales = sales.filter(created_at__date__gte=date_from_parsed)
                 cts = cts.filter(created_at__date__gte=date_from_parsed)
+                refunds = refunds.filter(paid_at__date__gte=date_from_parsed)
             except ValueError:
                 pass
                 
@@ -2241,6 +2264,7 @@ class ShopMomoHistoryView(LoginRequiredMixin, TemplateView):
                 date_to_parsed = datetime.strptime(date_to, '%Y-%m-%d').date()
                 sales = sales.filter(created_at__date__lte=date_to_parsed)
                 cts = cts.filter(created_at__date__lte=date_to_parsed)
+                refunds = refunds.filter(paid_at__date__lte=date_to_parsed)
             except ValueError:
                 pass
                 
@@ -2249,6 +2273,7 @@ class ShopMomoHistoryView(LoginRequiredMixin, TemplateView):
                 min_val = Decimal(min_amount)
                 sales = sales.filter(amount_paid__gte=min_val)
                 cts = cts.filter(amount__gte=min_val)
+                refunds = refunds.filter(refund_amount__gte=min_val)
             except (ValueError, TypeError):
                 pass
                 
@@ -2257,6 +2282,7 @@ class ShopMomoHistoryView(LoginRequiredMixin, TemplateView):
                 max_val = Decimal(max_amount)
                 sales = sales.filter(amount_paid__lte=max_val)
                 cts = cts.filter(amount__lte=max_val)
+                refunds = refunds.filter(refund_amount__lte=max_val)
             except (ValueError, TypeError):
                 pass
         
@@ -2282,26 +2308,33 @@ class ShopMomoHistoryView(LoginRequiredMixin, TemplateView):
         # Calculate dynamic summary metrics on filtered results
         filtered_sales_agg = sales.aggregate(total=Sum('amount_paid'), count=Count('id'))
         filtered_cts_agg = cts.aggregate(total=Sum('amount'), count=Count('id'))
+        filtered_refunds_agg = refunds.aggregate(total=Sum('refund_amount'), count=Count('id'))
         
         sales_momo_amount = filtered_sales_agg['total'] or Decimal('0.00')
         sales_momo_count = filtered_sales_agg['count'] or 0
         cts_momo_amount = filtered_cts_agg['total'] or Decimal('0.00')
         cts_momo_count = filtered_cts_agg['count'] or 0
+        refunds_momo_amount = filtered_refunds_agg['total'] or Decimal('0.00')
+        refunds_momo_count = filtered_refunds_agg['count'] or 0
         
         filtered_total_momo = sales_momo_amount + cts_momo_amount
-        filtered_total_count = sales_momo_count + cts_momo_count
+        filtered_net_momo = filtered_total_momo - refunds_momo_amount
+        filtered_total_count = sales_momo_count + cts_momo_count + refunds_momo_count
         
-        unconf_sales_filtered = sales.filter(is_accountant_confirmed=False).aggregate(t=Sum('amount_paid'))['t'] or Decimal('0.00')
+        unconf_sales_filtered = sales.filter(is_accountant_confirmed=False, status__in=['COMPLETED', 'PENDING_DISPATCH']).aggregate(t=Sum('amount_paid'))['t'] or Decimal('0.00')
         unconf_cts_filtered = cts.filter(is_accountant_confirmed=False).aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
         filtered_unconfirmed_total = unconf_sales_filtered + unconf_cts_filtered
         filtered_confirmed_total = filtered_total_momo - filtered_unconfirmed_total
 
         context['filtered_total_momo'] = filtered_total_momo
+        context['filtered_net_momo'] = filtered_net_momo
         context['filtered_total_count'] = filtered_total_count
         context['filtered_sales_momo'] = sales_momo_amount
         context['filtered_sales_count'] = sales_momo_count
         context['filtered_cts_momo'] = cts_momo_amount
         context['filtered_cts_count'] = cts_momo_count
+        context['filtered_refunds_momo'] = refunds_momo_amount
+        context['filtered_refunds_count'] = refunds_momo_count
         context['filtered_confirmed_momo'] = filtered_confirmed_total
         context['filtered_unconfirmed_momo'] = filtered_unconfirmed_total
 
@@ -2310,7 +2343,7 @@ class ShopMomoHistoryView(LoginRequiredMixin, TemplateView):
         context['shop'] = shop
         
         # Combine manually
-        transactions = list(sales) + list(cts)
+        transactions = list(sales) + list(cts) + list(refunds)
         
         # Apply Sorting
         sort_by = self.request.GET.get('sort', 'created_at')
@@ -2318,15 +2351,15 @@ class ShopMomoHistoryView(LoginRequiredMixin, TemplateView):
         is_reverse = direction == 'desc'
         
         if sort_by == 'amount':
-            transactions.sort(key=lambda x: getattr(x, 'amount_paid', getattr(x, 'amount', 0)), reverse=is_reverse)
+            transactions.sort(key=lambda x: getattr(x, 'refund_amount', getattr(x, 'amount_paid', getattr(x, 'amount', Decimal('0')))), reverse=is_reverse)
         elif sort_by == 'type':
-            transactions.sort(key=lambda x: 'Sale' if hasattr(x, 'sale_number') else 'Debt Payment', reverse=is_reverse)
+            transactions.sort(key=lambda x: 'Refund' if hasattr(x, 'refund_number') else ('Sale' if hasattr(x, 'sale_number') else 'Debt Payment'), reverse=is_reverse)
         elif sort_by == 'status':
-            transactions.sort(key=lambda x: x.is_accountant_confirmed, reverse=is_reverse)
+            transactions.sort(key=lambda x: True if hasattr(x, 'refund_number') else x.is_accountant_confirmed, reverse=is_reverse)
         elif sort_by == 'reference':
-            transactions.sort(key=lambda x: getattr(x, 'sale_number', getattr(x, 'customer', getattr(x, 'customer', ''))), reverse=is_reverse)
-        else: # default created_at
-            transactions.sort(key=lambda x: x.created_at, reverse=is_reverse)
+            transactions.sort(key=lambda x: getattr(x, 'refund_number', getattr(x, 'sale_number', str(getattr(x, 'customer', '')))), reverse=is_reverse)
+        else: # default created_at / paid_at
+            transactions.sort(key=lambda x: getattr(x, 'paid_at', None) or x.created_at, reverse=is_reverse)
         
         context['transactions'] = transactions
         
@@ -2383,8 +2416,10 @@ class ShopMomoExportView(LoginRequiredMixin, View):
             return redirect('accounting:shop_momo_history')
             
         # Build querysets
-        sales = Sale.objects.filter(tenant=tenant, shop=shop, status__in=['COMPLETED', 'PENDING_DISPATCH'], payment_method='MOMO')
+        from apps.sales.models import RefundRequest
+        sales = Sale.objects.filter(tenant=tenant, shop=shop, status__in=['COMPLETED', 'PENDING_DISPATCH', 'REFUNDED'], payment_method='MOMO')
         cts = CustomerTransaction.objects.filter(tenant=tenant, performed_by__location=shop, transaction_type='CREDIT', description__icontains='MOMO')
+        refunds = RefundRequest.channel_refunds(tenant=tenant, channel='MOMO', shop=shop)
         
         date_from = request.GET.get('date_from')
         date_to = request.GET.get('date_to')
@@ -2404,6 +2439,7 @@ class ShopMomoExportView(LoginRequiredMixin, View):
                 date_from_parsed = datetime.strptime(date_from, '%Y-%m-%d').date()
                 sales = sales.filter(created_at__date__gte=date_from_parsed)
                 cts = cts.filter(created_at__date__gte=date_from_parsed)
+                refunds = refunds.filter(paid_at__date__gte=date_from_parsed)
             except ValueError:
                 pass
         if date_to:
@@ -2411,22 +2447,27 @@ class ShopMomoExportView(LoginRequiredMixin, View):
                 date_to_parsed = datetime.strptime(date_to, '%Y-%m-%d').date()
                 sales = sales.filter(created_at__date__lte=date_to_parsed)
                 cts = cts.filter(created_at__date__lte=date_to_parsed)
+                refunds = refunds.filter(paid_at__date__lte=date_to_parsed)
             except ValueError:
                 pass
         if min_amount:
             try:
-                sales = sales.filter(amount_paid__gte=Decimal(min_amount))
-                cts = cts.filter(amount__gte=Decimal(min_amount))
+                min_val = Decimal(min_amount)
+                sales = sales.filter(amount_paid__gte=min_val)
+                cts = cts.filter(amount__gte=min_val)
+                refunds = refunds.filter(refund_amount__gte=min_val)
             except (ValueError, TypeError):
                 pass
         if max_amount:
             try:
-                sales = sales.filter(amount_paid__lte=Decimal(max_amount))
-                cts = cts.filter(amount__lte=Decimal(max_amount))
+                max_val = Decimal(max_amount)
+                sales = sales.filter(amount_paid__lte=max_val)
+                cts = cts.filter(amount__lte=max_val)
+                refunds = refunds.filter(refund_amount__lte=max_val)
             except (ValueError, TypeError):
                 pass
                 
-        transactions = list(sales) + list(cts)
+        transactions = list(sales) + list(cts) + list(refunds)
         
         # Sort
         sort_by = request.GET.get('sort', 'created_at')
@@ -2434,27 +2475,40 @@ class ShopMomoExportView(LoginRequiredMixin, View):
         is_reverse = direction == 'desc'
         
         if sort_by == 'amount':
-            transactions.sort(key=lambda x: getattr(x, 'amount_paid', getattr(x, 'amount', 0)), reverse=is_reverse)
+            transactions.sort(key=lambda x: getattr(x, 'refund_amount', getattr(x, 'amount_paid', getattr(x, 'amount', 0))), reverse=is_reverse)
         elif sort_by == 'type':
-            transactions.sort(key=lambda x: 'Sale' if hasattr(x, 'sale_number') else 'Debt Payment', reverse=is_reverse)
+            transactions.sort(key=lambda x: 'Refund' if hasattr(x, 'refund_number') else ('Sale' if hasattr(x, 'sale_number') else 'Debt Payment'), reverse=is_reverse)
         elif sort_by == 'status':
-            transactions.sort(key=lambda x: x.is_accountant_confirmed, reverse=is_reverse)
+            transactions.sort(key=lambda x: True if hasattr(x, 'refund_number') else x.is_accountant_confirmed, reverse=is_reverse)
         elif sort_by == 'reference':
-            transactions.sort(key=lambda x: getattr(x, 'sale_number', getattr(x, 'customer', getattr(x, 'customer', ''))), reverse=is_reverse)
+            transactions.sort(key=lambda x: getattr(x, 'refund_number', getattr(x, 'sale_number', str(getattr(x, 'customer', '')))), reverse=is_reverse)
         else: # default created_at
-            transactions.sort(key=lambda x: x.created_at, reverse=is_reverse)
+            transactions.sort(key=lambda x: getattr(x, 'paid_at', None) or x.created_at, reverse=is_reverse)
             
         headers = ['Date & Time', 'Type', 'Shop', 'Reference / Customer', 'Status', 'Amount']
         rows = []
         for t in transactions:
-            is_sale = hasattr(t, 'sale_number')
-            t_type = 'Sale' if is_sale else 'Debt Payment'
-            ref = t.sale_number if is_sale else str(t.customer)
-            amount = float(t.amount_paid) if is_sale else float(t.amount)
-            status = "Confirmed" if t.is_accountant_confirmed else "Pending"
+            if hasattr(t, 'refund_number'):
+                t_date = t.paid_at or t.created_at
+                t_type = 'MoMo Refund'
+                ref = t.refund_number or (f"Sale {t.sale.sale_number}" if t.sale else '-')
+                status = "Disbursed" if t.payout_status == 'PAID' else "Pending"
+                amount = -float(t.refund_amount)
+            elif hasattr(t, 'sale_number'):
+                t_date = t.created_at
+                t_type = 'MoMo Sale (Refunded)' if t.status == 'REFUNDED' else 'MoMo Sale'
+                ref = t.sale_number
+                status = "Confirmed" if t.is_accountant_confirmed else "Pending"
+                amount = float(t.amount_paid)
+            else:
+                t_date = t.created_at
+                t_type = 'Debt Payment (MoMo)'
+                ref = str(t.customer) if t.customer else '-'
+                status = "Confirmed" if t.is_accountant_confirmed else "Pending"
+                amount = float(t.amount)
             
             rows.append([
-                t.created_at.strftime('%Y-%m-%d %H:%M'),
+                t_date.strftime('%Y-%m-%d %H:%M') if t_date else '-',
                 t_type,
                 shop.name,
                 ref,
@@ -2936,7 +2990,7 @@ class CashHistoryView(LoginRequiredMixin, ListView):
         role_name = user.role.name if user.role else None
         qs = Sale.objects.filter(
             tenant=user.tenant,
-            status__in=['COMPLETED', 'PENDING_DISPATCH'],
+            status__in=['COMPLETED', 'PENDING_DISPATCH', 'REFUNDED'],
             payment_method__in=['CASH', 'MIXED'],
         ).select_related('attendant', 'shop')
 
@@ -3069,8 +3123,9 @@ class CashHistoryView(LoginRequiredMixin, ListView):
         refund_qs = RefundRequest.objects.filter(
             tenant=user.tenant,
             status='APPROVED',
-            payout_status='PAID',
-            refund_method='CASH'
+            payout_status='PAID'
+        ).filter(
+            Q(refund_method='CASH') | Q(sale__payment_method__in=['CASH', 'MIXED'])
         ).select_related('sale', 'sale__shop', 'sale__customer', 'paid_by').order_by('-paid_at')
         if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER', 'SHOP_ATTENDANT']:
             if user.location:
@@ -3094,7 +3149,7 @@ class CashHistoryView(LoginRequiredMixin, ListView):
             except ValueError:
                 pass
 
-        context['cash_refund_payouts'] = refund_qs[:20]
+        context['cash_refund_payouts'] = refund_qs[:100]
         context['total_cash_refunds'] = refund_qs.aggregate(total=Sum('refund_amount'))['total'] or Decimal('0.00')
         context['cash_refunds_count'] = refund_qs.count()
 
@@ -3128,7 +3183,7 @@ class CashHistoryExportView(LoginRequiredMixin, View):
         
         qs = Sale.objects.filter(
             tenant=user.tenant,
-            status__in=['COMPLETED', 'PENDING_DISPATCH'],
+            status__in=['COMPLETED', 'PENDING_DISPATCH', 'REFUNDED'],
             payment_method__in=['CASH', 'MIXED'],
         ).select_related('attendant', 'shop')
 
@@ -3165,10 +3220,12 @@ class CashHistoryExportView(LoginRequiredMixin, View):
         for sale in qs:
             amount = float(sale.amount_paid) if sale.payment_method == 'MIXED' else float(sale.total)
             method = "Mixed" if sale.payment_method == 'MIXED' else "Cash"
+            if sale.status == 'REFUNDED':
+                method += " (Refunded)"
             rows.append([
                 sale.created_at.strftime("%Y-%m-%d %H:%M"),
                 sale.sale_number,
-                sale.attendant.get_full_name() or sale.attendant.email,
+                sale.attendant.get_full_name() or sale.attendant.email if sale.attendant else 'Attendant',
                 sale.shop.name if sale.shop else '-',
                 method,
                 amount
@@ -3179,8 +3236,9 @@ class CashHistoryExportView(LoginRequiredMixin, View):
         rf_qs = RefundRequest.objects.filter(
             tenant=user.tenant,
             status='APPROVED',
-            payout_status='PAID',
-            refund_method='CASH'
+            payout_status='PAID'
+        ).filter(
+            Q(refund_method='CASH') | Q(sale__payment_method__in=['CASH', 'MIXED'])
         ).select_related('sale', 'sale__shop', 'paid_by')
         if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER', 'SHOP_ATTENDANT']:
             if user.location:

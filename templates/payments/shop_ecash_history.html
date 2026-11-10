@@ -2,6 +2,7 @@
 {% load static %}
 {% load sort_tags %}
 {% load humanize %}
+{% load core_filters %}
 
 {% block title %}E-Cash History - {{ shop.name }}{% endblock %}
 
@@ -167,7 +168,9 @@
                         <i class="bi bi-wallet2"></i>
                     </div>
                 </div>
-                <h4 class="mb-1 fw-bold text-primary">{{ currency_symbol }}{{ filtered_net_volume|floatformat:2|intcomma }}</h4>
+                <h4 class="mb-1 fw-bold {% if filtered_net_volume < 0 %}text-danger{% else %}text-primary{% endif %}">
+                    {% if filtered_net_volume < 0 %}-{{ currency_symbol }}{{ filtered_net_volume|stringformat:'.2f'|slice:'1:' }}{% else %}{{ currency_symbol }}{{ filtered_net_volume|floatformat:2|intcomma }}{% endif %}
+                </h4>
                 <div class="text-muted small">{{ filtered_total_count }} total transaction{{ filtered_total_count|pluralize }}</div>
             </div>
         </div>
@@ -210,13 +213,41 @@
                                 {% if tx.amount >= 0 %}+{% endif %}{{ currency_symbol }}{{ tx.amount|floatformat:"2g" }}
                             </td>
                             <td>
-                                {% if tx.reference_type and tx.reference_id %}
-                                <small class="text-muted">{{ tx.reference_type }} #{{ tx.reference_id }}</small>
+                                {% if tx.reference_type == 'Sale' and tx.reference_id %}
+                                    {% with sale_num=sale_number_map|get_item:tx.reference_id %}
+                                    <div class="d-flex align-items-center">
+                                        <i class="bi bi-receipt me-1 text-primary"></i>
+                                        <a href="#" class="text-decoration-none fw-semibold text-primary sale-detail-link"
+                                           data-sale-id="{{ tx.reference_id }}"
+                                           title="View Sale Details">
+                                            {{ sale_num|default:tx.reference_id }}
+                                        </a>
+                                    </div>
+                                    {% endwith %}
+                                {% elif tx.reference_type == 'RefundRequest' and tx.reference_id %}
+                                    {% with rf_info=refund_map|get_item:tx.reference_id %}
+                                    <div class="d-flex align-items-center">
+                                        <i class="bi bi-arrow-counterclockwise me-1 text-danger"></i>
+                                        <div>
+                                            <a href="#" class="text-decoration-none fw-semibold text-danger font-monospace sale-detail-link"
+                                               data-sale-id="{{ rf_info.sale_id|default:tx.reference_id }}"
+                                               title="View Refund / Sale Details">
+                                                {{ rf_info.refund_number|default:tx.reference_id }}
+                                            </a>
+                                            {% if rf_info.sale_number %}
+                                            <small class="text-muted d-block font-monospace">
+                                                Sale: <a href="#" class="text-decoration-none text-primary sale-detail-link" data-sale-id="{{ rf_info.sale_id }}">{{ rf_info.sale_number }}</a>
+                                            </small>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                    {% endwith %}
+                                {% elif tx.reference_type and tx.reference_id %}
+                                    <small class="text-muted">{{ tx.reference_type }} #{{ tx.reference_id }}</small>
                                 {% elif tx.paystack_reference %}
-                                <small
-                                    class="text-muted font-monospace">{{ tx.paystack_reference|truncatechars:20 }}</small>
+                                    <small class="text-muted font-monospace">{{ tx.paystack_reference|truncatechars:20 }}</small>
                                 {% else %}
-                                -
+                                    -
                                 {% endif %}
                             </td>
                             <td>
@@ -271,4 +302,233 @@
     </nav>
     {% endif %}
 </div>
+
+<!-- Sale Detail Modal -->
+<div class="modal fade" id="saleDetailModal" tabindex="-1" aria-labelledby="saleDetailModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="saleDetailModalLabel">
+                    <i class="bi bi-receipt-cutoff me-2"></i>Sale Details
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="saleDetailBody">
+                <div class="text-center py-5" id="saleDetailLoading">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="text-muted mt-2">Loading sale details...</p>
+                </div>
+                <div id="saleDetailContent" style="display:none;"></div>
+            </div>
+            <div class="modal-footer">
+                <a href="#" class="btn btn-primary" id="saleDetailPrintBtn" target="_blank">
+                    <i class="bi bi-printer me-1"></i>Print Receipt
+                </a>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const currencySymbol = '{{ currency_symbol|default:"$" }}';
+    const saleModalEl = document.getElementById('saleDetailModal');
+    let saleModalInstance = null;
+    if (saleModalEl) {
+        saleModalInstance = new bootstrap.Modal(saleModalEl);
+    }
+    const saleLoadingEl = document.getElementById('saleDetailLoading');
+    const saleContentEl = document.getElementById('saleDetailContent');
+    const salePrintBtn = document.getElementById('saleDetailPrintBtn');
+
+    function formatCurrency(val) {
+        const num = parseFloat(val);
+        if (isNaN(num)) return currencySymbol + '0.00';
+        return currencySymbol + num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    document.querySelectorAll('.sale-detail-link').forEach(function(link) {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const saleId = this.dataset.saleId;
+            if (!saleId) return;
+
+            saleLoadingEl.style.display = 'block';
+            saleContentEl.style.display = 'none';
+            salePrintBtn.href = '/sales/' + saleId + '/receipt/';
+
+            if (saleModalInstance) saleModalInstance.show();
+
+            fetch('/sales/api/' + saleId + '/detail/')
+                .then(function(response) {
+                    if (!response.ok) throw new Error('Network response was not ok');
+                    return response.json();
+                })
+                .then(function(data) {
+                    if (data.id || data.sale_id) {
+                        salePrintBtn.href = '/sales/' + (data.id || data.sale_id) + '/receipt/';
+                    }
+                    renderSaleDetail(data);
+                    saleLoadingEl.style.display = 'none';
+                    saleContentEl.style.display = 'block';
+                })
+                .catch(function(err) {
+                    console.error('Error fetching sale details:', err);
+                    saleContentEl.innerHTML = '<div class="alert alert-danger py-4 text-center"><i class="bi bi-exclamation-triangle fs-3 d-block mb-2"></i>Failed to load transaction details.</div>';
+                    saleLoadingEl.style.display = 'none';
+                    saleContentEl.style.display = 'block';
+                });
+        });
+    });
+
+    function getStatusBadge(statusCode, statusDisplay) {
+        const colors = {
+            'COMPLETED': 'success',
+            'VOIDED': 'danger',
+            'PENDING': 'warning',
+            'PENDING_DISPATCH': 'info',
+            'REFUNDED': 'danger',
+        };
+        const color = colors[statusCode] || 'secondary';
+        return '<span class="badge bg-' + color + '">' + (statusDisplay || statusCode) + '</span>';
+    }
+
+    function getPaymentBadge(code, display) {
+        const colors = {
+            'CASH': 'success',
+            'ECASH': 'primary',
+            'MOMO': 'info',
+            'CREDIT': 'warning',
+            'MIXED': 'secondary',
+        };
+        const color = colors[code] || 'secondary';
+        return '<span class="badge bg-' + color + '">' + (display || code) + '</span>';
+    }
+
+    function renderSaleDetail(data) {
+        let html = '';
+
+        if (data.refunds && data.refunds.length > 0) {
+            data.refunds.forEach(function(rf) {
+                html += '<div class="alert alert-danger py-2 px-3 mb-3 d-flex justify-content-between align-items-center">';
+                html += '<div><strong><i class="bi bi-arrow-counterclockwise me-1"></i>Refund: ' + (rf.refund_number || 'Record') + '</strong>';
+                html += ' <span class="badge bg-danger-subtle text-danger ms-1">' + (rf.status || 'Processed') + '</span>';
+                if (rf.refund_method) {
+                    html += ' <span class="badge bg-secondary ms-1">' + rf.refund_method + '</span>';
+                }
+                if (rf.reason) {
+                    html += '<br><small class="text-muted">' + rf.reason + '</small>';
+                }
+                html += '</div>';
+                html += '<span class="fw-bold fs-6 text-danger">-' + formatCurrency(rf.refund_amount) + '</span>';
+                html += '</div>';
+            });
+        }
+
+        html += '<div class="row mb-3">';
+        html += '<div class="col-sm-6">';
+        html += '<h6 class="text-muted mb-1">Sale Number</h6>';
+        html += '<p class="fw-bold fs-5 mb-0 font-monospace text-primary">' + data.sale_number + '</p>';
+        html += '</div>';
+        html += '<div class="col-sm-6 text-sm-end">';
+        html += '<h6 class="text-muted mb-1">Status</h6>';
+        html += '<p class="mb-0">' + getStatusBadge(data.status_code, data.status) + '</p>';
+        html += '</div>';
+        html += '</div>';
+
+        html += '<div class="row mb-3 py-2 bg-light rounded g-2">';
+        html += '<div class="col-sm-4">';
+        html += '<small class="text-muted d-block">Date</small>';
+        html += '<span class="fw-medium">' + data.created_at + '</span>';
+        html += '</div>';
+        html += '<div class="col-sm-4">';
+        html += '<small class="text-muted d-block">Shop</small>';
+        html += '<span class="fw-medium">' + data.shop + '</span>';
+        html += '</div>';
+        html += '<div class="col-sm-4">';
+        html += '<small class="text-muted d-block">Attendant</small>';
+        html += '<span class="fw-medium">' + data.attendant + '</span>';
+        html += '</div>';
+        html += '</div>';
+
+        html += '<div class="row mb-3">';
+        html += '<div class="col-sm-6">';
+        html += '<small class="text-muted d-block mb-1">Payment Method</small>';
+        html += getPaymentBadge(data.payment_method_code, data.payment_method);
+        html += '</div>';
+        if (data.customer) {
+            html += '<div class="col-sm-6">';
+            html += '<small class="text-muted d-block mb-1">Customer</small>';
+            html += '<span class="fw-medium">' + data.customer + '</span>';
+            if (data.customer_phone) {
+                html += '<br><small class="text-muted"><i class="bi bi-telephone me-1"></i>' + data.customer_phone + '</small>';
+            }
+            html += '</div>';
+        }
+        html += '</div>';
+
+        html += '<h6 class="border-bottom pb-2 mb-2 fw-bold">Items</h6>';
+        html += '<div class="table-responsive mb-3">';
+        html += '<table class="table table-sm table-hover mb-0 align-middle">';
+        html += '<thead class="table-light"><tr>';
+        html += '<th>Product</th><th class="text-center">Qty</th>';
+        html += '<th class="text-end">Price</th><th class="text-end">Total</th>';
+        html += '</tr></thead><tbody>';
+
+        if (data.items && data.items.length > 0) {
+            data.items.forEach(function(item) {
+                html += '<tr>';
+                html += '<td><span class="fw-medium">' + item.product_name + '</span><br><small class="text-muted">' + item.sku + '</small></td>';
+                html += '<td class="text-center">' + parseFloat(item.quantity) + '</td>';
+                html += '<td class="text-end">' + formatCurrency(item.unit_price) + '</td>';
+                html += '<td class="text-end fw-semibold">' + formatCurrency(item.total) + '</td>';
+                html += '</tr>';
+            });
+        } else {
+            html += '<tr><td colspan="4" class="text-center text-muted py-2">No items listed</td></tr>';
+        }
+
+        html += '</tbody></table></div>';
+
+        html += '<div class="border-top pt-2 mt-2">';
+        html += '<div class="d-flex justify-content-between mb-1">';
+        html += '<span class="text-muted">Subtotal</span><span>' + formatCurrency(data.subtotal) + '</span>';
+        html += '</div>';
+
+        if (data.discount_amount && parseFloat(data.discount_amount) > 0) {
+            html += '<div class="d-flex justify-content-between mb-1 text-danger">';
+            html += '<span>Discount</span><span>-' + formatCurrency(data.discount_amount) + '</span>';
+            html += '</div>';
+        }
+        if (data.tax_amount && parseFloat(data.tax_amount) > 0) {
+            html += '<div class="d-flex justify-content-between mb-1">';
+            html += '<span class="text-muted">Tax</span><span>' + formatCurrency(data.tax_amount) + '</span>';
+            html += '</div>';
+        }
+
+        html += '<div class="d-flex justify-content-between fw-bold fs-5 border-top pt-2">';
+        html += '<span>Total</span><span class="text-primary">' + formatCurrency(data.total) + '</span>';
+        html += '</div>';
+
+        html += '<div class="d-flex justify-content-between mt-1 text-muted">';
+        html += '<span>Amount Paid</span><span class="fw-semibold text-dark">' + formatCurrency(data.amount_paid) + '</span>';
+        html += '</div>';
+
+        if (data.change_given && parseFloat(data.change_given) > 0) {
+            html += '<div class="d-flex justify-content-between text-success">';
+            html += '<span>Change</span><span>' + formatCurrency(data.change_given) + '</span>';
+            html += '</div>';
+        }
+
+        html += '</div>';
+
+        saleContentEl.innerHTML = html;
+    }
+});
+</script>
 {% endblock %}

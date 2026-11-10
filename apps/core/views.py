@@ -411,6 +411,9 @@ class DashboardView(LoginRequiredMixin, View):
                 halt_pending_subquery = Exists(
                     RefundRequest.objects.filter(sale=OuterRef('pk'), status='PENDING', is_partial_halt=True)
                 )
+                payout_pending_subquery = Exists(
+                    RefundRequest.objects.filter(sale=OuterRef('pk'), status='APPROVED', payout_status='PENDING')
+                )
 
                 context['pending_dispatches'] = Sale.objects.filter(
                     tenant=user.tenant,
@@ -418,7 +421,8 @@ class DashboardView(LoginRequiredMixin, View):
                     status='PENDING_DISPATCH'
                 ).select_related('customer', 'attendant').annotate(
                     _has_pending_refund=refund_pending_subquery,
-                    _has_pending_halt=halt_pending_subquery
+                    _has_pending_halt=halt_pending_subquery,
+                    _has_approved_pending_payout=payout_pending_subquery
                 ).order_by('-created_at')[:10]
                 context['pending_dispatches_count'] = Sale.objects.filter(
                     tenant=user.tenant,
@@ -433,7 +437,8 @@ class DashboardView(LoginRequiredMixin, View):
                     status__in=['COMPLETED', 'PENDING_DISPATCH']
                 ).select_related('customer', 'attendant', 'dispatched_by').annotate(
                     _has_pending_refund=refund_pending_subquery,
-                    _has_pending_halt=halt_pending_subquery
+                    _has_pending_halt=halt_pending_subquery,
+                    _has_approved_pending_payout=payout_pending_subquery
                 ).order_by('-created_at')[:10]
 
                 # Recent Sales (Any status except pending)
@@ -444,7 +449,8 @@ class DashboardView(LoginRequiredMixin, View):
                     'customer', 'attendant'
                 ).annotate(
                     _has_pending_refund=refund_pending_subquery,
-                    _has_pending_halt=halt_pending_subquery
+                    _has_pending_halt=halt_pending_subquery,
+                    _has_approved_pending_payout=payout_pending_subquery
                 ).order_by('-created_at')[:10]
         
         return render(request, self.template_name, context)

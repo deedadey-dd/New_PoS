@@ -632,9 +632,21 @@ class Sale(TenantModel):
         return self.refund_requests.filter(status='PENDING', is_partial_halt=True).exists()
 
     @property
+    def has_approved_pending_payout(self):
+        """True when this sale has an approved refund or halt request awaiting cashier payout."""
+        if hasattr(self, '_has_approved_pending_payout'):
+            return bool(self._has_approved_pending_payout)
+        return self.refund_requests.filter(status='APPROVED', payout_status='PENDING').exists()
+
+    @property
     def pending_refund_request(self):
         """Return the pending RefundRequest instance, if any."""
         return self.refund_requests.filter(status='PENDING').first()
+
+    @property
+    def approved_pending_payout_request(self):
+        """Return the approved RefundRequest instance awaiting payout, if any."""
+        return self.refund_requests.filter(status='APPROVED', payout_status='PENDING').first()
 
 
     def complete(self, amount_paid, payment_method='CASH', paystack_ref='', cashier=None):
@@ -1252,6 +1264,34 @@ class RefundRequest(TenantModel):
             reference_id=self.pk,
         )
 
+    @classmethod
+    def channel_refunds(cls, tenant, channel, shop=None, date_from=None, date_to=None):
+        """
+        Disbursed refunds relevant to a payment channel's history page ('CASH', 'MOMO' or 'ECASH').
+        A refund is relevant when it was paid out through the channel OR when the original sale
+        was paid through the channel (even if the refund was paid via another channel).
+        Informational: refunded sales drop out of channel balances, so these rows keep the
+        refund visible in history without double-counting.
+        """
+        from django.db.models import Q
+        sale_methods = {
+            'CASH': ['CASH', 'MIXED'],
+            'MOMO': ['MOMO', 'LOCAL_MOMO'],
+            'ECASH': ['ECASH'],
+        }[channel]
+        qs = cls.objects.filter(
+            tenant=tenant, status='APPROVED', payout_status='PAID'
+        ).filter(
+            Q(refund_method=channel) | Q(sale__payment_method__in=sale_methods)
+        ).select_related('sale', 'sale__shop', 'sale__customer', 'paid_by')
+        if shop:
+            qs = qs.filter(sale__shop=shop)
+        if date_from:
+            qs = qs.filter(paid_at__date__gte=date_from)
+        if date_to:
+            qs = qs.filter(paid_at__date__lte=date_to)
+        return qs.order_by('-paid_at')
+
     def execute_payout(self, disburser, shift=None, transaction_reference='', payout_notes=''):
         """
         Cashier or Admin dispenses the payout funds (CASH, MOMO, ECASH).
@@ -1299,16 +1339,17 @@ class RefundRequest(TenantModel):
                     )
                 elif method == 'ECASH' and self.refund_amount > Decimal('0.00'):
                     from apps.payments.models import ECashLedger
-                    ECashLedger.objects.create(
-                        tenant=tenant,
-                        transaction_type='REFUND',
-                        amount=-abs(self.refund_amount),
-                        reference_type='RefundRequest',
-                        reference_id=self.pk,
-                        shop=sale.shop,
-                        created_by=disburser,
-                        notes=f"Partial refund disbursed by cashier: Sale {sale.sale_number} [{self.refund_number}]"
-                    )
+                    if not ECashLedger.objects.filter(reference_type='RefundRequest', reference_id=self.pk).exists():
+                        ECashLedger.objects.create(
+                            tenant=tenant,
+                            transaction_type='REFUND',
+                            amount=-abs(self.refund_amount),
+                            reference_type='RefundRequest',
+                            reference_id=self.pk,
+                            shop=sale.shop,
+                            created_by=disburser,
+                            notes=f"Partial refund disbursed by cashier: Sale {sale.sale_number} [{self.refund_number}]"
+                        )
             else:
                 # Full sale refund: return inventory & customer debt reversal
                 sale.refund(reason=self.reason, user=disburser)
@@ -1391,18 +1432,19 @@ class RefundRequest(TenantModel):
         # excluded from the shop's cash_sales, ecash_sales, or momo_sales aggregations.
         # This naturally drops the balance of whatever the original payment method was.
 
-        if refund_method == 'ECASH' and pay_method == 'ECASH':
+        if refund_method == 'ECASH':
             from apps.payments.models import ECashLedger
-            ECashLedger.objects.create(
-                tenant=tenant,
-                transaction_type='REFUND',
-                amount=-abs(paid_amount),
-                reference_type='RefundRequest',
-                reference_id=self.pk,
-                shop=shop,
-                created_by=approver,
-                notes=f"Refund: Sale {sale.sale_number} [{self.refund_number}]"
-            )
+            if not ECashLedger.objects.filter(reference_type='RefundRequest', reference_id=self.pk).exists():
+                ECashLedger.objects.create(
+                    tenant=tenant,
+                    transaction_type='REFUND',
+                    amount=-abs(paid_amount),
+                    reference_type='RefundRequest',
+                    reference_id=self.pk,
+                    shop=shop,
+                    created_by=approver,
+                    notes=f"Refund: Sale {sale.sale_number} [{self.refund_number}]"
+                )
         elif refund_method != pay_method and refund_method == 'CASH' and pay_method in ('ECASH', 'MOMO'):
             # The sale was digital, but we are paying back in physical cash.
             # 1. Restore the digital balance (because excluding the sale artificially dropped it)

@@ -25,7 +25,7 @@ This directory contains documentation for the POS System.
 - User Management → See [Settings & Administration](USER_MANUAL.md#settings--administration)
 - System Configuration → See [Settings & Administration](USER_MANUAL.md#settings--administration)
 - Approving Refund Requests → See [Refund Approval](USER_MANUAL.md#refund-approval-accountant--admin)
-- End of Day Reconciliation & Cash History → See [Refunds in Reports & Cash History](USER_MANUAL.md#refunds-in-reports--cash-history)
+- End of Day Reconciliation & Multi-Channel History → See [Refunds in Reports & History Pages Across All Channels](USER_MANUAL.md#5-refunds-in-reports--history-pages-across-all-channels)
 
 ## In-App Help
 

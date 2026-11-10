@@ -615,6 +615,9 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
             ),
             _has_pending_halt=Exists(
                 RefundRequest.objects.filter(sale=OuterRef('pk'), status='PENDING', is_partial_halt=True)
+            ),
+            _has_approved_pending_payout=Exists(
+                RefundRequest.objects.filter(sale=OuterRef('pk'), status='APPROVED', payout_status='PENDING')
             )
         ).order_by('-created_at')
         
@@ -668,7 +671,12 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
         # Refund status filter
         refund_status = self.request.GET.get('refund_status')
         if refund_status == 'pending':
+            from django.db.models import Q
+            queryset = queryset.filter(Q(_has_pending_refund=True) | Q(_has_approved_pending_payout=True))
+        elif refund_status == 'pending_approval':
             queryset = queryset.filter(_has_pending_refund=True)
+        elif refund_status == 'pending_payout':
+            queryset = queryset.filter(_has_approved_pending_payout=True)
         elif refund_status == 'pending_halt':
             queryset = queryset.filter(_has_pending_halt=True)
 
@@ -890,10 +898,19 @@ def api_sale_detail(request, pk_or_number):
     """Return sale detail as JSON for modal display."""
     queryset = Sale.objects.select_related('shop', 'attendant', 'customer').prefetch_related('items__product')
     
-    if str(pk_or_number).startswith('S'):
-        sale = get_object_or_404(queryset, sale_number=pk_or_number, tenant=request.user.tenant)
+    val_str = str(pk_or_number).strip()
+    if val_str.startswith('REF') or val_str.startswith('refund-'):
+        from apps.sales.models import RefundRequest
+        if val_str.startswith('refund-'):
+            ref_pk = val_str.split('-', 1)[1]
+            rf = get_object_or_404(RefundRequest, pk=ref_pk, tenant=request.user.tenant)
+        else:
+            rf = get_object_or_404(RefundRequest, refund_number=val_str, tenant=request.user.tenant)
+        sale = rf.sale
+    elif val_str.startswith('S'):
+        sale = get_object_or_404(queryset, sale_number=val_str, tenant=request.user.tenant)
     else:
-        sale = get_object_or_404(queryset, pk=pk_or_number, tenant=request.user.tenant)
+        sale = get_object_or_404(queryset, pk=val_str, tenant=request.user.tenant)
         
     items = []
     for item in sale.items.all():
@@ -963,6 +980,8 @@ def api_sale_detail(request, pk_or_number):
             ecash_metadata = ecash_tx.metadata
 
     data = {
+        'id': sale.pk,
+        'sale_id': sale.pk,
         'sale_number': sale.sale_number,
         'created_at': sale.created_at.strftime('%b %d, %Y %H:%M'),
         'shop': sale.shop.name,
@@ -989,6 +1008,21 @@ def api_sale_detail(request, pk_or_number):
         'items': items,
         'dispatch_history': dispatch_history,
         'ecash_metadata': ecash_metadata,
+        'refunds': [
+            {
+                'id': rf_obj.id,
+                'refund_number': rf_obj.refund_number,
+                'status': rf_obj.get_status_display(),
+                'status_code': rf_obj.status,
+                'payout_status': rf_obj.get_payout_status_display(),
+                'refund_amount': str(rf_obj.refund_amount),
+                'reason': rf_obj.reason,
+                'refund_method': rf_obj.get_refund_method_display(),
+                'created_at': rf_obj.created_at.strftime('%b %d, %Y %H:%M'),
+                'paid_at': rf_obj.paid_at.strftime('%b %d, %Y %H:%M') if rf_obj.paid_at else None,
+            }
+            for rf_obj in sale.refund_requests.all()
+        ],
         'has_pending_refund': sale.refund_requests.filter(status='PENDING').exists(),
         'pending_refund_info': {
             'id': sale.refund_requests.filter(status='PENDING').first().id,
@@ -999,6 +1033,17 @@ def api_sale_detail(request, pk_or_number):
             'reason': sale.refund_requests.filter(status='PENDING').first().reason,
             'created_at': sale.refund_requests.filter(status='PENDING').first().created_at.strftime('%b %d, %Y %H:%M'),
         } if sale.refund_requests.filter(status='PENDING').exists() else None,
+        'has_approved_pending_payout': sale.refund_requests.filter(status='APPROVED', payout_status='PENDING').exists(),
+        'approved_refund_info': {
+            'id': sale.refund_requests.filter(status='APPROVED', payout_status='PENDING').first().id,
+            'refund_number': sale.refund_requests.filter(status='APPROVED', payout_status='PENDING').first().refund_number,
+            'is_partial_halt': sale.refund_requests.filter(status='APPROVED', payout_status='PENDING').first().is_partial_halt,
+            'refund_amount': str(sale.refund_requests.filter(status='APPROVED', payout_status='PENDING').first().refund_amount),
+            'refund_method': sale.refund_requests.filter(status='APPROVED', payout_status='PENDING').first().get_refund_method_display(),
+            'debt_reduction_amount': str(sale.refund_requests.filter(status='APPROVED', payout_status='PENDING').first().debt_reduction_amount),
+            'reason': sale.refund_requests.filter(status='APPROVED', payout_status='PENDING').first().reason,
+            'created_at': sale.refund_requests.filter(status='APPROVED', payout_status='PENDING').first().created_at.strftime('%b %d, %Y %H:%M'),
+        } if sale.refund_requests.filter(status='APPROVED', payout_status='PENDING').exists() else None,
     }
     return JsonResponse(data)
 
@@ -1033,10 +1078,12 @@ def api_refund_sale(request, pk):
     if sale.status == 'REFUNDED':
         return JsonResponse({'success': False, 'error': 'Sale is already refunded.'}, status=400)
 
-    # Check for an already-pending refund request
+    # Check for an already-pending or approved refund request
     from .models import RefundRequest
     if RefundRequest.objects.filter(sale=sale, status='PENDING').exists():
         return JsonResponse({'success': False, 'error': 'A refund request for this sale is already pending approval.'}, status=400)
+    if RefundRequest.objects.filter(sale=sale, status='APPROVED', payout_status='PENDING').exists():
+        return JsonResponse({'success': False, 'error': 'An approved refund request for this sale is already awaiting cashier disbursement.'}, status=400)
 
     if sale.status not in ['COMPLETED', 'PENDING_DISPATCH']:
         return JsonResponse({'success': False, 'error': 'Only completed or pending dispatch sales can be refunded.'}, status=400)
