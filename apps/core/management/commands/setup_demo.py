@@ -96,11 +96,44 @@ class Command(BaseCommand):
                 self.stdout.write(f'  Building data for: {tenant.name}')
                 self._build_tenant_data(tenant, roles, is_strict)
 
-        self.stdout.write(self.style.SUCCESS('\n[OK] All Demo Environments successfully created!\n'))
-        self.stdout.write('  Login credentials (password: demo):')
-        for name in DEMO_TENANT_NAMES:
-            prefix = 'strict_' if 'Strict' in name else ''
-            self.stdout.write(f'    [{name}]  admin@demo.com  /  {prefix}admin@demo.com')
+        self.stdout.write(self.style.SUCCESS('\n========================================================='))
+        self.stdout.write(self.style.SUCCESS('   [OK] Comprehensive Demo Environments Successfully Created!'))
+        self.stdout.write(self.style.SUCCESS('=========================================================\n'))
+        self.stdout.write('  Shared Password for all demo accounts: demo\n')
+        self.stdout.write('  TENANT 1: Demo Company (Standard Location-Based Workflow)')
+        self.stdout.write('  ---------------------------------------------------------')
+        self.stdout.write('    Administrator:         admin@demo.com')
+        self.stdout.write('    Chief Accountant:      accountant@demo.com')
+        self.stdout.write('    System Auditor:        auditor@demo.com')
+        self.stdout.write('    Downtown Shop Manager: manager1@demo.com')
+        self.stdout.write('    Downtown Attendant:    attendant1@demo.com')
+        self.stdout.write('    Uptown Shop Manager:   manager2@demo.com')
+        self.stdout.write('    Uptown Attendant:      attendant2@demo.com')
+        self.stdout.write('    Warehouse Manager:     stores@demo.com')
+        self.stdout.write('    Production Manager:    production@demo.com\n')
+        self.stdout.write('  TENANT 2: Strict Demo Company (Strict Sales & Cashier Workflow)')
+        self.stdout.write('  ---------------------------------------------------------')
+        self.stdout.write('    Administrator:         strict_admin@demo.com')
+        self.stdout.write('    Shop Cashier (Till):   strict_cashier@demo.com')
+        self.stdout.write('    Chief Accountant:      strict_accountant@demo.com')
+        self.stdout.write('    System Auditor:        strict_auditor@demo.com')
+        self.stdout.write('    Downtown Shop Manager: strict_manager1@demo.com')
+        self.stdout.write('    Downtown Attendant:    strict_attendant1@demo.com')
+        self.stdout.write('    Uptown Shop Manager:   strict_manager2@demo.com')
+        self.stdout.write('    Uptown Attendant:      strict_attendant2@demo.com')
+        self.stdout.write('    Warehouse Manager:     strict_stores@demo.com')
+        self.stdout.write('    Production Manager:    strict_production@demo.com\n')
+        self.stdout.write('  Configured Features & Ready-to-Test Scenarios:')
+        self.stdout.write('    * POS Terminal & Product Bundles (School Pack, Refreshment Combo, Exam Bundle)')
+        self.stdout.write('    * Multi-Channel History (Cash, MoMo, ECash with transaction detail modals & receipts)')
+        self.stdout.write('    * 2-Step Refunds across all channels (Cash, MoMo, ECash, Cross-Payment)')
+        self.stdout.write('    * Partial Dispatch & Halt Scenarios with printable Dispatch Slips / Waybills')
+        self.stdout.write('    * Awaiting Payout State (locks refund button on sales list; cashier payout button)')
+        self.stdout.write('    * Customer Store Credit Cash Payouts & Debt Reductions')
+        self.stdout.write('    * End-of-Day Management Reports (Local MoMo reconciliation review, variance checks)')
+        self.stdout.write('    * Custom Receipt Printer Fonts (Consolas, Sans-Serif, size & weight options)')
+        self.stdout.write('    * Active Subscription Plans (Pre-linked Premium Plan with valid duration)')
+        self.stdout.write('    * Batch Audit Trail (BatchEditHistory change logs)\n')
 
     # ========================================================================
     # WIPE
@@ -108,12 +141,14 @@ class Command(BaseCommand):
 
     def _wipe_demo_data(self):
         from apps.transfers.models import StockRequest, StockRequestItem, Transfer, TransferItem, StockWriteOff
-        from apps.inventory.models import ProductBundle, BundleItem
+        from apps.inventory.models import ProductBundle, BundleItem, BatchEditHistory
+        from apps.notifications.models import BulletinRead
 
         tenants = Tenant.objects.filter(name__in=DEMO_TENANT_NAMES)
         for tenant in tenants:
-            # Notifications
+            # Notifications & Bulletins
             Notification.objects.filter(tenant=tenant).delete()
+            BulletinRead.objects.filter(bulletin_post__tenant=tenant).delete()
             BulletinPost.objects.filter(tenant=tenant).delete()
 
             # Product Bundles
@@ -127,7 +162,8 @@ class Command(BaseCommand):
             StockRequestItem.objects.filter(tenant=tenant).delete()
             StockRequest.objects.filter(tenant=tenant).delete()
 
-            # Inventory
+            # Inventory & Batch History
+            BatchEditHistory.objects.filter(tenant=tenant).delete()
             StockAdjustment.objects.filter(tenant=tenant).delete()
             FavoriteProduct.objects.filter(tenant=tenant).delete()
             ShopPrice.objects.filter(tenant=tenant).delete()
@@ -194,13 +230,23 @@ class Command(BaseCommand):
     # ========================================================================
 
     def _create_tenants(self):
+        from apps.subscriptions.models import SubscriptionPlan
+        premium_plan = SubscriptionPlan.objects.filter(code='PREMIUM').first() or SubscriptionPlan.objects.first()
+        now = timezone.now()
+
         tenant_standard = Tenant.objects.create(
             name='Demo Company',
             email='demo@demo.com',
             currency='GHS',
             phone='0241234567',
             address='123 High Street, Accra',
+            subscription_plan=premium_plan,
             subscription_status='ACTIVE',
+            subscription_start_date=now - timedelta(days=60),
+            subscription_end_date=now + timedelta(days=305),
+            auto_renew=True,
+            onboarding_paid=True,
+            setup_completed_at=now - timedelta(days=60),
             # Feature flags
             allow_momo_payments=True,
             allow_inter_shop_transfers=True,
@@ -211,6 +257,7 @@ class Command(BaseCommand):
             refund_always_cash=False,
             shop_manager_can_add_products=True,
             shop_manager_can_receive_stock=True,
+            shop_manager_can_delete_categories=True,
             shops_can_see_other_stock=True,
             allow_accountant_to_shop_transfers=True,
             pricing_control_mode='SHOP_MANAGER',
@@ -220,6 +267,7 @@ class Command(BaseCommand):
             waive_shift_requirement=False,
             cashier_transfers_to_bank=False,
             credit_limit_warning_percent=80,
+            backdating_allowed_days=30,
         )
         tenant_strict = Tenant.objects.create(
             name='Strict Demo Company',
@@ -227,7 +275,13 @@ class Command(BaseCommand):
             currency='GHS',
             phone='0241234568',
             address='456 Ring Road, Kumasi',
+            subscription_plan=premium_plan,
             subscription_status='ACTIVE',
+            subscription_start_date=now - timedelta(days=60),
+            subscription_end_date=now + timedelta(days=305),
+            auto_renew=True,
+            onboarding_paid=True,
+            setup_completed_at=now - timedelta(days=60),
             # Feature flags — strict mode
             use_strict_sales_workflow=True,
             use_cashier_workflow=True,
@@ -240,6 +294,7 @@ class Command(BaseCommand):
             refund_always_cash=True,
             shop_manager_can_add_products=False,
             shop_manager_can_receive_stock=False,
+            shop_manager_can_delete_categories=False,
             shops_can_see_other_stock=False,
             allow_accountant_to_shop_transfers=False,
             pricing_control_mode='ACCOUNTANT_PER_SHOP',
@@ -247,6 +302,7 @@ class Command(BaseCommand):
             waive_shift_requirement=False,
             cashier_transfers_to_bank=True,
             credit_limit_warning_percent=90,
+            backdating_allowed_days=7,
         )
         return tenant_standard, tenant_strict
 
@@ -358,11 +414,14 @@ class Command(BaseCommand):
                 )
 
         # --------------------------------------------------------------------
-        # ShopSettings
+        # ShopSettings (including receipt printer font customizations)
         # --------------------------------------------------------------------
         ShopSettings.objects.create(
             tenant=tenant, shop=loc_shop1,
             receipt_printer_type='THERMAL_80MM',
+            receipt_font_family='CONSOLAS',
+            receipt_font_weight='MEDIUM',
+            receipt_font_size='NORMAL',
             auto_print_receipts=True,
             show_logo_on_receipt=True,
             show_customer_info_on_receipt=True,
@@ -377,6 +436,9 @@ class Command(BaseCommand):
         ShopSettings.objects.create(
             tenant=tenant, shop=loc_shop2,
             receipt_printer_type='THERMAL_58MM',
+            receipt_font_family='SANSSERIF',
+            receipt_font_weight='NORMAL',
+            receipt_font_size='COMPACT',
             auto_print_receipts=False,
             show_logo_on_receipt=False,
             show_customer_info_on_receipt=False,
@@ -564,6 +626,28 @@ class Command(BaseCommand):
             Inventory.objects.create(
                 tenant=tenant, location=loc_production, product=p,
                 quantity=Decimal(str(item['prod_qty']))
+            )
+
+        # --------------------------------------------------------------------
+        # Batch Edit History (Audit logs for batch adjustments)
+        # --------------------------------------------------------------------
+        from apps.inventory.models import BatchEditHistory
+        BatchEditHistory.objects.create(
+            tenant=tenant,
+            batch=products[0]['batch_shop1'],
+            changed_by=manager1,
+            field_changed='unit_cost',
+            old_value='1.10',
+            new_value=str(products[0]['cost']),
+        )
+        if products[4].get('batch_stores_old'):
+            BatchEditHistory.objects.create(
+                tenant=tenant,
+                batch=products[4]['batch_stores_old'],
+                changed_by=stores_mgr,
+                field_changed='expiry_date',
+                old_value=str(today + timedelta(days=30)),
+                new_value=str(today + timedelta(days=8)),
             )
 
         # --------------------------------------------------------------------
@@ -1064,53 +1148,169 @@ class Command(BaseCommand):
         )
 
         # --------------------------------------------------------------------
-        # Standard Workflow Full RefundRequests
+        # Multi-Channel RefundRequests (Cash, MoMo, ECash, Cross-Payment, Awaiting Payout)
         # --------------------------------------------------------------------
-        refundable = [s for s in completed_sales if s.status == 'COMPLETED']
-        if len(refundable) >= 3:
-            # 1. PENDING full refund
-            pending_sale = refundable[0]
-            req_by_1 = cashier if (is_strict and pending_sale.shop == loc_shop1 and cashier) else (manager1 if pending_sale.shop == loc_shop1 else manager2)
+        completed_cash_sales = [s for s in completed_sales if s.payment_method == 'CASH' and s.status == 'COMPLETED']
+        completed_momo_sales = [s for s in completed_sales if s.payment_method == 'MOMO' and s.status == 'COMPLETED']
+        completed_ecash_sales = [s for s in completed_sales if s.payment_method == 'ECASH' and s.status == 'COMPLETED']
+
+        # 1. Full CASH Refund (PAID) -> sale becomes REFUNDED
+        if completed_cash_sales:
+            c_sale = completed_cash_sales.pop(0)
+            req_by = cashier if (is_strict and c_sale.shop == loc_shop1 and cashier) else (manager1 if c_sale.shop == loc_shop1 else manager2)
+            paid_by_user = cashier if (is_strict and c_sale.shop == loc_shop1 and cashier) else accountant
             RefundRequest.objects.create(
                 tenant=tenant,
-                sale=pending_sale,
-                requested_by=req_by_1,
-                reason='Customer returned unopened goods — wrong specifications (demo).',
-                status='PENDING',
-                is_partial_halt=False,
-                refund_amount=pending_sale.total,
-            )
-            # 2. APPROVED full refund
-            approved_sale = refundable[1]
-            req_by_2 = cashier if (is_strict and approved_sale.shop == loc_shop1 and cashier) else (manager1 if approved_sale.shop == loc_shop1 else manager2)
-            RefundRequest.objects.create(
-                tenant=tenant,
-                sale=approved_sale,
-                requested_by=req_by_2,
-                reason='Damaged goods returned by customer during warranty window.',
+                sale=c_sale,
+                requested_by=req_by,
+                reason='Customer returned unopened goods — wrong specifications (demo cash refund).',
                 status='APPROVED',
                 is_partial_halt=False,
-                refund_amount=approved_sale.total,
+                refund_amount=c_sale.total,
                 refund_method='CASH',
                 payout_status='PAID',
-                paid_by=accountant,
+                paid_by=paid_by_user,
+                paid_at=now - timedelta(days=2),
                 reviewed_by=accountant,
                 reviewed_at=now - timedelta(days=2),
+                payout_notes='Disbursed in cash from drawer',
             )
-            # 3. REJECTED full refund
-            rejected_sale = refundable[2]
-            req_by_3 = cashier if (is_strict and rejected_sale.shop == loc_shop1 and cashier) else (manager1 if rejected_sale.shop == loc_shop1 else manager2)
+            c_sale.status = 'REFUNDED'
+            c_sale.notes = 'REFUNDED: Returned unopened goods'
+            c_sale.save(update_fields=['status', 'notes'])
+
+        # 2. MoMo Refund (PAID) -> sale becomes REFUNDED, visible in /accounting/shop-momo/history/
+        if completed_momo_sales:
+            m_sale = completed_momo_sales.pop(0)
+            req_by = cashier if (is_strict and m_sale.shop == loc_shop1 and cashier) else (manager1 if m_sale.shop == loc_shop1 else manager2)
+            paid_by_user = cashier if (is_strict and m_sale.shop == loc_shop1 and cashier) else accountant
+            rr_momo = RefundRequest.objects.create(
+                tenant=tenant,
+                sale=m_sale,
+                requested_by=req_by,
+                reason='Customer cancelled order right after MoMo transfer (demo MoMo refund).',
+                status='APPROVED',
+                is_partial_halt=False,
+                refund_amount=m_sale.total,
+                refund_method='MOMO',
+                payout_status='PAID',
+                paid_by=paid_by_user,
+                paid_at=now - timedelta(days=1),
+                reviewed_by=accountant,
+                reviewed_at=now - timedelta(days=1),
+                payout_notes='Ref: TXN-MOMO-REF-8891 | Reversal sent via shop MoMo phone',
+            )
+            m_sale.status = 'REFUNDED'
+            m_sale.notes = 'REFUNDED: MoMo transfer reversed'
+            m_sale.save(update_fields=['status', 'notes'])
+
+        # 3. ECash Refund (PAID) -> sale becomes REFUNDED & ECashLedger REFUND entry
+        if completed_ecash_sales:
+            e_sale = completed_ecash_sales.pop(0)
+            req_by = cashier if (is_strict and e_sale.shop == loc_shop1 and cashier) else (manager1 if e_sale.shop == loc_shop1 else manager2)
+            paid_by_user = cashier if (is_strict and e_sale.shop == loc_shop1 and cashier) else accountant
+            rr_ecash = RefundRequest.objects.create(
+                tenant=tenant,
+                sale=e_sale,
+                requested_by=req_by,
+                reason='Defective product returned, refunded through payment gateway.',
+                status='APPROVED',
+                is_partial_halt=False,
+                refund_amount=e_sale.total,
+                refund_method='ECASH',
+                payout_status='PAID',
+                paid_by=paid_by_user,
+                paid_at=now - timedelta(days=3),
+                reviewed_by=accountant,
+                reviewed_at=now - timedelta(days=3),
+                payout_notes='Ref: PAYSTACK-RFD-5512 | Refunded via gateway',
+            )
+            e_sale.status = 'REFUNDED'
+            e_sale.notes = 'REFUNDED: Gateway refund'
+            e_sale.save(update_fields=['status', 'notes'])
+            ECashLedger.objects.create(
+                tenant=tenant, shop=e_sale.shop,
+                transaction_type='REFUND',
+                amount=-abs(e_sale.total),
+                reference_type='RefundRequest', reference_id=rr_ecash.pk,
+                provider_config=paystack_cfg,
+                provider=paystack_cfg.provider,
+                created_by=paid_by_user,
+                notes=f'Refund for Sale {e_sale.sale_number} [{rr_ecash.refund_number}]',
+            )
+
+        # 4. Cross-Payment Refund (Sale was MOMO, refunded in physical CASH)
+        if completed_momo_sales:
+            cross_sale = completed_momo_sales.pop(0)
+            req_by = cashier if (is_strict and cross_sale.shop == loc_shop1 and cashier) else (manager1 if cross_sale.shop == loc_shop1 else manager2)
+            paid_by_user = cashier if (is_strict and cross_sale.shop == loc_shop1 and cashier) else accountant
+            rr_cross = RefundRequest.objects.create(
+                tenant=tenant,
+                sale=cross_sale,
+                requested_by=req_by,
+                reason='Customer had no MoMo wallet to receive funds, paid back in physical cash (cross-payment).',
+                status='APPROVED',
+                is_partial_halt=False,
+                refund_amount=cross_sale.total,
+                refund_method='CASH',
+                payout_status='PAID',
+                paid_by=paid_by_user,
+                paid_at=now - timedelta(days=4),
+                reviewed_by=accountant,
+                reviewed_at=now - timedelta(days=4),
+                payout_notes='Cross-payment refund paid in physical cash from till',
+            )
+            cross_sale.status = 'REFUNDED'
+            cross_sale.notes = 'REFUNDED: Cross-payment cash payout'
+            cross_sale.save(update_fields=['status', 'notes'])
+
+        # 5. Sale Awaiting Cashier Payout (shows "Awaiting Payout" badge on sales list, locks refund button)
+        if completed_cash_sales:
+            awaiting_sale = completed_cash_sales.pop(0)
+            req_by = cashier if (is_strict and awaiting_sale.shop == loc_shop1 and cashier) else (manager1 if awaiting_sale.shop == loc_shop1 else manager2)
             RefundRequest.objects.create(
                 tenant=tenant,
-                sale=rejected_sale,
-                requested_by=req_by_3,
-                reason='Customer changed mind after 30 days of purchase.',
+                sale=awaiting_sale,
+                requested_by=req_by,
+                reason='Customer returned expired batch; accountant authorized cash refund, awaiting cashier disbursement.',
+                status='APPROVED',
+                is_partial_halt=False,
+                refund_amount=awaiting_sale.total,
+                refund_method='CASH',
+                payout_status='PENDING',
+                reviewed_by=accountant,
+                reviewed_at=now - timedelta(hours=2),
+            )
+
+        # 6. Newly Requested PENDING Refund
+        if completed_cash_sales:
+            p_sale = completed_cash_sales.pop(0)
+            req_by = cashier if (is_strict and p_sale.shop == loc_shop1 and cashier) else (manager1 if p_sale.shop == loc_shop1 else manager2)
+            RefundRequest.objects.create(
+                tenant=tenant,
+                sale=p_sale,
+                requested_by=req_by,
+                reason='Customer bought wrong size/item; requested full refund (pending approval).',
+                status='PENDING',
+                is_partial_halt=False,
+                refund_amount=p_sale.total,
+            )
+
+        # 7. REJECTED Refund
+        if completed_cash_sales:
+            rej_sale = completed_cash_sales.pop(0)
+            req_by = cashier if (is_strict and rej_sale.shop == loc_shop1 and cashier) else (manager1 if rej_sale.shop == loc_shop1 else manager2)
+            RefundRequest.objects.create(
+                tenant=tenant,
+                sale=rej_sale,
+                requested_by=req_by,
+                reason='Customer requested refund for item damaged due to misuse.',
                 status='REJECTED',
                 is_partial_halt=False,
-                refund_amount=rejected_sale.total,
-                rejection_reason='Policy limit exceeded (maximum 14 days for returns).',
+                refund_amount=rej_sale.total,
+                rejection_reason='Return rejected: Item damage caused by external customer misuse, not factory defect.',
                 reviewed_by=accountant,
-                reviewed_at=now - timedelta(days=7),
+                reviewed_at=now - timedelta(days=6),
             )
 
         # --------------------------------------------------------------------
