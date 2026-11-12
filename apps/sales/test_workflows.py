@@ -1124,6 +1124,7 @@ class WorkflowIntegrationTests(TestCase):
         self.assertEqual(cash_after, cash_before - Decimal("150.00"), "Cash-on-hand double deducted!")
 
         # 2. Sale with MOMO and refund_always_cash=False
+        self.tenant.enable_refunds = True
         self.tenant.refund_always_cash = False
         self.tenant.save()
 
@@ -2575,4 +2576,169 @@ class WorkflowIntegrationTests(TestCase):
         call_command('reset_refunded_sale', sale_id=sale5.pk)
         sale5.refresh_from_db()
         self.assertEqual(sale5.status, 'COMPLETED')
+
+    def test_25_disbursement_payout_with_refund_always_cash_false(self):
+        """
+        Test that when tenant.refund_always_cash = False:
+        1. MOMO sales approved as MOMO can be disbursed by cashier and admin without error.
+        2. ECASH sales approved as ECASH can be disbursed and update the ECashLedger.
+        3. Payout execution is idempotent even if sale.status was already REFUNDED.
+        4. Context processor returns correct momo and ecash balances for ADMIN role.
+        """
+        import json
+        from apps.sales.models import RefundRequest
+        self.tenant.enable_refunds = True
+        self.tenant.refund_always_cash = False
+        self.tenant.save()
+
+        # 1. MOMO Sale Refund & Payout
+        momo_sale = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.attendant_user,
+            cashier=self.cashier_user,
+            total=Decimal("120.00"),
+            amount_paid=Decimal("120.00"),
+            payment_method="MOMO",
+            status="COMPLETED"
+        )
+        SaleItem.objects.create(
+            tenant=self.tenant,
+            sale=momo_sale,
+            product=self.product,
+            batch=self.shop_batch,
+            quantity=Decimal("2.00"),
+            unit_price=Decimal("60.00"),
+            dispatched_quantity=Decimal("2.00")
+        )
+
+        # Shop Manager requests refund
+        self.client.force_login(self.manager_user)
+        req_resp = self.client.post(
+            f"/sales/api/{momo_sale.pk}/refund/",
+            data=json.dumps({'reason': 'MOMO refund requested'}),
+            content_type='application/json'
+        )
+        self.assertEqual(req_resp.status_code, 200)
+        rr_momo = RefundRequest.objects.get(sale=momo_sale)
+
+        # Accountant approves with method MOMO
+        self.client.force_login(self.accountant_user)
+        app_resp = self.client.post(
+            f"/sales/api/refund-requests/{rr_momo.pk}/approve/",
+            data=json.dumps({'refund_method': 'MOMO'}),
+            content_type='application/json'
+        )
+        self.assertEqual(app_resp.status_code, 200)
+        rr_momo.refresh_from_db()
+        self.assertEqual(rr_momo.status, 'APPROVED')
+        self.assertEqual(rr_momo.payout_status, 'PENDING')
+        self.assertEqual(rr_momo.refund_method, 'MOMO')
+
+        # Cashier disburses MOMO refund
+        self.client.force_login(self.cashier_user)
+        payout_resp = self.client.post(
+            f"/sales/api/refund-requests/{rr_momo.pk}/payout/",
+            data=json.dumps({'transaction_reference': 'MOMO-TX-9988', 'payout_notes': 'Sent to customer wallet'}),
+            content_type='application/json'
+        )
+        self.assertEqual(payout_resp.status_code, 200)
+        self.assertTrue(payout_resp.json()['success'])
+
+        rr_momo.refresh_from_db()
+        momo_sale.refresh_from_db()
+        self.assertEqual(rr_momo.payout_status, 'PAID')
+        self.assertEqual(rr_momo.paid_by, self.cashier_user)
+        self.assertEqual(momo_sale.status, 'REFUNDED')
+
+        # 2. ECASH Sale Refund & Payout
+        ecash_sale = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.attendant_user,
+            cashier=self.cashier_user,
+            total=Decimal("80.00"),
+            amount_paid=Decimal("80.00"),
+            payment_method="ECASH",
+            status="COMPLETED"
+        )
+        SaleItem.objects.create(
+            tenant=self.tenant,
+            sale=ecash_sale,
+            product=self.product,
+            batch=self.shop_batch,
+            quantity=Decimal("1.00"),
+            unit_price=Decimal("80.00"),
+            dispatched_quantity=Decimal("1.00")
+        )
+
+        rr_ecash = RefundRequest.objects.create(
+            tenant=self.tenant,
+            sale=ecash_sale,
+            requested_by=self.cashier_user,
+            reason='ECash refund test',
+            status='PENDING'
+        )
+        rr_ecash.approve(self.accountant_user, refund_method='ECASH')
+        rr_ecash.refresh_from_db()
+        self.assertEqual(rr_ecash.refund_method, 'ECASH')
+
+        # Admin disburses ECash refund
+        self.client.force_login(self.admin_user)
+        ecash_payout_resp = self.client.post(
+            f"/sales/api/refund-requests/{rr_ecash.pk}/payout/",
+            data=json.dumps({'transaction_reference': 'PAYSTACK-REF-123'}),
+            content_type='application/json'
+        )
+        self.assertEqual(ecash_payout_resp.status_code, 200)
+        self.assertTrue(ecash_payout_resp.json()['success'])
+
+        rr_ecash.refresh_from_db()
+        ecash_sale.refresh_from_db()
+        self.assertEqual(rr_ecash.payout_status, 'PAID')
+        self.assertEqual(ecash_sale.status, 'REFUNDED')
+
+        from apps.payments.models import ECashLedger
+        self.assertTrue(ECashLedger.objects.filter(reference_type='RefundRequest', reference_id=rr_ecash.pk).exists())
+
+        # 3. Idempotent payout execution if sale was already marked REFUNDED
+        sale_already_refunded = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.attendant_user,
+            cashier=self.cashier_user,
+            total=Decimal("50.00"),
+            amount_paid=Decimal("50.00"),
+            payment_method="CASH",
+            status="REFUNDED"
+        )
+        rr_already_refunded = RefundRequest.objects.create(
+            tenant=self.tenant,
+            sale=sale_already_refunded,
+            requested_by=self.cashier_user,
+            reason='Already refunded sale test',
+            status='APPROVED',
+            payout_status='PENDING',
+            refund_amount=Decimal('50.00'),
+            refund_method='CASH'
+        )
+        payout_already_resp = self.client.post(
+            f"/sales/api/refund-requests/{rr_already_refunded.pk}/payout/",
+            data=json.dumps({}),
+            content_type='application/json'
+        )
+        self.assertEqual(payout_already_resp.status_code, 200)
+        rr_already_refunded.refresh_from_db()
+        self.assertEqual(rr_already_refunded.payout_status, 'PAID')
+
+        # 4. Context processor for ADMIN includes digital balances without error
+        from apps.core.context_processors import tenant_context
+        from django.test import RequestFactory
+        factory = RequestFactory()
+        req = factory.get('/sales/refund-requests/')
+        req.user = self.admin_user
+        ctx = tenant_context(req)
+        self.assertIn('momo_balance', ctx)
+        self.assertIn('ecash_balance', ctx)
+
 

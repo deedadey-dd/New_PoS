@@ -254,7 +254,7 @@ def tenant_context(request):
             ).count()
         
         # Digital Balances (E-Cash and Momo)
-        if role_name in ['ACCOUNTANT', 'AUDITOR', 'SHOP_MANAGER', 'SHOP_CASHIER']:
+        if role_name in ['ACCOUNTANT', 'AUDITOR', 'SHOP_MANAGER', 'SHOP_CASHIER', 'ADMIN']:
             from apps.sales.models import Sale
             from apps.customers.models import CustomerTransaction
             
@@ -263,12 +263,12 @@ def tenant_context(request):
                 ecash_sales_q = Q(tenant=tenant, status__in=['COMPLETED', 'PENDING_DISPATCH'], payment_method='ECASH')
                 ecash_ct_q = Q(tenant=tenant, transaction_type='CREDIT', description__icontains='ECASH')
                 
-                if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER'] and user.location and user.location.location_type == 'SHOP':
-                    # Shop Manager sees current e-cash balance of their shop based on the Ledger
+                if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER', 'ADMIN'] and user.location and user.location.location_type == 'SHOP':
+                    # Shop balance based on the Ledger for this shop
                     from apps.payments.models import ECashLedger
                     context['ecash_balance'] = ECashLedger.get_shop_balance(tenant, user.location)
                 else:
-                    # Accountant sees Total Withdrawn ECash minus BANK TRANSFERS
+                    # Accountant / Admin sees Total Withdrawn ECash minus BANK TRANSFERS
                     from apps.payments.models import ECashWithdrawal
                     total_withdrawn = ECashWithdrawal.objects.filter(tenant=tenant, status='COMPLETED').aggregate(total=Sum('amount'))['total'] or Decimal('0')
                     
@@ -298,8 +298,8 @@ def tenant_context(request):
                     momo_sales_q = Q(tenant=tenant, status__in=['COMPLETED', 'PENDING_DISPATCH'], payment_method='MOMO')
                     momo_ct_q = Q(tenant=tenant, transaction_type='CREDIT', description__icontains='MOMO')
                     
-                    if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER'] and user.location and user.location.location_type == 'SHOP':
-                        # Shop Manager sees ALL momo MINUS DigitalFundWithdrawal
+                    if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER', 'ADMIN'] and user.location and user.location.location_type == 'SHOP':
+                        # Shop sees all momo MINUS DigitalFundWithdrawal
                         shop_sales = Sale.objects.filter(momo_sales_q, shop=user.location).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
                         shop_ct = CustomerTransaction.objects.filter(momo_ct_q, performed_by__location=user.location).aggregate(total=Sum('amount'))['total'] or Decimal('0')
                         from apps.accounting.models import DigitalFundWithdrawal

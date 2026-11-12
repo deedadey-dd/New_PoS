@@ -1352,8 +1352,9 @@ class RefundRequest(TenantModel):
                             notes=f"Partial refund disbursed by cashier: Sale {sale.sale_number} [{self.refund_number}]"
                         )
             else:
-                # Full sale refund: return inventory & customer debt reversal
-                sale.refund(reason=self.reason, user=disburser)
+                # Full sale refund: return inventory & customer debt reversal (idempotent if already refunded)
+                if sale.status != 'REFUNDED':
+                    sale.refund(reason=self.reason, user=disburser)
                 # Financial bucket deductions (CashTransfer / DigitalFundWithdrawal / ECashLedger)
                 self._apply_financial_adjustment(disburser)
 
@@ -1375,23 +1376,24 @@ class RefundRequest(TenantModel):
             self.save()
 
         # 4. Notify the shop manager who submitted the request
-        from apps.notifications.models import Notification
-        refund_type_str = "Partial Refund & Settle" if self.is_partial_halt else "Refund"
-        amt_display = f"{tenant.currency_symbol}{self.refund_amount}" if self.is_partial_halt else f"{tenant.currency_symbol}{sale.total}"
-        Notification.objects.create(
-            tenant=tenant,
-            user=self.requested_by,
-            title=f"{refund_type_str} Disbursed",
-            message=(
-                f"Your refund request {self.refund_number} for Sale "
-                f"{sale.sale_number} ({amt_display}) "
-                f"has been disbursed by {disburser.get_full_name() or disburser.email}. "
-                f"Method: {self.get_refund_method_display()}"
-            ),
-            notification_type='SYSTEM',
-            reference_type='RefundRequest',
-            reference_id=self.pk,
-        )
+        if self.requested_by:
+            from apps.notifications.models import Notification
+            refund_type_str = "Partial Refund & Settle" if self.is_partial_halt else "Refund"
+            amt_display = f"{tenant.currency_symbol}{self.refund_amount}" if self.is_partial_halt else f"{tenant.currency_symbol}{sale.total}"
+            Notification.objects.create(
+                tenant=tenant,
+                user=self.requested_by,
+                title=f"{refund_type_str} Disbursed",
+                message=(
+                    f"Your refund request {self.refund_number} for Sale "
+                    f"{sale.sale_number} ({amt_display}) "
+                    f"has been disbursed by {disburser.get_full_name() or disburser.email}. "
+                    f"Method: {self.get_refund_method_display()}"
+                ),
+                notification_type='SYSTEM',
+                reference_type='RefundRequest',
+                reference_id=self.pk,
+            )
 
     def _apply_financial_adjustment(self, approver):
         """

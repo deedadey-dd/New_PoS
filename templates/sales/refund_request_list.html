@@ -1701,6 +1701,12 @@
             const errAlert = document.getElementById('disburse-error-alert');
             const ackCheckbox = document.getElementById('acknowledge-balance-shortfall');
 
+            if (!refundId) {
+                errAlert.textContent = 'Error: Missing refund identifier. Please close and re-open the modal.';
+                errAlert.classList.remove('d-none');
+                return;
+            }
+
             const currentMethod = modalEl?.dataset.currentMethod || 'CASH';
             const amountNum = parseFloat(modalEl?.dataset.amountNum || 0);
             const balInfo = getCashierBalanceForMethod(currentMethod);
@@ -1709,6 +1715,7 @@
             if (isInsufficient && (!ackCheckbox || !ackCheckbox.checked)) {
                 errAlert.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-1"></i><strong>Insufficient Till Balance:</strong> Please check the acknowledgment box above to confirm disbursing with insufficient balance before proceeding.';
                 errAlert.classList.remove('d-none');
+                errAlert.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                 if (ackCheckbox) ackCheckbox.focus();
                 return;
             }
@@ -1717,8 +1724,12 @@
             confirmDisburseBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Processing...';
             errAlert.classList.add('d-none');
 
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 25000);
+
             fetch(`/sales/api/refund-requests/${refundId}/payout/`, {
                 method: 'POST',
+                signal: controller.signal,
                 headers: {
                     'Content-Type': 'application/json',
                     'X-CSRFToken': csrfToken
@@ -1728,20 +1739,36 @@
                     payout_notes: payoutNotes
                 })
             })
-            .then(r => r.json())
-            .then(data => {
-                if (data.success) {
+            .then(async response => {
+                clearTimeout(timeoutId);
+                let data = null;
+                try {
+                    data = await response.json();
+                } catch (_) {
+                    // Response body was not JSON (e.g. gateway timeout or HTML 500)
+                }
+                return { ok: response.ok, status: response.status, data };
+            })
+            .then(({ ok, status, data }) => {
+                if (ok && data && data.success) {
                     location.reload();
                 } else {
-                    errAlert.textContent = data.error || 'Failed to process payout.';
+                    const errorMsg = data?.error || data?.message || `Failed to process payout (HTTP ${status}). Please check till balance or refresh.`;
+                    errAlert.textContent = errorMsg;
                     errAlert.classList.remove('d-none');
+                    errAlert.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                     confirmDisburseBtn.disabled = false;
                     confirmDisburseBtn.innerHTML = '<i class="bi bi-check2-circle me-1"></i>Disburse Refund';
                 }
             })
             .catch(err => {
-                errAlert.textContent = 'Network error: ' + err;
+                clearTimeout(timeoutId);
+                const isTimeout = err && err.name === 'AbortError';
+                errAlert.textContent = isTimeout
+                    ? 'Request timed out after 25 seconds. Please refresh the page to see if payout was processed.'
+                    : 'Network error: ' + err;
                 errAlert.classList.remove('d-none');
+                errAlert.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                 confirmDisburseBtn.disabled = false;
                 confirmDisburseBtn.innerHTML = '<i class="bi bi-check2-circle me-1"></i>Disburse Refund';
             });
