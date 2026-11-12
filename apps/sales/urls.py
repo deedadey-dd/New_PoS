@@ -35,6 +35,7 @@ urlpatterns = [
     path('api/<int:pk>/refund/', views.api_refund_sale, name='api_refund_sale'),
     path('api/refund-requests/<int:pk>/approve/', views.api_approve_refund, name='api_approve_refund'),
     path('api/refund-requests/<int:pk>/reject/', views.api_reject_refund, name='api_reject_refund'),
+    path('api/refund-requests/<int:pk>/cancel/', views.api_cancel_refund, name='api_cancel_refund'),
     path('api/refund-requests/<int:pk>/payout/', views.api_payout_refund, name='api_payout_refund'),
     path('refund-requests/', views.RefundRequestListView.as_view(), name='refund_request_list'),
     path('api/invoices/<int:pk>/pay/', views.api_pay_invoice, name='api_pay_invoice'),

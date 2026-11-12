@@ -1289,6 +1289,41 @@ def api_reject_refund(request, pk):
         return JsonResponse({'success': False, 'error': str(e)}, status=400)
 
 
+@login_required
+@require_POST
+def api_cancel_refund(request, pk):
+    """
+    Cancel an approved RefundRequest before it has been disbursed.
+    Only Accountants and Admins can call this endpoint.
+    """
+    import json
+    from .models import RefundRequest
+
+    tenant = request.user.tenant
+    role_name = request.user.role.name if request.user.role else None
+
+    if role_name not in ['ACCOUNTANT', 'ADMIN']:
+        return JsonResponse({'success': False, 'error': 'Only accountants and admins can cancel refund approvals.'}, status=403)
+
+    refund_req = get_object_or_404(RefundRequest, pk=pk, tenant=tenant)
+
+    try:
+        data = json.loads(request.body) if request.body else {}
+        reason = data.get('reason', '').strip()
+    except Exception:
+        reason = request.POST.get('reason', '').strip()
+
+    try:
+        refund_req.cancel_approval(request.user, reason=reason)
+        return JsonResponse({
+            'success': True,
+            'message': f'Approval for refund request {refund_req.refund_number} has been cancelled.',
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+
 class RefundRequestListView(LoginRequiredMixin, ListView):
     """
     List refund requests.
@@ -1356,7 +1391,8 @@ class RefundRequestListView(LoginRequiredMixin, ListView):
                 When(status='APPROVED', payout_status='PENDING', then=1),
                 When(status='APPROVED', payout_status='PAID', then=2),
                 When(status='REJECTED', then=3),
-                default=4,
+                When(status='CANCELLED', then=4),
+                default=5,
                 output_field=IntegerField(),
             )
         ).order_by('status_order', '-created_at')

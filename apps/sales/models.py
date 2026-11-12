@@ -1057,6 +1057,7 @@ class RefundRequest(TenantModel):
         ('PENDING', 'Pending Approval'),
         ('APPROVED', 'Approved'),
         ('REJECTED', 'Rejected'),
+        ('CANCELLED', 'Cancelled'),
     ]
     REFUND_METHOD_CHOICES = [
         ('CASH', 'Cashier Till (Cash)'),
@@ -1521,4 +1522,43 @@ class RefundRequest(TenantModel):
             reference_type='RefundRequest',
             reference_id=self.pk,
         )
+
+    def cancel_approval(self, canceller, reason=''):
+        """
+        Cancel an approved refund request that has not yet been paid out / disbursed.
+        Only allowed for Accountants and Admins while status == 'APPROVED' and payout_status == 'PENDING'.
+        Reverts the request status to CANCELLED and unblocks the sale.
+        """
+        from django.utils import timezone as tz
+
+        if self.status != 'APPROVED':
+            raise ValidationError("Only approved refund requests can have their approval cancelled.")
+        if self.payout_status == 'PAID':
+            raise ValidationError("Cannot cancel a refund request that has already been paid out.")
+
+        self.status = 'CANCELLED'
+        self.reviewed_by = canceller
+        self.reviewed_at = tz.now()
+        self.rejection_reason = reason or "Approval cancelled"
+        self.save()
+
+        # Notify shop manager / requester
+        from apps.notifications.models import Notification
+        refund_type_str = "Partial Refund & Settle" if self.is_partial_halt else "Refund"
+        amt_display = f"{self.tenant.currency_symbol}{self.refund_amount}" if self.is_partial_halt else f"{self.tenant.currency_symbol}{self.sale.total}"
+        Notification.objects.create(
+            tenant=self.tenant,
+            user=self.requested_by,
+            title=f"{refund_type_str} Approval Cancelled",
+            message=(
+                f"The approved refund request {self.refund_number} for Sale "
+                f"{self.sale.sale_number} ({amt_display}) "
+                f"has been cancelled by {canceller.get_full_name() or canceller.email}. "
+                f"Reason: {reason or 'No reason given'}"
+            ),
+            notification_type='SYSTEM',
+            reference_type='RefundRequest',
+            reference_id=self.pk,
+        )
+
 

@@ -65,6 +65,7 @@
                         <option value="PENDING_PAYOUT" {% if selected_status == 'PENDING_PAYOUT' %}selected{% endif %}>Awaiting Disbursement {% if pending_payout_count > 0 %}({{ pending_payout_count }}){% endif %}</option>
                         <option value="APPROVED" {% if selected_status == 'APPROVED' %}selected{% endif %}>Approved</option>
                         <option value="REJECTED" {% if selected_status == 'REJECTED' %}selected{% endif %}>Rejected</option>
+                        <option value="CANCELLED" {% if selected_status == 'CANCELLED' %}selected{% endif %}>Cancelled</option>
                     </select>
                 </div>
                 {% if role_name != 'SHOP_MANAGER' %}
@@ -127,7 +128,7 @@
                     <tbody>
                         {% for rr in refund_requests %}
                         <tr id="refund-row-{{ rr.pk }}" 
-                            class="{% if rr.status == 'PENDING' %}table-warning{% elif rr.status == 'APPROVED' %}table-success{% elif rr.status == 'REJECTED' %}table-danger{% endif %} bg-opacity-10"
+                            class="{% if rr.status == 'PENDING' %}table-warning{% elif rr.status == 'APPROVED' and rr.payout_status == 'PENDING' %}table-warning bg-opacity-25{% elif rr.status == 'APPROVED' and rr.payout_status == 'PAID' %}table-success{% elif rr.status == 'REJECTED' %}table-danger{% elif rr.status == 'CANCELLED' %}table-light text-muted{% endif %} bg-opacity-10"
                             data-refund-id="{{ rr.pk }}"
                             data-refund-number="{{ rr.refund_number }}"
                             data-is-partial-halt="{% if rr.is_partial_halt %}true{% else %}false{% endif %}"
@@ -138,6 +139,8 @@
                             data-sale-balance="{{ rr.sale.balance_due|floatformat:'2' }}"
                             data-payment-method="{{ rr.sale.get_payment_method_display }}"
                             data-payment-code="{{ rr.sale.payment_method }}"
+                            data-refund-method="{{ rr.get_refund_method_display }}"
+                            data-payout-status="{{ rr.payout_status }}"
                             data-shop="{{ rr.sale.shop.name }}"
                             data-refund-amount="{{ rr.refund_amount|floatformat:'2' }}"
                             data-debt-reduction-amount="{{ rr.debt_reduction_amount|floatformat:'2' }}"
@@ -160,7 +163,8 @@
                                    data-sale-number="{{ rr.sale.sale_number }}"
                                    data-amount="{{ rr.sale.total }}"
                                    data-shop="{{ rr.sale.shop.name }}"
-                                   data-status="{{ rr.status }}">
+                                   data-status="{{ rr.status }}"
+                                   data-payout-status="{{ rr.payout_status }}">
                                     {{ rr.sale.sale_number }}
                                 </a>
                             </td>
@@ -239,6 +243,19 @@
                                     {% if rr.rejection_reason %}
                                     <div class="text-muted small mt-1">{{ rr.rejection_reason|truncatechars:50 }}</div>
                                     {% endif %}
+                                {% elif rr.status == 'CANCELLED' %}
+                                    <span class="badge bg-secondary">
+                                        <i class="bi bi-slash-circle me-1"></i>Cancelled
+                                    </span>
+                                    {% if rr.rejection_reason %}
+                                    <div class="text-muted small mt-1">{{ rr.rejection_reason|truncatechars:50 }}</div>
+                                    {% endif %}
+                                    {% if rr.reviewed_by %}
+                                    <div class="text-muted small mt-1" style="font-size: 0.72rem;">
+                                        <span><strong>Cancelled by:</strong> {{ rr.reviewed_by.get_full_name|default:rr.reviewed_by.email }}</span><br>
+                                        <small class="text-muted">{{ rr.reviewed_at|date:"M d, Y h:i A" }}</small>
+                                    </div>
+                                    {% endif %}
                                 {% endif %}
                             </td>
                             <td class="text-center pe-4">
@@ -258,19 +275,34 @@
                                         <i class="bi bi-x-lg me-1"></i>Reject
                                     </button>
                                 </div>
-                                {% elif rr.status == 'APPROVED' and rr.payout_status == 'PENDING' and rr.refund_amount > 0 and role_name in 'SHOP_CASHIER,ADMIN' %}
-                                <button class="btn btn-sm btn-primary shadow-sm btn-disburse-refund"
-                                    data-refund-id="{{ rr.pk }}"
-                                    data-refund-number="{{ rr.refund_number }}"
-                                    data-sale-number="{{ rr.sale.sale_number }}"
-                                    data-amount="{{ rr.refund_amount|floatformat:'2' }}"
-                                    data-method="{{ rr.refund_method }}"
-                                    data-method-display="{{ rr.get_refund_method_display }}"
-                                    data-customer="{% if rr.sale.customer %}{{ rr.sale.customer.name }}{% elif rr.sale.customer_name %}{{ rr.sale.customer_name }}{% else %}Walk-in Customer{% endif %}"
-                                    data-approved-by="{% if rr.reviewed_by %}{{ rr.reviewed_by.get_full_name|default:rr.reviewed_by.email }}{% else %}Accountant{% endif %}"
-                                    data-reason="{{ rr.reason|escape }}">
-                                    <i class="bi {% if rr.refund_method == 'MOMO' %}bi-phone{% elif rr.refund_method == 'ECASH' %}bi-credit-card{% else %}bi-cash-stack{% endif %} me-1"></i>Disburse Refund
-                                </button>
+                                {% elif rr.status == 'APPROVED' and rr.payout_status == 'PENDING' %}
+                                <div class="d-flex justify-content-center align-items-center gap-2 flex-wrap">
+                                    {% if role_name in 'SHOP_CASHIER,ADMIN' and rr.refund_amount > 0 %}
+                                    <button class="btn btn-sm btn-primary shadow-sm btn-disburse-refund"
+                                        data-refund-id="{{ rr.pk }}"
+                                        data-refund-number="{{ rr.refund_number }}"
+                                        data-sale-number="{{ rr.sale.sale_number }}"
+                                        data-amount="{{ rr.refund_amount|floatformat:'2' }}"
+                                        data-method="{{ rr.refund_method }}"
+                                        data-method-display="{{ rr.get_refund_method_display }}"
+                                        data-customer="{% if rr.sale.customer %}{{ rr.sale.customer.name }}{% elif rr.sale.customer_name %}{{ rr.sale.customer_name }}{% else %}Walk-in Customer{% endif %}"
+                                        data-approved-by="{% if rr.reviewed_by %}{{ rr.reviewed_by.get_full_name|default:rr.reviewed_by.email }}{% else %}Accountant{% endif %}"
+                                        data-reason="{{ rr.reason|escape }}">
+                                        <i class="bi {% if rr.refund_method == 'MOMO' %}bi-phone{% elif rr.refund_method == 'ECASH' %}bi-credit-card{% else %}bi-cash-stack{% endif %} me-1"></i>Disburse Refund
+                                    </button>
+                                    {% endif %}
+                                    {% if role_name in 'ACCOUNTANT,ADMIN' %}
+                                    <button class="btn btn-sm btn-outline-danger btn-cancel-refund"
+                                        data-refund-id="{{ rr.pk }}"
+                                        data-refund-number="{{ rr.refund_number }}"
+                                        data-sale-number="{{ rr.sale.sale_number }}"
+                                        data-amount="{% if rr.is_partial_halt %}{{ rr.refund_amount|floatformat:'2' }}{% else %}{{ rr.sale.total|floatformat:'2' }}{% endif %}"
+                                        data-shop="{{ rr.sale.shop.name }}"
+                                        data-method="{{ rr.get_refund_method_display }}">
+                                        <i class="bi bi-slash-circle me-1"></i>Cancel Approval
+                                    </button>
+                                    {% endif %}
+                                </div>
                                 {% else %}
                                 <span class="text-muted small">—</span>
                                 {% endif %}
@@ -452,7 +484,7 @@
                 <!-- Warning notice -->
                 <div class="alert alert-warning alert-permanent py-2 small mb-0 d-flex align-items-center gap-2">
                     <i class="bi bi-shield-exclamation text-warning fs-5"></i>
-                    <span>Approval will immediately settle this sale and apply the financial adjustment. This action cannot be reversed.</span>
+                    <span>Approval authorizes payout disbursement by cashier. Approval can be cancelled by an accountant or admin prior to payout.</span>
                 </div>
             </div>
             <div class="modal-footer border-0 d-flex justify-content-between">
@@ -604,6 +636,77 @@
                         <i class="bi bi-x-lg me-1"></i>Confirm Rejection
                     </button>
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Cancel Approval Modal (Accountant / Admin) -->
+<div class="modal fade" id="cancelApprovalModal" tabindex="-1" aria-labelledby="cancelApprovalModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-4 border-0 shadow">
+            <div class="modal-header border-0 pb-0 bg-danger bg-opacity-10">
+                <div class="d-flex align-items-center">
+                    <h5 class="modal-title fw-bold text-danger mb-0" id="cancelApprovalModalLabel">
+                        <i class="bi bi-slash-circle me-2"></i>Cancel Refund Approval
+                    </h5>
+                    <span id="cancel-approval-badge" class="badge bg-danger ms-2">Undisbursed</span>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <p class="text-secondary small mb-3">
+                    You are cancelling the approval for this undisbursed refund. No funds will be deducted, and the sale will return to active status.
+                </p>
+
+                <!-- Sale & Refund Overview Card -->
+                <div class="card border rounded-3 mb-3 bg-light bg-opacity-50">
+                    <div class="card-body py-2 px-3 small">
+                        <div class="d-flex justify-content-between py-1 border-bottom">
+                            <span class="text-muted">Refund Reference:</span>
+                            <span class="fw-bold font-monospace text-dark" id="cancel-refund-number"></span>
+                        </div>
+                        <div class="d-flex justify-content-between py-1 border-bottom">
+                            <span class="text-muted">Sale Invoice:</span>
+                            <span class="fw-bold font-monospace text-primary" id="cancel-sale-number"></span>
+                        </div>
+                        <div class="d-flex justify-content-between py-1 border-bottom">
+                            <span class="text-muted">Shop:</span>
+                            <span class="fw-semibold text-dark" id="cancel-refund-shop"></span>
+                        </div>
+                        <div class="d-flex justify-content-between py-1 border-bottom">
+                            <span class="text-muted">Refund Amount:</span>
+                            <span class="fw-bold text-danger fs-6" id="cancel-refund-amount"></span>
+                        </div>
+                        <div class="d-flex justify-content-between py-1">
+                            <span class="text-muted">Payment Channel:</span>
+                            <span class="fw-semibold text-dark" id="cancel-refund-channel"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Cancellation Reason Input -->
+                <div class="mb-3">
+                    <label for="cancel-approval-reason" class="form-label fw-bold text-dark small">
+                        Cancellation Reason <span class="text-danger">*</span>
+                    </label>
+                    <textarea id="cancel-approval-reason" class="form-control" rows="3"
+                        placeholder="Explain why this approved refund is being cancelled..."></textarea>
+                    <div class="invalid-feedback" id="cancel-approval-reason-feedback" style="display:none;">
+                        Please provide a reason for cancelling this refund approval.
+                    </div>
+                </div>
+
+                <div class="alert alert-warning py-2 small mb-0 d-flex align-items-center gap-2">
+                    <i class="bi bi-exclamation-triangle-fill text-warning flex-shrink-0"></i>
+                    <span>Once cancelled, cashier disbursement will be blocked and the sale is unblocked.</span>
+                </div>
+            </div>
+            <div class="modal-footer border-0 d-flex justify-content-end gap-2">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-danger fw-bold px-4" id="confirm-cancel-approval-btn">
+                    <i class="bi bi-slash-circle me-1"></i>Confirm Cancellation
+                </button>
             </div>
         </div>
     </div>
@@ -778,6 +881,9 @@
                 <button type="button" class="btn btn-outline-danger" id="saleDetailRejectBtn" style="display: none;">
                     <i class="bi bi-x-lg me-1"></i>Reject
                 </button>
+                <button type="button" class="btn btn-outline-danger" id="saleDetailCancelBtn" style="display: none;">
+                    <i class="bi bi-slash-circle me-1"></i>Cancel Approval
+                </button>
                 {% endif %}
                 <a href="#" class="btn btn-outline-info" id="saleDetailPrintBtn" target="_blank">
                     <i class="bi bi-printer me-1"></i>Print Receipt
@@ -793,6 +899,7 @@
     const currencySymbol = '{{ currency_symbol|default:"$" }}';
     let pendingApproveId = null;
     let pendingRejectId = null;
+    let pendingCancelId = null;
     let currentRefundData = null;
 
     // ── Safe Modal Lifecycle & Chaining Helpers ───────────────────
@@ -1056,6 +1163,49 @@
         });
     }
 
+    function populateCancelModal(data) {
+        if (!data) return;
+        pendingCancelId = data.refundId;
+
+        const refNumEl = document.getElementById('cancel-refund-number');
+        if (refNumEl) refNumEl.textContent = data.refundNumber || '—';
+
+        const saleNumEl = document.getElementById('cancel-sale-number');
+        if (saleNumEl) saleNumEl.textContent = data.saleNumber || '—';
+
+        const shopEl = document.getElementById('cancel-refund-shop');
+        if (shopEl) shopEl.textContent = data.shop || '—';
+
+        const amtEl = document.getElementById('cancel-refund-amount');
+        if (amtEl) amtEl.textContent = currencySymbol + parseFloat(data.refundAmount || data.saleTotal || 0).toFixed(2);
+
+        const channelEl = document.getElementById('cancel-refund-channel');
+        if (channelEl) channelEl.textContent = data.refundMethod || data.paymentMethod || '—';
+
+        const reasonInput = document.getElementById('cancel-approval-reason');
+        if (reasonInput) {
+            reasonInput.value = '';
+            reasonInput.classList.remove('is-invalid');
+        }
+
+        const fb = document.getElementById('cancel-approval-reason-feedback');
+        if (fb) fb.style.display = 'none';
+
+        const confirmBtn = document.getElementById('confirm-cancel-approval-btn');
+        if (confirmBtn) {
+            confirmBtn.disabled = false;
+            confirmBtn.innerHTML = '<i class="bi bi-slash-circle me-1"></i>Confirm Cancellation';
+        }
+    }
+
+    function openCancelModal(data) {
+        if (!data) return;
+        currentRefundData = data;
+        safelyShowModal(document.getElementById('cancelApprovalModal'), () => {
+            populateCancelModal(data);
+        });
+    }
+
     // ── Modal Transitions (Approve <-> Reject) ─────────────────────
     document.getElementById('approve-to-reject-btn')?.addEventListener('click', function() {
         if (!currentRefundData) return;
@@ -1090,6 +1240,13 @@
         });
     });
 
+    document.querySelectorAll('.btn-cancel-refund').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const row = this.closest('tr');
+            if (row) openCancelModal(row.dataset);
+        });
+    });
+
     // ── Sale Detail Modal Logic ────────────────────────────────────
     document.addEventListener('DOMContentLoaded', function() {
         const saleDetailModalEl = document.getElementById('saleDetailModal');
@@ -1115,6 +1272,7 @@
                 
                 const approveBtn = document.getElementById('saleDetailApproveBtn');
                 const rejectBtn = document.getElementById('saleDetailRejectBtn');
+                const cancelBtn = document.getElementById('saleDetailCancelBtn');
                 
                 if (approveBtn && rejectBtn) {
                     if (refundStatus === 'PENDING') {
@@ -1123,6 +1281,15 @@
                     } else {
                         approveBtn.style.display = 'none';
                         rejectBtn.style.display = 'none';
+                    }
+                }
+
+                if (cancelBtn) {
+                    const payoutStatus = this.dataset.payoutStatus;
+                    if (refundStatus === 'APPROVED' && payoutStatus === 'PENDING') {
+                        cancelBtn.style.display = 'inline-block';
+                    } else {
+                        cancelBtn.style.display = 'none';
                     }
                 }
 
@@ -1232,6 +1399,18 @@
         });
     }
 
+    const saleDetailCancelBtn = document.getElementById('saleDetailCancelBtn');
+    if (saleDetailCancelBtn) {
+        saleDetailCancelBtn.addEventListener('click', function() {
+            if (!currentRefundData) return;
+            switchModals(
+                document.getElementById('saleDetailModal'),
+                document.getElementById('cancelApprovalModal'),
+                () => populateCancelModal(currentRefundData)
+            );
+        });
+    }
+
     // ── Confirm Approve Submission ─────────────────────────────────
     document.getElementById('confirm-approve-btn').addEventListener('click', () => {
         if (!pendingApproveId) return;
@@ -1318,6 +1497,57 @@
             }
             btn.disabled = false;
             btn.innerHTML = '<i class="bi bi-x-lg me-1"></i>Confirm Rejection';
+        });
+    });
+
+    // ── Confirm Cancel Approval Submission ─────────────────────────
+    document.getElementById('confirm-cancel-approval-btn')?.addEventListener('click', () => {
+        if (!pendingCancelId) return;
+        const reasonInput = document.getElementById('cancel-approval-reason');
+        const reason = reasonInput ? reasonInput.value.trim() : '';
+        const fb = document.getElementById('cancel-approval-reason-feedback');
+
+        if (!reason) {
+            if (reasonInput) reasonInput.classList.add('is-invalid');
+            if (fb) fb.style.display = 'block';
+            if (reasonInput) reasonInput.focus();
+            return;
+        }
+
+        if (reasonInput) reasonInput.classList.remove('is-invalid');
+        if (fb) fb.style.display = 'none';
+
+        const btn = document.getElementById('confirm-cancel-approval-btn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Cancelling...';
+
+        fetch(`/sales/api/refund-requests/${pendingCancelId}/cancel/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reason })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                if (typeof window.showAppToast === 'function') {
+                    window.showAppToast(data.error || 'Unknown error', 'danger', 'Cancellation Error');
+                } else {
+                    alert('Error: ' + (data.error || 'Unknown error'));
+                }
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-slash-circle me-1"></i>Confirm Cancellation';
+            }
+        })
+        .catch(err => {
+            if (typeof window.showAppToast === 'function') {
+                window.showAppToast('Request error: ' + err, 'danger', 'Request Failed');
+            } else {
+                alert('Request error: ' + err);
+            }
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-slash-circle me-1"></i>Confirm Cancellation';
         });
     });
 

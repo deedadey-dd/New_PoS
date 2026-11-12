@@ -2314,3 +2314,192 @@ class WorkflowIntegrationTests(TestCase):
         sale.refresh_from_db()
         self.assertFalse(sale.has_approved_pending_payout)
         self.assertEqual(sale.status, 'REFUNDED')
+
+    def test_24_accountant_and_admin_can_cancel_approved_undisbursed_refund(self):
+        """
+        Verify that an accountant and admin can cancel an approved refund before disbursement:
+        1. A completed sale has a refund request submitted by shop manager.
+        2. Accountant approves the refund request (status='APPROVED', payout_status='PENDING').
+        3. Sale has sale.has_approved_pending_payout == True.
+        4. Attendant/Cashier cannot cancel the approval (403 Forbidden).
+        5. Accountant cancels the approval via /sales/api/refund-requests/<id>/cancel/ with reason.
+        6. RefundRequest transitions to status='CANCELLED' with cancellation reason and reviewed_by=accountant.
+        7. Sale has sale.has_approved_pending_payout == False, and remains COMPLETED.
+        8. Cashier cannot disburse payout on the cancelled refund request (returns 400 error).
+        9. Admin can also cancel an approved refund request.
+        10. A refund that has already been paid out (payout_status='PAID') cannot be cancelled (returns 400 error).
+        """
+        import json
+        from apps.sales.models import RefundRequest
+
+        self.tenant.enable_refunds = True
+        self.tenant.save()
+
+        # 1. Attendant creates completed sale
+        sale = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.attendant_user,
+            cashier=self.cashier_user,
+            total=Decimal("80.00"),
+            amount_paid=Decimal("80.00"),
+            payment_method="CASH",
+            status="COMPLETED"
+        )
+        SaleItem.objects.create(
+            tenant=self.tenant,
+            sale=sale,
+            product=self.product,
+            batch=self.shop_batch,
+            quantity=Decimal("2.00"),
+            unit_price=Decimal("40.00"),
+            dispatched_quantity=Decimal("2.00")
+        )
+
+        # 2. Manager requests refund
+        self.client.force_login(self.manager_user)
+        req_resp = self.client.post(
+            f"/sales/api/{sale.pk}/refund/",
+            data=json.dumps({'reason': 'Customer requested refund'}),
+            content_type='application/json'
+        )
+        self.assertEqual(req_resp.status_code, 200)
+
+        refund_req = RefundRequest.objects.get(sale=sale)
+        self.assertEqual(refund_req.status, 'PENDING')
+
+        # 3. Accountant approves refund
+        self.client.force_login(self.accountant_user)
+        appr_resp = self.client.post(
+            f"/sales/api/refund-requests/{refund_req.pk}/approve/",
+            data=json.dumps({'refund_method': 'CASH'}),
+            content_type='application/json'
+        )
+        self.assertEqual(appr_resp.status_code, 200)
+
+        sale.refresh_from_db()
+        refund_req.refresh_from_db()
+        self.assertEqual(refund_req.status, 'APPROVED')
+        self.assertEqual(refund_req.payout_status, 'PENDING')
+        self.assertTrue(sale.has_approved_pending_payout)
+
+        # 4. Attendant / Cashier attempts to cancel approval -> 403 Forbidden
+        self.client.force_login(self.cashier_user)
+        cashier_cancel_resp = self.client.post(
+            f"/sales/api/refund-requests/{refund_req.pk}/cancel/",
+            data=json.dumps({'reason': 'Cashier trying to cancel'}),
+            content_type='application/json'
+        )
+        self.assertEqual(cashier_cancel_resp.status_code, 403)
+
+        # 5. Accountant cancels approval
+        self.client.force_login(self.accountant_user)
+        cancel_resp = self.client.post(
+            f"/sales/api/refund-requests/{refund_req.pk}/cancel/",
+            data=json.dumps({'reason': 'Customer changed mind and kept items'}),
+            content_type='application/json'
+        )
+        self.assertEqual(cancel_resp.status_code, 200)
+        self.assertTrue(cancel_resp.json()['success'])
+
+        # 6. Verify RefundRequest state
+        refund_req.refresh_from_db()
+        self.assertEqual(refund_req.status, 'CANCELLED')
+        self.assertEqual(refund_req.reviewed_by, self.accountant_user)
+        self.assertIn('Customer changed mind', refund_req.rejection_reason)
+
+        # 7. Verify Sale state is unblocked
+        sale.refresh_from_db()
+        self.assertFalse(sale.has_approved_pending_payout)
+        self.assertFalse(sale.has_pending_refund)
+        self.assertEqual(sale.status, 'COMPLETED')
+
+        # 8. Cashier cannot disburse payout on cancelled refund
+        self.client.force_login(self.cashier_user)
+        payout_resp = self.client.post(
+            f"/sales/api/refund-requests/{refund_req.pk}/payout/",
+            data=json.dumps({'payout_notes': 'Trying to disburse cancelled'}),
+            content_type='application/json'
+        )
+        self.assertEqual(payout_resp.status_code, 400)
+        self.assertIn('must be approved before payout', payout_resp.json()['error'])
+
+        # 9. Verify Admin can also cancel an approved refund
+        # Submit a new refund request for the same sale now that the previous was cancelled
+        self.client.force_login(self.manager_user)
+        req2_resp = self.client.post(
+            f"/sales/api/{sale.pk}/refund/",
+            data=json.dumps({'reason': 'Second refund request'}),
+            content_type='application/json'
+        )
+        self.assertEqual(req2_resp.status_code, 200)
+
+        refund_req2 = RefundRequest.objects.filter(sale=sale, status='PENDING').first()
+        self.assertIsNotNone(refund_req2)
+
+        # Approve by accountant
+        self.client.force_login(self.accountant_user)
+        self.client.post(
+            f"/sales/api/refund-requests/{refund_req2.pk}/approve/",
+            data=json.dumps({'refund_method': 'CASH'}),
+            content_type='application/json'
+        )
+        refund_req2.refresh_from_db()
+        self.assertEqual(refund_req2.status, 'APPROVED')
+
+        # Admin cancels approval
+        self.client.force_login(self.admin_user)
+        admin_cancel_resp = self.client.post(
+            f"/sales/api/refund-requests/{refund_req2.pk}/cancel/",
+            data=json.dumps({'reason': 'Admin decided to cancel'}),
+            content_type='application/json'
+        )
+        self.assertEqual(admin_cancel_resp.status_code, 200)
+        refund_req2.refresh_from_db()
+        self.assertEqual(refund_req2.status, 'CANCELLED')
+        self.assertEqual(refund_req2.reviewed_by, self.admin_user)
+
+        # 10. Cannot cancel a refund that has already been disbursed
+        sale3 = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.attendant_user,
+            cashier=self.cashier_user,
+            total=Decimal("50.00"),
+            amount_paid=Decimal("50.00"),
+            payment_method="CASH",
+            status="COMPLETED"
+        )
+        SaleItem.objects.create(
+            tenant=self.tenant,
+            sale=sale3,
+            product=self.product,
+            batch=self.shop_batch,
+            quantity=Decimal("1.00"),
+            unit_price=Decimal("50.00"),
+            dispatched_quantity=Decimal("1.00")
+        )
+        refund_req3 = RefundRequest.objects.create(
+            tenant=self.tenant,
+            sale=sale3,
+            requested_by=self.manager_user,
+            reason='Paid refund',
+            status='PENDING',
+            refund_amount=Decimal('50.00'),
+            refund_method='CASH'
+        )
+        refund_req3.approve(self.accountant_user, refund_method='CASH')
+        refund_req3.execute_payout(self.cashier_user)
+        refund_req3.refresh_from_db()
+        self.assertEqual(refund_req3.payout_status, 'PAID')
+
+        # Attempt to cancel paid refund -> 400
+        self.client.force_login(self.accountant_user)
+        paid_cancel_resp = self.client.post(
+            f"/sales/api/refund-requests/{refund_req3.pk}/cancel/",
+            data=json.dumps({'reason': 'Cancel paid'}),
+            content_type='application/json'
+        )
+        self.assertEqual(paid_cancel_resp.status_code, 400)
+        self.assertIn('already been paid out', paid_cancel_resp.json()['error'])
+
