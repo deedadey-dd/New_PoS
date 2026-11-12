@@ -2503,3 +2503,76 @@ class WorkflowIntegrationTests(TestCase):
         self.assertEqual(paid_cancel_resp.status_code, 400)
         self.assertIn('already been paid out', paid_cancel_resp.json()['error'])
 
+        # 11. Verify that if a sale was marked REFUNDED prematurely before payout,
+        # cancelling approval restores sale.status to COMPLETED and allows cashier to re-request refund
+        sale4 = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.attendant_user,
+            cashier=self.cashier_user,
+            total=Decimal("60.00"),
+            amount_paid=Decimal("60.00"),
+            payment_method="CASH",
+            status="REFUNDED",  # Prematurely refunded
+            notes="REFUNDED: Testing refund reversal"
+        )
+        SaleItem.objects.create(
+            tenant=self.tenant,
+            sale=sale4,
+            product=self.product,
+            batch=self.shop_batch,
+            quantity=Decimal("1.00"),
+            unit_price=Decimal("60.00"),
+            dispatched_quantity=Decimal("1.00")
+        )
+        refund_req4 = RefundRequest.objects.create(
+            tenant=self.tenant,
+            sale=sale4,
+            requested_by=self.cashier_user,
+            reason='Premature refund test',
+            status='APPROVED',
+            payout_status='PENDING',
+            refund_amount=Decimal('60.00'),
+            refund_method='CASH'
+        )
+        # Cancel approval by accountant
+        self.client.force_login(self.accountant_user)
+        cancel4_resp = self.client.post(
+            f"/sales/api/refund-requests/{refund_req4.pk}/cancel/",
+            data=json.dumps({'reason': 'Cancelling premature refund'}),
+            content_type='application/json'
+        )
+        self.assertEqual(cancel4_resp.status_code, 200)
+
+        sale4.refresh_from_db()
+        self.assertEqual(sale4.status, 'COMPLETED')
+        self.assertFalse(sale4.has_approved_pending_payout)
+        self.assertFalse(sale4.has_pending_refund)
+
+        # Cashier can now request refund again
+        self.client.force_login(self.cashier_user)
+        rerequest_resp = self.client.post(
+            f"/sales/api/{sale4.pk}/refund/",
+            data=json.dumps({'reason': 'Customer returned with receipt again'}),
+            content_type='application/json'
+        )
+        self.assertEqual(rerequest_resp.status_code, 200)
+        self.assertTrue(rerequest_resp.json()['success'])
+
+        # 12. Test reset_refunded_sale management command
+        from django.core.management import call_command
+        sale5 = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.attendant_user,
+            cashier=self.cashier_user,
+            total=Decimal("95.00"),
+            amount_paid=Decimal("95.00"),
+            payment_method="CASH",
+            status="REFUNDED",
+            notes="REFUNDED: Orphaned refund status"
+        )
+        call_command('reset_refunded_sale', sale_id=sale5.pk)
+        sale5.refresh_from_db()
+        self.assertEqual(sale5.status, 'COMPLETED')
+

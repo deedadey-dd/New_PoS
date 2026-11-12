@@ -1528,7 +1528,10 @@ class RefundRequest(TenantModel):
         Cancel an approved refund request that has not yet been paid out / disbursed.
         Only allowed for Accountants and Admins while status == 'APPROVED' and payout_status == 'PENDING'.
         Reverts the request status to CANCELLED and unblocks the sale.
+        If the sale was prematurely marked REFUNDED, reverts it back to COMPLETED / PENDING_DISPATCH
+        and reverses any returned inventory or customer credit debt adjustments.
         """
+        from django.db import transaction as db_transaction
         from django.utils import timezone as tz
 
         if self.status != 'APPROVED':
@@ -1536,11 +1539,80 @@ class RefundRequest(TenantModel):
         if self.payout_status == 'PAID':
             raise ValidationError("Cannot cancel a refund request that has already been paid out.")
 
-        self.status = 'CANCELLED'
-        self.reviewed_by = canceller
-        self.reviewed_at = tz.now()
-        self.rejection_reason = reason or "Approval cancelled"
-        self.save()
+        with db_transaction.atomic():
+            self.status = 'CANCELLED'
+            self.reviewed_by = canceller
+            self.reviewed_at = tz.now()
+            self.rejection_reason = reason or "Approval cancelled"
+            self.save()
+
+            sale = self.sale
+            if sale.status == 'REFUNDED':
+                if sale.tenant.use_strict_sales_workflow:
+                    from django.db.models import F
+                    has_undispatched = sale.items.filter(dispatched_quantity__lt=F('quantity')).exists()
+                    sale.status = 'PENDING_DISPATCH' if has_undispatched else 'COMPLETED'
+                else:
+                    sale.status = 'COMPLETED'
+
+                if sale.notes and sale.notes.startswith("REFUNDED"):
+                    sale.notes = ""
+
+                # Reverse any SALE_RETURN inventory ledger entries created by sale.refund()
+                from apps.inventory.models import InventoryLedger
+                return_ledgers = InventoryLedger.objects.filter(
+                    reference_type='Refund',
+                    reference_id=sale.pk,
+                    transaction_type='SALE_RETURN'
+                )
+                if return_ledgers.exists():
+                    for ret in return_ledgers:
+                        InventoryLedger.objects.create(
+                            tenant=sale.tenant,
+                            product=ret.product,
+                            batch=ret.batch,
+                            location=ret.location,
+                            transaction_type='SALE',
+                            quantity=-ret.quantity,
+                            unit_cost=ret.unit_cost,
+                            reference_type='RefundCancellation',
+                            reference_id=self.pk,
+                            notes=f"Reversal of uncompleted refund return: {self.refund_number}",
+                            created_by=canceller
+                        )
+                    # Restore dispatch tracking on items
+                    for item in sale.items.all():
+                        if item.dispatched_quantity == 0 and item.quantity > 0:
+                            item.dispatched_quantity = item.quantity
+                            item.save(update_fields=['dispatched_quantity'])
+                    sale.is_dispatched = True
+
+                # Reverse customer credit transaction if one was recorded
+                if sale.customer:
+                    from apps.customers.models import CustomerTransaction
+                    refund_credit_tx = CustomerTransaction.objects.filter(
+                        customer=sale.customer,
+                        reference_id=sale.sale_number,
+                        transaction_type='CREDIT',
+                        description__startswith="Refund:"
+                    ).order_by('-created_at').first()
+                    if refund_credit_tx:
+                        balance_before = sale.customer.current_balance
+                        sale.customer.current_balance += refund_credit_tx.amount
+                        sale.customer.save()
+                        CustomerTransaction.objects.create(
+                            tenant=sale.tenant,
+                            customer=sale.customer,
+                            transaction_type='DEBIT',
+                            amount=refund_credit_tx.amount,
+                            reference_id=sale.sale_number,
+                            balance_before=balance_before,
+                            balance_after=sale.customer.current_balance,
+                            description=f"Refund Approval Cancelled: {self.refund_number}",
+                            performed_by=canceller
+                        )
+
+                sale.save()
 
         # Notify shop manager / requester
         from apps.notifications.models import Notification
