@@ -73,6 +73,20 @@ def tenant_context(request):
         context['latest_unread_bulletin'] = unread_qs.first()
 
         
+        # Add shop settings if user is assigned to a shop location
+        from apps.sales.models import ShopSettings
+        shop_settings = None
+        if user.location and user.location.location_type == 'SHOP':
+            try:
+                shop_settings = user.location.shop_settings
+            except (ShopSettings.DoesNotExist, AttributeError):
+                shop_settings, _ = ShopSettings.objects.get_or_create(
+                    tenant=tenant,
+                    shop=user.location,
+                    defaults={'receipt_printer_type': 'THERMAL_80MM', 'disallow_manual_momo_amount': True}
+                )
+        context['shop_settings'] = shop_settings
+
         # Calculate cash on hand based on role and workflow
         from apps.accounting.models import CashTransfer, BankTransfer
         from apps.sales.models import Shift, Sale

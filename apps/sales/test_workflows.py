@@ -3817,6 +3817,86 @@ class WorkflowIntegrationTests(TestCase):
         self.assertTrue(sale.is_dispatched)
         self.assertFalse(sale.is_partially_dispatched)
 
+    def test_41_strict_workflow_receive_payment_disallow_manual_momo(self):
+        """
+        Verify that in the strict workflow Receive Payment modal:
+        1. When disallow_manual_momo_amount is active on the shop, data-disallow-momo is 'true'.
+        2. Even if a client sends an amount_paid higher than total on Momo payment,
+           the backend locks amount_paid to exact total with change_given = 0.
+        3. api_sale_detail reports disallow_manual_momo_amount = True.
+        """
+        # Configure tenant for strict sales workflow
+        self.tenant.use_strict_sales_workflow = True
+        self.tenant.save()
+
+        # Ensure shop settings has disallow_manual_momo_amount = True
+        settings, _ = ShopSettings.objects.get_or_create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            defaults={'receipt_printer_type': 'THERMAL_80MM', 'disallow_manual_momo_amount': True}
+        )
+        settings.disallow_manual_momo_amount = True
+        settings.save()
+
+        # Create a customer
+        customer = Customer.objects.create(
+            tenant=self.tenant,
+            name="Test Strict Customer",
+            phone="0241234567"
+        )
+
+        # Create draft sale invoice
+        sale = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.attendant_user,
+            customer=customer,
+            status='PENDING',
+            total=Decimal('150.00'),
+            subtotal=Decimal('150.00'),
+        )
+        SaleItem.objects.create(
+            tenant=self.tenant,
+            sale=sale,
+            product=self.product,
+            quantity=10,
+            unit_price=Decimal('15.00'),
+            total=Decimal('150.00'),
+        )
+
+        # 1. Cashier views /sales/
+        self.client.force_login(self.cashier_user)
+        resp = self.client.get('/sales/')
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode('utf-8')
+        self.assertIn('data-disallow-momo="true"', content)
+
+        # 2. Detail API returns disallow_manual_momo_amount
+        detail_resp = self.client.get(f'/sales/api/{sale.pk}/detail/')
+        self.assertEqual(detail_resp.status_code, 200)
+        self.assertTrue(detail_resp.json()['disallow_manual_momo_amount'])
+
+        # 3. Pay invoice with MOMO and an attempted inflated amount of 250.00
+        pay_resp = self.client.post(
+            f'/sales/api/invoices/{sale.pk}/pay/',
+            data=json.dumps({
+                'payment_method': 'MOMO',
+                'amount_paid': 250.00,
+                'paystack_reference': 'MOMO-REF-12345',
+            }),
+            content_type='application/json'
+        )
+        self.assertEqual(pay_resp.status_code, 200)
+        self.assertTrue(pay_resp.json()['success'])
+
+        sale.refresh_from_db()
+        self.assertEqual(sale.status, 'PENDING_DISPATCH')
+        self.assertEqual(sale.payment_method, 'MOMO')
+        # Amount paid MUST be locked to exact total (150.00), change MUST be 0.00
+        self.assertEqual(sale.amount_paid, Decimal('150.00'))
+        self.assertEqual(sale.change_given, Decimal('0.00'))
+
+
 
 
 

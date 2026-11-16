@@ -941,6 +941,16 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
                 unique_providers.append(p)
                 
         context['available_providers'] = unique_providers
+
+        # Shop settings for receipt/payment configuration
+        if user_shop and user_shop.location_type == 'SHOP':
+            from apps.sales.models import ShopSettings
+            shop_settings, _ = ShopSettings.objects.get_or_create(
+                tenant=user.tenant,
+                shop=user_shop,
+                defaults={'receipt_printer_type': 'THERMAL_80MM', 'disallow_manual_momo_amount': True}
+            )
+            context['shop_settings'] = shop_settings
         
         return context
 
@@ -1281,6 +1291,19 @@ def api_sale_detail(request, pk_or_number):
             'created_at': sale.refund_requests.filter(status='APPROVED', payout_status='PENDING').first().created_at.strftime('%b %d, %Y %H:%M'),
         } if sale.refund_requests.filter(status='APPROVED', payout_status='PENDING').exists() else None,
     }
+    
+    disallow_manual_momo = True
+    shop_settings = getattr(sale.shop, 'shop_settings', None)
+    if not shop_settings and sale.shop:
+        try:
+            from apps.sales.models import ShopSettings
+            shop_settings = ShopSettings.objects.get(shop=sale.shop)
+        except ShopSettings.DoesNotExist:
+            shop_settings = None
+    if shop_settings:
+        disallow_manual_momo = shop_settings.disallow_manual_momo_amount
+    data['disallow_manual_momo_amount'] = disallow_manual_momo
+
     return JsonResponse(data)
 
 
@@ -2116,6 +2139,17 @@ def api_pay_invoice(request, pk):
         
     amount_paid = Decimal(str(data.get('amount_paid', 0)))
     paystack_ref = data.get('paystack_reference', '')
+
+    if payment_method == 'MOMO':
+        shop_settings = getattr(sale.shop, 'shop_settings', None)
+        if not shop_settings and sale.shop:
+            try:
+                from apps.sales.models import ShopSettings
+                shop_settings = ShopSettings.objects.get(shop=sale.shop)
+            except ShopSettings.DoesNotExist:
+                shop_settings = None
+        if shop_settings and shop_settings.disallow_manual_momo_amount:
+            amount_paid = sale.total
     
     try:
         with transaction.atomic():

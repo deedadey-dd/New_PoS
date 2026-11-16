@@ -452,7 +452,9 @@
 
                                                 data-sale-total="{{ invoice.total }}"
 
-                                                data-has-customer="{% if invoice.customer %}true{% else %}false{% endif %}">
+                                                data-has-customer="{% if invoice.customer %}true{% else %}false{% endif %}"
+
+                                                data-disallow-momo="{% if invoice.shop.shop_settings %}{% if invoice.shop.shop_settings.disallow_manual_momo_amount %}true{% else %}false{% endif %}{% elif shop_settings %}{% if shop_settings.disallow_manual_momo_amount %}true{% else %}false{% endif %}{% else %}true{% endif %}">
 
                                             <i class="bi bi-credit-card me-1"></i>Pay
 
@@ -983,193 +985,133 @@ document.addEventListener('DOMContentLoaded', function () {
 
 
     let currentTotalDue = 0;
+    let currentDisallowMomo = true;
 
-
-
-    // Open Payment Modal
-
-    document.querySelectorAll('.pay-invoice-btn').forEach(function(button) {
-
-        button.addEventListener('click', function(e) {
-
-            e.stopPropagation();
-
-            const saleId = this.dataset.saleId;
-
-            const saleNumber = this.dataset.saleNumber;
-
-            currentTotalDue = parseFloat(this.dataset.saleTotal);
-
-
-
-            document.getElementById('modalInvoiceId').value = saleId;
-
-            document.getElementById('modalInvoiceNumber').innerText = saleNumber;
-
-            document.getElementById('modalTotalDue').innerText = currencySymbol + currentTotalDue.toFixed(2);
-
-            
-
-            amountPaidInput.value = currentTotalDue.toFixed(2);
-
-            paymentMethodSelect.value = 'CASH';
-
-            digitalRefContainer.classList.add('d-none');
-
-            paystackReferenceInput.value = '';
-
-            changeDisplayContainer.classList.add('d-none');
-
-            amountError.classList.add('d-none');
-
-
-
-            const hasCustomer = this.dataset.hasCustomer === 'true';
-
-            Array.from(paymentMethodSelect.options).forEach(opt => {
-
-                if (opt.value === 'CREDIT' || opt.value === 'MIXED') {
-
-                    opt.disabled = !hasCustomer;
-
-                    if (!hasCustomer) opt.title = "Requires a registered customer account";
-
-                }
-
-            });
-
-
-
-            payModal.show();
-
-        });
-
-    });
-
-
-
-    // Handle Payment Method Select Change
-
-    paymentMethodSelect.addEventListener('change', function() {
-
-        const method = this.value;
-
-        if (method === 'ECASH') {
-
-            ecashProviderContainer.classList.remove('d-none');
-
-            ecashProviderSelect.required = true;
-
-            digitalRefContainer.classList.add('d-none');
-
-            paystackReferenceInput.required = false;
-
-        } else if (method === 'MOMO') {
-
-            ecashProviderContainer.classList.add('d-none');
-
-            ecashProviderSelect.required = false;
-
-            digitalRefContainer.classList.remove('d-none');
-
-            paystackReferenceInput.required = true;
-
-        } else {
-
-            ecashProviderContainer.classList.add('d-none');
-
-            ecashProviderSelect.required = false;
-
-            digitalRefContainer.classList.add('d-none');
-
-            paystackReferenceInput.required = false;
-
-            paystackReferenceInput.value = '';
-
-        }
-
-        calculateChange();
-
-    });
-
-
-
-    // Calculate Change on input
-
-    amountPaidInput.addEventListener('input', calculateChange);
-
-
-
-    function calculateChange() {
-
-        const paid = parseFloat(amountPaidInput.value) || 0;
-
+    function updatePaymentMethodState() {
         const method = paymentMethodSelect.value;
-
-
-
-        if (method !== 'CREDIT') {
-
-            if (paid >= currentTotalDue) {
-
-                const change = paid - currentTotalDue;
-
-                changeDisplayContainer.classList.remove('d-none');
-
-                modalChangeValue.innerText = currencySymbol + change.toFixed(2);
-
-                amountError.classList.add('d-none');
-
-            } else {
-
+        if (method === 'ECASH') {
+            ecashProviderContainer.classList.remove('d-none');
+            ecashProviderSelect.required = true;
+            digitalRefContainer.classList.add('d-none');
+            paystackReferenceInput.required = false;
+            amountPaidInput.readOnly = false;
+        } else if (method === 'MOMO') {
+            ecashProviderContainer.classList.add('d-none');
+            ecashProviderSelect.required = false;
+            digitalRefContainer.classList.remove('d-none');
+            paystackReferenceInput.required = true;
+            if (currentDisallowMomo) {
+                amountPaidInput.value = currentTotalDue.toFixed(2);
+                amountPaidInput.readOnly = true;
                 changeDisplayContainer.classList.add('d-none');
-
-                if (method !== 'MIXED') {
-
-                    amountError.classList.remove('d-none');
-
-                } else {
-
-                    amountError.classList.add('d-none');
-
-                }
-
+                amountError.classList.add('d-none');
+            } else {
+                amountPaidInput.readOnly = false;
             }
-
         } else {
-
-            changeDisplayContainer.classList.add('d-none');
-
-            amountError.classList.add('d-none');
-
+            ecashProviderContainer.classList.add('d-none');
+            ecashProviderSelect.required = false;
+            digitalRefContainer.classList.add('d-none');
+            paystackReferenceInput.required = false;
+            paystackReferenceInput.value = '';
+            amountPaidInput.readOnly = false;
         }
-
+        calculateChange();
     }
 
+    paymentMethodSelect.addEventListener('change', updatePaymentMethodState);
 
+    amountPaidInput.addEventListener('keydown', function(e) {
+        if (paymentMethodSelect.value === 'MOMO' && currentDisallowMomo) {
+            if (e.key !== 'Tab' && e.key !== 'Enter' && e.key !== 'Escape') {
+                e.preventDefault();
+            }
+        }
+    });
 
-    // Submit Payment
+    // Open Payment Modal
+    document.querySelectorAll('.pay-invoice-btn').forEach(function(button) {
+        button.addEventListener('click', function(e) {
+            e.stopPropagation();
+            const saleId = this.dataset.saleId;
+            const saleNumber = this.dataset.saleNumber;
+            currentTotalDue = parseFloat(this.dataset.saleTotal);
+            currentDisallowMomo = this.dataset.disallowMomo !== undefined ? (this.dataset.disallowMomo === 'true') : true;
 
-    payForm.addEventListener('submit', function(e) {
+            document.getElementById('modalInvoiceId').value = saleId;
+            document.getElementById('modalInvoiceNumber').innerText = saleNumber;
+            document.getElementById('modalTotalDue').innerText = currencySymbol + currentTotalDue.toFixed(2);
+            
+            amountPaidInput.value = currentTotalDue.toFixed(2);
+            paymentMethodSelect.value = 'CASH';
+            amountPaidInput.readOnly = false;
+            digitalRefContainer.classList.add('d-none');
+            paystackReferenceInput.value = '';
+            changeDisplayContainer.classList.add('d-none');
+            amountError.classList.add('d-none');
 
-        e.preventDefault();
+            const hasCustomer = this.dataset.hasCustomer === 'true';
+            Array.from(paymentMethodSelect.options).forEach(opt => {
+                if (opt.value === 'CREDIT' || opt.value === 'MIXED') {
+                    opt.disabled = !hasCustomer;
+                    if (!hasCustomer) opt.title = "Requires a registered customer account";
+                }
+            });
 
-        const saleId = document.getElementById('modalInvoiceId').value;
+            updatePaymentMethodState();
+            payModal.show();
+        });
+    });
 
+    // Calculate Change on input
+    amountPaidInput.addEventListener('input', calculateChange);
+
+    function calculateChange() {
         const method = paymentMethodSelect.value;
+        if (method === 'MOMO' && currentDisallowMomo) {
+            changeDisplayContainer.classList.add('d-none');
+            amountError.classList.add('d-none');
+            return;
+        }
 
         const paid = parseFloat(amountPaidInput.value) || 0;
 
+        if (method !== 'CREDIT') {
+            if (paid >= currentTotalDue) {
+                const change = paid - currentTotalDue;
+                changeDisplayContainer.classList.remove('d-none');
+                modalChangeValue.innerText = currencySymbol + change.toFixed(2);
+                amountError.classList.add('d-none');
+            } else {
+                changeDisplayContainer.classList.add('d-none');
+                if (method !== 'MIXED') {
+                    amountError.classList.remove('d-none');
+                } else {
+                    amountError.classList.add('d-none');
+                }
+            }
+        } else {
+            changeDisplayContainer.classList.add('d-none');
+            amountError.classList.add('d-none');
+        }
+    }
+
+    // Submit Payment
+    payForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const saleId = document.getElementById('modalInvoiceId').value;
+        const method = paymentMethodSelect.value;
+        let paid = parseFloat(amountPaidInput.value) || 0;
         const ref = paystackReferenceInput.value.trim();
 
-
+        if (method === 'MOMO' && currentDisallowMomo) {
+            paid = currentTotalDue;
+            amountPaidInput.value = currentTotalDue.toFixed(2);
+        }
 
         if (method !== 'CREDIT' && method !== 'MIXED' && paid < currentTotalDue) {
-
             amountError.classList.remove('d-none');
-
             return;
-
         }
 
 

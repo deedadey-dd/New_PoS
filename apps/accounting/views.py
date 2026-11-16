@@ -443,6 +443,15 @@ class AccountantDashboardView(LoginRequiredMixin, View):
                     seen_ids.add(p['id'])
                     unique_providers.append(p)
             
+            from apps.sales.models import ShopSettings
+            shop_settings = None
+            if user.location and user.location.location_type == 'SHOP':
+                shop_settings, _ = ShopSettings.objects.get_or_create(
+                    tenant=tenant,
+                    shop=user.location,
+                    defaults={'receipt_printer_type': 'THERMAL_80MM', 'disallow_manual_momo_amount': True}
+                )
+
             context = {
                 'pending_invoices': pending_invoices[:10],
                 'pending_invoices_count': pending_invoices.count(),
@@ -456,6 +465,7 @@ class AccountantDashboardView(LoginRequiredMixin, View):
                 'pending_refunds_total': pending_refunds_total,
                 'shop': user.location,
                 'available_providers': unique_providers,
+                'shop_settings': shop_settings,
             }
             return render(request, 'accounting/cashier_dashboard.html', context)
         
@@ -718,6 +728,16 @@ class AccountantDashboardView(LoginRequiredMixin, View):
         
         context['sales_by_user'] = sales_by_user
         
+        from apps.sales.models import ShopSettings
+        shop_settings = None
+        if user.location and user.location.location_type == 'SHOP':
+            shop_settings, _ = ShopSettings.objects.get_or_create(
+                tenant=tenant,
+                shop=user.location,
+                defaults={'receipt_printer_type': 'THERMAL_80MM', 'disallow_manual_momo_amount': True}
+            )
+        context['shop_settings'] = shop_settings
+
         return render(request, self.template_name, context)
 
 
