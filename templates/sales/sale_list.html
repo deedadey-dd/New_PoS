@@ -27,10 +27,10 @@
         font-size: 1.15rem;
     }
     .nav-pill-custom {
-        padding: 0.45rem 1rem;
+        padding: 0.4rem 0.85rem;
         border-radius: 50rem;
         font-weight: 600;
-        font-size: 0.85rem;
+        font-size: 0.82rem;
         color: #64748b;
         background: #f1f5f9;
         text-decoration: none;
@@ -38,6 +38,7 @@
         display: inline-flex;
         align-items: center;
         gap: 0.35rem;
+        white-space: nowrap;
     }
     .nav-pill-custom:hover {
         background: #e2e8f0;
@@ -47,6 +48,33 @@
         background: #0f172a;
         color: #ffffff;
         box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
+    }
+    .nav-pill-custom.active.pill-warning {
+        background: #d97706;
+        color: #ffffff;
+        box-shadow: 0 4px 12px rgba(217, 119, 6, 0.25);
+    }
+    .nav-pill-custom.active.pill-info {
+        background: #0284c7;
+        color: #ffffff;
+        box-shadow: 0 4px 12px rgba(2, 132, 199, 0.25);
+    }
+    .nav-pill-custom.active.pill-danger {
+        background: #dc2626;
+        color: #ffffff;
+        box-shadow: 0 4px 12px rgba(220, 38, 38, 0.25);
+    }
+    .nav-pill-custom.active.pill-success {
+        background: #16a34a;
+        color: #ffffff;
+        box-shadow: 0 4px 12px rgba(22, 163, 74, 0.25);
+    }
+    .nav-pill-count {
+        font-size: 0.72rem;
+        padding: 0.15rem 0.45rem;
+        border-radius: 50rem;
+        font-weight: 700;
+        line-height: 1;
     }
 </style>
 {% endblock %}
@@ -83,32 +111,79 @@
     </div>
 </div>
 
-<!-- Payment Method Navigation Pills -->
-<div class="d-flex flex-wrap gap-2 mb-3">
-    <a href="?{% if selected_shop %}shop={{ selected_shop }}&{% endif %}{% if date_from %}date_from={{ date_from }}&{% endif %}{% if date_to %}date_to={{ date_to }}&{% endif %}{% if selected_status %}status={{ selected_status }}&{% endif %}{% if q %}q={{ q }}&{% endif %}"
-       class="nav-pill-custom {% if not selected_payment %}active{% endif %}">
-        <i class="bi bi-grid-fill"></i> All Sales
-    </a>
-    <a href="?payment=CASH{% if selected_shop %}&shop={{ selected_shop }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if q %}&q={{ q }}{% endif %}"
-       class="nav-pill-custom {% if selected_payment == 'CASH' %}active{% endif %}">
-        <i class="bi bi-cash-stack"></i> Cash
-    </a>
-    <a href="?payment=ECASH{% if selected_shop %}&shop={{ selected_shop }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if q %}&q={{ q }}{% endif %}"
-       class="nav-pill-custom {% if selected_payment == 'ECASH' %}active{% endif %}">
-        <i class="bi bi-credit-card-2-front"></i> E-Cash (Paystack)
-    </a>
-    <a href="?payment=MOMO{% if selected_shop %}&shop={{ selected_shop }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if q %}&q={{ q }}{% endif %}"
-       class="nav-pill-custom {% if selected_payment == 'MOMO' %}active{% endif %}">
-        <i class="bi bi-phone"></i> Local Momo
-    </a>
-    <a href="?payment=CREDIT{% if selected_shop %}&shop={{ selected_shop }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if q %}&q={{ q }}{% endif %}"
-       class="nav-pill-custom {% if selected_payment == 'CREDIT' %}active{% endif %}">
-        <i class="bi bi-journal-bookmark"></i> Credit
-    </a>
-    <a href="?payment=MIXED{% if selected_shop %}&shop={{ selected_shop }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if q %}&q={{ q }}{% endif %}"
-       class="nav-pill-custom {% if selected_payment == 'MIXED' %}active{% endif %}">
-        <i class="bi bi-pie-chart"></i> Mixed
-    </a>
+<!-- Quick Filter Pills -->
+<div class="card mb-3 border-0 shadow-sm">
+    <div class="card-body p-3">
+        <!-- Tier 1: Refund & Activity Quick Filter Pills -->
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+            <span class="text-muted small fw-bold text-uppercase me-1" style="font-size: 0.75rem; letter-spacing: 0.5px; min-width: 65px;">Refunds:</span>
+            <a href="?{% if selected_payment %}payment={{ selected_payment }}&{% endif %}{% if selected_shop %}shop={{ selected_shop }}&{% endif %}{% if date_from %}date_from={{ date_from }}&{% endif %}{% if date_to %}date_to={{ date_to }}&{% endif %}{% if selected_status %}status={{ selected_status }}&{% endif %}{% if q %}q={{ q }}&{% endif %}"
+               class="nav-pill-custom {% if not selected_refund_status %}active{% endif %}">
+                <i class="bi bi-grid-fill"></i> All Sales
+            </a>
+            <a href="?refund_status=pending_approval{% if selected_payment %}&payment={{ selected_payment }}{% endif %}{% if selected_shop %}&shop={{ selected_shop }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if q %}&q={{ q }}{% endif %}"
+               class="nav-pill-custom pill-warning {% if selected_refund_status == 'pending_approval' %}active{% endif %}">
+                <i class="bi bi-hourglass-split"></i> Pending Approval
+                {% if count_pending_approval > 0 %}
+                <span class="badge rounded-pill bg-warning text-dark nav-pill-count ms-1">{{ count_pending_approval }}</span>
+                {% endif %}
+            </a>
+            <a href="?refund_status=pending_payout{% if selected_payment %}&payment={{ selected_payment }}{% endif %}{% if selected_shop %}&shop={{ selected_shop }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if q %}&q={{ q }}{% endif %}"
+               class="nav-pill-custom pill-info {% if selected_refund_status == 'pending_payout' %}active{% endif %}">
+                <i class="bi bi-cash-coin"></i> Awaiting Payout
+                {% if count_pending_payout > 0 %}
+                <span class="badge rounded-pill bg-info text-white nav-pill-count ms-1">{{ count_pending_payout }}</span>
+                {% endif %}
+            </a>
+            <a href="?refund_status=halted{% if selected_payment %}&payment={{ selected_payment }}{% endif %}{% if selected_shop %}&shop={{ selected_shop }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if q %}&q={{ q }}{% endif %}"
+               class="nav-pill-custom pill-warning {% if selected_refund_status == 'halted' %}active{% endif %}">
+                <i class="bi bi-pause-circle"></i> Halted Dispatch
+                {% if count_halted > 0 %}
+                <span class="badge rounded-pill bg-secondary text-white nav-pill-count ms-1">{{ count_halted }}</span>
+                {% endif %}
+            </a>
+            <a href="?refund_status=refunded{% if selected_payment %}&payment={{ selected_payment }}{% endif %}{% if selected_shop %}&shop={{ selected_shop }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if q %}&q={{ q }}{% endif %}"
+               class="nav-pill-custom pill-danger {% if selected_refund_status == 'refunded' %}active{% endif %}">
+                <i class="bi bi-arrow-counterclockwise"></i> Fully Refunded
+                {% if count_refunded > 0 %}
+                <span class="badge rounded-pill bg-danger text-white nav-pill-count ms-1">{{ count_refunded }}</span>
+                {% endif %}
+            </a>
+            <a href="?refund_status=no_refunds{% if selected_payment %}&payment={{ selected_payment }}{% endif %}{% if selected_shop %}&shop={{ selected_shop }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if q %}&q={{ q }}{% endif %}"
+               class="nav-pill-custom pill-success {% if selected_refund_status == 'no_refunds' %}active{% endif %}">
+                <i class="bi bi-check2-circle"></i> Active Sales
+            </a>
+        </div>
+
+        <!-- Tier 2: Payment Method Navigation Pills -->
+        <div class="d-flex flex-wrap align-items-center gap-2 pt-2 border-top">
+            <span class="text-muted small fw-bold text-uppercase me-1" style="font-size: 0.75rem; letter-spacing: 0.5px; min-width: 65px;">Payment:</span>
+            <a href="?{% if selected_refund_status %}refund_status={{ selected_refund_status }}&{% endif %}{% if selected_shop %}shop={{ selected_shop }}&{% endif %}{% if date_from %}date_from={{ date_from }}&{% endif %}{% if date_to %}date_to={{ date_to }}&{% endif %}{% if selected_status %}status={{ selected_status }}&{% endif %}{% if q %}q={{ q }}&{% endif %}"
+               class="nav-pill-custom {% if not selected_payment %}active{% endif %}">
+                <i class="bi bi-wallet2"></i> All Payments
+            </a>
+            <a href="?payment=CASH{% if selected_refund_status %}&refund_status={{ selected_refund_status }}{% endif %}{% if selected_shop %}&shop={{ selected_shop }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if q %}&q={{ q }}{% endif %}"
+               class="nav-pill-custom {% if selected_payment == 'CASH' %}active{% endif %}">
+                <i class="bi bi-cash-stack"></i> Cash
+            </a>
+            <a href="?payment=ECASH{% if selected_refund_status %}&refund_status={{ selected_refund_status }}{% endif %}{% if selected_shop %}&shop={{ selected_shop }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if q %}&q={{ q }}{% endif %}"
+               class="nav-pill-custom {% if selected_payment == 'ECASH' %}active{% endif %}">
+                <i class="bi bi-credit-card-2-front"></i> E-Cash (Paystack)
+            </a>
+            <a href="?payment=MOMO{% if selected_refund_status %}&refund_status={{ selected_refund_status }}{% endif %}{% if selected_shop %}&shop={{ selected_shop }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if q %}&q={{ q }}{% endif %}"
+               class="nav-pill-custom {% if selected_payment == 'MOMO' %}active{% endif %}">
+                <i class="bi bi-phone"></i> Local Momo
+            </a>
+            <a href="?payment=CREDIT{% if selected_refund_status %}&refund_status={{ selected_refund_status }}{% endif %}{% if selected_shop %}&shop={{ selected_shop }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if q %}&q={{ q }}{% endif %}"
+               class="nav-pill-custom {% if selected_payment == 'CREDIT' %}active{% endif %}">
+                <i class="bi bi-journal-bookmark"></i> Credit
+            </a>
+            <a href="?payment=MIXED{% if selected_refund_status %}&refund_status={{ selected_refund_status }}{% endif %}{% if selected_shop %}&shop={{ selected_shop }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if q %}&q={{ q }}{% endif %}"
+               class="nav-pill-custom {% if selected_payment == 'MIXED' %}active{% endif %}">
+                <i class="bi bi-pie-chart"></i> Mixed
+            </a>
+        </div>
+    </div>
 </div>
 
 <!-- Filters -->
@@ -177,17 +252,19 @@
                 <label class="form-label">Refund / Halt</label>
                 <select name="refund_status" class="form-select">
                     <option value="">All</option>
-                    <option value="pending" {% if selected_refund_status == 'pending' %}selected{% endif %}>Pending Any Refund</option>
                     <option value="pending_approval" {% if selected_refund_status == 'pending_approval' %}selected{% endif %}>Pending Approval</option>
                     <option value="pending_payout" {% if selected_refund_status == 'pending_payout' %}selected{% endif %}>Awaiting Payout</option>
-                    <option value="pending_halt" {% if selected_refund_status == 'pending_halt' %}selected{% endif %}>Pending Halt & Settle</option>
+                    <option value="halted" {% if selected_refund_status == 'halted' %}selected{% endif %}>Halted Dispatch</option>
+                    <option value="refunded" {% if selected_refund_status == 'refunded' %}selected{% endif %}>Fully Refunded</option>
+                    <option value="all_refunds" {% if selected_refund_status == 'all_refunds' %}selected{% endif %}>All Refunds / Halts</option>
+                    <option value="no_refunds" {% if selected_refund_status == 'no_refunds' %}selected{% endif %}>Active (No Refunds)</option>
                 </select>
             </div>
             <div class="col-md-2 d-flex align-items-end gap-2">
                 <button type="submit" class="btn btn-primary flex-grow-1">
                     <i class="bi bi-filter me-1"></i>Filter
                 </button>
-                <a href="?{% if selected_payment %}payment={{ selected_payment }}{% endif %}" class="btn btn-outline-secondary">
+                <a href="{% url 'sales:sale_list' %}" class="btn btn-outline-secondary" title="Reset all filters">
                     <i class="bi bi-x-lg"></i>
                 </a>
             </div>
@@ -276,7 +353,7 @@
                 <thead>
                     <tr>
                         <th>{% sort_link "Sale #" "sale_number" %}</th>
-                        <th>{% sort_link "Date" "created_at" %}</th>
+                        <th>{% sort_link "Date / Activity" "latest_activity" %}</th>
                         <th>Shop</th>
                         <th>Customer</th>
                         <th>{% sort_link "Attendant" "attendant__username" %}</th>
@@ -295,7 +372,34 @@
                                 {{ sale.sale_number }}
                             </a>
                         </td>
-                        <td>{{ sale.created_at|date:"M d, Y H:i" }}</td>
+                        <td>
+                            <div class="fw-semibold text-dark">{{ sale.created_at|date:"M d, Y H:i" }}</div>
+                            {% if sale.has_recent_activity %}
+                                <div class="mt-1">
+                                    {% if sale.has_pending_refund %}
+                                        <span class="badge bg-warning text-dark py-1 px-2 border" title="Refund request pending approval (Activity: {{ sale.latest_activity|default:sale.updated_at|date:'M d, Y H:i' }})" data-bs-toggle="tooltip">
+                                            <i class="bi bi-hourglass-split me-1"></i>Refund req {{ sale.latest_activity|default:sale.updated_at|timesince }} ago
+                                        </span>
+                                    {% elif sale.has_approved_pending_payout %}
+                                        <span class="badge bg-info text-white py-1 px-2" title="Approved refund awaiting payout (Activity: {{ sale.latest_activity|default:sale.updated_at|date:'M d, Y H:i' }})" data-bs-toggle="tooltip">
+                                            <i class="bi bi-cash-coin me-1"></i>Awaiting payout {{ sale.latest_activity|default:sale.updated_at|timesince }} ago
+                                        </span>
+                                    {% elif sale.status == 'REFUNDED' %}
+                                        <span class="badge bg-danger py-1 px-2" title="Sale refunded (Activity: {{ sale.latest_activity|default:sale.updated_at|date:'M d, Y H:i' }})" data-bs-toggle="tooltip">
+                                            <i class="bi bi-arrow-counterclockwise me-1"></i>Refunded {{ sale.latest_activity|default:sale.updated_at|timesince }} ago
+                                        </span>
+                                    {% elif sale.is_halted %}
+                                        <span class="badge bg-secondary py-1 px-2" title="Dispatch halted (Activity: {{ sale.latest_activity|default:sale.updated_at|date:'M d, Y H:i' }})" data-bs-toggle="tooltip">
+                                            <i class="bi bi-pause-circle me-1"></i>Halted {{ sale.latest_activity|default:sale.updated_at|timesince }} ago
+                                        </span>
+                                    {% else %}
+                                        <span class="badge bg-light text-muted border py-1 px-2" title="Activity: {{ sale.latest_activity|default:sale.updated_at|date:'M d, Y H:i' }}" data-bs-toggle="tooltip">
+                                            <i class="bi bi-clock-history text-primary me-1"></i>Active {{ sale.latest_activity|default:sale.updated_at|timesince }} ago
+                                        </span>
+                                    {% endif %}
+                                </div>
+                            {% endif %}
+                        </td>
                         <td>{{ sale.shop.name }}</td>
                         <td>
                             {% if sale.customer %}
@@ -357,6 +461,12 @@
                                     </span>
                                     {% endif %}
                                 </div>
+                            {% elif sale.is_halted %}
+                                <div class="mt-1">
+                                    <span class="badge bg-warning text-dark border border-warning" data-bs-toggle="tooltip" title="Dispatch halted by Shop Manager">
+                                        <i class="bi bi-pause-circle me-1"></i>Halted
+                                    </span>
+                                </div>
                             {% endif %}
                         </td>
                         <td class="text-end">
@@ -379,10 +489,31 @@
                                         <button class="btn btn-sm btn-outline-secondary me-1 disabled" data-bs-toggle="tooltip" title="Refund request already pending Accountant approval">
                                             <i class="bi bi-clock-history me-1"></i>Pending
                                         </button>
+                                        {% elif sale.status == 'PENDING_DISPATCH' and not sale.is_halted %}
+                                        <button class="btn btn-sm btn-outline-secondary me-1 disabled" data-bs-toggle="tooltip" title="Pending dispatch — Shop Manager must halt dispatch before a refund can be requested">
+                                            <i class="bi bi-box-seam me-1"></i>Pending Dispatch
+                                        </button>
                                         {% else %}
+                                        {% if sale.can_be_resumed %}
+                                        <button class="btn btn-sm btn-outline-success me-1 inline-resume-btn" 
+                                                data-sale-id="{{ sale.id }}" 
+                                                data-sale-number="{{ sale.sale_number }}"
+                                                data-bs-toggle="tooltip" 
+                                                title="Resume dispatch if halted by mistake">
+                                            <i class="bi bi-play-circle me-1"></i>Resume
+                                        </button>
+                                        {% endif %}
                                         <button class="btn btn-sm btn-outline-warning me-1 inline-refund-btn" 
                                                 data-sale-id="{{ sale.id }}" 
-                                                data-sale-number="{{ sale.sale_number }}">Refund</button>
+                                                data-sale-number="{{ sale.sale_number }}"
+                                                data-total="{{ sale.total|floatformat:'2' }}"
+                                                data-amount-paid="{{ sale.amount_paid|floatformat:'2' }}"
+                                                data-payment-method="{{ sale.payment_method }}"
+                                                data-payment-display="{{ sale.get_payment_method_display }}"
+                                                data-customer="{% if sale.customer %}{{ sale.customer.name }}{% elif sale.customer_name %}{{ sale.customer_name }}{% else %}Walk-in Customer{% endif %}"
+                                                data-is-partial-halt="{% if sale.is_partially_dispatched %}true{% elif sale.is_halted and sale.dispatched_total > 0 %}true{% elif sale.amount_paid > sale.total %}true{% else %}false{% endif %}"
+                                                data-dispatched-total="{{ sale.dispatched_total|floatformat:'2' }}"
+                                                data-refund-amount="{{ sale.calculated_refund_amount|floatformat:'2' }}">Refund</button>
                                         {% endif %}
                                     {% endif %}
                                 {% endif %}
@@ -409,9 +540,17 @@
                                             class="btn btn-sm btn-success open-dispatch-modal me-1 rounded-pill px-3"
                                             data-sale-id="{{ sale.id }}"
                                             data-sale-number="{{ sale.sale_number }}">
-                                        <i class="bi bi-box-seam me-1"></i>Dispatch Goods
+                                        <i class="bi bi-box-seam me-1"></i>Dispatch/ Halt
                                     </button>
                                     {% endif %}
+                                {% elif sale.can_be_resumed %}
+                                    <button class="btn btn-sm btn-outline-success me-1 inline-resume-btn" 
+                                            data-sale-id="{{ sale.id }}" 
+                                            data-sale-number="{{ sale.sale_number }}"
+                                            data-bs-toggle="tooltip" 
+                                            title="Resume dispatch if halted by mistake">
+                                        <i class="bi bi-play-circle me-1"></i>Resume
+                                    </button>
                                 {% elif sale.is_dispatched %}
                                     <a href="{% url 'sales:sale_waybill' sale.pk %}" class="btn btn-sm btn-outline-secondary me-1"
                                         target="_blank" data-bs-toggle="tooltip" title="View Waybill">
@@ -477,7 +616,7 @@
                 {% if role_name == 'SHOP_MANAGER' and request.user.tenant.use_strict_sales_workflow %}
                 <button type="button" class="btn btn-success" id="saleDetailDispatchBtn" style="display: none;"
                     data-bs-toggle="modal" data-bs-target="#partialDispatchModal">
-                    <i class="bi bi-send me-1"></i>Dispatch Goods
+                    <i class="bi bi-send me-1"></i>Dispatch/ Halt
                 </button>
                 {% endif %}
                 {% if role_name == 'SHOP_CASHIER' %}
@@ -485,11 +624,16 @@
                     <i class="bi bi-credit-card me-1"></i>Pay Invoice
                 </button>
                 {% endif %}
-                {% if request.user.tenant.enable_refunds and role_name == 'SHOP_MANAGER' or role_name == 'SHOP_CASHIER' %}
-                <button type="button" class="btn btn-warning text-dark" id="saleDetailRefundBtn" style="display: none;">
-                    <i class="bi bi-arrow-counterclockwise me-1"></i>Request Refund
-                </button>
+                {% if request.user.tenant.enable_refunds %}
+                    {% if role_name == 'SHOP_CASHIER' or not request.user.tenant.use_strict_sales_workflow and role_name == 'SHOP_MANAGER' %}
+                    <button type="button" class="btn btn-warning text-dark" id="saleDetailRefundBtn" style="display: none;">
+                        <i class="bi bi-arrow-counterclockwise me-1"></i>Request Refund
+                    </button>
+                    {% endif %}
                 {% endif %}
+                <button type="button" class="btn btn-outline-success" id="saleDetailResumeBtn" style="display: none;">
+                    <i class="bi bi-play-circle me-1"></i>Resume Dispatch
+                </button>
                 <a href="#" class="btn btn-outline-info" id="saleDetailPrintBtn">
                     <i class="bi bi-printer me-1"></i>Print Receipt
                 </a>
@@ -597,12 +741,62 @@
             </div>
             <div class="modal-body">
                 <div class="d-flex align-items-center justify-content-between mb-3 p-2 bg-light rounded-3">
-                    <span class="text-muted small">Sale Invoice:</span>
-                    <span class="fw-bold font-monospace text-dark" id="saleRefundModalNumber">-</span>
+                    <div>
+                        <span class="text-muted small d-block">Sale Invoice:</span>
+                        <span class="fw-bold font-monospace text-dark fs-6" id="saleRefundModalNumber">-</span>
+                    </div>
+                    <div class="text-end">
+                        <span class="text-muted small d-block">Customer:</span>
+                        <span class="fw-semibold text-dark small" id="saleRefundModalCustomer">-</span>
+                    </div>
                 </div>
-                <p class="text-muted small mb-3">
-                    Please provide the reason for requesting a refund. The request will be submitted to the Accountant for review and approval.
-                </p>
+
+                <!-- Refund Amount Summary Card -->
+                <div class="card border-0 mb-3" id="saleRefundAmountCard" style="background-color: #fff5f5; border: 1px solid #fecaca !important; border-radius: 12px;">
+                    <div class="card-body p-3">
+                        <div class="d-flex align-items-center justify-content-between mb-1">
+                            <span class="text-uppercase small fw-bold text-danger" id="saleRefundTypeBadge">
+                                <i class="bi bi-cash-coin me-1"></i>Refund Amount Due
+                            </span>
+                            <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1" id="saleRefundMethodBadge">Cash</span>
+                        </div>
+                        
+                        <div class="d-flex align-items-baseline justify-content-between my-2">
+                            <span class="text-muted small fw-medium">Total To Be Refunded:</span>
+                            <span class="fs-3 fw-bold text-danger font-monospace" id="saleRefundModalAmountDisplay">{{ current_tenant.currency_symbol }}0.00</span>
+                        </div>
+
+                        <!-- Partial Dispatch Breakdown (shown if partial halt) -->
+                        <div id="saleRefundPartialHaltBreakdown" class="border-top pt-2 mt-2 small d-none" style="border-color: #fecaca !important;">
+                            <div class="d-flex justify-content-between text-muted mb-1">
+                                <span>Original Paid Amount:</span>
+                                <span class="fw-medium font-monospace text-dark" id="saleRefundOriginalPaid">{{ current_tenant.currency_symbol }}0.00</span>
+                            </div>
+                            <div class="d-flex justify-content-between text-muted mb-1">
+                                <span>Dispatched Goods Value (Kept):</span>
+                                <span class="fw-medium font-monospace text-dark" id="saleRefundDispatchedValue">{{ current_tenant.currency_symbol }}0.00</span>
+                            </div>
+                            <div class="d-flex justify-content-between text-danger fw-semibold pt-1">
+                                <span><i class="bi bi-info-circle me-1"></i>Undispatched Excess Refund:</span>
+                                <span class="font-monospace" id="saleRefundUndispatchedDue">{{ current_tenant.currency_symbol }}0.00</span>
+                            </div>
+                            <div id="saleRefundUndispatchedItemsList" class="mt-2 pt-2 border-top border-danger border-opacity-25 d-none">
+                                <div class="text-muted small fw-bold mb-1"><i class="bi bi-box-seam me-1"></i>Undispatched Items Being Refunded:</div>
+                                <div id="saleRefundUndispatchedItemsBody" class="small ps-1"></div>
+                            </div>
+                        </div>
+
+                        <!-- Credit Sale Debt Reduction Notice (shown if 0 paid on credit) -->
+                        <div id="saleRefundCreditNotice" class="border-top pt-2 mt-2 small text-muted d-none" style="border-color: #fecaca !important;">
+                            <div class="d-flex justify-content-between text-warning-emphasis">
+                                <span><i class="bi bi-person-badge me-1"></i>Customer Debt Reduction:</span>
+                                <span class="fw-bold font-monospace" id="saleRefundDebtReduction">{{ current_tenant.currency_symbol }}0.00</span>
+                            </div>
+                            <div class="text-muted small mt-1">This credit sale has zero cash collected; customer balance will be credited.</div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="mb-3">
                     <label for="saleRefundReasonInput" class="form-label fw-semibold">
                         Reason for Refund <span class="text-danger">*</span>
@@ -618,7 +812,40 @@
             <div class="modal-footer border-0 gap-2">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-danger fw-bold" id="confirmSaleRefundBtn">
-                    <i class="bi bi-send me-1"></i>Submit Refund Request
+                    <i class="bi bi-send me-1"></i><span id="confirmSaleRefundBtnText">Submit Refund Request</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Resume Sale Dispatch Modal -->
+<div class="modal fade" id="saleResumeModal" tabindex="-1" aria-labelledby="saleResumeModalLabel" aria-hidden="true" style="z-index: 1065;">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-4 border-0 shadow">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold text-success" id="saleResumeModalLabel">
+                    <i class="bi bi-play-circle-fill me-2"></i>Resume Sale Dispatch
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="saleResumeId">
+                <div class="alert alert-info py-2 small mb-3">
+                    <i class="bi bi-info-circle me-1"></i>
+                    Resuming this transaction will return it to <strong>Pending Dispatch</strong> and restore original line items so the Shop Manager can continue dispatching goods.
+                </div>
+                <p class="mb-2">Are you sure you want to resume dispatch for sale <strong id="saleResumeModalNumber" class="font-monospace text-primary"></strong>?</p>
+                <div class="mb-3">
+                    <label for="saleResumeReasonInput" class="form-label small text-muted">Reason for Resuming (Optional)</label>
+                    <input type="text" class="form-control" id="saleResumeReasonInput" placeholder="e.g., Shop Manager halted by mistake">
+                </div>
+                <div id="saleResumeErrorAlert" class="alert alert-danger py-2 small mb-0 d-none"></div>
+            </div>
+            <div class="modal-footer border-0 gap-2">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success fw-bold" id="confirmSaleResumeBtn">
+                    <i class="bi bi-play-circle me-1"></i><span id="confirmSaleResumeBtnText">Confirm Resume</span>
                 </button>
             </div>
         </div>
@@ -671,6 +898,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             window._salePendingRefundInfo = data.pending_refund_info;
                             window._saleHasApprovedPendingPayout = data.has_approved_pending_payout;
                             window._saleApprovedRefundInfo = data.approved_refund_info;
+                            window._saleIsHalted = data.is_halted;
 
                             if (data.has_approved_pending_payout) {
                                 dispatchBtn.classList.replace('btn-success', 'btn-info');
@@ -686,7 +914,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                 dispatchBtn.classList.replace('btn-warning', 'btn-success');
                                 dispatchBtn.classList.replace('btn-info', 'btn-success');
                                 dispatchBtn.classList.remove('text-dark');
-                                dispatchBtn.innerHTML = '<i class="bi bi-send me-1"></i>Dispatch Goods';
+                                dispatchBtn.innerHTML = '<i class="bi bi-send me-1"></i>Dispatch/ Halt';
                             }
                         } else {
                             dispatchBtn.style.display = 'none';
@@ -718,15 +946,56 @@ document.addEventListener('DOMContentLoaded', function() {
                             refundBtn.disabled = true;
                             refundBtn.className = 'btn btn-secondary';
                             refundBtn.innerHTML = '<i class="bi bi-clock-history me-1"></i>Refund Pending Approval';
-                        } else if (data.status_code === 'COMPLETED' || data.status_code === 'PENDING_DISPATCH') {
+                        } else if (data.status_code === 'PENDING_DISPATCH') {
+                            if (data.is_halted) {
+                                refundBtn.style.display = 'inline-block';
+                                refundBtn.disabled = false;
+                                refundBtn.className = 'btn btn-warning text-dark';
+                                refundBtn.innerHTML = '<i class="bi bi-arrow-counterclockwise me-1"></i>Request Refund';
+                                refundBtn.dataset.saleId = saleId;
+                                refundBtn.dataset.saleNumber = data.sale_number;
+                                refundBtn.dataset.total = data.total;
+                                refundBtn.dataset.amountPaid = data.amount_paid;
+                                refundBtn.dataset.paymentMethod = data.payment_method_code;
+                                refundBtn.dataset.paymentDisplay = data.payment_method;
+                                refundBtn.dataset.customer = data.customer || 'Walk-in Customer';
+                                refundBtn.dataset.isPartialHalt = (data.is_partially_dispatched || data.calculated_is_partial_halt) ? 'true' : 'false';
+                                refundBtn.dataset.refundAmount = data.calculated_refund_amount || data.amount_paid;
+                                refundBtn.dataset.dispatchedTotal = data.dispatched_total || '0.00';
+                            } else {
+                                refundBtn.style.display = 'inline-block';
+                                refundBtn.disabled = true;
+                                refundBtn.className = 'btn btn-secondary';
+                                refundBtn.innerHTML = '<i class="bi bi-box-seam me-1"></i>Halt Dispatch Required';
+                            }
+                        } else if (data.status_code === 'COMPLETED') {
                             refundBtn.style.display = 'inline-block';
                             refundBtn.disabled = false;
                             refundBtn.className = 'btn btn-warning text-dark';
                             refundBtn.innerHTML = '<i class="bi bi-arrow-counterclockwise me-1"></i>Request Refund';
                             refundBtn.dataset.saleId = saleId;
                             refundBtn.dataset.saleNumber = data.sale_number;
+                            refundBtn.dataset.total = data.total;
+                            refundBtn.dataset.amountPaid = data.amount_paid;
+                            refundBtn.dataset.paymentMethod = data.payment_method_code;
+                            refundBtn.dataset.paymentDisplay = data.payment_method;
+                            refundBtn.dataset.customer = data.customer || 'Walk-in Customer';
+                            refundBtn.dataset.isPartialHalt = data.calculated_is_partial_halt ? 'true' : 'false';
+                            refundBtn.dataset.refundAmount = data.calculated_refund_amount || data.amount_paid;
+                            refundBtn.dataset.dispatchedTotal = data.dispatched_total || '0.00';
                         } else {
                             refundBtn.style.display = 'none';
+                        }
+                    }
+                    
+                    const resumeBtn = document.getElementById('saleDetailResumeBtn');
+                    if (resumeBtn) {
+                        if (data.can_be_resumed) {
+                            resumeBtn.style.display = 'inline-block';
+                            resumeBtn.dataset.saleId = saleId;
+                            resumeBtn.dataset.saleNumber = data.sale_number;
+                        } else {
+                            resumeBtn.style.display = 'none';
                         }
                     }
                     
@@ -780,23 +1049,76 @@ document.addEventListener('DOMContentLoaded', function() {
             const rInfo = data.approved_refund_info || {};
             const rType = rInfo.is_partial_halt ? 'Halt & Settle' : 'Refund';
             const rNum = rInfo.refund_number ? `(${rInfo.refund_number})` : '';
-            html += `<div class="alert alert-info py-2 mb-3 d-flex align-items-center justify-content-between border border-info rounded-3">
-                <div>
+            const refundAmt = parseFloat(rInfo.refund_amount || 0);
+            let origPaid = parseFloat(rInfo.effective_amount_paid || data.amount_paid || 0);
+            const dispTotal = parseFloat(rInfo.dispatched_total || 0);
+            if (rInfo.is_partial_halt && (dispTotal + refundAmt) > origPaid) {
+                origPaid = dispTotal + refundAmt;
+            }
+            html += `<div class="alert alert-info py-2 mb-3 border border-info rounded-3">
+                <div class="d-flex align-items-center justify-content-between mb-1">
                     <div class="fw-bold text-dark"><i class="bi bi-cash-stack text-info me-2 fs-5"></i>${rType} Approved (Awaiting Payout)</div>
-                    <div class="small text-muted">Request ${rNum} has been approved by the Accountant and is awaiting disbursement by the Cashier.</div>
+                    <span class="badge bg-info text-dark border border-info">Awaiting Payout</span>
                 </div>
-                <span class="badge bg-info text-dark border border-info">Awaiting Payout</span>
+                <div class="small text-muted mb-2">Request ${rNum} has been approved by the Accountant and is awaiting disbursement by the Cashier.</div>
+                ${rInfo.is_partial_halt ? `
+                <div class="p-2 rounded bg-white bg-opacity-75 border small mb-2">
+                    <div class="d-flex justify-content-between text-muted mb-1"><span>Original Amount Paid:</span><span class="fw-medium text-dark">${currencySymbol}${origPaid.toFixed(2)}</span></div>
+                    <div class="d-flex justify-content-between text-muted mb-1"><span>Dispatched Goods Value (Kept):</span><span class="fw-medium text-dark">${currencySymbol}${dispTotal.toFixed(2)}</span></div>
+                    <div class="d-flex justify-content-between border-top pt-1 fw-bold text-dark"><span>Undispatched Excess Refund Due:</span><span class="text-success fs-6">${currencySymbol}${refundAmt.toFixed(2)}</span></div>
+                </div>` : `
+                <div class="mt-1 fw-bold text-success fs-5">Refund Amount: ${currencySymbol}${refundAmt.toFixed(2)}</div>
+                `}
             </div>`;
         } else if (data.has_pending_refund) {
             const rInfo = data.pending_refund_info || {};
             const rType = rInfo.is_partial_halt ? 'Halt & Settle' : 'Refund';
             const rNum = rInfo.refund_number ? `(${rInfo.refund_number})` : '';
-            html += `<div class="alert alert-warning py-2 mb-3 d-flex align-items-center justify-content-between border border-warning rounded-3">
-                <div>
+            const refundAmt = parseFloat(rInfo.refund_amount || 0);
+            let origPaid = parseFloat(rInfo.effective_amount_paid || data.amount_paid || 0);
+            const dispTotal = parseFloat(rInfo.dispatched_total || 0);
+            if (rInfo.is_partial_halt && (dispTotal + refundAmt) > origPaid) {
+                origPaid = dispTotal + refundAmt;
+            }
+            html += `<div class="alert alert-warning py-2 mb-3 border border-warning rounded-3">
+                <div class="d-flex align-items-center justify-content-between mb-1">
                     <div class="fw-bold text-dark"><i class="bi bi-clock-history text-warning me-2 fs-5"></i>${rType} Request Pending Approval</div>
-                    <div class="small text-muted">Request ${rNum} is currently awaiting review by the Accountant.</div>
+                    <span class="badge bg-warning text-dark border border-warning">Pending Approval</span>
                 </div>
-                <span class="badge bg-warning text-dark border border-warning">Pending Approval</span>
+                <div class="small text-muted mb-2">Request ${rNum} is currently awaiting review by the Accountant.</div>
+                ${rInfo.is_partial_halt ? `
+                <div class="p-2 rounded bg-white bg-opacity-75 border small mb-2">
+                    <div class="d-flex justify-content-between text-muted mb-1"><span>Original Amount Paid:</span><span class="fw-medium text-dark">${currencySymbol}${origPaid.toFixed(2)}</span></div>
+                    <div class="d-flex justify-content-between text-muted mb-1"><span>Dispatched Goods Value (Kept):</span><span class="fw-medium text-dark">${currencySymbol}${dispTotal.toFixed(2)}</span></div>
+                    <div class="d-flex justify-content-between border-top pt-1 fw-bold text-dark"><span>Undispatched Excess Refund Due:</span><span class="text-success fs-6">${currencySymbol}${refundAmt.toFixed(2)}</span></div>
+                </div>` : `
+                <div class="mt-1 fw-bold text-dark fs-5">Refund Amount: ${currencySymbol}${refundAmt.toFixed(2)}</div>
+                `}
+            </div>`;
+        } else if (data.is_halted || data.calculated_is_partial_halt) {
+            const refundAmt = parseFloat(data.calculated_refund_amount || 0);
+            const origPaid = parseFloat(data.amount_paid || 0);
+            let dispTotal = parseFloat(data.dispatched_total || 0);
+            if (dispTotal <= 0 && data.total && origPaid > refundAmt && parseFloat(data.total) < origPaid) {
+                dispTotal = parseFloat(data.total);
+            }
+            if (dispTotal <= 0 && origPaid > refundAmt) {
+                dispTotal = origPaid - refundAmt;
+            }
+            if ((data.is_halted || data.calculated_is_partial_halt) && (dispTotal + refundAmt) > origPaid) {
+                origPaid = dispTotal + refundAmt;
+            }
+            html += `<div class="alert alert-warning py-2 mb-3 border border-warning rounded-3">
+                <div class="d-flex align-items-center justify-content-between mb-1">
+                    <div class="fw-bold text-dark"><i class="bi bi-pause-circle text-warning me-2 fs-5"></i>Dispatch Halted by Shop Manager</div>
+                    <span class="badge bg-warning text-dark">Halted</span>
+                </div>
+                <div class="small text-muted mb-2">This transaction was halted. Cashier can request a refund or resume the transaction if halted by mistake.</div>
+                <div class="p-2 rounded bg-white bg-opacity-75 border small">
+                    <div class="d-flex justify-content-between text-muted mb-1"><span>Original Amount Paid:</span><span class="fw-medium text-dark">${currencySymbol}${origPaid.toFixed(2)}</span></div>
+                    <div class="d-flex justify-content-between text-muted mb-1"><span>Dispatched Goods Value (Kept):</span><span class="fw-medium text-dark">${currencySymbol}${dispTotal.toFixed(2)}</span></div>
+                    <div class="d-flex justify-content-between border-top pt-1 fw-bold text-dark"><span>Undispatched Excess Refund Due:</span><span class="text-success fs-6">${currencySymbol}${refundAmt.toFixed(2)}</span></div>
+                </div>
             </div>`;
         }
 
@@ -863,11 +1185,20 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         // Items table
+        const isRefundingState = Boolean(data.is_refunding || data.is_halted || data.has_pending_refund || data.has_approved_pending_payout || data.status_code === 'REFUNDED');
+        const showDispatchCols = data.is_partially_dispatched || data.is_halted || data.status_code === 'PENDING_DISPATCH' || data.items.some(i => parseFloat(i.dispatched_quantity || 0) > 0) || isRefundingState;
         html += '<h6 class="border-bottom pb-2 mb-0">Items</h6>';
         html += '<div class="table-responsive">';
         html += '<table class="table table-sm mb-0">';
         html += '<thead class="table-light"><tr>';
-        html += '<th>Product</th><th class="text-center">Qty</th>';
+        html += '<th>Product</th><th class="text-center">Ordered</th>';
+        if (showDispatchCols) {
+            if (isRefundingState) {
+                html += '<th class="text-center text-success">Dispatched (Kept)</th><th class="text-center text-danger">Undispatched (Refund)</th>';
+            } else {
+                html += '<th class="text-center">Dispatched</th><th class="text-center">Remaining</th>';
+            }
+        }
         html += '<th class="text-end">Price</th><th class="text-end">Total</th>';
         html += '</tr></thead><tbody>';
 
@@ -875,46 +1206,141 @@ document.addEventListener('DOMContentLoaded', function() {
             html += '<tr>';
             html += '<td>' + item.product_name + '<br><small class="text-muted">' + item.sku + '</small></td>';
             html += '<td class="text-center">' + parseFloat(item.quantity) + '</td>';
+            if (showDispatchCols) {
+                const dispQty = parseFloat(item.dispatched_quantity || 0);
+                const remQty = parseFloat(item.remaining_quantity || 0);
+                const dispVal = parseFloat(item.dispatched_value || (dispQty * parseFloat(item.unit_price || 0)) || 0);
+                const remVal = parseFloat(item.remaining_value || (remQty * parseFloat(item.unit_price || 0)) || 0);
+
+                if (isRefundingState) {
+                    html += '<td class="text-center text-success fw-bold">' + dispQty;
+                    if (dispQty > 0) {
+                        html += '<br><small class="text-success fw-semibold">' + currencySymbol + dispVal.toFixed(2) + '</small>';
+                    }
+                    html += '</td>';
+
+                    if (remQty > 0) {
+                        html += '<td class="text-center text-danger fw-bold">' + remQty;
+                        html += '<br><small class="text-danger fw-semibold">-' + currencySymbol + remVal.toFixed(2) + '</small></td>';
+                    } else {
+                        html += '<td class="text-center text-muted">0</td>';
+                    }
+                } else {
+                    html += '<td class="text-center text-success fw-bold">' + dispQty + '</td>';
+                    html += '<td class="text-center ' + (remQty > 0 ? 'text-warning-emphasis fw-bold' : 'text-muted') + '">' + remQty + '</td>';
+                }
+            }
             html += '<td class="text-end">' + currencySymbol + parseFloat(item.unit_price).toFixed(2) + '</td>';
             html += '<td class="text-end">' + currencySymbol + parseFloat(item.total).toFixed(2) + '</td>';
             html += '</tr>';
         });
 
+        if (data.legacy_settled_amount && parseFloat(data.legacy_settled_amount) > 0) {
+            const legAmt = parseFloat(data.legacy_settled_amount);
+            html += '<tr class="table-warning bg-opacity-25">';
+            html += '<td><span class="text-warning-emphasis fw-semibold"><i class="bi bi-info-circle me-1"></i>Halted / Cancelled Items</span><br><small class="text-muted">Settled for Refund in Partial Halt</small></td>';
+            html += '<td class="text-center text-muted">—</td>';
+            if (showDispatchCols) {
+                html += '<td class="text-center text-muted">0</td>';
+                html += '<td class="text-center text-danger fw-bold">—<br><small class="text-danger fw-semibold">-' + currencySymbol + legAmt.toFixed(2) + '</small></td>';
+            }
+            html += '<td class="text-end text-muted">—</td>';
+            html += '<td class="text-end text-danger fw-bold">-' + currencySymbol + legAmt.toFixed(2) + '</td>';
+            html += '</tr>';
+        }
+
         html += '</tbody></table></div>';
 
         // Totals
         html += '<div class="border-top pt-2 mt-2">';
-        html += '<div class="d-flex justify-content-between mb-1">';
-        html += '<span>Subtotal</span><span>' + currencySymbol + parseFloat(data.subtotal).toFixed(2) + '</span>';
-        html += '</div>';
+        
+        if (isRefundingState) {
+            const origTotal = parseFloat(data.original_sale_total || data.total || 0);
+            let origPaid = parseFloat(data.effective_amount_paid || data.amount_paid || 0);
+            const dispTotal = parseFloat(data.effective_dispatched_total || data.dispatched_total || 0);
+            const refundAmt = parseFloat(data.active_refund_amount || data.calculated_refund_amount || 0);
+            const debtRed = parseFloat(data.active_debt_reduction || data.calculated_debt_reduction || 0);
+            let netRetained = parseFloat(data.net_retained_amount != null ? data.net_retained_amount : dispTotal);
+            if (data.status_code === 'REFUNDED') {
+                netRetained = 0;
+            }
+            if ((dispTotal + refundAmt) > origPaid) {
+                origPaid = dispTotal + refundAmt;
+            }
 
-        if (data.discount_amount) {
-            html += '<div class="d-flex justify-content-between mb-1 text-danger">';
-            html += '<span>Discount</span><span>-' + currencySymbol + parseFloat(data.discount_amount).toFixed(2) + '</span>';
+            html += '<div class="d-flex justify-content-between mb-1 text-muted">';
+            html += '<span>Original Sale Total</span><span>' + currencySymbol + origTotal.toFixed(2) + '</span>';
             html += '</div>';
-        }
-        if (data.tax_amount) {
+
+            html += '<div class="d-flex justify-content-between mb-1 text-dark fw-medium">';
+            html += '<span>Original Amount Paid</span><span>' + currencySymbol + origPaid.toFixed(2) + '</span>';
+            html += '</div>';
+
+            if (debtRed > 0) {
+                html += '<div class="d-flex justify-content-between mb-1 text-info">';
+                html += '<span><i class="bi bi-person-dash me-1"></i>Credit Debt Cancellation</span><span>-' + currencySymbol + debtRed.toFixed(2) + '</span>';
+                html += '</div>';
+            }
+
+            if (refundAmt > 0) {
+                let refundLabel = 'Refund in Progress';
+                let refundColor = 'text-warning-emphasis';
+                if (data.has_approved_pending_payout) {
+                    refundLabel = 'Approved Refund (Awaiting Payout)';
+                    refundColor = 'text-info-emphasis';
+                } else if (data.status_code === 'REFUNDED' || (data.refunds && data.refunds.some(r => r.payout_status === 'Paid / Completed'))) {
+                    refundLabel = 'Refund Disbursed / Paid';
+                    refundColor = 'text-danger';
+                } else if (data.is_halted && !data.has_pending_refund) {
+                    refundLabel = 'Undispatched Excess to Refund';
+                    refundColor = 'text-warning-emphasis';
+                }
+                html += '<div class="d-flex justify-content-between mb-1 ' + refundColor + ' fw-semibold">';
+                html += '<span><i class="bi bi-arrow-counterclockwise me-1"></i>' + refundLabel + '</span><span>-' + currencySymbol + refundAmt.toFixed(2) + '</span>';
+                html += '</div>';
+            }
+
+            html += '<div class="d-flex justify-content-between fw-bold fs-5 border-top pt-2 mt-2 ' + (netRetained > 0 ? 'text-success' : 'text-secondary') + '">';
+            if (netRetained > 0) {
+                html += '<span>Net Goods Value Retained (Kept)</span><span>' + currencySymbol + netRetained.toFixed(2) + '</span>';
+            } else {
+                html += '<span>Net Goods Value Retained</span><span>' + currencySymbol + '0.00 (Refunded in Full)</span>';
+            }
+            html += '</div>';
+
+        } else {
             html += '<div class="d-flex justify-content-between mb-1">';
-            html += '<span>Tax</span><span>' + currencySymbol + parseFloat(data.tax_amount).toFixed(2) + '</span>';
+            html += '<span>Subtotal</span><span>' + currencySymbol + parseFloat(data.subtotal).toFixed(2) + '</span>';
             html += '</div>';
-        }
 
-        html += '<div class="d-flex justify-content-between fw-bold fs-5 border-top pt-2">';
-        html += '<span>Total</span><span>' + currencySymbol + parseFloat(data.total).toFixed(2) + '</span>';
-        html += '</div>';
+            if (data.discount_amount) {
+                html += '<div class="d-flex justify-content-between mb-1 text-danger">';
+                html += '<span>Discount</span><span>-' + currencySymbol + parseFloat(data.discount_amount).toFixed(2) + '</span>';
+                html += '</div>';
+            }
+            if (data.tax_amount) {
+                html += '<div class="d-flex justify-content-between mb-1">';
+                html += '<span>Tax</span><span>' + currencySymbol + parseFloat(data.tax_amount).toFixed(2) + '</span>';
+                html += '</div>';
+            }
 
-        html += '<div class="d-flex justify-content-between mt-1 text-muted">';
-        html += '<span>Amount Paid</span><span>' + currencySymbol + parseFloat(data.amount_paid).toFixed(2) + '</span>';
-        html += '</div>';
-
-        if (data.overpayment_credited && parseFloat(data.overpayment_credited) > 0) {
-            html += '<div class="d-flex justify-content-between mt-1 text-info">';
-            html += '<span>Overage (Credited to Account)</span><span>' + currencySymbol + parseFloat(data.overpayment_credited).toFixed(2) + '</span>';
+            html += '<div class="d-flex justify-content-between fw-bold fs-5 border-top pt-2">';
+            html += '<span>Total</span><span>' + currencySymbol + parseFloat(data.total).toFixed(2) + '</span>';
             html += '</div>';
-        } else if (data.change_given && parseFloat(data.change_given) > 0 && !data.customer) {
-            html += '<div class="d-flex justify-content-between text-success">';
-            html += '<span>Change</span><span>' + currencySymbol + parseFloat(data.change_given).toFixed(2) + '</span>';
+
+            html += '<div class="d-flex justify-content-between mt-1 text-muted">';
+            html += '<span>Amount Paid</span><span>' + currencySymbol + parseFloat(data.amount_paid).toFixed(2) + '</span>';
             html += '</div>';
+
+            if (data.overpayment_credited && parseFloat(data.overpayment_credited) > 0) {
+                html += '<div class="d-flex justify-content-between mt-1 text-info">';
+                html += '<span>Overage (Credited to Account)</span><span>' + currencySymbol + parseFloat(data.overpayment_credited).toFixed(2) + '</span>';
+                html += '</div>';
+            } else if (data.change_given && parseFloat(data.change_given) > 0 && !data.customer) {
+                html += '<div class="d-flex justify-content-between text-success">';
+                html += '<span>Change</span><span>' + currencySymbol + parseFloat(data.change_given).toFixed(2) + '</span>';
+                html += '</div>';
+            }
         }
 
         html += '</div>';
@@ -927,7 +1353,16 @@ document.addEventListener('DOMContentLoaded', function() {
         refundBtn.addEventListener('click', function() {
             const saleId = this.dataset.saleId;
             const saleNumber = this.dataset.saleNumber;
-            handleRefundRequest(saleId, saleNumber);
+            handleRefundRequest(saleId, saleNumber, {
+                total: this.dataset.total,
+                amountPaid: this.dataset.amountPaid,
+                paymentMethod: this.dataset.paymentMethod,
+                paymentDisplay: this.dataset.paymentDisplay,
+                customer: this.dataset.customer,
+                isPartialHalt: this.dataset.isPartialHalt,
+                refundAmount: this.dataset.refundAmount,
+                dispatchedTotal: this.dataset.dispatchedTotal
+            });
         });
     }
 
@@ -937,23 +1372,47 @@ document.addEventListener('DOMContentLoaded', function() {
             e.stopPropagation();
             const saleId = this.dataset.saleId;
             const saleNumber = this.dataset.saleNumber;
-            handleRefundRequest(saleId, saleNumber);
+            handleRefundRequest(saleId, saleNumber, {
+                total: this.dataset.total,
+                amountPaid: this.dataset.amountPaid,
+                paymentMethod: this.dataset.paymentMethod,
+                paymentDisplay: this.dataset.paymentDisplay,
+                customer: this.dataset.customer,
+                isPartialHalt: this.dataset.isPartialHalt,
+                refundAmount: this.dataset.refundAmount,
+                dispatchedTotal: this.dataset.dispatchedTotal
+            });
         });
     });
 
     let pendingRefundSaleId = null;
 
-    function handleRefundRequest(saleId, saleNumber) {
+    function handleRefundRequest(saleId, saleNumber, opts) {
         pendingRefundSaleId = saleId;
         const modalEl = document.getElementById('saleRefundModal');
         if (!modalEl) return;
 
+        opts = opts || {};
+        const currencySymbol = '{{ current_tenant.currency_symbol|default:"GH₵" }}';
+
         const numEl = document.getElementById('saleRefundModalNumber');
+        const custEl = document.getElementById('saleRefundModalCustomer');
+        const amountDisplay = document.getElementById('saleRefundModalAmountDisplay');
+        const methodBadge = document.getElementById('saleRefundMethodBadge');
+        const typeBadge = document.getElementById('saleRefundTypeBadge');
+        const partialBox = document.getElementById('saleRefundPartialHaltBreakdown');
+        const origPaidEl = document.getElementById('saleRefundOriginalPaid');
+        const dispValEl = document.getElementById('saleRefundDispatchedValue');
+        const undispatchedDueEl = document.getElementById('saleRefundUndispatchedDue');
+        const creditNotice = document.getElementById('saleRefundCreditNotice');
+        const debtRedEl = document.getElementById('saleRefundDebtReduction');
+        const btnText = document.getElementById('confirmSaleRefundBtnText');
         const reasonInput = document.getElementById('saleRefundReasonInput');
         const feedback = document.getElementById('saleRefundReasonFeedback');
         const errAlert = document.getElementById('saleRefundErrorAlert');
 
         if (numEl) numEl.textContent = '#' + saleNumber;
+        if (custEl) custEl.textContent = opts.customer || 'Walk-in Customer';
         if (reasonInput) {
             reasonInput.value = '';
             reasonInput.classList.remove('is-invalid');
@@ -963,6 +1422,113 @@ document.addEventListener('DOMContentLoaded', function() {
             errAlert.classList.add('d-none');
             errAlert.textContent = '';
         }
+
+        function populateModal(dataOpts) {
+            const total = parseFloat(dataOpts.total || 0);
+            const amountPaid = parseFloat(dataOpts.amountPaid || 0);
+            let refundDue = parseFloat(dataOpts.refundAmount || 0);
+            let dispatchedVal = parseFloat(dataOpts.dispatchedTotal || 0);
+            const isPartialHalt = dataOpts.isPartialHalt === 'true' || dataOpts.isPartialHalt === true || (amountPaid > total) || (refundDue > 0 && refundDue < amountPaid) || (dispatchedVal > 0 && dispatchedVal < total);
+            const paymentDisplay = dataOpts.paymentDisplay || 'Cash';
+
+            if (methodBadge) methodBadge.textContent = paymentDisplay;
+            if (custEl) custEl.textContent = dataOpts.customer || 'Walk-in Customer';
+
+            if (isPartialHalt) {
+                if (refundDue <= 0 && dispatchedVal > 0 && amountPaid > dispatchedVal) {
+                    refundDue = amountPaid - dispatchedVal;
+                } else if (refundDue <= 0 && amountPaid > total) {
+                    refundDue = amountPaid - total;
+                }
+                if (dispatchedVal <= 0 && refundDue > 0 && amountPaid > refundDue) {
+                    dispatchedVal = amountPaid - refundDue;
+                }
+            }
+
+            if (isPartialHalt && (dispatchedVal > 0 || (refundDue > 0 && refundDue < amountPaid) || (amountPaid > total))) {
+                // Partial dispatch halted: refund is for excess paid on undispatched items
+                const keptVal = dispatchedVal > 0 ? dispatchedVal : Math.max(0, amountPaid - refundDue);
+                if (typeBadge) {
+                    typeBadge.innerHTML = '<i class="bi bi-box-seam me-1"></i>Partial Dispatch Halted Refund';
+                    typeBadge.className = 'text-uppercase small fw-bold text-warning-emphasis';
+                }
+                if (amountDisplay) amountDisplay.textContent = currencySymbol + refundDue.toFixed(2);
+                if (origPaidEl) origPaidEl.textContent = currencySymbol + amountPaid.toFixed(2);
+                if (dispValEl) dispValEl.textContent = currencySymbol + keptVal.toFixed(2);
+                if (undispatchedDueEl) undispatchedDueEl.textContent = currencySymbol + refundDue.toFixed(2);
+                if (partialBox) partialBox.classList.remove('d-none');
+                if (creditNotice) creditNotice.classList.add('d-none');
+                if (btnText) btnText.textContent = 'Submit Refund Request (' + currencySymbol + refundDue.toFixed(2) + ')';
+
+                const itemsBox = document.getElementById('saleRefundUndispatchedItemsList');
+                const itemsBody = document.getElementById('saleRefundUndispatchedItemsBody');
+                if (itemsBox && itemsBody) {
+                    if (dataOpts.items && dataOpts.items.length > 0) {
+                        let itemsHtml = '';
+                        dataOpts.items.forEach(function(it) {
+                            const rem = parseFloat(it.remaining_quantity || 0);
+                            if (rem > 0) {
+                                const uPrice = parseFloat(it.unit_price || 0);
+                                const lineVal = rem * uPrice;
+                                itemsHtml += `<div class="d-flex justify-content-between text-muted mb-1">
+                                    <span>• ${it.product_name} (${rem} remaining @ ${currencySymbol}${uPrice.toFixed(2)})</span>
+                                    <span class="fw-medium font-monospace text-dark">${currencySymbol}${lineVal.toFixed(2)}</span>
+                                </div>`;
+                            }
+                        });
+                        if (itemsHtml) {
+                            itemsBody.innerHTML = itemsHtml;
+                            itemsBox.classList.remove('d-none');
+                        } else {
+                            itemsBox.classList.add('d-none');
+                        }
+                    } else if (!dataOpts.items) {
+                        itemsBox.classList.add('d-none');
+                    }
+                }
+            } else if (amountPaid <= 0 && total > 0) {
+                // Credit sale (0 paid in cash)
+                if (typeBadge) {
+                    typeBadge.innerHTML = '<i class="bi bi-person-badge me-1"></i>Credit Debt Cancellation';
+                    typeBadge.className = 'text-uppercase small fw-bold text-info';
+                }
+                if (amountDisplay) amountDisplay.textContent = currencySymbol + '0.00';
+                if (debtRedEl) debtRedEl.textContent = currencySymbol + total.toFixed(2);
+                if (partialBox) partialBox.classList.add('d-none');
+                if (creditNotice) creditNotice.classList.remove('d-none');
+                if (btnText) btnText.textContent = 'Submit Debt Cancellation (' + currencySymbol + total.toFixed(2) + ')';
+            } else {
+                // Standard full refund
+                if (typeBadge) {
+                    typeBadge.innerHTML = '<i class="bi bi-cash-coin me-1"></i>Full Sale Refund Amount';
+                    typeBadge.className = 'text-uppercase small fw-bold text-danger';
+                }
+                const fullRefund = refundDue > 0 ? refundDue : (amountPaid > 0 ? amountPaid : total);
+                if (amountDisplay) amountDisplay.textContent = currencySymbol + fullRefund.toFixed(2);
+                if (partialBox) partialBox.classList.add('d-none');
+                if (creditNotice) creditNotice.classList.add('d-none');
+                if (btnText) btnText.textContent = 'Submit Refund Request (' + currencySymbol + fullRefund.toFixed(2) + ')';
+            }
+        }
+
+        populateModal(opts);
+
+        // Fetch detail API to populate exact items and figures
+        fetch('/sales/api/' + saleId + '/detail/')
+            .then(r => r.json())
+            .then(d => {
+                populateModal({
+                    total: d.total,
+                    amountPaid: d.amount_paid,
+                    customer: d.customer,
+                    paymentDisplay: d.payment_method,
+                    isPartialHalt: (d.is_partially_dispatched || d.calculated_is_partial_halt),
+                    refundAmount: d.calculated_refund_amount,
+                    dispatchedTotal: d.dispatched_total,
+                    items: d.items
+                });
+            })
+            .catch(() => {});
 
         const modalInstance = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
         modalInstance.show();
@@ -1024,6 +1590,101 @@ document.addEventListener('DOMContentLoaded', function() {
             .catch(function(err) {
                 confirmSaleRefundBtn.disabled = false;
                 confirmSaleRefundBtn.innerHTML = originalHtml;
+                if (errAlert) {
+                    errAlert.textContent = err.message;
+                    errAlert.classList.remove('d-none');
+                } else if (window.showAppToast) {
+                    window.showAppToast(err.message, 'danger');
+                }
+            });
+        });
+    }
+
+    // ── Resume Dispatch Logic ────────────────────────────────────
+    function handleResumeRequest(saleId, saleNumber) {
+        const modalEl = document.getElementById('saleResumeModal');
+        if (!modalEl) return;
+        const idInput = document.getElementById('saleResumeId');
+        const numEl = document.getElementById('saleResumeModalNumber');
+        const reasonInput = document.getElementById('saleResumeReasonInput');
+        const errAlert = document.getElementById('saleResumeErrorAlert');
+
+        if (idInput) idInput.value = saleId;
+        if (numEl) numEl.textContent = '#' + saleNumber;
+        if (reasonInput) reasonInput.value = '';
+        if (errAlert) {
+            errAlert.classList.add('d-none');
+            errAlert.textContent = '';
+        }
+
+        const modalInstance = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+        modalInstance.show();
+    }
+
+    document.querySelectorAll('.inline-resume-btn').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            handleResumeRequest(this.dataset.saleId, this.dataset.saleNumber);
+        });
+    });
+
+    const detailResumeBtn = document.getElementById('saleDetailResumeBtn');
+    if (detailResumeBtn) {
+        detailResumeBtn.addEventListener('click', function() {
+            const saleId = this.dataset.saleId;
+            const saleNumber = this.dataset.saleNumber;
+            const detailModalEl = document.getElementById('saleDetailModal');
+            const detailModalInstance = bootstrap.Modal.getInstance(detailModalEl);
+            if (detailModalInstance) {
+                detailModalInstance.hide();
+            }
+            setTimeout(function() {
+                handleResumeRequest(saleId, saleNumber);
+            }, 350);
+        });
+    }
+
+    const confirmSaleResumeBtn = document.getElementById('confirmSaleResumeBtn');
+    if (confirmSaleResumeBtn) {
+        confirmSaleResumeBtn.addEventListener('click', function() {
+            const saleId = document.getElementById('saleResumeId').value;
+            const reason = document.getElementById('saleResumeReasonInput').value.trim();
+            const errAlert = document.getElementById('saleResumeErrorAlert');
+            const btnText = document.getElementById('confirmSaleResumeBtnText');
+
+            confirmSaleResumeBtn.disabled = true;
+            btnText.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Resuming...';
+            if (errAlert) errAlert.classList.add('d-none');
+
+            const csrfToken = '{{ csrf_token }}';
+            fetch('/sales/api/sales/' + saleId + '/resume-dispatch/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
+                },
+                body: JSON.stringify({ reason: reason })
+            })
+            .then(function(res) {
+                if (!res.ok) {
+                    return res.json().then(function(err) { throw new Error(err.error || 'Failed to resume sale dispatch.') });
+                }
+                return res.json();
+            })
+            .then(function(res) {
+                const modalEl = document.getElementById('saleResumeModal');
+                if (modalEl) {
+                    const modalInstance = bootstrap.Modal.getInstance(modalEl);
+                    if (modalInstance) modalInstance.hide();
+                }
+                if (window.showAppToast) {
+                    window.showAppToast(res.message || 'Sale resumed successfully and returned to Pending Dispatch.', 'success');
+                }
+                setTimeout(() => location.reload(), 900);
+            })
+            .catch(function(err) {
+                confirmSaleResumeBtn.disabled = false;
+                btnText.textContent = 'Confirm Resume';
                 if (errAlert) {
                     errAlert.textContent = err.message;
                     errAlert.classList.remove('d-none');

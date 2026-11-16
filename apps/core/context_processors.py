@@ -84,10 +84,12 @@ def tenant_context(request):
                 location = user.location
                 
                 # All time cash sales at this location
+                from django.db.models import Case, When, F
+                cash_paid_expr = Case(When(amount_paid__gt=Decimal('0.00'), then=F('amount_paid')), default=F('total'))
                 all_sales_agg = Sale.objects.filter(
                     tenant=tenant, shop=location, status__in=['COMPLETED', 'PENDING_DISPATCH']
                 ).aggregate(
-                    cash_sales=Sum('total', filter=Q(payment_method='CASH')),
+                    cash_sales=Sum(cash_paid_expr, filter=Q(payment_method='CASH')),
                     mixed_paid=Sum('amount_paid', filter=Q(payment_method='MIXED')),
                 )
                 cash_sales_val = (all_sales_agg['cash_sales'] or Decimal('0')) + (all_sales_agg['mixed_paid'] or Decimal('0'))
@@ -149,24 +151,52 @@ def tenant_context(request):
                     to_user=user
                 ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
 
+                from apps.sales.models import RefundRequest
+                cash_refunded_sale_ids = RefundRequest.objects.filter(
+                    tenant=tenant,
+                    paid_by=user,
+                    status='APPROVED',
+                    payout_status='PAID',
+                    refund_method='CASH',
+                    is_partial_halt=False,
+                ).values_list('sale_id', flat=True)
+
                 # Own cash collected from sales where this user is the cashier (or attendant if no cashier assigned)
+                from django.db.models import Case, When, F
+                cash_paid_expr = Case(When(amount_paid__gt=Decimal('0.00'), then=F('amount_paid')), default=F('total'))
                 cash_sales = Sale.objects.filter(
                     tenant=tenant,
-                    status__in=['COMPLETED', 'PENDING_DISPATCH'],
                     payment_method='CASH'
                 ).filter(
+                    Q(status__in=['COMPLETED', 'PENDING_DISPATCH']) |
+                    Q(status='REFUNDED', id__in=cash_refunded_sale_ids)
+                ).filter(
                     Q(cashier=user) | Q(cashier__isnull=True, attendant=user)
-                ).aggregate(total=Sum('total'))['total'] or Decimal('0')
+                ).aggregate(total=Sum(cash_paid_expr))['total'] or Decimal('0')
 
                 mixed_sales = Sale.objects.filter(
                     tenant=tenant,
-                    status__in=['COMPLETED', 'PENDING_DISPATCH'],
                     payment_method='MIXED'
+                ).filter(
+                    Q(status__in=['COMPLETED', 'PENDING_DISPATCH']) |
+                    Q(status='REFUNDED', id__in=cash_refunded_sale_ids)
                 ).filter(
                     Q(cashier=user) | Q(cashier__isnull=True, attendant=user)
                 ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
 
-                own_sales = cash_sales + mixed_sales
+                # Add back disbursed partial halt cash refunds
+                # (because execute_payout reduces amount_paid by refund_amount, while refund_cash_payouts also subtracts refund_amount)
+                partial_halt_addback = RefundRequest.objects.filter(
+                    tenant=tenant,
+                    paid_by=user,
+                    status='APPROVED',
+                    payout_status='PAID',
+                    refund_method='CASH',
+                    is_partial_halt=True,
+                    sale__payment_method__in=['CASH', 'MIXED']
+                ).aggregate(total=Sum('refund_amount'))['total'] or Decimal('0')
+
+                own_sales = cash_sales + mixed_sales + partial_halt_addback
 
                 # Opening cash from currently OPEN shift run by user
                 open_shift_opening_cash = Shift.objects.filter(

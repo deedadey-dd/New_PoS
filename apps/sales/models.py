@@ -247,11 +247,12 @@ class Shift(TenantModel):
     @property
     def total_sales(self):
         """Total cash sales collected during this shift (offset by refund_payouts for same-shift cash refunds)."""
-        from django.db.models import Q
+        from django.db.models import Q, Case, When, F
         sales_qs = self._collected_sales_qs()
+        cash_paid_expr = Case(When(amount_paid__gt=Decimal('0.00'), then=F('amount_paid')), default=F('total'))
         cash_total = sales_qs.filter(
             payment_method='CASH'
-        ).aggregate(t=Sum('total'))['t'] or Decimal('0')
+        ).aggregate(t=Sum(cash_paid_expr))['t'] or Decimal('0')
         mixed_total = sales_qs.filter(
             payment_method='MIXED'
         ).aggregate(t=Sum('amount_paid'))['t'] or Decimal('0')
@@ -546,8 +547,18 @@ class Sale(TenantModel):
         related_name='processed_sales',
         help_text="The cashier who received/processed payment for this sale."
     )
+    is_halted = models.BooleanField(
+        default=False,
+        help_text="Designates whether dispatch was halted by shop manager prior to refund or resumption."
+    )
+    halt_snapshot = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="Snapshot of sale state and items prior to halt, allowing cashier resumption."
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True, null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
 
     # Sync fields (from main/alpha - for bidirectional sync support)
@@ -583,6 +594,8 @@ class Sale(TenantModel):
         return f"Sale {self.sale_number} - {self.total}"
     
     def save(self, *args, **kwargs):
+        if 'update_fields' in kwargs and kwargs['update_fields'] is not None:
+            kwargs['update_fields'] = set(kwargs['update_fields']) | {'updated_at'}
         # Auto-generate sale number
         if not self.sale_number:
             today = timezone.now().strftime('%Y%m%d')
@@ -600,6 +613,10 @@ class Sale(TenantModel):
             else:
                 self.sale_number = f"S{today}0001"
         
+        # Default amount_paid to total for cash sales created directly without amount_paid
+        if (self.amount_paid is None or self.amount_paid == Decimal('0.00')) and self.payment_method == 'CASH' and self.total and self.total > Decimal('0.00'):
+            self.amount_paid = self.total
+        
         super().save(*args, **kwargs)
     
     def calculate_totals(self):
@@ -611,11 +628,52 @@ class Sale(TenantModel):
         self.save()
 
     @property
+    def dispatched_total(self):
+        """Total value of goods already dispatched."""
+        val = Decimal('0.00')
+        for item in self.items.all():
+            if item.quantity > Decimal('0') and item.dispatched_quantity > Decimal('0'):
+                effective_price = item.total / item.quantity
+                val += (effective_price * item.dispatched_quantity).quantize(Decimal('0.01'))
+        if val <= Decimal('0.00') and self.amount_paid and self.total and self.amount_paid > self.total:
+            return self.total
+        return val
+
+    @property
+    def undispatched_total(self):
+        """Value of goods not yet dispatched."""
+        disp = self.dispatched_total
+        return max(Decimal('0.00'), self.total - disp)
+
+    @property
+    def calculated_refund_amount(self):
+        """Refund amount due for customer."""
+        disp = self.dispatched_total
+        if self.is_halted or self.is_partially_dispatched:
+            if self.amount_paid and self.amount_paid > disp:
+                return self.amount_paid - disp
+            return Decimal('0.00')
+        if self.amount_paid and self.total and self.amount_paid > self.total:
+            return self.amount_paid - self.total
+        return self.amount_paid or Decimal('0.00')
+
+    @property
     def all_items_dispatched(self):
         """True when every item in this sale has been fully dispatched."""
         return not self.items.filter(
             dispatched_quantity__lt=models.F('quantity')
         ).exists()
+
+    @property
+    def is_partially_dispatched(self):
+        """True when a PENDING_DISPATCH sale has some dispatched quantity and some remaining undispatched quantity."""
+        if hasattr(self, '_is_partially_dispatched'):
+            return bool(self._is_partially_dispatched)
+        if self.status != 'PENDING_DISPATCH':
+            return False
+        has_dispatched = self.items.filter(dispatched_quantity__gt=0).exists()
+        has_undispatched = self.items.filter(dispatched_quantity__lt=models.F('quantity')).exists()
+        return has_dispatched and has_undispatched
 
     @property
     def has_pending_refund(self):
@@ -639,6 +697,17 @@ class Sale(TenantModel):
         return self.refund_requests.filter(status='APPROVED', payout_status='PENDING').exists()
 
     @property
+    def has_recent_activity(self):
+        """True when the sale had activity (refund, dispatch, halt, update) after its creation."""
+        from datetime import timedelta
+        latest = getattr(self, 'latest_activity', None)
+        if not latest:
+            latest = getattr(self, 'updated_at', None)
+        if not latest:
+            return False
+        return latest > (self.created_at + timedelta(seconds=15))
+
+    @property
     def pending_refund_request(self):
         """Return the pending RefundRequest instance, if any."""
         return self.refund_requests.filter(status='PENDING').first()
@@ -647,6 +716,30 @@ class Sale(TenantModel):
     def approved_pending_payout_request(self):
         """Return the approved RefundRequest instance awaiting payout, if any."""
         return self.refund_requests.filter(status='APPROVED', payout_status='PENDING').first()
+
+    @property
+    def can_be_resumed(self):
+        """
+        True when this sale's dispatch was halted by the shop manager and can be resumed by the cashier.
+        Allowed only if halted (is_halted=True or legacy COMPLETED) and no active/approved/disbursed refund or pending refund exists.
+        """
+        if not self.is_halted:
+            if not self.notes or '[Dispatch Resumed' in self.notes:
+                return False
+            if not ('[Halted & Settled' in self.notes or '[Dispatch Halted' in self.notes):
+                return False
+            if self.status != 'COMPLETED':
+                return False
+        if self.status not in ['PENDING_DISPATCH', 'COMPLETED']:
+            return False
+        # If any refund request is approved or disbursed, cannot resume
+        active_refunds = self.refund_requests.filter(status__in=['APPROVED', 'DISBURSED']).exists() or self.refund_requests.filter(payout_status='PAID').exists()
+        if active_refunds:
+            return False
+        # If pending refund exists, cannot resume until cancelled or rejected
+        if self.refund_requests.filter(status='PENDING').exists():
+            return False
+        return True
 
 
     def complete(self, amount_paid, payment_method='CASH', paystack_ref='', cashier=None):
@@ -819,10 +912,10 @@ class Sale(TenantModel):
             raise ValidationError("Sale is already refunded.")
             
         # 1. Return Inventory (only if it was deducted)
-        # In strict workflow, inventory is only deducted if dispatched. In standard, if completed.
+        # In strict workflow, inventory is only deducted if items were actually dispatched. In standard, if completed.
         inventory_deducted = False
         if self.tenant.use_strict_sales_workflow:
-            if self.is_dispatched:
+            if self.is_dispatched and self.items.filter(dispatched_quantity__gt=0).exists():
                 inventory_deducted = True
         else:
             if self.status in ['COMPLETED', 'PENDING_DISPATCH']:
@@ -830,13 +923,19 @@ class Sale(TenantModel):
                 
         if inventory_deducted:
             for item in self.items.all():
+                if item.dispatched_quantity > Decimal('0'):
+                    return_qty = item.dispatched_quantity
+                else:
+                    return_qty = item.quantity
+                if return_qty <= Decimal('0'):
+                    continue
                 InventoryLedger.objects.create(
                     tenant=self.tenant,
                     product=item.product,
                     batch=item.batch,
                     location=self.shop,
                     transaction_type='SALE_RETURN',
-                    quantity=item.quantity,  # Add back
+                    quantity=return_qty,  # Add back
                     unit_cost=item.unit_price,
                     reference_type='Refund',
                     reference_id=self.pk,
@@ -879,38 +978,94 @@ class Sale(TenantModel):
                 )
             
         self.status = 'REFUNDED'
+        self.is_halted = False
+        self.halt_snapshot = None
         self.notes = f"REFUNDED: {reason}" if reason else "REFUNDED"
         self.save()
 
-    def halt_and_settle(self, user=None, refund_req=None, refund_method='CASH'):
+    def halt_dispatch(self, user=None, reason=''):
         """
-        Halt an ongoing partial dispatch in the Strict Sales Workflow and settle the sale
-        to match the actual dispatched quantities. Undispatched quantities are cancelled;
-        no inventory return is created because undispatched goods were never deducted.
+        Halt an ongoing dispatch in the Strict Sales Workflow without deleting items.
+        Locks dispatching and allows the cashier to request a refund for undispatched goods.
+        Sale remains in PENDING_DISPATCH with is_halted=True and all line items intact.
+        """
+        if self.status != 'PENDING_DISPATCH':
+            raise ValidationError(f"Cannot halt dispatch for sale in {self.status} status.")
+
+        self.is_halted = True
+        reason_suffix = f": {reason}" if reason else ""
+        halt_note = f"[Dispatch Halted{reason_suffix}]"
+        self.notes = f"{self.notes}\n{halt_note}".strip() if self.notes else halt_note
+        self.save(update_fields=['is_halted', 'notes'])
+
+    def settle_halted_sale(self, user=None, refund_req=None, refund_method='CASH', reason=''):
+        """
+        Officially settle a halted sale upon approval/payout of the refund request.
+        - If partially dispatched: truncates undispatched items to match actual dispatched quantities.
+        - If zero items dispatched: keeps original items intact so full sale details remain for cashier refund.
+        Undispatched quantities are cancelled; no inventory return is created because
+        undispatched goods were never deducted.
         """
         from django.db import transaction as db_transaction
         from django.utils import timezone as tz
 
-        if self.status != 'PENDING_DISPATCH':
-            raise ValidationError(f"Cannot halt dispatch for sale in {self.status} status.")
-
         with db_transaction.atomic():
-            # 1. Truncate items to actual dispatched quantities
-            for item in list(self.items.all()):
-                if item.dispatched_quantity <= Decimal('0'):
-                    item.delete()
-                elif item.dispatched_quantity < item.quantity:
-                    item.quantity = item.dispatched_quantity
-                    item.save()
+            pre_subtotal = self.subtotal
+            pre_discount = self.discount_amount
+            pre_discount_reason = self.discount_reason
+            pre_tax = self.tax_amount
+            pre_total = self.total
+            pre_paid = self.amount_paid
+            old_debt = max(Decimal('0.00'), pre_total - pre_paid)
 
-            # 2. Recalculate totals from surviving items
-            self.calculate_totals()
+            items_snapshot = [
+                {
+                    'product_id': item.product_id,
+                    'batch_id': item.batch_id,
+                    'quantity': str(item.quantity),
+                    'dispatched_quantity': str(item.dispatched_quantity),
+                    'unit_price': str(item.unit_price),
+                    'unit_cost': str(item.unit_cost),
+                    'discount_amount': str(item.discount_amount),
+                    'total': str(item.total),
+                }
+                for item in self.items.all()
+            ]
+
+            has_dispatched_items = self.items.filter(dispatched_quantity__gt=0).exists()
+
+            if has_dispatched_items:
+                # 1. Truncate items to actual dispatched quantities
+                for item in list(self.items.all()):
+                    if item.dispatched_quantity <= Decimal('0'):
+                        item.delete()
+                    elif item.dispatched_quantity < item.quantity:
+                        item.quantity = item.dispatched_quantity
+                        item.save()
+
+                # 2. Recalculate totals from surviving items
+                self.calculate_totals()
+            else:
+                # Zero items dispatched: keep original items intact
+                pass
 
             # 3. Adjust amount_paid if cash/fund refund is given
             refund_amt = refund_req.refund_amount if refund_req else Decimal('0.00')
-            debt_reduction = refund_req.debt_reduction_amount if refund_req else Decimal('0.00')
+            if refund_req:
+                debt_reduction = refund_req.debt_reduction_amount
+            else:
+                new_debt = max(Decimal('0.00'), self.total - self.amount_paid)
+                debt_reduction = max(Decimal('0.00'), old_debt - new_debt)
 
-            if refund_amt > Decimal('0.00'):
+            # 3. Adjust amount_paid only if payout is already paid, account credit, or direct non-request settlement
+            should_reduce_paid = False
+            if refund_req:
+                if refund_req.payout_status == 'PAID' or refund_method == 'ACCOUNT_CREDIT':
+                    should_reduce_paid = True
+            else:
+                should_reduce_paid = True
+
+            if should_reduce_paid and refund_amt > Decimal('0.00'):
                 self.amount_paid = max(Decimal('0.00'), self.amount_paid - refund_amt)
 
             # 4. Finalize sale status to COMPLETED and mark dispatched
@@ -918,8 +1073,27 @@ class Sale(TenantModel):
             self.is_dispatched = True
             self.dispatched_at = tz.now()
             self.dispatched_by = user or self.dispatched_by
-            ref_num = refund_req.refund_number if refund_req else 'Partial Refund'
-            halt_note = f"[Halted & Settled via {ref_num}]"
+            self.is_halted = False
+            self.halt_snapshot = {
+                'subtotal': str(pre_subtotal),
+                'discount_amount': str(pre_discount),
+                'discount_reason': pre_discount_reason,
+                'tax_amount': str(pre_tax),
+                'total': str(pre_total),
+                'amount_paid': str(pre_paid),
+                'debt_reduction': str(debt_reduction),
+                'items': items_snapshot,
+                'halt_reason': reason,
+                'halted_by_id': user.id if user else None,
+            }
+            if refund_req:
+                halt_note = f"[Halted & Settled via {refund_req.refund_number}]"
+            else:
+                reason_suffix = f": {reason}" if reason else ""
+                if has_dispatched_items:
+                    halt_note = f"[Halted & Settled{reason_suffix}]"
+                else:
+                    halt_note = f"[Dispatch Halted (No Goods Released){reason_suffix}]"
             self.notes = f"{self.notes}\n{halt_note}".strip() if self.notes else halt_note
             self.save()
 
@@ -961,6 +1135,104 @@ class Sale(TenantModel):
                         description=f"Account credit refund for halted undispatched items ({self.sale_number})",
                         performed_by=user or self.attendant
                     )
+
+    def halt_and_settle(self, user=None, refund_req=None, refund_method='CASH', reason=''):
+        """
+        Backwards-compatible wrapper.
+        If called with refund_req (e.g. during refund approval/payout), settles the sale.
+        If called without refund_req (e.g. initial manager halt), halts dispatch without deleting items.
+        """
+        if refund_req is not None:
+            return self.settle_halted_sale(user=user, refund_req=refund_req, refund_method=refund_method, reason=reason)
+        return self.halt_dispatch(user=user, reason=reason)
+
+    def resume_dispatch(self, user=None, reason=''):
+        """
+        Resume a halted sale in the Strict Sales Workflow, returning it to PENDING_DISPATCH
+        and restoring its original pre-halt items and quantities.
+        Only allowed if the sale was halted and no refund has been approved or paid out.
+        """
+        from django.db import transaction as db_transaction
+        from decimal import Decimal
+
+        if not self.is_halted and not (self.notes and ('[Halted & Settled' in self.notes or '[Dispatch Halted' in self.notes)):
+            raise ValidationError("This sale is not in a halted state and cannot be resumed.")
+
+        # Check for active refunds
+        active_refunds = self.refund_requests.filter(status__in=['APPROVED', 'DISBURSED']).exists() or self.refund_requests.filter(payout_status='PAID').exists()
+        if active_refunds:
+            raise ValidationError("Cannot resume transaction: a refund has already been approved or disbursed for this sale.")
+
+        pending_refunds = self.refund_requests.filter(status='PENDING')
+        if pending_refunds.exists():
+            raise ValidationError("A refund request is currently pending approval for this sale. Please cancel the refund request before resuming.")
+
+        with db_transaction.atomic():
+            snapshot = self.halt_snapshot or {}
+
+            # 1. Reverse debt reduction if customer had one
+            debt_reduction_str = snapshot.get('debt_reduction', '0.00')
+            try:
+                debt_reduction = Decimal(str(debt_reduction_str))
+            except Exception:
+                debt_reduction = Decimal('0.00')
+
+            if self.customer and debt_reduction > Decimal('0.00'):
+                from apps.customers.models import CustomerTransaction
+                balance_before = self.customer.current_balance
+                self.customer.current_balance += debt_reduction
+                self.customer.save()
+
+                CustomerTransaction.objects.create(
+                    tenant=self.tenant,
+                    customer=self.customer,
+                    transaction_type='DEBIT',
+                    amount=debt_reduction,
+                    reference_id=self.sale_number,
+                    balance_before=balance_before,
+                    balance_after=self.customer.current_balance,
+                    description=f"Reversed debt reduction on dispatch resumption ({self.sale_number})",
+                    performed_by=user or self.attendant
+                )
+
+            # 2. Restore items from snapshot if available
+            items_data = snapshot.get('items')
+            if items_data:
+                self.items.all().delete()
+                for item_dict in items_data:
+                    SaleItem.objects.create(
+                        tenant=self.tenant,
+                        sale=self,
+                        product_id=item_dict['product_id'],
+                        batch_id=item_dict.get('batch_id'),
+                        quantity=Decimal(str(item_dict['quantity'])),
+                        dispatched_quantity=Decimal(str(item_dict.get('dispatched_quantity', '0'))),
+                        unit_price=Decimal(str(item_dict['unit_price'])),
+                        unit_cost=Decimal(str(item_dict.get('unit_cost', '0'))),
+                        discount_amount=Decimal(str(item_dict.get('discount_amount', '0'))),
+                        total=Decimal(str(item_dict['total'])),
+                    )
+                self.subtotal = Decimal(str(snapshot.get('subtotal', self.subtotal)))
+                self.discount_amount = Decimal(str(snapshot.get('discount_amount', self.discount_amount)))
+                self.discount_reason = snapshot.get('discount_reason', self.discount_reason)
+                self.tax_amount = Decimal(str(snapshot.get('tax_amount', self.tax_amount)))
+                self.total = Decimal(str(snapshot.get('total', self.total)))
+                self.amount_paid = Decimal(str(snapshot.get('amount_paid', self.amount_paid)))
+            else:
+                self.calculate_totals()
+
+            # 3. Reset sale status back to PENDING_DISPATCH
+            self.status = 'PENDING_DISPATCH'
+            self.is_dispatched = False
+            self.dispatched_at = None
+            self.dispatched_by = None
+            self.is_halted = False
+            self.halt_snapshot = None
+
+            reason_str = f": {reason}" if reason else ""
+            resumed_note = f"[Dispatch Resumed by {user.get_full_name() if user else 'Cashier'}{reason_str}]"
+            self.notes = f"{self.notes}\n{resumed_note}".strip() if self.notes else resumed_note
+            self.save()
 
 
 class SaleItem(TenantModel):
@@ -1038,6 +1310,11 @@ class SaleItem(TenantModel):
         # Calculate line total
         self.total = (self.quantity * self.unit_price) - self.discount_amount
         super().save(*args, **kwargs)
+        if self.sale_id:
+            try:
+                Sale.objects.filter(pk=self.sale_id).update(updated_at=timezone.now())
+            except Exception:
+                pass
 
 
 class RefundRequest(TenantModel):
@@ -1176,10 +1453,119 @@ class RefundRequest(TenantModel):
             else:
                 num = 1
             self.refund_number = f"RFD{today}{num:04d}"
-        if not self.is_partial_halt and (not self.refund_amount or self.refund_amount <= Decimal('0.00')):
+        if not self.refund_amount or self.refund_amount <= Decimal('0.00'):
             if self.sale_id and hasattr(self, 'sale') and self.sale:
-                self.refund_amount = self.sale.amount_paid if (self.sale.amount_paid and self.sale.amount_paid > Decimal('0.00')) else self.sale.total
+                if self.sale.amount_paid and self.sale.total and self.sale.amount_paid > self.sale.total:
+                    self.is_partial_halt = True
+                    self.refund_amount = self.sale.amount_paid - self.sale.total
+                    self.dispatched_total = self.sale.total
+                elif not self.is_partial_halt:
+                    self.refund_amount = self.sale.amount_paid if (self.sale.amount_paid and self.sale.amount_paid > Decimal('0.00')) else self.sale.total
+        if self.is_partial_halt and (not self.dispatched_total or self.dispatched_total <= Decimal('0.00')):
+            if self.sale_id and hasattr(self, 'sale') and self.sale:
+                if self.sale.total and self.sale.total > Decimal('0.00'):
+                    self.dispatched_total = self.sale.total
+                elif self.sale.amount_paid and self.refund_amount and self.sale.amount_paid > self.refund_amount:
+                    self.dispatched_total = self.sale.amount_paid - self.refund_amount
         super().save(*args, **kwargs)
+        if self.sale_id:
+            try:
+                Sale.objects.filter(pk=self.sale_id).update(updated_at=timezone.now())
+            except Exception:
+                pass
+
+    @property
+    def effective_dispatched_total(self):
+        """
+        Return the value of goods dispatched (kept by customer).
+        Provides automatic calculation for legacy or existing refund requests
+        where dispatched_total was saved as 0.00.
+        """
+        if self.dispatched_total and self.dispatched_total > Decimal('0.00'):
+            return self.dispatched_total
+        if self.is_partial_halt:
+            if self.sale:
+                if hasattr(self.sale, 'dispatched_total') and self.sale.dispatched_total > Decimal('0.00'):
+                    return self.sale.dispatched_total
+                if self.sale.halt_snapshot and self.sale.halt_snapshot.get('dispatched_total'):
+                    try:
+                        return Decimal(str(self.sale.halt_snapshot['dispatched_total']))
+                    except Exception:
+                        pass
+                ref_amt = self.refund_amount or Decimal('0.00')
+                debt_amt = self.debt_reduction_amount or Decimal('0.00')
+                total_ded = ref_amt + debt_amt
+                if self.sale.amount_paid and self.sale.amount_paid > total_ded:
+                    return self.sale.amount_paid - total_ded
+                if self.sale.total and self.sale.total > total_ded:
+                    return self.sale.total - total_ded
+                if self.sale.notes and ('[Halted & Settled' in self.sale.notes or '[Dispatch Halted' in self.sale.notes):
+                    return self.sale.total
+        return Decimal('0.00')
+
+    @property
+    def undispatched_total(self):
+        """
+        Return the value of undispatched items cancelled in partial halt.
+        """
+        if self.is_partial_halt:
+            ref_amt = self.refund_amount or Decimal('0.00')
+            debt_amt = self.debt_reduction_amount or Decimal('0.00')
+            calc_undisp = ref_amt + debt_amt
+            if calc_undisp > Decimal('0.00'):
+                return calc_undisp
+            orig = self.original_sale_total
+            disp = self.effective_dispatched_total
+            if orig > disp:
+                return orig - disp
+        return Decimal('0.00')
+
+    @property
+    def original_sale_total(self):
+        """
+        Return the pre-halt original sale total for this refund request.
+        """
+        if self.is_partial_halt:
+            if self.sale and self.sale.halt_snapshot and self.sale.halt_snapshot.get('total'):
+                try:
+                    return Decimal(str(self.sale.halt_snapshot['total']))
+                except Exception:
+                    pass
+            eff_disp = self.effective_dispatched_total
+            ref_amt = self.refund_amount or Decimal('0.00')
+            debt_amt = self.debt_reduction_amount or Decimal('0.00')
+            calc_total = eff_disp + ref_amt + debt_amt
+            if calc_total > Decimal('0.00'):
+                return calc_total
+            if self.sale and self.sale.amount_paid and self.sale.amount_paid > Decimal('0.00'):
+                return self.sale.amount_paid
+        if self.sale:
+            return self.sale.total
+        return Decimal('0.00')
+
+    @property
+    def effective_amount_paid(self):
+        """
+        Return the pre-halt amount paid for this refund request.
+        For legacy sales where sale.amount_paid was overwritten with dispatched_total,
+        reconstructs the true paid amount as dispatched_total + refund_amount.
+        """
+        if not self.sale:
+            return Decimal('0.00')
+        if self.is_partial_halt:
+            if self.sale.halt_snapshot and self.sale.halt_snapshot.get('amount_paid'):
+                try:
+                    return Decimal(str(self.sale.halt_snapshot['amount_paid']))
+                except Exception:
+                    pass
+            ref_amt = self.refund_amount or Decimal('0.00')
+            disp_total = self.effective_dispatched_total
+            reconstructed_paid = disp_total + ref_amt
+            curr_paid = self.sale.amount_paid or Decimal('0.00')
+            if curr_paid < reconstructed_paid:
+                return reconstructed_paid
+            return curr_paid
+        return self.sale.amount_paid or Decimal('0.00')
 
     def approve(self, approver, refund_method=None):
         """
@@ -1214,7 +1600,30 @@ class RefundRequest(TenantModel):
             if method == 'ACCOUNT_CREDIT' or self.refund_amount <= Decimal('0.00'):
                 # Customer account credit / debt cancellation only - no physical cashier funds leave shop
                 if self.is_partial_halt:
-                    sale.halt_and_settle(user=approver, refund_req=self, refund_method=method)
+                    if sale.status == 'PENDING_DISPATCH':
+                        sale.halt_and_settle(user=approver, refund_req=self, refund_method=method)
+                    else:
+                        if self.refund_amount > Decimal('0.00'):
+                            sale.amount_paid = max(Decimal('0.00'), sale.amount_paid - self.refund_amount)
+                            p_note = f"[Halted & Settled via {self.refund_number}]"
+                            sale.notes = f"{sale.notes}\n{p_note}".strip() if sale.notes else p_note
+                            sale.save()
+                        if sale.customer and self.refund_amount > Decimal('0.00'):
+                            from apps.customers.models import CustomerTransaction
+                            balance_before = sale.customer.current_balance
+                            sale.customer.current_balance -= self.refund_amount
+                            sale.customer.save()
+                            CustomerTransaction.objects.create(
+                                tenant=tenant,
+                                customer=sale.customer,
+                                transaction_type='CREDIT',
+                                amount=self.refund_amount,
+                                reference_id=sale.sale_number,
+                                balance_before=balance_before,
+                                balance_after=sale.customer.current_balance,
+                                description=f"Account credit refund ({sale.sale_number})",
+                                performed_by=approver
+                            )
                     orig_pay_method = sale.payment_method
                     if orig_pay_method == 'MOMO' and self.refund_amount > Decimal('0.00'):
                         from apps.accounting.models import DigitalFundWithdrawal
@@ -1233,9 +1642,15 @@ class RefundRequest(TenantModel):
                 self.payout_status = 'PAID'
                 self.paid_by = approver
                 self.paid_at = tz.now()
+                sale.is_halted = False
+                sale.halt_snapshot = None
+                sale.save(update_fields=['is_halted', 'halt_snapshot'])
             else:
                 # CASH, MOMO, ECASH: Approved by accountant, awaiting cashier payout disbursement.
-                # Crucial: NO fund deductions occur upon approval.
+                # Settle the sale to actual dispatched items upon approval.
+                if self.is_partial_halt and sale.status == 'PENDING_DISPATCH':
+                    sale.settle_halted_sale(user=approver, refund_req=self, refund_method=method)
+                # Crucial: NO physical fund deductions occur upon approval (only upon payout).
                 self.payout_status = 'PENDING'
                 self.paid_by = None
                 self.paid_at = None
@@ -1315,7 +1730,13 @@ class RefundRequest(TenantModel):
             # 1. Execute the financial adjustments and sale status settlement
             if self.is_partial_halt:
                 # Settle the sale to actual dispatched items and reduce amount_paid
-                sale.halt_and_settle(user=disburser, refund_req=self, refund_method=method)
+                if sale.status == 'PENDING_DISPATCH':
+                    sale.settle_halted_sale(user=disburser, refund_req=self, refund_method=method)
+                if self.refund_amount > Decimal('0.00') and sale.amount_paid > sale.total:
+                    sale.amount_paid = max(Decimal('0.00'), sale.amount_paid - self.refund_amount)
+                    p_note = f"[Partial refund of {tenant.currency_symbol}{self.refund_amount} disbursed via {self.refund_number}]"
+                    sale.notes = f"{sale.notes}\n{p_note}".strip() if sale.notes else p_note
+                    sale.save()
 
                 orig_pay_method = sale.payment_method
                 if method == 'MOMO' and orig_pay_method != 'MOMO' and self.refund_amount > Decimal('0.00'):
@@ -1359,6 +1780,10 @@ class RefundRequest(TenantModel):
                 self._apply_financial_adjustment(disburser)
 
             # 2. Record disbursement metadata
+            sale.is_halted = False
+            sale.halt_snapshot = None
+            sale.save(update_fields=['is_halted', 'halt_snapshot'])
+
             combined_notes = []
             if transaction_reference:
                 combined_notes.append(f"Ref: {transaction_reference}")

@@ -590,8 +590,8 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
     model = Sale
     template_name = 'sales/sale_list.html'
     context_object_name = 'sales'
-    sortable_fields = ['created_at', 'sale_number', 'total', 'amount_paid', 'status', 'payment_method', 'attendant__username']
-    default_sort = '-created_at'
+    sortable_fields = ['created_at', 'latest_activity', 'sale_number', 'total', 'amount_paid', 'status', 'payment_method', 'attendant__username']
+    default_sort = '-latest_activity'
     
     def get_paginate_by(self, queryset):
         try:
@@ -604,9 +604,33 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
         
         user = self.request.user
         role_name = user.role.name if user.role else None
-        from django.db.models import Exists, OuterRef
-        from .models import RefundRequest
         
+        from django.db.models import Exists, OuterRef, F, Q, ExpressionWrapper, BooleanField, Subquery
+        from django.db.models.functions import Greatest, Coalesce
+        from .models import RefundRequest, SaleItem
+        from apps.inventory.models import InventoryLedger
+
+        # Subquery for latest activity across refund requests (request date, review date, payout date)
+        sub_rf = Subquery(
+            RefundRequest.objects.filter(sale=OuterRef('pk'))
+            .annotate(
+                rf_latest=Greatest(
+                    Coalesce('paid_at', F('created_at')),
+                    Coalesce('reviewed_at', F('created_at')),
+                    F('created_at')
+                )
+            )
+            .order_by('-rf_latest')
+            .values('rf_latest')[:1]
+        )
+
+        # Subquery for latest goods dispatch ledger entry
+        sub_il = Subquery(
+            InventoryLedger.objects.filter(reference_type='Sale', reference_id=OuterRef('pk'))
+            .order_by('-created_at')
+            .values('created_at')[:1]
+        )
+
         queryset = Sale.objects.filter(
             tenant=user.tenant
         ).select_related('shop', 'attendant', 'customer').annotate(
@@ -618,8 +642,20 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
             ),
             _has_approved_pending_payout=Exists(
                 RefundRequest.objects.filter(sale=OuterRef('pk'), status='APPROVED', payout_status='PENDING')
+            ),
+            _is_partially_dispatched=ExpressionWrapper(
+                Q(status='PENDING_DISPATCH')
+                & Exists(SaleItem.objects.filter(sale=OuterRef('pk'), dispatched_quantity__gt=0))
+                & Exists(SaleItem.objects.filter(sale=OuterRef('pk'), dispatched_quantity__lt=F('quantity'))),
+                output_field=BooleanField()
+            ),
+            latest_activity=Greatest(
+                'created_at',
+                Coalesce('updated_at', 'created_at'),
+                Coalesce(sub_rf, 'created_at'),
+                Coalesce(sub_il, 'created_at')
             )
-        ).order_by('-created_at')
+        )
         
         # For shop-based users (Shop Manager, Attendant), filter by their shop
         # Auditors, Accountants, and Admins see all shops by default
@@ -679,6 +715,26 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
             queryset = queryset.filter(_has_approved_pending_payout=True)
         elif refund_status == 'pending_halt':
             queryset = queryset.filter(_has_pending_halt=True)
+        elif refund_status == 'halted':
+            queryset = queryset.filter(is_halted=True)
+        elif refund_status == 'refunded':
+            queryset = queryset.filter(status='REFUNDED')
+        elif refund_status == 'all_refunds':
+            from django.db.models import Q
+            queryset = queryset.filter(
+                Q(_has_pending_refund=True) |
+                Q(_has_approved_pending_payout=True) |
+                Q(is_halted=True) |
+                Q(status='REFUNDED')
+            )
+        elif refund_status == 'no_refunds':
+            from django.db.models import Q
+            queryset = queryset.filter(
+                ~Q(status='REFUNDED'),
+                _has_pending_refund=False,
+                _has_approved_pending_payout=False,
+                is_halted=False
+            )
 
         # Dispatch status filter
         dispatch_status = self.request.GET.get('dispatch_status')
@@ -769,6 +825,38 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
                 is_active=True
             ).order_by('first_name', 'email')
         
+        # Quick filter badge counts for refund/activity navigation pills
+        base_counts_qs = Sale.objects.filter(tenant=user.tenant)
+        if role_name not in ['AUDITOR', 'ACCOUNTANT', 'ADMIN']:
+            if user.location and user.location.location_type == 'SHOP':
+                base_counts_qs = base_counts_qs.filter(shop=user.location)
+            if role_name == 'SHOP_ATTENDANT':
+                base_counts_qs = base_counts_qs.filter(attendant=user)
+        else:
+            if self.request.GET.get('shop'):
+                base_counts_qs = base_counts_qs.filter(shop_id=self.request.GET.get('shop'))
+            if self.request.GET.get('attendant'):
+                base_counts_qs = base_counts_qs.filter(attendant_id=self.request.GET.get('attendant'))
+
+        ref_counts = base_counts_qs.aggregate(
+            cnt_pending_approval=Count('id', distinct=True, filter=Q(refund_requests__status='PENDING')),
+            cnt_pending_payout=Count('id', distinct=True, filter=Q(refund_requests__status='APPROVED', refund_requests__payout_status='PENDING')),
+            cnt_halted=Count('id', filter=Q(is_halted=True)),
+            cnt_refunded=Count('id', filter=Q(status='REFUNDED')),
+            cnt_total=Count('id'),
+        )
+        context['count_pending_approval'] = ref_counts['cnt_pending_approval'] or 0
+        context['count_pending_payout'] = ref_counts['cnt_pending_payout'] or 0
+        context['count_halted'] = ref_counts['cnt_halted'] or 0
+        context['count_refunded'] = ref_counts['cnt_refunded'] or 0
+        context['count_all_refunds'] = (
+            context['count_pending_approval'] +
+            context['count_pending_payout'] +
+            context['count_halted'] +
+            context['count_refunded']
+        )
+        context['count_no_refunds'] = max(0, (ref_counts['cnt_total'] or 0) - context['count_all_refunds'])
+
         # Preserve filter values
         context['per_page'] = self.get_paginate_by(None)
         context['date_from'] = self.request.GET.get('date_from', '')
@@ -914,16 +1002,29 @@ def api_sale_detail(request, pk_or_number):
         
     items = []
     for item in sale.items.all():
+        qty = item.quantity or Decimal('0.00')
+        disp_qty = item.dispatched_quantity or Decimal('0.00')
+        rem_qty = item.remaining_quantity or Decimal('0.00')
+        tot = item.total or Decimal('0.00')
+        if qty > Decimal('0.00'):
+            disp_val = (disp_qty * (tot / qty)).quantize(Decimal('0.01'))
+            rem_val = tot - disp_val
+        else:
+            disp_val = Decimal('0.00')
+            rem_val = Decimal('0.00')
+
         items.append({
             'id': item.id,
             'product_name': item.product.name,
             'sku': item.product.sku,
-            'quantity': str(item.quantity),
-            'dispatched_quantity': str(item.dispatched_quantity),
-            'remaining_quantity': str(item.remaining_quantity),
+            'quantity': str(qty),
+            'dispatched_quantity': str(disp_qty),
+            'remaining_quantity': str(rem_qty),
             'is_fully_dispatched': item.is_fully_dispatched,
             'unit_price': str(item.unit_price),
-            'total': str(item.total),
+            'total': str(tot),
+            'dispatched_value': str(disp_val),
+            'remaining_value': str(rem_val),
         })
 
     # Look up actual overpayment credited to customer account from CustomerTransaction.
@@ -979,6 +1080,53 @@ def api_sale_detail(request, pk_or_number):
         if ecash_tx and ecash_tx.metadata:
             ecash_metadata = ecash_tx.metadata
 
+    # Calculate refund figures for modal displays
+    calc_disp_total = sale.dispatched_total
+    calc_undisp_total = sale.undispatched_total
+    calc_refund_amt = sale.calculated_refund_amount
+    calc_is_partial = bool(sale.is_partially_dispatched or (sale.is_halted and calc_disp_total > Decimal('0.00')) or (sale.amount_paid and sale.total and sale.amount_paid > sale.total))
+    if sale.amount_paid and sale.amount_paid > calc_disp_total:
+        calc_debt_red = max(Decimal('0.00'), sale.total - sale.amount_paid)
+    else:
+        calc_debt_red = calc_undisp_total
+
+    active_rf = (
+        sale.refund_requests.filter(status='PENDING').first() or
+        sale.refund_requests.filter(status='APPROVED', payout_status='PENDING').first() or
+        sale.refund_requests.filter(status='APPROVED', payout_status='PAID').first() or
+        sale.refund_requests.first()
+    )
+
+    if active_rf:
+        effective_paid = active_rf.effective_amount_paid
+        effective_disp = active_rf.effective_dispatched_total
+        effective_orig_total = active_rf.original_sale_total
+        active_refund_val = active_rf.refund_amount
+        active_debt_red = active_rf.debt_reduction_amount
+        is_refunding = bool(sale.is_halted or sale.status == 'REFUNDED' or active_rf.status in ['PENDING', 'APPROVED'])
+    else:
+        effective_paid = sale.amount_paid or Decimal('0.00')
+        effective_disp = calc_disp_total
+        effective_orig_total = sale.total or Decimal('0.00')
+        active_refund_val = calc_refund_amt
+        active_debt_red = calc_debt_red
+        is_refunding = bool(sale.is_halted or sale.status == 'REFUNDED')
+
+    if (sale.is_halted or (active_rf and active_rf.is_partial_halt)) and (effective_disp + active_refund_val) > effective_paid:
+        effective_paid = effective_disp + active_refund_val
+
+    if sale.status == 'REFUNDED':
+        net_retained = Decimal('0.00')
+    elif is_refunding:
+        net_retained = effective_disp
+    else:
+        net_retained = sale.total or Decimal('0.00')
+
+    items_total_sum = sum((item.total or Decimal('0.00')) for item in sale.items.all())
+    legacy_settled_amount = Decimal('0.00')
+    if is_refunding and effective_orig_total > items_total_sum:
+        legacy_settled_amount = effective_orig_total - items_total_sum
+
     data = {
         'id': sale.pk,
         'sale_id': sale.pk,
@@ -995,6 +1143,14 @@ def api_sale_detail(request, pk_or_number):
         'tax_amount': str(sale.tax_amount) if sale.tax_amount else None,
         'total': str(sale.total),
         'amount_paid': str(sale.amount_paid),
+        'effective_amount_paid': str(effective_paid),
+        'original_sale_total': str(effective_orig_total),
+        'effective_dispatched_total': str(effective_disp),
+        'active_refund_amount': str(active_refund_val),
+        'active_debt_reduction': str(active_debt_red),
+        'net_retained_amount': str(net_retained),
+        'is_refunding': is_refunding,
+        'legacy_settled_amount': str(legacy_settled_amount) if legacy_settled_amount > Decimal('0.00') else None,
         'change_given': str(sale.change_given) if sale.change_given else None,
         'overpayment_credited': overpayment_credited,
         'customer': sale.customer.name if sale.customer else (sale.customer_name or None),
@@ -1004,7 +1160,15 @@ def api_sale_detail(request, pk_or_number):
         'customer_phone': sale.customer_phone,
         'is_dispatched': sale.is_dispatched,
         'all_items_dispatched': sale.all_items_dispatched,
+        'is_partially_dispatched': sale.is_partially_dispatched,
         'allow_partial_dispatch': sale.shop.allow_partial_dispatch if sale.shop else True,
+        'is_halted': sale.is_halted,
+        'can_be_resumed': sale.can_be_resumed,
+        'calculated_refund_amount': str(calc_refund_amt),
+        'calculated_is_partial_halt': calc_is_partial,
+        'calculated_debt_reduction': str(calc_debt_red),
+        'dispatched_total': str(calc_disp_total),
+        'undispatched_total': str(calc_undisp_total),
         'items': items,
         'dispatch_history': dispatch_history,
         'ecash_metadata': ecash_metadata,
@@ -1016,6 +1180,11 @@ def api_sale_detail(request, pk_or_number):
                 'status_code': rf_obj.status,
                 'payout_status': rf_obj.get_payout_status_display(),
                 'refund_amount': str(rf_obj.refund_amount),
+                'is_partial_halt': rf_obj.is_partial_halt,
+                'debt_reduction_amount': str(rf_obj.debt_reduction_amount),
+                'dispatched_total': str(rf_obj.effective_dispatched_total),
+                'undispatched_total': str(rf_obj.undispatched_total),
+                'original_sale_total': str(rf_obj.original_sale_total),
                 'reason': rf_obj.reason,
                 'refund_method': rf_obj.get_refund_method_display(),
                 'created_at': rf_obj.created_at.strftime('%b %d, %Y %H:%M'),
@@ -1029,7 +1198,11 @@ def api_sale_detail(request, pk_or_number):
             'refund_number': sale.refund_requests.filter(status='PENDING').first().refund_number,
             'is_partial_halt': sale.refund_requests.filter(status='PENDING').first().is_partial_halt,
             'refund_amount': str(sale.refund_requests.filter(status='PENDING').first().refund_amount),
+            'dispatched_total': str(sale.refund_requests.filter(status='PENDING').first().effective_dispatched_total),
+            'undispatched_total': str(sale.refund_requests.filter(status='PENDING').first().undispatched_total),
+            'original_sale_total': str(sale.refund_requests.filter(status='PENDING').first().original_sale_total),
             'debt_reduction_amount': str(sale.refund_requests.filter(status='PENDING').first().debt_reduction_amount),
+            'effective_amount_paid': str(sale.refund_requests.filter(status='PENDING').first().effective_amount_paid),
             'reason': sale.refund_requests.filter(status='PENDING').first().reason,
             'created_at': sale.refund_requests.filter(status='PENDING').first().created_at.strftime('%b %d, %Y %H:%M'),
         } if sale.refund_requests.filter(status='PENDING').exists() else None,
@@ -1039,8 +1212,12 @@ def api_sale_detail(request, pk_or_number):
             'refund_number': sale.refund_requests.filter(status='APPROVED', payout_status='PENDING').first().refund_number,
             'is_partial_halt': sale.refund_requests.filter(status='APPROVED', payout_status='PENDING').first().is_partial_halt,
             'refund_amount': str(sale.refund_requests.filter(status='APPROVED', payout_status='PENDING').first().refund_amount),
+            'dispatched_total': str(sale.refund_requests.filter(status='APPROVED', payout_status='PENDING').first().effective_dispatched_total),
+            'undispatched_total': str(sale.refund_requests.filter(status='APPROVED', payout_status='PENDING').first().undispatched_total),
+            'original_sale_total': str(sale.refund_requests.filter(status='APPROVED', payout_status='PENDING').first().original_sale_total),
             'refund_method': sale.refund_requests.filter(status='APPROVED', payout_status='PENDING').first().get_refund_method_display(),
             'debt_reduction_amount': str(sale.refund_requests.filter(status='APPROVED', payout_status='PENDING').first().debt_reduction_amount),
+            'effective_amount_paid': str(sale.refund_requests.filter(status='APPROVED', payout_status='PENDING').first().effective_amount_paid),
             'reason': sale.refund_requests.filter(status='APPROVED', payout_status='PENDING').first().reason,
             'created_at': sale.refund_requests.filter(status='APPROVED', payout_status='PENDING').first().created_at.strftime('%b %d, %Y %H:%M'),
         } if sale.refund_requests.filter(status='APPROVED', payout_status='PENDING').exists() else None,
@@ -1066,7 +1243,10 @@ def api_refund_sale(request, pk):
         return JsonResponse({'success': False, 'error': 'Refunds are disabled for this tenant.'}, status=403)
 
     role_name = request.user.role.name if request.user.role else None
-    if role_name not in ['SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN', 'SHOP_CASHIER']:
+    if tenant.use_strict_sales_workflow:
+        if role_name != 'SHOP_CASHIER':
+            return JsonResponse({'success': False, 'error': 'In strict sales mode, only cashiers can request refunds.'}, status=403)
+    elif role_name not in ['SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN', 'SHOP_CASHIER']:
         return JsonResponse({'success': False, 'error': 'You do not have permission to request or process refunds.'}, status=403)
 
     sale = get_object_or_404(Sale, pk=pk, tenant=tenant)
@@ -1078,15 +1258,21 @@ def api_refund_sale(request, pk):
     if sale.status == 'REFUNDED':
         return JsonResponse({'success': False, 'error': 'Sale is already refunded.'}, status=400)
 
+    if sale.status == 'PENDING_DISPATCH':
+        if not sale.is_halted:
+            return JsonResponse({
+                'success': False,
+                'error': "This sale is pending dispatch. The Shop Manager must halt dispatch before a refund can be requested."
+            }, status=400)
+    elif sale.status != 'COMPLETED':
+        return JsonResponse({'success': False, 'error': 'Only completed or halted sales can be refunded.'}, status=400)
+
     # Check for an already-pending or approved refund request
     from .models import RefundRequest
     if RefundRequest.objects.filter(sale=sale, status='PENDING').exists():
         return JsonResponse({'success': False, 'error': 'A refund request for this sale is already pending approval.'}, status=400)
     if RefundRequest.objects.filter(sale=sale, status='APPROVED', payout_status='PENDING').exists():
         return JsonResponse({'success': False, 'error': 'An approved refund request for this sale is already awaiting cashier disbursement.'}, status=400)
-
-    if sale.status not in ['COMPLETED', 'PENDING_DISPATCH']:
-        return JsonResponse({'success': False, 'error': 'Only completed or pending dispatch sales can be refunded.'}, status=400)
 
     try:
         data = json.loads(request.body)
@@ -1103,7 +1289,36 @@ def api_refund_sale(request, pk):
         except Exception as e:
             return JsonResponse({'success': False, 'error': str(e)}, status=400)
 
-    # Shop Managers — create a pending RefundRequest
+    # Determine refund amount and whether this is a partial halt refund
+    if sale.is_halted or (sale.amount_paid and sale.total and sale.amount_paid > sale.total):
+        dispatched_total = Decimal('0.00')
+        for item in sale.items.all():
+            if item.quantity > Decimal('0') and item.dispatched_quantity > Decimal('0'):
+                effective_price = item.total / item.quantity
+                dispatched_item_val = (effective_price * item.dispatched_quantity).quantize(Decimal('0.01'))
+                dispatched_total += dispatched_item_val
+
+        if dispatched_total <= Decimal('0.00') and sale.amount_paid and sale.total and sale.amount_paid > sale.total:
+            dispatched_total = sale.total
+
+        undispatched_total = max(Decimal('0.00'), sale.total - dispatched_total)
+        has_dispatched_items = dispatched_total > Decimal('0.00')
+
+        if sale.amount_paid > dispatched_total:
+            refund_amount = sale.amount_paid - dispatched_total
+            debt_reduction_amount = max(Decimal('0.00'), sale.total - sale.amount_paid)
+        else:
+            refund_amount = Decimal('0.00')
+            debt_reduction_amount = undispatched_total
+
+        is_partial_halt = has_dispatched_items
+    else:
+        is_partial_halt = False
+        refund_amount = sale.amount_paid or Decimal('0.00')
+        dispatched_total = sale.total
+        debt_reduction_amount = max(Decimal('0.00'), sale.total - sale.amount_paid) if sale.amount_paid else sale.total
+
+    # Shop Managers / Cashiers — create a pending RefundRequest
     try:
         with transaction.atomic():
             refund_req = RefundRequest.objects.create(
@@ -1112,6 +1327,10 @@ def api_refund_sale(request, pk):
                 requested_by=request.user,
                 reason=reason,
                 status='PENDING',
+                is_partial_halt=is_partial_halt,
+                refund_amount=refund_amount,
+                dispatched_total=dispatched_total,
+                debt_reduction_amount=debt_reduction_amount,
             )
 
             # Notify all accountants + admins in this tenant
@@ -1130,7 +1349,7 @@ def api_refund_sale(request, pk):
                     title="Refund Request Awaiting Approval",
                     message=(
                         f"{request.user.get_full_name() or request.user.email} has requested a refund "
-                        f"for Sale {sale.sale_number} ({tenant.currency_symbol}{sale.total}) "
+                        f"for Sale {sale.sale_number} ({tenant.currency_symbol}{refund_amount}) "
                         f"at {sale.shop.name}. "
                         f"Reason: {reason[:150]}"
                     ),
@@ -1142,9 +1361,11 @@ def api_refund_sale(request, pk):
         return JsonResponse({
             'success': True,
             'pending_approval': True,
+            'refund_id': refund_req.pk,
             'refund_number': refund_req.refund_number,
+            'refund_amount': str(refund_amount),
             'message': (
-                f'Refund request {refund_req.refund_number} submitted. '
+                f'Refund request {refund_req.refund_number} ({tenant.currency_symbol}{refund_amount:.2f}) submitted. '
                 f'Awaiting accountant approval.'
             ),
         })
@@ -1204,7 +1425,10 @@ def api_payout_refund(request, pk):
     tenant = request.user.tenant
     role_name = request.user.role.name if request.user.role else None
 
-    if role_name not in ['SHOP_CASHIER', 'ADMIN']:
+    if tenant.use_strict_sales_workflow:
+        if role_name != 'SHOP_CASHIER':
+            return JsonResponse({'success': False, 'error': 'In strict sales mode, only cashiers can disburse refund payouts.'}, status=403)
+    elif role_name not in ['SHOP_CASHIER', 'ADMIN']:
         return JsonResponse({'success': False, 'error': 'Only cashiers and admins can disburse refund payouts.'}, status=403)
 
     refund_req = get_object_or_404(RefundRequest, pk=pk, tenant=tenant)
@@ -2017,59 +2241,67 @@ def api_halt_and_request_refund(request, pk):
 
     try:
         with transaction.atomic():
-            refund_req = RefundRequest.objects.create(
-                tenant=tenant,
-                sale=sale,
-                requested_by=request.user,
-                reason=reason,
-                status='PENDING',
-                is_partial_halt=True,
-                dispatched_total=dispatched_total,
-                refund_amount=refund_amount,
-                debt_reduction_amount=debt_reduction_amount,
-                refund_method='CASH' if sale.payment_method == 'CASH' else ('MOMO' if sale.payment_method == 'MOMO' else ('ECASH' if sale.payment_method == 'ECASH' else 'ACCOUNT_CREDIT')),
-                payout_status='PENDING' if refund_amount > Decimal('0.00') else 'PAID'
-            )
-
-            # Notify accountants and admins
-            from apps.core.models import User
-            from apps.notifications.models import Notification
-            approvers = User.objects.filter(
-                tenant=tenant,
-                role__name__in=['ACCOUNTANT', 'ADMIN'],
-                is_active=True
-            )
-            for approver in approvers:
-                Notification.objects.create(
-                    tenant=tenant,
-                    user=approver,
-                    title="Partial Refund Request Awaiting Approval",
-                    message=(
-                        f"{request.user.get_full_name() or request.user.email} has requested to halt dispatch "
-                        f"and refund Sale {sale.sale_number} at {sale.shop.name}. "
-                        f"Dispatched: {tenant.currency_symbol}{dispatched_total}, "
-                        f"Refund Owed: {tenant.currency_symbol}{refund_amount}, "
-                        f"Debt Reduction: {tenant.currency_symbol}{debt_reduction_amount}. "
-                        f"Reason: {reason[:120]}"
-                    ),
-                    notification_type='SYSTEM',
-                    reference_type='RefundRequest',
-                    reference_id=refund_req.pk,
-                )
+            sale.halt_dispatch(user=request.user, reason=reason)
 
         return JsonResponse({
             'success': True,
-            'refund_id': refund_req.pk,
-            'refund_number': refund_req.refund_number,
+            'status': sale.status,
+            'is_halted': True,
             'dispatched_total': str(dispatched_total),
             'undispatched_total': str(undispatched_total),
-            'refund_amount': str(refund_amount),
-            'debt_reduction_amount': str(debt_reduction_amount),
-            'message': (
-                f'Dispatch halted. Refund request {refund_req.refund_number} submitted for accountant approval '
-                f'(Refund: {tenant.currency_symbol}{refund_amount}, Debt reduction: {tenant.currency_symbol}{debt_reduction_amount}).'
-            ),
+            'message': f'Dispatch halted for sale {sale.sale_number}. Cashier can now request refund or shop manager can resume.',
         })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@login_required
+@require_POST
+def api_resume_dispatch(request, pk):
+    """
+    Resume a halted sale dispatch in Strict Sales Workflow.
+    Allows Cashiers, Shop Managers, and Admins to reopen the sale for dispatch
+    if the Shop Manager halted it by mistake.
+    """
+    import json
+    from django.core.exceptions import ValidationError
+
+    tenant = request.user.tenant
+    if not tenant.use_strict_sales_workflow:
+        return JsonResponse({'error': 'Strict sales workflow is not enabled for this tenant.'}, status=400)
+
+    role_name = request.user.role.name if request.user.role else None
+    if role_name not in ['SHOP_CASHIER', 'SHOP_MANAGER', 'ADMIN']:
+        return JsonResponse({'error': 'Only cashiers, shop managers, and admins can resume sales.'}, status=403)
+
+    sale = get_object_or_404(
+        Sale,
+        pk=pk,
+        tenant=tenant
+    )
+
+    if role_name in ['SHOP_CASHIER', 'SHOP_MANAGER'] and sale.shop != request.user.location:
+        return JsonResponse({'error': 'You can only resume sales for your own shop.'}, status=403)
+
+    try:
+        body = json.loads(request.body) if request.body else {}
+    except Exception:
+        body = {}
+    reason = body.get('reason', 'Resumed by cashier').strip() or 'Resumed by cashier'
+
+    try:
+        with transaction.atomic():
+            sale.resume_dispatch(user=request.user, reason=reason)
+
+        return JsonResponse({
+            'success': True,
+            'message': f'Sale {sale.sale_number} has been resumed and returned to Pending Dispatch.',
+            'status': sale.status,
+            'is_dispatched': sale.is_dispatched,
+            'sale_number': sale.sale_number,
+        })
+    except ValidationError as e:
+        return JsonResponse({'error': e.message if hasattr(e, 'message') else str(e)}, status=400)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=400)
 
@@ -2089,8 +2321,18 @@ def api_customer_credit_payout(request, pk):
     tenant = request.user.tenant
     role_name = request.user.role.name if request.user.role else None
 
-    if role_name not in ['SHOP_CASHIER', 'SHOP_MANAGER', 'ADMIN', 'ACCOUNTANT']:
-        return JsonResponse({'success': False, 'error': 'You do not have permission to payout customer credit.'}, status=403)
+    if tenant.use_strict_sales_workflow:
+        allowed_roles = ['SHOP_CASHIER', 'ADMIN', 'ACCOUNTANT']
+    else:
+        allowed_roles = ['SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN']
+
+    if role_name not in allowed_roles:
+        msg = f'Your role ({role_name}) is not permitted to disburse customer credit payouts under the current workflow.'
+        if request.headers.get('x-requested-with') == 'XMLHttpRequest' or (request.content_type and 'application/json' in request.content_type):
+            return JsonResponse({'success': False, 'error': msg}, status=403)
+        from django.contrib import messages
+        messages.error(request, msg)
+        return redirect('customers:customer_detail', pk=pk)
 
     customer = get_object_or_404(Customer, pk=pk, tenant=tenant)
 

@@ -690,17 +690,15 @@
                     <h3 id="dispatch-halt" class="mt-4">Halt &amp; Settle Undispatched Goods</h3>
                     <div class="card border-warning mb-4">
                         <div class="card-body">
-                            <h5><i class="bi bi-stop-circle text-warning me-2"></i>Halting Partially Dispatched Invoices</h5>
-                            <p>In strict sales workflow mode, if a customer cannot or chooses not to collect the remaining items on a partially dispatched order, the Shop Manager can formally halt the dispatch.</p>
+                            <h5><i class="bi bi-stop-circle text-warning me-2"></i>Halting Invoices in Dispatch</h5>
+                            <p>In strict sales workflow mode, any sale that is in <code>PENDING_DISPATCH</code> state (whether zero items or partial items have been released) <strong>must be halted by the Shop Manager before a refund can be initiated</strong>. This eliminates operational race conditions where money is refunded at the cash desk while warehouse staff is concurrently packaging or loading goods.</p>
                             <ul>
-                                <li><strong>Dispatched quantities remain sold</strong>: Products already handed over to the customer remain recorded as final sales.</li>
-                                <li><strong>Undispatched stock released</strong>: Uncollected items are released from the pending dispatch ledger, returning immediately to available shop stock.</li>
-                                <li><strong>Automated Customer Settlement</strong>:
-                                    <ul>
-                                        <li><em>Overpayment (Cash / MoMo / E-Cash)</em>: If customer payments exceed the value of dispatched goods, an automatic <strong>Refund Request</strong> is created for the excess balance.</li>
-                                        <li><em>Credit Sale Debt Reduction</em>: If the sale was on credit or unpaid, the customer's credit debt is automatically reduced by the value of undispatched goods.</li>
-                                    </ul>
-                                </li>
+                                <li><strong>Phase 1 &mdash; Dispatch Freeze (Halt Dispatch)</strong>: When the Shop Manager clicks Halt &amp; Settle, dispatch is locked to prevent any goods from leaving the shop. Crucially, <strong>all original line items and quantities remain preserved intact</strong> in the database so no items are lost if the request is later rejected or resumed.</li>
+                                <li><strong>Cashier Refund Request</strong>: The Cashier is now unlocked to submit a refund request for the undispatched value via the Sales list.</li>
+                                <li><strong>Phase 2 &mdash; Official Settlement on Approval</strong>: When the Accountant approves the refund request, the sale is officially settled: undispatched items are cancelled, invoice totals are adjusted to the dispatched goods, the sale transitions to <code>COMPLETED</code>, and the cashier disburses the refund funds.</li>
+                                <li><strong>Zero Dispatch Halt</strong>: If no items were dispatched, halting freezes the order while preserving all original line items and invoice totals so that the cashier can initiate a 100% full refund. No phantom inventory return movements are generated.</li>
+                                <li><strong>Credit Sale Debt Reduction</strong>: If the sale was on credit, accountant approval reduces the customer's outstanding balance by the value of undispatched goods.</li>
+                                <li><strong>Resuming a Halted Dispatch or Rejection</strong>: If the Accountant rejects the refund, or if the Shop Manager halted by mistake and clicks <strong>Resume</strong>, the transaction is immediately unlocked. Because items were never deleted, <strong>100% of all undispatched line items and remaining quantities are instantly available in the dispatch modal</strong> with zero data loss.</li>
                             </ul>
                         </div>
                     </div>
@@ -717,17 +715,17 @@
                             <div class="card h-100 border-primary">
                                 <div class="card-body">
                                     <div class="fw-bold text-primary mb-1">Stage 1: Request</div>
-                                    <h6 class="card-title">Shop Manager</h6>
-                                    <p class="small text-muted mb-0">Submits full refund or partial dispatch halt request with mandatory justification.</p>
+                                    <h6 class="card-title">Cashier (Strict Mode)</h6>
+                                    <p class="small text-muted mb-0">In strict mode, only the Cashier can request refunds. In standard mode, Shop Managers / Cashiers initiate requests with mandatory justification.</p>
                                 </div>
                             </div>
                         </div>
                         <div class="col-md-4">
                             <div class="card h-100 border-info">
                                 <div class="card-body">
-                                    <div class="fw-bold text-info mb-1">Stage 2: Approval</div>
+                                    <div class="fw-bold text-info mb-1">Stage 2: Approval &amp; Cancellation</div>
                                     <h6 class="card-title">Accountant / Admin</h6>
-                                    <p class="small text-muted mb-0">Audits the invoice and selects the refund payment method. <em>No funds are deducted at this stage.</em></p>
+                                    <p class="small text-muted mb-0">Audits the invoice and selects the payout channel (Cash, MoMo, E-Cash, Store Credit). Can cancel approved requests before payout. <em>No funds leave the till upon approval.</em></p>
                                 </div>
                             </div>
                         </div>
@@ -735,8 +733,8 @@
                             <div class="card h-100 border-success">
                                 <div class="card-body">
                                     <div class="fw-bold text-success mb-1">Stage 3: Disbursement</div>
-                                    <h6 class="card-title">Cashier / Admin</h6>
-                                    <p class="small text-muted mb-0">Pays out physical cash or mobile money. Deductions from till/wallet occur exclusively at this stage.</p>
+                                    <h6 class="card-title">Cashier Only (Strict Mode)</h6>
+                                    <p class="small text-muted mb-0">Physically pays out cash or confirms digital transfer. Till and wallet deductions occur exclusively at this step.</p>
                                 </div>
                             </div>
                         </div>
@@ -745,23 +743,24 @@
                     <h3 id="refunds-request">1. Requesting Refunds</h3>
                     <div class="card mb-4">
                         <div class="card-body">
-                            <p>Refunds can be initiated by the Shop Manager from <strong>Sales History</strong> or the <strong>Sale Detail</strong> page:</p>
+                            <p>Refunds can be initiated from <strong>Sales History</strong> or the <strong>Sale Detail</strong> modal:</p>
                             <ol>
-                                <li>Find the completed invoice and click <strong>Request Refund</strong>.</li>
-                                <li>Provide a detailed, mandatory <strong>Reason</strong> explaining the return or cancellation.</li>
-                                <li>Submit the request to queue it for Head Office review.</li>
+                                <li><strong>Strict Workflow Rule</strong>: In strict mode, only users with the <strong>Cashier (<code>SHOP_CASHIER</code>)</strong> role can request refunds. Shop Managers, Accountants, and Admins cannot request refunds.</li>
+                                <li><strong>Precondition for Dispatch</strong>: If the sale is in <code>PENDING_DISPATCH</code>, the refund button is locked with <em>"Halt Dispatch Required"</em>. The Shop Manager must first halt the dispatch before the Cashier can proceed.</li>
+                                <li>Click <strong>Request Refund</strong>, provide a detailed mandatory <strong>Reason</strong>, and submit.</li>
                             </ol>
                         </div>
                     </div>
 
-                    <h3 id="refunds-approval">2. Accountant &amp; Admin Approval</h3>
+                    <h3 id="refunds-approval">2. Accountant &amp; Admin Approval &amp; Cancellation</h3>
                     <div class="card mb-4">
                         <div class="card-body">
                             <p>Head Office Accountants and Administrators review pending requests under <strong>Sales → Refund Requests</strong>:</p>
                             <ul>
-                                <li>Review the original receipt, customer, items, and manager's reason.</li>
-                                <li>Designate the refund method: <strong>Cashier Till (Cash)</strong>, <strong>Mobile Money (MoMo)</strong>, or <strong>E-Cash</strong>.</li>
+                                <li>Review the original receipt, customer, items, and requester's reason.</li>
+                                <li>Designate the refund method: <strong>Cashier Till (Cash)</strong>, <strong>Mobile Money (MoMo)</strong>, <strong>E-Cash</strong>, or <strong>Customer Account Credit</strong>.</li>
                                 <li>Click <strong>Approve</strong>. The request transitions to <em>Pending Payout</em>.</li>
+                                <li><strong>Cancelling an Approved Request</strong>: If a refund was approved erroneously or the customer changes their mind, an Accountant or Admin can click <strong>Cancel Approval</strong>. The request transitions to <code>CANCELLED</code> and the sale returns to <code>COMPLETED</code>, unlocking it for future actions.</li>
                             </ul>
                             <div class="alert alert-info mb-0">
                                 <i class="bi bi-info-circle me-1"></i><strong>Key Security Rule:</strong> Approval authorizes the payout but <u>does not deduct cash from the till</u>. The physical disbursement must be executed by the cashier on duty.
@@ -774,10 +773,13 @@
                         <div class="card-body">
                             <p>Cashiers disburse funds to customers directly from the <strong>Cashier Dashboard</strong> or <strong>Refund Requests</strong> menu:</p>
                             <ol>
-                                <li>Locate approved requests displaying the green <strong>Disburse Refund</strong> button.</li>
-                                <li>Click <strong>Disburse Refund</strong>.</li>
-                                <li><strong>Insufficient Balance Safeguard</strong>: If the cashier's drawer or wallet balance is less than the payout amount, an application modal warns of the shortfall before permitting disbursement.</li>
-                                <li><strong>Negative Balance Support</strong>: If approved payouts exceed total daily intake, the till/wallet safely accepts the disbursement and renders the deficit in bold red (e.g. <code>-GH₵50.00</code>).</li>
+                                <li><strong>Strict Workflow Rule</strong>: In strict mode, only the <strong>Cashier</strong> can disburse approved payouts.</li>
+                                <li>Locate approved requests displaying the <strong>Disburse Refund</strong> button.</li>
+                                <li>Click <strong>Disburse Refund</strong> and enter transaction references for digital transfers if applicable.</li>
+                                <li><strong>Live Navbar Balances</strong>: The till, MoMo, and E-Cash balances in the navbar immediately update to reflect the disbursement.</li>
+                                <li><strong>Cross-Payment Refunds</strong>: Sales paid by MoMo or E-Cash can be disbursed in physical Cash (or vice versa), reconciling accurately across all shift ledgers.</li>
+                                <li><strong>Insufficient Balance Safeguard</strong>: If the drawer or wallet balance is less than the payout amount, a confirmation modal warns of the deficit before permitting disbursement.</li>
+                                <li><strong>Negative Balance Support</strong>: If approved payouts exceed total daily intake, the till/wallet accepts the disbursement and renders the deficit in bold red (e.g. <code>-GH₵50.00</code>).</li>
                                 <li>Upon completion, the disbursing cashier's user ID and timestamp are permanently affixed to the record.</li>
                             </ol>
                         </div>

@@ -472,11 +472,22 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         html += '</div>';
 
+                // Items table
+        const isRefundingState = Boolean(data.is_refunding || data.is_halted || data.has_pending_refund || data.has_approved_pending_payout || data.status_code === 'REFUNDED');
+        const showDispatchCols = data.is_partially_dispatched || data.is_halted || data.status_code === 'PENDING_DISPATCH' || (data.items && data.items.some(i => parseFloat(i.dispatched_quantity || 0) > 0)) || isRefundingState;
+
         html += '<h6 class="border-bottom pb-2 mb-2 fw-bold">Items</h6>';
         html += '<div class="table-responsive mb-3">';
         html += '<table class="table table-sm table-hover mb-0 align-middle">';
         html += '<thead class="table-light"><tr>';
-        html += '<th>Product</th><th class="text-center">Qty</th>';
+        html += '<th>Product</th><th class="text-center">Ordered</th>';
+        if (showDispatchCols) {
+            if (isRefundingState) {
+                html += '<th class="text-center text-success">Dispatched (Kept)</th><th class="text-center text-danger">Undispatched (Refund)</th>';
+            } else {
+                html += '<th class="text-center">Dispatched</th><th class="text-center">Remaining</th>';
+            }
+        }
         html += '<th class="text-end">Price</th><th class="text-end">Total</th>';
         html += '</tr></thead><tbody>';
 
@@ -485,44 +496,139 @@ document.addEventListener('DOMContentLoaded', function() {
                 html += '<tr>';
                 html += '<td><span class="fw-medium">' + item.product_name + '</span><br><small class="text-muted">' + item.sku + '</small></td>';
                 html += '<td class="text-center">' + parseFloat(item.quantity) + '</td>';
+                if (showDispatchCols) {
+                    const dispQty = parseFloat(item.dispatched_quantity || 0);
+                    const remQty = parseFloat(item.remaining_quantity || 0);
+                    const dispVal = parseFloat(item.dispatched_value || (dispQty * parseFloat(item.unit_price || 0)) || 0);
+                    const remVal = parseFloat(item.remaining_value || (remQty * parseFloat(item.unit_price || 0)) || 0);
+
+                    if (isRefundingState) {
+                        html += '<td class="text-center text-success fw-bold">' + dispQty;
+                        if (dispQty > 0) {
+                            html += '<br><small class="text-success fw-semibold">' + formatCurrency(dispVal) + '</small>';
+                        }
+                        html += '</td>';
+
+                        if (remQty > 0) {
+                            html += '<td class="text-center text-danger fw-bold">' + remQty;
+                            html += '<br><small class="text-danger fw-semibold">-' + formatCurrency(remVal) + '</small></td>';
+                        } else {
+                            html += '<td class="text-center text-muted">0</td>';
+                        }
+                    } else {
+                        html += '<td class="text-center text-success fw-bold">' + dispQty + '</td>';
+                        html += '<td class="text-center ' + (remQty > 0 ? 'text-warning-emphasis fw-bold' : 'text-muted') + '">' + remQty + '</td>';
+                    }
+                }
                 html += '<td class="text-end">' + formatCurrency(item.unit_price) + '</td>';
                 html += '<td class="text-end fw-semibold">' + formatCurrency(item.total) + '</td>';
                 html += '</tr>';
             });
         } else {
-            html += '<tr><td colspan="4" class="text-center text-muted py-2">No items listed</td></tr>';
+            html += '<tr><td colspan="' + (showDispatchCols ? 6 : 4) + '" class="text-center text-muted py-2">No items listed</td></tr>';
+        }
+
+        if (data.legacy_settled_amount && parseFloat(data.legacy_settled_amount) > 0) {
+            const legAmt = parseFloat(data.legacy_settled_amount);
+            html += '<tr class="table-warning bg-opacity-25">';
+            html += '<td><span class="text-warning-emphasis fw-semibold"><i class="bi bi-info-circle me-1"></i>Halted / Cancelled Items</span><br><small class="text-muted">Settled for Refund in Partial Halt</small></td>';
+            html += '<td class="text-center text-muted">—</td>';
+            if (showDispatchCols) {
+                html += '<td class="text-center text-muted">0</td>';
+                html += '<td class="text-center text-danger fw-bold">—<br><small class="text-danger fw-semibold">-' + formatCurrency(legAmt) + '</small></td>';
+            }
+            html += '<td class="text-end text-muted">—</td>';
+            html += '<td class="text-end text-danger fw-bold">-' + formatCurrency(legAmt) + '</td>';
+            html += '</tr>';
         }
 
         html += '</tbody></table></div>';
 
         html += '<div class="border-top pt-2 mt-2">';
-        html += '<div class="d-flex justify-content-between mb-1">';
-        html += '<span class="text-muted">Subtotal</span><span>' + formatCurrency(data.subtotal) + '</span>';
-        html += '</div>';
 
-        if (data.discount_amount && parseFloat(data.discount_amount) > 0) {
-            html += '<div class="d-flex justify-content-between mb-1 text-danger">';
-            html += '<span>Discount</span><span>-' + formatCurrency(data.discount_amount) + '</span>';
+        if (isRefundingState) {
+            const origTotal = parseFloat(data.original_sale_total || data.total || 0);
+            let origPaid = parseFloat(data.effective_amount_paid || data.amount_paid || 0);
+            const dispTotal = parseFloat(data.effective_dispatched_total || data.dispatched_total || 0);
+            const refundAmt = parseFloat(data.active_refund_amount || data.calculated_refund_amount || 0);
+            const debtRed = parseFloat(data.active_debt_reduction || data.calculated_debt_reduction || 0);
+            let netRetained = parseFloat(data.net_retained_amount != null ? data.net_retained_amount : dispTotal);
+            if (data.status_code === 'REFUNDED') {
+                netRetained = 0;
+            }
+            if ((dispTotal + refundAmt) > origPaid) {
+                origPaid = dispTotal + refundAmt;
+            }
+
+            html += '<div class="d-flex justify-content-between mb-1 text-muted">';
+            html += '<span>Original Sale Total</span><span>' + formatCurrency(origTotal) + '</span>';
             html += '</div>';
-        }
-        if (data.tax_amount && parseFloat(data.tax_amount) > 0) {
+
+            html += '<div class="d-flex justify-content-between mb-1 text-dark fw-medium">';
+            html += '<span>Original Amount Paid</span><span>' + formatCurrency(origPaid) + '</span>';
+            html += '</div>';
+
+            if (debtRed > 0) {
+                html += '<div class="d-flex justify-content-between mb-1 text-info">';
+                html += '<span><i class="bi bi-person-dash me-1"></i>Credit Debt Cancellation</span><span>-' + formatCurrency(debtRed) + '</span>';
+                html += '</div>';
+            }
+
+            if (refundAmt > 0) {
+                let refundLabel = 'Refund in Progress';
+                let refundColor = 'text-warning-emphasis';
+                if (data.has_approved_pending_payout) {
+                    refundLabel = 'Approved Refund (Awaiting Payout)';
+                    refundColor = 'text-info-emphasis';
+                } else if (data.status_code === 'REFUNDED' || (data.refunds && data.refunds.some(r => r.payout_status === 'Paid / Completed'))) {
+                    refundLabel = 'Refund Disbursed / Paid';
+                    refundColor = 'text-danger';
+                } else if (data.is_halted && !data.has_pending_refund) {
+                    refundLabel = 'Undispatched Excess to Refund';
+                    refundColor = 'text-warning-emphasis';
+                }
+                html += '<div class="d-flex justify-content-between mb-1 ' + refundColor + ' fw-semibold">';
+                html += '<span><i class="bi bi-arrow-counterclockwise me-1"></i>' + refundLabel + '</span><span>-' + formatCurrency(refundAmt) + '</span>';
+                html += '</div>';
+            }
+
+            html += '<div class="d-flex justify-content-between fw-bold fs-5 border-top pt-2 mt-2 ' + (netRetained > 0 ? 'text-success' : 'text-secondary') + '">';
+            if (netRetained > 0) {
+                html += '<span>Net Goods Value Retained (Kept)</span><span>' + formatCurrency(netRetained) + '</span>';
+            } else {
+                html += '<span>Net Goods Value Retained</span><span>' + formatCurrency(0) + ' (Refunded in Full)</span>';
+            }
+            html += '</div>';
+
+        } else {
             html += '<div class="d-flex justify-content-between mb-1">';
-            html += '<span class="text-muted">Tax</span><span>' + formatCurrency(data.tax_amount) + '</span>';
+            html += '<span class="text-muted">Subtotal</span><span>' + formatCurrency(data.subtotal) + '</span>';
             html += '</div>';
-        }
 
-        html += '<div class="d-flex justify-content-between fw-bold fs-5 border-top pt-2">';
-        html += '<span>Total</span><span class="text-primary">' + formatCurrency(data.total) + '</span>';
-        html += '</div>';
+            if (data.discount_amount && parseFloat(data.discount_amount) > 0) {
+                html += '<div class="d-flex justify-content-between mb-1 text-danger">';
+                html += '<span>Discount</span><span>-' + formatCurrency(data.discount_amount) + '</span>';
+                html += '</div>';
+            }
+            if (data.tax_amount && parseFloat(data.tax_amount) > 0) {
+                html += '<div class="d-flex justify-content-between mb-1">';
+                html += '<span class="text-muted">Tax</span><span>' + formatCurrency(data.tax_amount) + '</span>';
+                html += '</div>';
+            }
 
-        html += '<div class="d-flex justify-content-between mt-1 text-muted">';
-        html += '<span>Amount Paid</span><span class="fw-semibold text-dark">' + formatCurrency(data.amount_paid) + '</span>';
-        html += '</div>';
-
-        if (data.change_given && parseFloat(data.change_given) > 0) {
-            html += '<div class="d-flex justify-content-between text-success">';
-            html += '<span>Change</span><span>' + formatCurrency(data.change_given) + '</span>';
+            html += '<div class="d-flex justify-content-between fw-bold fs-5 border-top pt-2">';
+            html += '<span>Total</span><span class="text-primary">' + formatCurrency(data.total) + '</span>';
             html += '</div>';
+
+            html += '<div class="d-flex justify-content-between mt-1 text-muted">';
+            html += '<span>Amount Paid</span><span class="fw-semibold text-dark">' + formatCurrency(data.amount_paid) + '</span>';
+            html += '</div>';
+
+            if (data.change_given && parseFloat(data.change_given) > 0) {
+                html += '<div class="d-flex justify-content-between text-success">';
+                html += '<span>Change</span><span>' + formatCurrency(data.change_given) + '</span>';
+                html += '</div>';
+            }
         }
 
         html += '</div>';

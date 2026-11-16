@@ -126,8 +126,10 @@ class Command(BaseCommand):
         self.stdout.write('  Configured Features & Ready-to-Test Scenarios:')
         self.stdout.write('    * POS Terminal & Product Bundles (School Pack, Refreshment Combo, Exam Bundle)')
         self.stdout.write('    * Multi-Channel History (Cash, MoMo, ECash with transaction detail modals & receipts)')
-        self.stdout.write('    * 2-Step Refunds across all channels (Cash, MoMo, ECash, Cross-Payment)')
-        self.stdout.write('    * Partial Dispatch & Halt Scenarios with printable Dispatch Slips / Waybills')
+        self.stdout.write('    * Strict Cashier Refund Workflow (Cashier-only requests & payouts, mandatory dispatch halt precondition)')
+        self.stdout.write('    * Dispatch Halting (Zero-dispatch & partial-dispatch halt without phantom inventory)')
+        self.stdout.write('    * Refund Approval & Cancellation (Accountant/Admin can cancel approved requests before payout)')
+        self.stdout.write('    * Live Navbar Digital Balances (Cash on hand, MoMo, and ECash real-time balances)')
         self.stdout.write('    * Awaiting Payout State (locks refund button on sales list; cashier payout button)')
         self.stdout.write('    * Customer Store Credit Cash Payouts & Debt Reductions')
         self.stdout.write('    * End-of-Day Management Reports (Local MoMo reconciliation review, variance checks)')
@@ -995,7 +997,7 @@ class Command(BaseCommand):
             RefundRequest.objects.create(
                 tenant=tenant,
                 sale=sale_halt_pending,
-                requested_by=manager1,
+                requested_by=cashier if (is_strict and cashier) else manager1,
                 reason='Customer vehicle ran out of space after loading 4 pieces. Requested halt & cash refund for 6 remaining items.',
                 status='PENDING',
                 is_partial_halt=True,
@@ -1030,7 +1032,7 @@ class Command(BaseCommand):
             RefundRequest.objects.create(
                 tenant=tenant,
                 sale=sale_halt_approved,
-                requested_by=manager1,
+                requested_by=cashier if (is_strict and cashier) else manager1,
                 reason='Customer requested halt of remaining 5 items. Accountant approved cash refund.',
                 status='APPROVED',
                 is_partial_halt=True,
@@ -1069,7 +1071,7 @@ class Command(BaseCommand):
             RefundRequest.objects.create(
                 tenant=tenant,
                 sale=sale_debt_halt,
-                requested_by=manager1,
+                requested_by=cashier if (is_strict and cashier) else manager1,
                 reason='Customer only wanted 8 pens out of 20 ordered. Remainder canceled; customer credit debt reduced by 60.00.',
                 status='APPROVED',
                 is_partial_halt=True,
@@ -1106,7 +1108,7 @@ class Command(BaseCommand):
             RefundRequest.objects.create(
                 tenant=tenant,
                 sale=sale_halt_rejected,
-                requested_by=manager1,
+                requested_by=cashier if (is_strict and cashier) else manager1,
                 reason='Customer hesitated about remaining items.',
                 status='REJECTED',
                 is_partial_halt=True,
@@ -1116,6 +1118,48 @@ class Command(BaseCommand):
                 rejection_reason='Customer confirmed they will collect remainder this afternoon. Dispatch resumed.',
                 reviewed_by=accountant,
                 reviewed_at=now - timedelta(hours=1),
+            )
+
+            # 6. Zero-Dispatch Halted Sale (Items intact, note appended, ready for cashier 100% refund)
+            sale_zero_halt = Sale.objects.create(
+                tenant=tenant, shop=loc_shop1, attendant=attendant1,
+                cashier=cashier, shift=open_shift,
+                status='COMPLETED',
+                payment_method='CASH',
+                amount_paid=Decimal('60.00'),
+                total=Decimal('60.00'),
+                subtotal=Decimal('60.00'),
+                sale_number=f'DEMO-SL-ZERO-HALT-{tenant.pk}-0006',
+                is_dispatched=True,
+                dispatched_by=manager1,
+                dispatched_at=now - timedelta(hours=2),
+                notes='[Dispatch Halted (No Goods Released): Customer cancelled prior to loading]',
+            )
+            SaleItem.objects.create(
+                tenant=tenant, sale=sale_zero_halt, product=biscuit,
+                quantity=Decimal('6.00'), unit_price=Decimal('10.00'),
+                unit_cost=batch_biscuit.unit_cost, total=Decimal('60.00'),
+                dispatched_quantity=Decimal('0.00'),
+            )
+
+            # 7. Sale in PENDING_DISPATCH where refund is locked until Shop Manager halts dispatch
+            sale_disp_blocked = Sale.objects.create(
+                tenant=tenant, shop=loc_shop1, attendant=attendant1,
+                cashier=cashier, shift=open_shift,
+                status='PENDING_DISPATCH',
+                payment_method='CASH',
+                amount_paid=Decimal('50.00'),
+                total=Decimal('50.00'),
+                subtotal=Decimal('50.00'),
+                sale_number=f'DEMO-SL-PENDING-DISP-{tenant.pk}-0007',
+                is_dispatched=False,
+                notes='Active at warehouse dispatch counter; refund blocked until manager halts',
+            )
+            SaleItem.objects.create(
+                tenant=tenant, sale=sale_disp_blocked, product=pen,
+                quantity=Decimal('10.00'), unit_price=Decimal('5.00'),
+                unit_cost=batch_pen.unit_cost, total=Decimal('50.00'),
+                dispatched_quantity=Decimal('0.00'),
             )
 
         # Sync closed demo shifts' closing_cash to their actual expected_cash
@@ -1312,6 +1356,27 @@ class Command(BaseCommand):
                 reviewed_by=accountant,
                 reviewed_at=now - timedelta(days=6),
             )
+
+        # 8. CANCELLED Refund (Approved by accountant, then cancelled before disbursement)
+        if completed_cash_sales:
+            canc_sale = completed_cash_sales.pop(0)
+            req_by = cashier if (is_strict and canc_sale.shop == loc_shop1 and cashier) else (manager1 if canc_sale.shop == loc_shop1 else manager2)
+            RefundRequest.objects.create(
+                tenant=tenant,
+                sale=canc_sale,
+                requested_by=req_by,
+                reason='Customer initially requested cash refund for broken packaging.',
+                status='CANCELLED',
+                is_partial_halt=False,
+                refund_amount=canc_sale.total,
+                refund_method='CASH',
+                payout_status='PENDING',
+                reviewed_by=accountant,
+                reviewed_at=now - timedelta(days=1),
+                rejection_reason='Customer decided to exchange for another item in store instead of refund.',
+            )
+            canc_sale.status = 'COMPLETED'
+            canc_sale.save(update_fields=['status'])
 
         # --------------------------------------------------------------------
         # CashTransfers

@@ -21,6 +21,9 @@ def sort_link(context, display_name, field_name, extra_classes=''):
         next_dir = 'desc' if current_dir == 'asc' else 'asc'
         # Set icon
         icon = '<i class="bi bi-sort-down-alt ms-1 text-primary"></i>' if current_dir == 'asc' else '<i class="bi bi-sort-down ms-1 text-primary"></i>'
+    elif not current_sort and field_name in ['latest_activity', 'created_at']:
+        next_dir = 'asc'
+        icon = '<i class="bi bi-sort-down ms-1 text-primary"></i>'
     else:
         next_dir = 'asc'
         icon = '<i class="bi bi-arrow-down-up ms-1 text-muted" style="opacity:0.3; font-size: 0.8em;"></i>'

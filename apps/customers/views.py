@@ -234,6 +234,14 @@ class CustomerDetailView(LoginRequiredMixin, DetailView):
             is_active=True
         ).exists()
         context['paystack_enabled'] = active_provider
+
+        # Permission to payout / withdraw customer store credit
+        tenant = self.request.user.tenant
+        role_name = self.request.user.role.name if self.request.user.role else 'ATTENDANT'
+        if tenant.use_strict_sales_workflow:
+            context['can_payout_credit'] = role_name in ['SHOP_CASHIER', 'ADMIN', 'ACCOUNTANT']
+        else:
+            context['can_payout_credit'] = role_name in ['SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN']
         
         return context
 

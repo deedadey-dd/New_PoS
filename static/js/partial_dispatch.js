@@ -2,7 +2,7 @@
 var _dispatchSaleItems = [];
 var _dispatchSaleId = null;
 
-function populateDispatchModal(items, allowPartial, hasPendingRefund, pendingRefundInfo, hasApprovedPendingPayout, approvedRefundInfo) {
+function populateDispatchModal(items, allowPartial, hasPendingRefund, pendingRefundInfo, hasApprovedPendingPayout, approvedRefundInfo, isHalted) {
     if (allowPartial === undefined) allowPartial = true;
 
     const tbody = document.getElementById('dispatchItemsBody');
@@ -63,6 +63,28 @@ function populateDispatchModal(items, allowPartial, hasPendingRefund, pendingRef
         if (partialBtn) {
             partialBtn.disabled = true;
             partialBtn.title = 'Locked while refund request is pending';
+        }
+    } else if (isHalted) {
+        if (infoBanner && infoText) {
+            infoBanner.className = 'alert alert-warning py-2 mb-3 d-flex align-items-center gap-2 border border-warning';
+            infoText.innerHTML = `<i class="bi bi-pause-circle text-warning me-1"></i>` +
+                `<strong>Dispatch Halted:</strong> This sale's dispatch was halted by the Shop Manager. ` +
+                `The Cashier can request a refund in the Sales list, or the transaction can be resumed if halted by mistake. ` +
+                `Goods dispatch is locked while halted.`;
+        }
+        if (haltBtn) {
+            haltBtn.disabled = true;
+            haltBtn.className = 'btn btn-secondary';
+            haltBtn.innerHTML = '<i class="bi bi-pause-circle me-1"></i>Halted';
+            haltBtn.title = 'Dispatch is halted. Resume the transaction from the sales list to continue.';
+        }
+        if (fullBtn) {
+            fullBtn.disabled = true;
+            fullBtn.title = 'Locked while dispatch is halted';
+        }
+        if (partialBtn) {
+            partialBtn.disabled = true;
+            partialBtn.title = 'Locked while dispatch is halted';
         }
     } else {
         if (infoBanner && infoText) {
@@ -281,7 +303,7 @@ function initPartialDispatch() {
                     _dispatchSaleId = saleId;
                     const snEl = document.getElementById('dispatchModalSaleNumber');
                     if (snEl) snEl.textContent = '#' + (saleNumber || '');
-                    populateDispatchModal(data.items, data.allow_partial_dispatch !== false, data.has_pending_refund, data.pending_refund_info, data.has_approved_pending_payout, data.approved_refund_info);
+                    populateDispatchModal(data.items, data.allow_partial_dispatch !== false, data.has_pending_refund, data.pending_refund_info, data.has_approved_pending_payout, data.approved_refund_info, data.is_halted);
                     populateDispatchHistory(data.dispatch_history || []);
                     const modalEl = document.getElementById('partialDispatchModal');
                     if (modalEl) {
@@ -309,7 +331,7 @@ function initPartialDispatch() {
             const snEl = document.getElementById('dispatchModalSaleNumber');
             if (snEl) snEl.textContent = '#' + (this.dataset.saleNumber || '');
             const allowPartial = window._allowPartialDispatch !== false;
-            populateDispatchModal(_dispatchSaleItems, allowPartial, window._saleHasPendingRefund, window._salePendingRefundInfo, window._saleHasApprovedPendingPayout, window._saleApprovedRefundInfo);
+            populateDispatchModal(_dispatchSaleItems, allowPartial, window._saleHasPendingRefund, window._salePendingRefundInfo, window._saleHasApprovedPendingPayout, window._saleApprovedRefundInfo, window._saleIsHalted);
             populateDispatchHistory(window._dispatchHistory || []);
             const saleDetailModal = document.getElementById('saleDetailModal');
             if (saleDetailModal) {
@@ -425,7 +447,7 @@ function initPartialDispatch() {
                     if (haltInstance) haltInstance.hide();
                 }
                 if (window.showAppToast) {
-                    window.showAppToast(res.message || 'Dispatch halted and refund request submitted.', 'success');
+                    window.showAppToast(res.message || 'Dispatch halted and sale settled.', 'success');
                 }
                 setTimeout(() => location.reload(), 900);
             })

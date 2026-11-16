@@ -981,30 +981,37 @@
                     <h5><i class="bi bi-shield-lock me-2 text-primary"></i>3-Step Refund Workflow</h5>
                     <p>To prevent unauthorized cash movement and preserve financial reconciliation, refunds follow strict separation of duties:</p>
                     <ol>
-                        <li><strong>Step 1: Request (Shop Manager)</strong>:
+                        <li><strong>Step 1: Request (Cashier in Strict Mode)</strong>:
                             <ul>
-                                <li>Submitted from <strong>Sales History</strong> with a mandatory justification reason.</li>
-                                <li><strong>Halt &amp; Settle Partial Dispatch</strong>: In strict workflow mode, managers can halt partially dispatched sales. Items already dispatched stay sold, undispatched items return to inventory, and overpayments automatically generate refund requests (or reduce credit debt).</li>
+                                <li>In <strong>Strict Sales Workflow</strong>, only the <strong>Cashier (<code>SHOP_CASHIER</code>)</strong> can initiate refund requests. (In standard mode, Shop Managers / Cashiers can initiate).</li>
+                                <li>Submitted from <strong>Sales History</strong> or the <strong>Sale Detail</strong> modal with a mandatory justification reason.</li>
+                                <li><strong>Pre-condition: Dispatch Must Be Halted</strong>: Any sale that is pending dispatch (<code>PENDING_DISPATCH</code>) <strong>cannot</strong> be refunded until the Shop Manager halts the dispatch. This eliminates race conditions where cash is refunded while goods are actively being loaded.</li>
+                                <li><strong>Shop Manager Halt &amp; Settle (Phase 1 Freeze)</strong>: Clicking "Halt &amp; Settle" freezes dispatch and preserves all line items and remaining quantities intact in the database so no items are lost if rejected or resumed. The Cashier then requests the refund. Official settlement (Phase 2) occurs once the Accountant approves the request.</li>
+                                <li><strong>Resuming Dispatch (Zero Data Loss)</strong>: If the Accountant rejects the refund, or if the Shop Manager halted by mistake, the Cashier/Manager can click <strong>Resume</strong> on the Sales page to unlock dispatch with 100% of all undispatched line items and remaining quantities instantly available.</li>
                             </ul>
                         </li>
-                        <li><strong>Step 2: Approval (Accountant / Admin)</strong>:
+                        <li><strong>Step 2: Approval &amp; Cancellation (Accountant / Admin)</strong>:
                             <ul>
-                                <li>Accountants audit the request under <strong>Sales → Refund Requests</strong> and select the refund channel (Cash, MoMo, E-Cash).</li>
-                                <li><strong>Safety Rule</strong>: Approval authorizes the payout but <em>does not deduct cash from the till</em>.</li>
+                                <li>Accountants audit the request under <strong>Sales → Refund Requests</strong> and select the refund channel (Cash, MoMo, E-Cash, or Customer Account Credit).</li>
+                                <li><strong>Safety Rule</strong>: Approval authorizes the payout but <em>does not deduct cash from the till or wallet</em>.</li>
+                                <li><strong>Approval Cancellation</strong>: If a refund request was approved by mistake or the customer changes their mind before collecting funds, an Accountant or Admin can click <strong>Cancel Approval</strong>. This moves the request to <code>CANCELLED</code> and unblocks the sale.</li>
                             </ul>
                         </li>
-                        <li><strong>Step 3: Disbursement (Cashier / Admin)</strong>:
+                        <li><strong>Step 3: Disbursement (Cashier Only in Strict Mode)</strong>:
                             <ul>
-                                <li>Cashiers click <strong>Disburse Refund</strong> to physically pay out the customer. Deductions from cash till or digital wallets happen exclusively at this step.</li>
+                                <li>In strict mode, only the <strong>Cashier</strong> can click <strong>Disburse Refund</strong> to physically pay out the customer. Financial deductions from cash drawers or digital wallets occur exclusively at this step.</li>
                             </ul>
                         </li>
                     </ol>
                 </div>
                 <div class="col-md-6">
-                    <h5><i class="bi bi-cash-stack me-2 text-danger"></i>Till Safeguards &amp; Reporting</h5>
+                    <h5><i class="bi bi-cash-stack me-2 text-danger"></i>Till Safeguards &amp; Digital Balances</h5>
                     <ul>
+                        <li><strong>Live Navbar Balances</strong>: Cash, MoMo, and E-Cash balances in the navbar reflect real-time shift and wallet activity, deducting immediately when payouts are disbursed.</li>
+                        <li><strong>Cross-Payment Refunds</strong>: Sales paid via MoMo or E-Cash can be refunded in physical Cash from the till (or vice versa) if the customer lacks an active wallet, reconciling accurately across all shift ledgers.</li>
+                        <li><strong>Store Credit &amp; Debt Reduction</strong>: Registered customer refunds can be applied directly to store credit (<code>ACCOUNT_CREDIT</code>) or debt reduction without cash leaving the drawer.</li>
                         <li><strong>Insufficient Till Balance Warning</strong>: If the cashier's drawer or wallet balance is less than the payout amount, an application modal warns of the shortfall before proceeding.</li>
-                        <li><strong>Negative Balances</strong>: The system supports till deficits when payouts exceed daily collections, displaying negative figures in high-visibility red badges (e.g. <code>-GH₵50.00</code>).</li>
+                        <li><strong>Negative Balances Supported</strong>: The system supports till deficits when payouts exceed daily collections, displaying negative figures in high-visibility red badges (e.g. <code>-GH₵50.00</code>).</li>
                         <li><strong>Cashier Accountability</strong>: The disbursing cashier's identity and timestamp are permanently recorded (<code>paid_by</code>, <code>paid_at</code>).</li>
                         <li><strong>Multi-Channel History Integration</strong>: Outflows and refunds appear across all channels (Cash History at <code>/accounting/cash-history/</code>, Mobile Money History at <code>/accounting/shop-momo/history/</code>, and E-Cash History at <code>/payments/shops/history/</code>) with dedicated metric cards and negative balance support.</li>
                         <li><strong>End of Day Reconciliation</strong>: Cash refunds are subtracted from <code>expected_cash</code> in the daily reconciliation review, preventing false till shortage variances.</li>

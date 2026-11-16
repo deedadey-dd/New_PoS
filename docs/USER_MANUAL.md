@@ -194,51 +194,68 @@ At the end of your shift:
 The POS system enforces a multi-tier separation-of-duties workflow for refund requests to guarantee financial integrity and accountability:
 
 ```
-┌─────────────────────────┐       ┌─────────────────────────┐       ┌─────────────────────────┐
-│     SHOP MANAGER        │       │   ACCOUNTANT / ADMIN    │       │     CASHIER / ADMIN     │
-│  (Submits Refund /      │ ───►  │  (Reviews & Approves    │ ───►  │  (Disburses Funds from  │
-│   Halts Partial Order)  │       │   Authorization)        │       │   Till or Wallet)       │
-└─────────────────────────┘       └─────────────────────────┘       └─────────────────────────┘
+┌────────────────────────────────┐       ┌─────────────────────────┐       ┌─────────────────────────┐
+│     CASHIER (Strict Mode)      │       │   ACCOUNTANT / ADMIN    │       │     CASHIER ONLY        │
+│  (Requests Refund After        │ ───►  │  (Reviews, Approves,    │ ───►  │  (Disburses Funds from  │
+│   Dispatch is Halted/Complete) │       │   or Cancels Approval)  │       │   Till or Wallet)       │
+└────────────────────────────────┘       └─────────────────────────┘       └─────────────────────────┘
 ```
 
-### 1. Requesting a Refund (Shop Manager)
+### 1. Requesting a Refund
 
-Shop Managers can initiate refunds from **Sales History** or the **Sale Detail** view:
-- **Full Refund**: For standard completed sales where the customer is returning goods or cancelling the transaction.
+Refund requests follow strict role-based separation:
+- **Strict Sales Mode**: Only users with the **Cashier (`SHOP_CASHIER`)** role can request refunds. Shop Managers, Attendants, Accountants, and Admins cannot request refunds.
+- **Standard Sales Mode**: Shop Managers or Cashiers can initiate refund requests.
+- **Mandatory Precondition &mdash; Dispatch Must Be Halted**:
+  If an order is in `PENDING_DISPATCH` status (whether 0 items or partial items have been released), **the Cashier cannot request a refund**. The refund button displays *"Halt Dispatch Required"*. The Shop Manager must first halt the dispatch before a refund can be submitted.
 - **Reason Requirement**: A mandatory note explaining why the refund is being initiated.
 
-### 2. Strict Workflow: Partial Dispatch Halt & Settle
+### 2. Strict Workflow: Dispatch Halting & Reconciliation
 
-In strict sales mode (Order → Payment → Dispatch), orders may be partially fulfilled if the shop lacks sufficient stock or the customer chooses to take only a portion of the items:
-1. When an order is in `PENDING_DISPATCH` state with items remaining, the Shop Manager can click **Halt & Settle Dispatch**.
-2. **Automatic Stock & Financial Reconciliation**:
-   - Items already dispatched remain permanently sold.
-   - Undispatched quantities are marked as not dispatched and their reserved ledger allocations are freed.
-   - The value of goods dispatched is calculated (`dispatched_total`).
-3. **Customer Balance Settlement**:
-   - **Customer Paid in Excess (Cash / MoMo / E-Cash)**: If the customer paid more than the dispatched value, a `RefundRequest` is generated automatically for the difference (`paid - dispatched_total`).
-   - **Customer Bought on Credit**: If the sale was on credit or partially unpaid, the customer's outstanding balance/debt is automatically reduced by the value of undispatched goods (`debt_reduction_amount`).
+In strict sales mode (Order → Payment → Dispatch), orders in `PENDING_DISPATCH` use a safe two-phase Halt & Settlement flow:
+1. **Halting Dispatch (Phase 1 &mdash; Dispatch Freeze)**:
+   The Shop Manager opens the dispatch modal and clicks **Halt & Settle**.
+   - Dispatching is locked to prevent any further goods from leaving the shop.
+   - **Line items are preserved intact** in the database with their dispatched and remaining quantities.
+   - The Cashier is unlocked to submit a refund request for the undispatched portion.
+2. **Cashier Initiates Refund Request**:
+   The **Cashier** submits a refund request for the undispatched value via `/sales/`.
+3. **Accountant Approval (Phase 2 &mdash; Official Settlement)**:
+   When the Accountant approves the refund request:
+   - Undispatched items are officially cancelled and the invoice settles to the dispatched goods value.
+   - The sale status updates to `COMPLETED` and `is_dispatched = True`.
+   - Any customer credit debt reduction is applied.
+   - The Cashier then disburses the refund funds.
+4. **Resuming a Halted Dispatch or Rejection**:
+   If the Accountant **rejects** the refund request, or if the Shop Manager halted by mistake and clicks **Resume**:
+   - The transaction is unlocked in `PENDING_DISPATCH`.
+   - Because items were preserved, **100% of all undispatched line items and remaining quantities are immediately available in the dispatch modal** with zero data loss.
+   - The dispatcher can immediately continue releasing the remaining goods to the customer.
 
-### 3. Refund Approval (Accountant & Admin)
+### 3. Refund Approval & Cancellation (Accountant & Admin)
 
 Accountants and Admins review refund requests at `/sales/refund-requests/`:
-- **Verification**: Review the original invoice, requesting manager, reason, breakdown of dispatched goods, and customer details.
-- **Select Payment Method**: Select whether the refund should be paid out via **Cash**, **Mobile Money (MoMo)**, or **E-Cash**.
-- **Important**: Approving a refund authorizes the payout but **DOES NOT deduct funds** from the till or cash drawers. Financial deductions occur solely upon disbursement.
+- **Verification**: Review the original invoice, requesting cashier, reason, items, and customer details.
+- **Select Payment Method**: Select whether the refund should be paid out via **Cash**, **Mobile Money (MoMo)**, **E-Cash**, or credited to the customer's store account (**Account Credit**).
+- **Important**: Approving a refund authorizes the payout but **DOES NOT deduct funds** from the till or cash drawers. Financial deductions occur solely upon physical disbursement.
+- **Approval Cancellation**:
+  If a refund was approved erroneously or the customer changes their mind before receiving payment, an Accountant or Admin can click **Cancel Approval**. This transitions the request to `CANCELLED` and resets the sale status back to `COMPLETED`, allowing the cashier to re-request if necessary.
 
 ### 4. Cashier Refund Disbursement & Till Safeguards
 
-Cashiers and Admins execute the payout to the customer:
+In strict sales mode, **only the Cashier** can execute the payout to the customer:
 1. Open the **Refund Requests** menu from the sidebar or Cashier Dashboard (`/sales/refund-requests/`).
-2. Approved refunds ready for payout will display a green **Disburse Refund** button.
-3. **Till Balance Safeguard**:
-   - Before completing disbursement, the system checks the cashier's current cash drawer or wallet balance.
-   - If the balance is less than the refund amount, a modal warning appears displaying the current till balance, refund amount, and resulting shortfall before allowing confirmation.
-4. **Negative Balances**:
-   - When payouts exceed total intake, drawer and wallet balances transition cleanly into negative amounts (rendered in high-visibility red badges, e.g. `-GH₵50.00`).
-5. **Permanent Audit Trail**:
-   - The system records the disbursing cashier (`paid_by`), execution timestamp (`paid_at`), and transitions status to `PAID`.
-   - Cashiers can view their disbursement history in the Cashier Dashboard and daily reports.
+2. Approved refunds ready for payout display a **Disburse Refund** button.
+3. **Live Navbar Balances**:
+   Navbar balances for Till Cash, MoMo, and E-Cash update in real time as disbursements take place.
+4. **Cross-Payment Refunds**:
+   Sales paid via MoMo or E-Cash can be disbursed in physical Cash from the drawer (or vice versa), reconciling accurately across all shift ledgers.
+5. **Till Balance Safeguard**:
+   Before completing disbursement, the system checks the cashier's current cash drawer or wallet balance. If the balance is less than the refund amount, a warning modal displays the current till balance, refund amount, and resulting deficit before allowing confirmation.
+6. **Negative Balances**:
+   When payouts exceed total intake, drawer and wallet balances transition cleanly into negative amounts (rendered in high-visibility red badges, e.g. `-GH₵50.00`).
+7. **Permanent Audit Trail**:
+   The system records the disbursing cashier (`paid_by`), execution timestamp (`paid_at`), and transitions status to `PAID`.
 
 ### 5. Refunds & Transaction Details in History Pages Across All Channels
 

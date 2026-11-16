@@ -41,6 +41,8 @@ urlpatterns = [
     path('api/invoices/<int:pk>/pay/', views.api_pay_invoice, name='api_pay_invoice'),
     path('api/sales/<int:pk>/dispatch/', views.api_dispatch_sale, name='api_dispatch_sale'),
     path('api/sales/<int:pk>/halt-dispatch/', views.api_halt_and_request_refund, name='api_halt_and_request_refund'),
+    path('api/sales/<int:pk>/resume-dispatch/', views.api_resume_dispatch, name='api_resume_dispatch'),
+    path('api/<int:pk>/resume/', views.api_resume_dispatch, name='api_resume_sale'),
     path('api/customers/<int:pk>/credit-payout/', views.api_customer_credit_payout, name='api_customer_credit_payout'),
     
     # E-Cash Payment

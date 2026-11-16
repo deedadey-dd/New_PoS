@@ -1,3 +1,4 @@
+import json
 import uuid
 from decimal import Decimal
 from django.test import TestCase
@@ -7,7 +8,7 @@ from django.core.exceptions import ValidationError
 from django.db.models import Sum
 
 from apps.core.models import Tenant, Role, User, Location
-from apps.sales.models import Shift, Sale, SaleItem
+from apps.sales.models import Shift, Sale, SaleItem, RefundRequest
 from apps.accounting.models import (
     CashTransfer, BankTransfer, ExpenditureCategory, ExpenditureRequest, ExpenditureItem
 )
@@ -750,6 +751,7 @@ class WorkflowIntegrationTests(TestCase):
         """
         # Enable strict workflow
         self.tenant.use_strict_sales_workflow = True
+        self.tenant.enable_refunds = True
         self.tenant.save()
 
         # Attendant creates pending invoice
@@ -816,6 +818,7 @@ class WorkflowIntegrationTests(TestCase):
         Verify expenditure requests and approvals under the strict workflow.
         """
         self.tenant.use_strict_sales_workflow = True
+        self.tenant.enable_refunds = True
         self.tenant.save()
 
         # Manager completes a sale to get 300.00 cash-on-hand
@@ -1237,6 +1240,7 @@ class WorkflowIntegrationTests(TestCase):
         Verify strict sale workflow with E-Cash invoice payment via Paystack inline initialization.
         """
         self.tenant.use_strict_sales_workflow = True
+        self.tenant.enable_refunds = True
         self.tenant.save()
 
         # Attendant creates pending invoice
@@ -1496,6 +1500,7 @@ class WorkflowIntegrationTests(TestCase):
         from apps.sales.models import RefundRequest
 
         self.tenant.use_strict_sales_workflow = True
+        self.tenant.enable_refunds = True
         self.tenant.save()
 
         # Attendant creates and completes cash sale for 10 items
@@ -1536,7 +1541,7 @@ class WorkflowIntegrationTests(TestCase):
         ).count()
         self.assertEqual(ledger_sales_count, 1)
 
-        # 2. Manager halts further dispatch and requests refund
+        # 2. Manager halts further dispatch (locks dispatch without deleting items)
         halt_resp = self.client.post(
             f"/sales/api/sales/{sale.pk}/halt-dispatch/",
             data=json.dumps({'reason': 'Customer requested cancellation of remaining 5 units'}),
@@ -1545,42 +1550,47 @@ class WorkflowIntegrationTests(TestCase):
         self.assertEqual(halt_resp.status_code, 200)
         data = halt_resp.json()
         self.assertTrue(data['success'])
+        self.assertEqual(data['status'], 'PENDING_DISPATCH')
+        self.assertTrue(data['is_halted'])
         self.assertEqual(data['dispatched_total'], "50.00")
-        self.assertEqual(data['refund_amount'], "50.00")
-        self.assertEqual(data['debt_reduction_amount'], "0.00")
 
+        self.assertFalse(RefundRequest.objects.filter(sale=sale).exists())
+
+        # Sale remains in PENDING_DISPATCH with is_halted=True; all line items intact
+        sale.refresh_from_db()
+        self.assertEqual(sale.status, 'PENDING_DISPATCH')
+        self.assertTrue(sale.is_halted)
+        self.assertFalse(sale.is_dispatched)
+        self.assertEqual(sale.total, Decimal("100.00"))
+
+        item.refresh_from_db()
+        self.assertEqual(item.quantity, Decimal("10.00"))
+        self.assertEqual(item.dispatched_quantity, Decimal("5.00"))
+        self.assertEqual(item.remaining_quantity, Decimal("5.00"))
+
+        # Cashier requests refund on halted sale
+        self.client.force_login(self.cashier_user)
+        ref_resp = self.client.post(
+            f"/sales/api/{sale.pk}/refund/",
+            data=json.dumps({'reason': 'Customer cancelled remaining 5 units'}),
+            content_type='application/json'
+        )
+        self.assertEqual(ref_resp.status_code, 200)
         refund_req = RefundRequest.objects.get(sale=sale, status='PENDING')
-        self.assertTrue(refund_req.is_partial_halt)
-        self.assertEqual(refund_req.refund_amount, Decimal("50.00"))
 
-        # 3. Accountant approves refund (authorizes, leaves payout pending)
+        # Accountant approves -> officially settles the sale to 5 items and COMPLETED
         self.client.force_login(self.accountant_user)
-        approve_resp = self.client.post(
+        app_resp = self.client.post(
             f"/sales/api/refund-requests/{refund_req.pk}/approve/",
             data=json.dumps({'refund_method': 'CASH'}),
             content_type='application/json'
         )
-        self.assertEqual(approve_resp.status_code, 200)
+        self.assertEqual(app_resp.status_code, 200)
 
-        refund_req.refresh_from_db()
-        self.assertEqual(refund_req.status, 'APPROVED')
-        self.assertEqual(refund_req.payout_status, 'PENDING')
-
-        # 4. Cashier disburses payout (sale is settled and funds deducted)
-        self.client.force_login(self.cashier_user)
-        payout_resp = self.client.post(f"/sales/api/refund-requests/{refund_req.pk}/payout/")
-        self.assertEqual(payout_resp.status_code, 200)
-
-        refund_req.refresh_from_db()
-        self.assertEqual(refund_req.payout_status, 'PAID')
-        self.assertEqual(refund_req.paid_by, self.cashier_user)
-
-        # Sale is now settled to 5 items and COMPLETED
         sale.refresh_from_db()
         self.assertEqual(sale.status, 'COMPLETED')
         self.assertTrue(sale.is_dispatched)
         self.assertEqual(sale.total, Decimal("50.00"))
-        self.assertEqual(sale.amount_paid, Decimal("50.00"))
 
         item.refresh_from_db()
         self.assertEqual(item.quantity, Decimal("5.00"))
@@ -1589,6 +1599,30 @@ class WorkflowIntegrationTests(TestCase):
         # Crucial check: Inventory ledger entries must NOT change!
         ledger_count_after = InventoryLedger.objects.filter(reference_id=sale.pk).count()
         self.assertEqual(ledger_count_after, 1, "No phantom inventory movements should be generated!")
+
+        # Crucial check: Cashier navbar money must NOT drop upon accountant approval
+        ctx_cashier_pending = self.get_navbar_context(self.cashier_user)
+        self.assertEqual(ctx_cashier_pending['cash_on_hand'], Decimal("100.00"))
+
+        # 7. Cashier executes cash payout via api_payout_refund
+        self.client.force_login(self.cashier_user)
+        payout_resp = self.client.post(
+            f"/sales/api/refund-requests/{refund_req.pk}/payout/",
+            data=json.dumps({'payout_notes': 'Partial cash refund disbursed'}),
+            content_type='application/json'
+        )
+        self.assertEqual(payout_resp.status_code, 200)
+
+        refund_req.refresh_from_db()
+        self.assertEqual(refund_req.payout_status, 'PAID')
+        self.assertEqual(refund_req.paid_by, self.cashier_user)
+
+        sale.refresh_from_db()
+        self.assertEqual(sale.amount_paid, Decimal("50.00"))
+
+        # Cashier navbar money must now drop by the refund amount (100 - 50 = 50)
+        ctx_cashier_after = self.get_navbar_context(self.cashier_user)
+        self.assertEqual(ctx_cashier_after['cash_on_hand'], Decimal("50.00"))
 
     def test_17_strict_partial_dispatch_halt_registered_customer_credit(self):
         """
@@ -1604,6 +1638,7 @@ class WorkflowIntegrationTests(TestCase):
         from apps.sales.models import RefundRequest
 
         self.tenant.use_strict_sales_workflow = True
+        self.tenant.enable_refunds = True
         self.tenant.save()
 
         customer = Customer.objects.create(
@@ -1645,27 +1680,39 @@ class WorkflowIntegrationTests(TestCase):
             content_type='application/json'
         )
 
-        # Manager halts dispatch
+        # Manager halts dispatch (locks dispatch)
         halt_resp = self.client.post(
             f"/sales/api/sales/{sale.pk}/halt-dispatch/",
             data=json.dumps({'reason': 'Customer requested halt'}),
             content_type='application/json'
         )
+        self.assertEqual(halt_resp.status_code, 200)
         data = halt_resp.json()
-        self.assertEqual(data['refund_amount'], "0.00")
-        self.assertEqual(data['debt_reduction_amount'], "50.00")
+        self.assertEqual(data['status'], 'PENDING_DISPATCH')
+        self.assertTrue(data['is_halted'])
+        self.assertEqual(data['dispatched_total'], "50.00")
+        self.assertFalse(RefundRequest.objects.filter(sale=sale).exists())
 
-        refund_req = RefundRequest.objects.get(sale=sale, status='PENDING')
-
-        # Accountant approves
-        self.client.force_login(self.accountant_user)
-        self.client.post(
-            f"/sales/api/refund-requests/{refund_req.pk}/approve/",
-            data=json.dumps({}),
+        # Cashier requests refund / debt reduction on halted sale
+        self.client.force_login(self.cashier_user)
+        ref_resp = self.client.post(
+            f"/sales/api/{sale.pk}/refund/",
+            data=json.dumps({'reason': 'Cancel undispatched credit items'}),
             content_type='application/json'
         )
+        self.assertEqual(ref_resp.status_code, 200)
+        refund_req = RefundRequest.objects.get(sale=sale, status='PENDING')
 
-        # Verify customer debt reduced
+        # Accountant approves -> customer debt reduced by 50.00 and sale settled
+        self.client.force_login(self.accountant_user)
+        app_resp = self.client.post(
+            f"/sales/api/refund-requests/{refund_req.pk}/approve/",
+            data=json.dumps({'refund_method': 'ACCOUNT_CREDIT'}),
+            content_type='application/json'
+        )
+        self.assertEqual(app_resp.status_code, 200)
+
+        # Verify customer debt reduced upon approval
         customer.refresh_from_db()
         self.assertEqual(customer.current_balance, Decimal("50.00"))
 
@@ -1694,6 +1741,7 @@ class WorkflowIntegrationTests(TestCase):
         from apps.sales.models import RefundRequest
 
         self.tenant.use_strict_sales_workflow = True
+        self.tenant.enable_refunds = True
         self.tenant.save()
 
         customer = Customer.objects.create(
@@ -1732,41 +1780,58 @@ class WorkflowIntegrationTests(TestCase):
             content_type='application/json'
         )
 
-        # Halt dispatch
-        self.client.post(
+        # Halt dispatch settles directly to 50.00 (no RefundRequest created)
+        halt_resp = self.client.post(
             f"/sales/api/sales/{sale.pk}/halt-dispatch/",
+            data=json.dumps({'reason': 'Halt remaining items'}),
+            content_type='application/json'
+        )
+        self.assertEqual(halt_resp.status_code, 200)
+        self.assertFalse(RefundRequest.objects.filter(sale=sale).exists())
+
+        # Cashier requests refund on the settled sale
+        self.client.force_login(self.cashier_user)
+        ref_resp = self.client.post(
+            f"/sales/api/{sale.pk}/refund/",
             data=json.dumps({'reason': 'Refund to customer store credit account'}),
             content_type='application/json'
         )
+        self.assertEqual(ref_resp.status_code, 200)
         refund_req = RefundRequest.objects.get(sale=sale, status='PENDING')
 
-        # Accountant approves with ACCOUNT_CREDIT
+        # Accountant approves with ACCOUNT_CREDIT (immediately fulfilled, no cashier payout needed)
         self.client.force_login(self.accountant_user)
-        self.client.post(
+        app_resp = self.client.post(
             f"/sales/api/refund-requests/{refund_req.pk}/approve/",
             data=json.dumps({'refund_method': 'ACCOUNT_CREDIT'}),
             content_type='application/json'
         )
+        self.assertEqual(app_resp.status_code, 200)
 
         customer.refresh_from_db()
         self.assertEqual(customer.current_balance, Decimal("-50.00"), "Customer should now have 50.00 store credit!")
 
+        sale.refresh_from_db()
+        self.assertEqual(sale.status, 'COMPLETED')
+        self.assertEqual(sale.amount_paid, Decimal("50.00"))
+        self.assertEqual(sale.total, Decimal("50.00"))
+
         refund_req.refresh_from_db()
-        self.assertEqual(refund_req.payout_status, 'PAID', "Account credit is immediately fulfilled")
+        self.assertEqual(refund_req.payout_status, 'PAID')
 
     def test_19_registered_customer_credit_payout_cash(self):
         """
         Verify that a registered customer who has positive credit (negative current_balance)
-        can withdraw some or all of their credit in cash from the cashier:
-        1. Customer has -100.00 balance (100.00 store credit).
-        2. Cashier opens shift with 200.00 cash.
-        3. Cashier executes credit payout of 40.00 cash.
-        4. Customer balance becomes -60.00.
-        5. Shift credit_payouts records 40.00, expected_cash drops from 200.00 to 160.00.
-        6. Attempt to withdraw 70.00 (more than remaining 60.00) is rejected with 400 error.
-        7. Customer with debt (positive balance) cannot withdraw credit.
+        can withdraw some or all of their credit in cash, with workflow-specific permissions:
+        1. In strict workflow: SHOP_CASHIER, ADMIN, ACCOUNTANT can payout; SHOP_MANAGER cannot (403).
+        2. In standard workflow: SHOP_MANAGER, ADMIN, ACCOUNTANT can payout; SHOP_CASHIER cannot (403).
+        3. Payout decreases customer credit and shift expected_cash.
+        4. Over-withdrawal and debt guards are enforced.
         """
         import json
+
+        self.tenant.use_strict_sales_workflow = True
+        self.tenant.save()
 
         # Customer with 100.00 store credit
         customer = Customer.objects.create(
@@ -1775,6 +1840,15 @@ class WorkflowIntegrationTests(TestCase):
             name="Credit Holder",
             current_balance=Decimal("-100.00")
         )
+
+        # In strict workflow, SHOP_MANAGER cannot dispense credit payouts
+        self.client.force_login(self.manager_user)
+        mgr_resp = self.client.post(
+            f"/sales/api/customers/{customer.pk}/credit-payout/",
+            data=json.dumps({'amount': '20.00'}),
+            content_type='application/json'
+        )
+        self.assertEqual(mgr_resp.status_code, 403)
 
         # Cashier open shift
         shift = Shift.objects.create(
@@ -1785,7 +1859,7 @@ class WorkflowIntegrationTests(TestCase):
             status='OPEN'
         )
 
-        # 1. Payout 40.00
+        # 1. Payout 40.00 by Cashier in strict workflow
         self.client.force_login(self.cashier_user)
         payout_resp = self.client.post(
             f"/sales/api/customers/{customer.pk}/credit-payout/",
@@ -1833,6 +1907,28 @@ class WorkflowIntegrationTests(TestCase):
         )
         self.assertEqual(debt_resp.status_code, 400)
         self.assertIn("no available credit", debt_resp.json()['error'])
+
+        # 4. In standard workflow, SHOP_MANAGER can payout, but SHOP_CASHIER cannot
+        self.tenant.use_strict_sales_workflow = False
+        self.tenant.save()
+
+        self.client.force_login(self.cashier_user)
+        cashier_std_resp = self.client.post(
+            f"/sales/api/customers/{customer.pk}/credit-payout/",
+            data=json.dumps({'amount': '10.00'}),
+            content_type='application/json'
+        )
+        self.assertEqual(cashier_std_resp.status_code, 403)
+
+        self.client.force_login(self.manager_user)
+        mgr_std_resp = self.client.post(
+            f"/sales/api/customers/{customer.pk}/credit-payout/",
+            data=json.dumps({'amount': '10.00', 'notes': 'Manager standard workflow payout'}),
+            content_type='application/json'
+        )
+        self.assertEqual(mgr_std_resp.status_code, 200)
+        customer.refresh_from_db()
+        self.assertEqual(customer.current_balance, Decimal("-50.00"))
 
     def test_20_standard_workflow_unaffected(self):
         """
@@ -1883,6 +1979,7 @@ class WorkflowIntegrationTests(TestCase):
         from apps.sales.models import RefundRequest
 
         self.tenant.use_strict_sales_workflow = True
+        self.tenant.enable_refunds = True
         self.tenant.save()
 
         sale = Sale.objects.create(
@@ -1915,55 +2012,43 @@ class WorkflowIntegrationTests(TestCase):
         item.refresh_from_db()
         self.assertEqual(item.dispatched_quantity, Decimal("3.00"))
 
-        # 2. Halt dispatch request
+        # 2. Halt dispatch pauses dispatch without deleting items
         halt_resp = self.client.post(
             f"/sales/api/sales/{sale.pk}/halt-dispatch/",
-            data=json.dumps({'reason': 'Customer considering cancellation'}),
+            data=json.dumps({'reason': 'Customer cancelled remaining items'}),
             content_type='application/json'
         )
         self.assertEqual(halt_resp.status_code, 200)
+        self.assertFalse(RefundRequest.objects.filter(sale=sale).exists())
 
+        sale.refresh_from_db()
+        self.assertEqual(sale.status, 'PENDING_DISPATCH')
+        self.assertTrue(sale.is_halted)
+
+        # 3. Cashier requests refund and Accountant approves -> settles sale to 3 items
+        self.client.force_login(self.cashier_user)
+        ref_resp = self.client.post(
+            f"/sales/api/{sale.pk}/refund/",
+            data=json.dumps({'reason': 'Customer cancelled remaining items'}),
+            content_type='application/json'
+        )
+        self.assertEqual(ref_resp.status_code, 200)
         refund_req = RefundRequest.objects.get(sale=sale, status='PENDING')
-        self.assertTrue(refund_req.is_partial_halt)
-        self.assertEqual(refund_req.refund_amount, Decimal("50.00"))
 
-        # 3. Further dispatch attempt while PENDING is rejected
-        dispatch_blocked = self.client.post(
-            f"/sales/api/sales/{sale.pk}/dispatch/",
-            data=json.dumps({'items': [{'sale_item_id': item.pk, 'qty': 5}]}),
-            content_type='application/json'
-        )
-        self.assertEqual(dispatch_blocked.status_code, 400)
-        self.assertIn("refund or halt request is pending", dispatch_blocked.json()['error'].lower())
-
-        # 4. Accountant rejects the halt request
         self.client.force_login(self.accountant_user)
-        reject_resp = self.client.post(
-            f"/sales/api/refund-requests/{refund_req.pk}/reject/",
-            data=json.dumps({'reason': 'Customer decided to take the remaining items after all.'}),
+        app_resp = self.client.post(
+            f"/sales/api/refund-requests/{refund_req.pk}/approve/",
+            data=json.dumps({'refund_method': 'CASH'}),
             content_type='application/json'
         )
-        self.assertEqual(reject_resp.status_code, 200)
-
-        refund_req.refresh_from_db()
-        self.assertEqual(refund_req.status, 'REJECTED')
-        self.assertEqual(refund_req.rejection_reason, 'Customer decided to take the remaining items after all.')
-        self.assertEqual(refund_req.reviewed_by, self.accountant_user)
-
-        # 5. Manager resumes dispatch and releases remaining 5 units
-        self.client.force_login(self.manager_user)
-        resume_resp = self.client.post(
-            f"/sales/api/sales/{sale.pk}/dispatch/",
-            data=json.dumps({'items': [{'sale_item_id': item.pk, 'qty': 5}]}),
-            content_type='application/json'
-        )
-        self.assertEqual(resume_resp.status_code, 200)
+        self.assertEqual(app_resp.status_code, 200)
 
         sale.refresh_from_db()
         item.refresh_from_db()
-        self.assertEqual(item.dispatched_quantity, Decimal("8.00"))
+        self.assertEqual(sale.status, 'COMPLETED')
+        self.assertEqual(item.dispatched_quantity, Decimal("3.00"))
+        self.assertEqual(item.quantity, Decimal("3.00"))
         self.assertTrue(sale.is_dispatched)
-        self.assertEqual(sale.status, "COMPLETED")
 
     def test_22_strict_partial_dispatch_halt_momo_refund_updates_navbar_balance(self):
         """
@@ -1983,6 +2068,7 @@ class WorkflowIntegrationTests(TestCase):
 
         self.tenant.use_strict_sales_workflow = True
         self.tenant.allow_momo_payments = True
+        self.tenant.enable_refunds = True
         self.tenant.save()
 
         # Attendant creates and completes MOMO sale for 10 items
@@ -2019,17 +2105,28 @@ class WorkflowIntegrationTests(TestCase):
         )
         self.assertEqual(disp_resp.status_code, 200)
 
-        # 2. Manager halts dispatch and requests refund
+        # 2. Manager halts dispatch (settles sale directly to 40.00, no RefundRequest created)
         halt_resp = self.client.post(
             f"/sales/api/sales/{sale.pk}/halt-dispatch/",
-            data=json.dumps({'reason': 'Halt remaining items and refund via MoMo'}),
+            data=json.dumps({'reason': 'Halt remaining items'}),
             content_type='application/json'
         )
         self.assertEqual(halt_resp.status_code, 200)
+        self.assertFalse(RefundRequest.objects.filter(sale=sale).exists())
 
+        sale.refresh_from_db()
+        self.assertEqual(sale.status, 'PENDING_DISPATCH')
+        self.assertTrue(sale.is_halted)
+
+        # 2b. Cashier requests refund on the halted sale (60.00 undispatched)
+        self.client.force_login(self.cashier_user)
+        ref_resp = self.client.post(
+            f"/sales/api/{sale.pk}/refund/",
+            data=json.dumps({'reason': 'Customer cancelling remaining items via MoMo'}),
+            content_type='application/json'
+        )
+        self.assertEqual(ref_resp.status_code, 200)
         refund_req = RefundRequest.objects.get(sale=sale, status='PENDING')
-        self.assertTrue(refund_req.is_partial_halt)
-        self.assertEqual(refund_req.refund_amount, Decimal("60.00"))
 
         # 3. Accountant approves refund selecting MOMO
         self.client.force_login(self.accountant_user)
@@ -2039,11 +2136,13 @@ class WorkflowIntegrationTests(TestCase):
             content_type='application/json'
         )
         self.assertEqual(approve_resp.status_code, 200)
+        refund_req.refresh_from_db()
+        self.assertEqual(refund_req.refund_amount, Decimal("60.00"))
 
         # 4. Verify right after accountant approval: funds are NOT deducted yet
         sale.refresh_from_db()
-        self.assertEqual(sale.status, 'PENDING_DISPATCH')
-        self.assertEqual(sale.total, Decimal("100.00"))
+        self.assertEqual(sale.status, 'COMPLETED')
+        self.assertEqual(sale.total, Decimal("40.00"))
         self.assertEqual(sale.amount_paid, Decimal("100.00"))
         ctx_cashier_mid = self.get_navbar_context(self.cashier_user)
         self.assertEqual(ctx_cashier_mid['momo_balance'], Decimal("100.00"), "Approval must not deduct funds!")
@@ -2057,7 +2156,7 @@ class WorkflowIntegrationTests(TestCase):
         self.assertEqual(refund_req.reviewed_by, self.accountant_user)
         self.assertIsNone(refund_req.paid_by)
 
-        # 6. Verify Shop Manager CANNOT disburse payout (Cashier and Admin only)
+        # 6. Verify Shop Manager CANNOT disburse payout
         self.client.force_login(self.manager_user)
         mgr_resp = self.client.post(
             f"/sales/api/refund-requests/{refund_req.pk}/payout/",
@@ -2087,11 +2186,11 @@ class WorkflowIntegrationTests(TestCase):
         )
         self.assertEqual(payout_resp.status_code, 200)
 
-        # 8. Verify sale is settled upon payout disbursement
+        # 8. Verify sale is settled to 40.00 and stays COMPLETED (customer kept dispatched items)
         sale.refresh_from_db()
         self.assertEqual(sale.status, 'COMPLETED')
-        self.assertEqual(sale.total, Decimal("40.00"))
         self.assertEqual(sale.amount_paid, Decimal("40.00"))
+        self.assertEqual(sale.total, Decimal("40.00"))
 
         # Verify refund request is now PAID and linked to cashier and shift
         refund_req.refresh_from_db()
@@ -2101,7 +2200,7 @@ class WorkflowIntegrationTests(TestCase):
         self.assertIn('Ref: TXN-MOMO-999', refund_req.payout_notes)
         self.assertIn('Sent by cashier via shop MoMo phone', refund_req.payout_notes)
 
-        # Verify shift accounts for the momo refund payout
+        # Verify shift accounts for the momo refund payout (60.00)
         self.assertEqual(shift.momo_refund_payouts, Decimal("60.00"))
         self.assertEqual(shift.refund_payouts, Decimal("0.00"))
 
@@ -2183,6 +2282,11 @@ class WorkflowIntegrationTests(TestCase):
         self.assertEqual(refund_req.status, 'APPROVED')
         self.assertEqual(refund_req.payout_status, 'PENDING')
 
+        # Verify that upon accountant approval, cash_on_hand and shift.expected_cash do NOT prematurely drop
+        self.assertEqual(shift.expected_cash, Decimal("200.00"))
+        ctx_pending = self.get_navbar_context(self.cashier_user)
+        self.assertEqual(ctx_pending['cash_on_hand'], Decimal("200.00"))
+
         # Cashier assents and dispenses the cash refund
         self.client.force_login(self.cashier_user)
         payout_resp = self.client.post(
@@ -2203,9 +2307,9 @@ class WorkflowIntegrationTests(TestCase):
         self.assertEqual(shift.refund_payouts, Decimal("30.00"))
         self.assertEqual(shift.expected_cash, Decimal("170.00"))
 
-        # Cashier's cash_on_hand context must also deduct the refund payout
+        # Cashier's cash_on_hand context must now accurately deduct the refund payout
         ctx = self.get_navbar_context(self.cashier_user)
-        self.assertEqual(ctx['cash_on_hand'], Decimal("70.00"))  # 100 sale - 30 refund
+        self.assertEqual(ctx['cash_on_hand'], Decimal("170.00"))  # 100 opening + 100 sale - 30 refund
 
     def test_21_refund_button_hidden_while_awaiting_payout(self):
         """
@@ -2740,5 +2844,573 @@ class WorkflowIntegrationTests(TestCase):
         ctx = tenant_context(req)
         self.assertIn('momo_balance', ctx)
         self.assertIn('ecash_balance', ctx)
+
+    def test_29_strict_mode_partial_dispatch_refund_block_and_cashier_only_permissions(self):
+        """
+        Verify strict mode rules:
+        1. Partially dispatched sale blocks cashier from requesting refund until Shop Manager runs Halt & Settle.
+        2. Halt & Settle directly settles the sale to dispatched quantities with NO RefundRequest created.
+        3. Once settled, cashier can request a refund.
+        4. In strict mode, only SHOP_CASHIER can request refunds (MANAGER, ACCOUNTANT, ADMIN get 403).
+        5. In strict mode, only SHOP_CASHIER can disburse refund payouts (ADMIN gets 403).
+        """
+        import json
+        from apps.sales.models import RefundRequest
+
+        self.tenant.use_strict_sales_workflow = True
+        self.tenant.enable_refunds = True
+        self.tenant.save()
+
+        sale = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.attendant_user,
+            cashier=self.cashier_user,
+            total=Decimal("100.00"),
+            amount_paid=Decimal("100.00"),
+            payment_method="CASH",
+            status="PENDING_DISPATCH"
+        )
+        item = SaleItem.objects.create(
+            tenant=self.tenant,
+            sale=sale,
+            product=self.product,
+            batch=self.shop_batch,
+            quantity=Decimal("10.00"),
+            unit_price=Decimal("10.00"),
+            dispatched_quantity=Decimal("0.00")
+        )
+
+        # 0. Zero items dispatched: Cashier is already BLOCKED because sale is PENDING_DISPATCH
+        self.client.force_login(self.cashier_user)
+        zero_disp_blocked = self.client.post(
+            f"/sales/api/{sale.pk}/refund/",
+            data=json.dumps({'reason': 'Customer wants refund before dispatch'}),
+            content_type='application/json'
+        )
+        self.assertEqual(zero_disp_blocked.status_code, 400)
+        self.assertIn("must halt dispatch", zero_disp_blocked.json()['error'].lower())
+
+        # 1. Manager partially dispatches 4 of 10 units
+        self.client.force_login(self.manager_user)
+        disp_resp = self.client.post(
+            f"/sales/api/sales/{sale.pk}/dispatch/",
+            data=json.dumps({'items': [{'sale_item_id': item.pk, 'qty': 4}]}),
+            content_type='application/json'
+        )
+        self.assertEqual(disp_resp.status_code, 200)
+        sale.refresh_from_db()
+        self.assertTrue(sale.is_partially_dispatched)
+
+        # 2. Cashier is STILL BLOCKED from requesting refund while pending dispatch
+        self.client.force_login(self.cashier_user)
+        blocked_resp = self.client.post(
+            f"/sales/api/{sale.pk}/refund/",
+            data=json.dumps({'reason': 'Customer wants refund'}),
+            content_type='application/json'
+        )
+        self.assertEqual(blocked_resp.status_code, 400)
+        self.assertIn("must halt dispatch", blocked_resp.json()['error'].lower())
+
+        # 3. Non-cashier roles are forbidden from requesting refunds in strict mode
+        for non_cashier in [self.manager_user, self.accountant_user, self.admin_user]:
+            self.client.force_login(non_cashier)
+            resp = self.client.post(
+                f"/sales/api/{sale.pk}/refund/",
+                data=json.dumps({'reason': 'Unauthorized role'}),
+                content_type='application/json'
+            )
+            self.assertEqual(resp.status_code, 403)
+
+        # 4. Manager halts dispatch -> locks dispatch and allows cashier to request refund
+        self.client.force_login(self.manager_user)
+        halt_resp = self.client.post(
+            f"/sales/api/sales/{sale.pk}/halt-dispatch/",
+            data=json.dumps({'reason': 'Customer took 4 units only'}),
+            content_type='application/json'
+        )
+        self.assertEqual(halt_resp.status_code, 200)
+        self.assertFalse(RefundRequest.objects.filter(sale=sale).exists())
+
+        sale.refresh_from_db()
+        self.assertEqual(sale.status, 'PENDING_DISPATCH')
+        self.assertTrue(sale.is_halted)
+        self.assertEqual(sale.total, Decimal("100.00"))
+
+        # 5. Now Cashier can request a refund on the halted sale (refunds excess paid: 100 - 40 = 60)
+        self.client.force_login(self.cashier_user)
+        req_resp = self.client.post(
+            f"/sales/api/{sale.pk}/refund/",
+            data=json.dumps({'reason': 'Refunding halted sale'}),
+            content_type='application/json'
+        )
+        self.assertEqual(req_resp.status_code, 200)
+        refund_req = RefundRequest.objects.get(sale=sale, status='PENDING')
+        self.assertTrue(refund_req.is_partial_halt)
+        self.assertEqual(refund_req.refund_amount, Decimal("60.00"))
+
+        # 6. Accountant approves -> settles sale to 40.00 and COMPLETED
+        self.client.force_login(self.accountant_user)
+        app_resp = self.client.post(
+            f"/sales/api/refund-requests/{refund_req.pk}/approve/",
+            data=json.dumps({'refund_method': 'CASH'}),
+            content_type='application/json'
+        )
+        self.assertEqual(app_resp.status_code, 200)
+
+        sale.refresh_from_db()
+        self.assertEqual(sale.status, 'COMPLETED')
+        self.assertEqual(sale.total, Decimal("40.00"))
+
+        # 7. Admin CANNOT disburse payout in strict mode (only SHOP_CASHIER)
+        self.client.force_login(self.admin_user)
+        admin_payout = self.client.post(
+            f"/sales/api/refund-requests/{refund_req.pk}/payout/",
+            data=json.dumps({}),
+            content_type='application/json'
+        )
+        self.assertEqual(admin_payout.status_code, 403)
+
+        # 8. Cashier CAN disburse payout
+        self.client.force_login(self.cashier_user)
+        cashier_payout = self.client.post(
+            f"/sales/api/refund-requests/{refund_req.pk}/payout/",
+            data=json.dumps({}),
+            content_type='application/json'
+        )
+        self.assertEqual(cashier_payout.status_code, 200)
+        refund_req.refresh_from_db()
+        self.assertEqual(refund_req.payout_status, 'PAID')
+
+        # Sale amount_paid is adjusted to match total of kept goods (40.00)
+        sale.refresh_from_db()
+        self.assertEqual(sale.amount_paid, Decimal("40.00"))
+        self.assertEqual(sale.total, Decimal("40.00"))
+        self.assertEqual(sale.status, 'COMPLETED')
+
+    def test_30_zero_dispatch_halt_allows_full_refund_without_phantom_inventory(self):
+        """
+        Verify that when a sale in strict mode has 0 items dispatched:
+        1. Cashier cannot request refund while sale is in PENDING_DISPATCH.
+        2. Shop Manager halts dispatch (zero items dispatched).
+        3. All original sale items remain intact with original line totals.
+        4. Sale is COMPLETED with is_dispatched=True.
+        5. Cashier requests a 100% refund.
+        6. Accountant approves and Cashier disburses payout.
+        7. Sale is marked REFUNDED and NO phantom InventoryLedger SALE_RETURN entries are created.
+        """
+        import json
+        from apps.sales.models import RefundRequest
+        from apps.inventory.models import InventoryLedger
+
+        self.tenant.use_strict_sales_workflow = True
+        self.tenant.enable_refunds = True
+        self.tenant.save()
+
+        sale = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.attendant_user,
+            cashier=self.cashier_user,
+            total=Decimal("80.00"),
+            amount_paid=Decimal("80.00"),
+            payment_method="CASH",
+            status="PENDING_DISPATCH"
+        )
+        item = SaleItem.objects.create(
+            tenant=self.tenant,
+            sale=sale,
+            product=self.product,
+            batch=self.shop_batch,
+            quantity=Decimal("8.00"),
+            unit_price=Decimal("10.00"),
+            dispatched_quantity=Decimal("0.00")
+        )
+
+        initial_ledger_count = InventoryLedger.objects.filter(reference_id=sale.pk).count()
+
+        # 1. Cashier is blocked from refunding while in PENDING_DISPATCH
+        self.client.force_login(self.cashier_user)
+        ref_block = self.client.post(
+            f"/sales/api/{sale.pk}/refund/",
+            data=json.dumps({'reason': 'Customer changed mind'}),
+            content_type='application/json'
+        )
+        self.assertEqual(ref_block.status_code, 400)
+        self.assertIn("must halt dispatch", ref_block.json()['error'].lower())
+
+        # 2. Shop Manager halts dispatch before any items were released
+        self.client.force_login(self.manager_user)
+        halt_resp = self.client.post(
+            f"/sales/api/sales/{sale.pk}/halt-dispatch/",
+            data=json.dumps({'reason': 'Customer cancelled before collection'}),
+            content_type='application/json'
+        )
+        self.assertEqual(halt_resp.status_code, 200)
+
+        sale.refresh_from_db()
+        item.refresh_from_db()
+        self.assertEqual(sale.status, 'PENDING_DISPATCH')
+        self.assertTrue(sale.is_halted)
+        self.assertFalse(sale.is_dispatched)
+        # All items and full total preserved
+        self.assertEqual(sale.items.count(), 1)
+        self.assertEqual(item.quantity, Decimal("8.00"))
+        self.assertEqual(sale.total, Decimal("80.00"))
+        self.assertIn("Dispatch Halted", sale.notes)
+
+        # 3. Cashier can now request 100% refund
+        self.client.force_login(self.cashier_user)
+        req_resp = self.client.post(
+            f"/sales/api/{sale.pk}/refund/",
+            data=json.dumps({'reason': 'Full refund cancelled order'}),
+            content_type='application/json'
+        )
+        self.assertEqual(req_resp.status_code, 200)
+
+        refund_req = RefundRequest.objects.get(sale=sale, status='PENDING')
+
+        # 4. Accountant approves
+        self.client.force_login(self.accountant_user)
+        app_resp = self.client.post(
+            f"/sales/api/refund-requests/{refund_req.pk}/approve/",
+            data=json.dumps({'refund_method': 'CASH'}),
+            content_type='application/json'
+        )
+        self.assertEqual(app_resp.status_code, 200)
+
+        # 5. Cashier disburses payout
+        self.client.force_login(self.cashier_user)
+        payout_resp = self.client.post(
+            f"/sales/api/refund-requests/{refund_req.pk}/payout/",
+            data=json.dumps({}),
+            content_type='application/json'
+        )
+        self.assertEqual(payout_resp.status_code, 200)
+
+        sale.refresh_from_db()
+        self.assertEqual(sale.status, 'REFUNDED')
+
+        # 6. Verify NO phantom inventory entries were created
+        final_ledger_count = InventoryLedger.objects.filter(reference_id=sale.pk).count()
+        self.assertEqual(final_ledger_count, initial_ledger_count, "No inventory should be returned when zero items were dispatched")
+
+    def test_32_cashier_can_resume_halted_transaction(self):
+        """
+        Verify that when a shop manager halts a sale by mistake in strict sales workflow,
+        the cashier can resume the transaction.
+        The sale returns to PENDING_DISPATCH, is_dispatched=False, and all original items
+        and quantities are completely restored so dispatch can continue.
+        """
+        self.tenant.use_strict_sales_workflow = True
+        self.tenant.enable_refunds = True
+        self.tenant.save()
+        initial_ledger_count = InventoryLedger.objects.count()
+
+        # 1. Create a sale with 10 units @ 10 GHS = 100 GHS
+        sale = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.attendant_user,
+            cashier=self.cashier_user,
+            subtotal=Decimal("100.00"),
+            total=Decimal("100.00"),
+            amount_paid=Decimal("100.00"),
+            payment_method='CASH',
+            status='PENDING_DISPATCH',
+            is_dispatched=False
+        )
+        item = SaleItem.objects.create(
+            tenant=self.tenant,
+            sale=sale,
+            product=self.product,
+            batch=self.shop_batch,
+            quantity=Decimal("10.00"),
+            unit_price=Decimal("10.00"),
+            total=Decimal("100.00")
+        )
+
+        # 2. Partially dispatch 4 items
+        self.client.force_login(self.manager_user)
+        disp_resp = self.client.post(
+            f"/sales/api/sales/{sale.pk}/dispatch/",
+            data=json.dumps({'items': [{'sale_item_id': item.pk, 'qty': '4.00'}]}),
+            content_type='application/json'
+        )
+        self.assertEqual(disp_resp.status_code, 200)
+
+        # 3. Shop Manager halts and settles by mistake
+        halt_resp = self.client.post(
+            f"/sales/api/sales/{sale.pk}/halt-dispatch/",
+            data=json.dumps({'reason': 'Halted by mistake'}),
+            content_type='application/json'
+        )
+        self.assertEqual(halt_resp.status_code, 200)
+
+        sale.refresh_from_db()
+        self.assertEqual(sale.status, 'PENDING_DISPATCH')
+        self.assertFalse(sale.is_dispatched)
+        self.assertTrue(sale.is_halted)
+        self.assertTrue(sale.can_be_resumed)
+        self.assertEqual(sale.total, Decimal("100.00"))
+        self.assertEqual(sale.items.count(), 1)
+        self.assertEqual(sale.items.first().quantity, Decimal("10.00"))
+        self.assertEqual(sale.items.first().dispatched_quantity, Decimal("4.00"))
+        self.assertEqual(sale.items.first().remaining_quantity, Decimal("6.00"))
+
+        # 4. Check api_sale_detail returns resumption metadata
+        self.client.force_login(self.cashier_user)
+        detail_resp = self.client.get(f"/sales/api/{sale.pk}/detail/")
+        self.assertEqual(detail_resp.status_code, 200)
+        detail_data = detail_resp.json()
+        self.assertTrue(detail_data['can_be_resumed'])
+        self.assertTrue(detail_data['is_halted'])
+        self.assertEqual(detail_data['calculated_refund_amount'], "60.00")
+
+        # 5. Cashier resumes the transaction
+        resume_resp = self.client.post(
+            f"/sales/api/sales/{sale.pk}/resume-dispatch/",
+            data=json.dumps({'reason': 'Shop manager clicked halt by mistake'}),
+            content_type='application/json'
+        )
+        self.assertEqual(resume_resp.status_code, 200)
+        self.assertIn("resumed", resume_resp.json()['message'].lower())
+
+        sale.refresh_from_db()
+        self.assertEqual(sale.status, 'PENDING_DISPATCH')
+        self.assertFalse(sale.is_dispatched)
+        self.assertFalse(sale.is_halted)
+        self.assertFalse(sale.can_be_resumed)
+        self.assertEqual(sale.total, Decimal("100.00"))
+        self.assertEqual(sale.amount_paid, Decimal("100.00"))
+        self.assertIn("Dispatch Resumed", sale.notes)
+
+        # Verify items and quantities are fully restored
+        self.assertEqual(sale.items.count(), 1)
+        restored_item = sale.items.first()
+        self.assertEqual(restored_item.quantity, Decimal("10.00"))
+        self.assertEqual(restored_item.dispatched_quantity, Decimal("4.00"))
+        self.assertEqual(restored_item.remaining_quantity, Decimal("6.00"))
+
+        # 6. Shop Manager now successfully dispatches the remaining 6 items
+        self.client.force_login(self.manager_user)
+        disp_resp2 = self.client.post(
+            f"/sales/api/sales/{sale.pk}/dispatch/",
+            data=json.dumps({'items': [{'sale_item_id': restored_item.pk, 'qty': '6.00'}]}),
+            content_type='application/json'
+        )
+        self.assertEqual(disp_resp2.status_code, 200)
+
+        sale.refresh_from_db()
+        self.assertEqual(sale.status, 'COMPLETED')
+        self.assertTrue(sale.is_dispatched)
+        self.assertTrue(sale.all_items_dispatched)
+
+    def test_33_resume_blocked_when_refund_pending_or_approved(self):
+        """
+        Verify that a halted sale cannot be resumed if a refund request is pending
+        approval (must be cancelled first) or already approved/disbursed.
+        """
+        self.tenant.use_strict_sales_workflow = True
+        self.tenant.enable_refunds = True
+        self.tenant.save()
+
+        sale = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.attendant_user,
+            cashier=self.cashier_user,
+            subtotal=Decimal("80.00"),
+            total=Decimal("80.00"),
+            amount_paid=Decimal("80.00"),
+            payment_method='CASH',
+            status='PENDING_DISPATCH',
+            is_dispatched=False
+        )
+        item = SaleItem.objects.create(
+            tenant=self.tenant,
+            sale=sale,
+            product=self.product,
+            batch=self.shop_batch,
+            quantity=Decimal("8.00"),
+            unit_price=Decimal("10.00"),
+            total=Decimal("80.00")
+        )
+
+        # Halt sale
+        self.client.force_login(self.manager_user)
+        self.client.post(
+            f"/sales/api/sales/{sale.pk}/halt-dispatch/",
+            data=json.dumps({'reason': 'Halted'}),
+            content_type='application/json'
+        )
+
+        # Cashier requests refund -> status=PENDING
+        self.client.force_login(self.cashier_user)
+        self.client.post(
+            f"/sales/api/{sale.pk}/refund/",
+            data=json.dumps({'reason': 'Customer requested refund'}),
+            content_type='application/json'
+        )
+
+        sale.refresh_from_db()
+        self.assertFalse(sale.can_be_resumed)
+
+        # Resuming while refund request is pending must be rejected
+        res_fail = self.client.post(
+            f"/sales/api/sales/{sale.pk}/resume-dispatch/",
+            data=json.dumps({'reason': 'Try resume'}),
+            content_type='application/json'
+        )
+        self.assertEqual(res_fail.status_code, 400)
+        self.assertIn("pending approval", res_fail.json()['error'].lower())
+
+        # If accountant rejects the pending refund request
+        refund_req = RefundRequest.objects.get(sale=sale, status='PENDING')
+        self.client.force_login(self.accountant_user)
+        reject_resp = self.client.post(
+            f"/sales/api/refund-requests/{refund_req.pk}/reject/",
+            data=json.dumps({'reason': 'Rejected so cashier can resume'}),
+            content_type='application/json'
+        )
+        self.assertEqual(reject_resp.status_code, 200)
+
+        # Now cashier can resume!
+        sale.refresh_from_db()
+        self.assertTrue(sale.can_be_resumed)
+        self.client.force_login(self.cashier_user)
+        res_ok = self.client.post(
+            f"/sales/api/sales/{sale.pk}/resume-dispatch/",
+            data=json.dumps({'reason': 'Resuming after rejected refund'}),
+            content_type='application/json'
+        )
+        self.assertEqual(res_ok.status_code, 200)
+        sale.refresh_from_db()
+        self.assertEqual(sale.status, 'PENDING_DISPATCH')
+
+    def test_34_legacy_refund_request_effective_dispatched_total(self):
+        """
+        Verify that legacy or pre-existing refund requests where dispatched_total is 0.00
+        correctly report their effective dispatched goods value via effective_dispatched_total
+        and api_sale_detail.
+        """
+        sale = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.attendant_user,
+            cashier=self.cashier_user,
+            subtotal=Decimal("40.00"),
+            total=Decimal("40.00"),
+            amount_paid=Decimal("100.00"),
+            payment_method='CASH',
+            status='COMPLETED',
+            is_dispatched=True
+        )
+
+        # Create a legacy RefundRequest directly with dispatched_total=0
+        refund_req = RefundRequest.objects.create(
+            tenant=self.tenant,
+            sale=sale,
+            requested_by=self.cashier_user,
+            refund_amount=Decimal("60.00"),
+            dispatched_total=Decimal("0.00"),
+            is_partial_halt=True,
+            reason="Legacy halted refund"
+        )
+        RefundRequest.objects.filter(pk=refund_req.pk).update(dispatched_total=Decimal("0.00"))
+        refund_req.refresh_from_db()
+        self.assertEqual(refund_req.dispatched_total, Decimal("0.00"))
+
+        # Verify effective_dispatched_total resolves to 40.00
+        self.assertEqual(refund_req.effective_dispatched_total, Decimal("40.00"))
+
+        # Verify api_sale_detail returns 40.00 for dispatched_total
+        self.client.force_login(self.cashier_user)
+        resp = self.client.get(f"/sales/api/{sale.pk}/detail/")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['refunds'][0]['dispatched_total'], "40.00")
+
+    def test_35_partial_dispatch_halt_refund_amount_calculation(self):
+        """
+        Verify that when a sale is partially dispatched and halted by the manager:
+        1. sale.dispatched_total accurately reflects the dispatched items (e.g. 140.00).
+        2. sale.undispatched_total and sale.calculated_refund_amount reflect the undispatched items (e.g. 155.00).
+        3. api_sale_detail returns dispatched_total, undispatched_total, and calculated_refund_amount accurately.
+        4. When the cashier submits a refund request, it creates a request for 155.00 (not 295.00).
+        """
+        self.tenant.enable_refunds = True
+        self.tenant.use_strict_sales_workflow = True
+        self.tenant.save()
+
+        sale = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.attendant_user,
+            total=Decimal("295.00"),
+            amount_paid=Decimal("295.00"),
+            payment_method='CASH',
+            status='PENDING_DISPATCH',
+        )
+        # item 1: 4 ordered, 3 dispatched @ 25.00 = 75.00 dispatched, 25.00 undispatched
+        SaleItem.objects.create(
+            tenant=self.tenant,
+            sale=sale,
+            product=self.product,
+            quantity=Decimal("4.00"),
+            dispatched_quantity=Decimal("3.00"),
+            unit_price=Decimal("25.00"),
+            total=Decimal("100.00"),
+        )
+        # item 2: 3 ordered, 1 dispatched @ 65.00 = 65.00 dispatched, 130.00 undispatched
+        p2 = Product.objects.create(
+            tenant=self.tenant,
+            name="Pendrive",
+            sku=f"PEN-{self.unique_suffix}",
+            category=self.category,
+            default_selling_price=Decimal("65.00"),
+        )
+        SaleItem.objects.create(
+            tenant=self.tenant,
+            sale=sale,
+            product=p2,
+            quantity=Decimal("3.00"),
+            dispatched_quantity=Decimal("1.00"),
+            unit_price=Decimal("65.00"),
+            total=Decimal("195.00"),
+        )
+
+        # Halt sale
+        sale.halt_dispatch(self.manager_user, reason="Customer canceled remainder")
+        self.assertTrue(sale.is_halted)
+        self.assertTrue(sale.is_partially_dispatched)
+        self.assertEqual(sale.dispatched_total, Decimal("140.00"))
+        self.assertEqual(sale.undispatched_total, Decimal("155.00"))
+        self.assertEqual(sale.calculated_refund_amount, Decimal("155.00"))
+
+        # Verify api_sale_detail
+        self.client.force_login(self.cashier_user)
+        resp = self.client.get(f"/sales/api/{sale.pk}/detail/")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['dispatched_total'], "140.00")
+        self.assertEqual(data['undispatched_total'], "155.00")
+        self.assertEqual(data['calculated_refund_amount'], "155.00")
+        self.assertTrue(data['calculated_is_partial_halt'])
+
+        # Cashier requests refund
+        req_resp = self.client.post(
+            f"/sales/api/{sale.pk}/refund/",
+            data=json.dumps({'reason': 'Customer requested refund on undispatched items'}),
+            content_type='application/json'
+        )
+        self.assertEqual(req_resp.status_code, 200)
+        rf = RefundRequest.objects.get(sale=sale)
+        self.assertEqual(rf.refund_amount, Decimal("155.00"))
+        self.assertEqual(rf.dispatched_total, Decimal("140.00"))
+        self.assertTrue(rf.is_partial_halt)
+
+
+
 
 
