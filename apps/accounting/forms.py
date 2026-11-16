@@ -136,8 +136,12 @@ class CashTransferForm(forms.ModelForm):
                 ).values_list('sale_id', flat=True)
 
                 # Own cash collected from sales (either as cashier or attendant)
-                from django.db.models import Case, When, F
-                cash_paid_expr = Case(When(amount_paid__gt=Decimal('0.00'), then=F('amount_paid')), default=F('total'))
+                from django.db.models import Case, When, F, Value
+                from django.db.models.functions import Coalesce
+                cash_paid_expr = Case(
+                    When(amount_paid__gt=Decimal('0.00'), then=F('amount_paid') - Coalesce(F('change_given'), Value(Decimal('0.00')))),
+                    default=F('total')
+                )
                 cash_sales = Sale.objects.filter(
                     tenant=user.tenant,
                     payment_method='CASH'
@@ -158,19 +162,20 @@ class CashTransferForm(forms.ModelForm):
                     Q(cashier=user) | Q(cashier__isnull=True, attendant=user)
                 ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
 
-                # Add back disbursed partial halt cash refunds
+                # Add back disbursed partial halt and partial return cash refunds
                 # (because execute_payout reduces amount_paid by refund_amount, while refund_cash_payouts also subtracts refund_amount)
-                partial_halt_addback = RefundRequest.objects.filter(
+                partial_refund_addback = RefundRequest.objects.filter(
                     tenant=user.tenant,
                     paid_by=user,
                     status='APPROVED',
                     payout_status='PAID',
                     refund_method='CASH',
-                    is_partial_halt=True,
                     sale__payment_method__in=['CASH', 'MIXED']
+                ).filter(
+                    Q(is_partial_halt=True) | Q(is_partial_return=True)
                 ).aggregate(total=Sum('refund_amount'))['total'] or Decimal('0')
                 
-                own_sales = cash_sales + mixed_sales + partial_halt_addback
+                own_sales = cash_sales + mixed_sales + partial_refund_addback
                 
                 # Opening cash from the currently OPEN shift run by this user
                 open_shift_opening_cash = Shift.objects.filter(
@@ -203,8 +208,12 @@ class CashTransferForm(forms.ModelForm):
                     location = user.location
                     
                     # All time cash sales at this location
-                    from django.db.models import Case, When, F
-                    cash_paid_expr = Case(When(amount_paid__gt=Decimal('0.00'), then=F('amount_paid')), default=F('total'))
+                    from django.db.models import Case, When, F, Value
+                    from django.db.models.functions import Coalesce
+                    cash_paid_expr = Case(
+                        When(amount_paid__gt=Decimal('0.00'), then=F('amount_paid') - Coalesce(F('change_given'), Value(Decimal('0.00')))),
+                        default=F('total')
+                    )
                     all_sales_agg = Sale.objects.filter(tenant=user.tenant, shop=location, status__in=['COMPLETED', 'PENDING_DISPATCH']).aggregate(
                         cash_sales=Sum(cash_paid_expr, filter=Q(payment_method='CASH')),
                         mixed_paid=Sum('amount_paid', filter=Q(payment_method='MIXED')),

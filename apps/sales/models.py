@@ -247,24 +247,29 @@ class Shift(TenantModel):
     @property
     def total_sales(self):
         """Total cash sales collected during this shift (offset by refund_payouts for same-shift cash refunds)."""
-        from django.db.models import Q, Case, When, F
+        from django.db.models import Q, Case, When, F, Value
+        from django.db.models.functions import Coalesce
         sales_qs = self._collected_sales_qs()
-        cash_paid_expr = Case(When(amount_paid__gt=Decimal('0.00'), then=F('amount_paid')), default=F('total'))
+        cash_paid_expr = Case(
+            When(amount_paid__gt=Decimal('0.00'), then=F('amount_paid') - Coalesce(F('change_given'), Value(Decimal('0.00')))),
+            default=F('total')
+        )
         cash_total = sales_qs.filter(
             payment_method='CASH'
         ).aggregate(t=Sum(cash_paid_expr))['t'] or Decimal('0')
         mixed_total = sales_qs.filter(
             payment_method='MIXED'
         ).aggregate(t=Sum('amount_paid'))['t'] or Decimal('0')
-        # For partial-halt refunds (is_partial_halt=True), Sale.halt_and_settle() already reduced
-        # sale.total and sale.amount_paid in-place by refund_amount. When that partial refund is
+        # For partial-halt or partial-return refunds, Sale.settle_halted_sale() or execute_payout()
+        # already reduced sale.amount_paid in-place by refund_amount. When that partial refund is
         # also disbursed in cash during this shift (subtracted in self.refund_payouts), add back
         # the partial refund amount here so it is not deducted twice from expected_cash.
-        partial_halt_addback = self._disbursed_refunds_qs(refund_method='CASH').filter(
-            is_partial_halt=True,
+        partial_addback = self._disbursed_refunds_qs(refund_method='CASH').filter(
             sale__in=sales_qs.filter(payment_method__in=['CASH', 'MIXED'])
+        ).filter(
+            Q(is_partial_halt=True) | Q(is_partial_return=True)
         ).aggregate(t=Sum('refund_amount'))['t'] or Decimal('0')
-        return cash_total + mixed_total + partial_halt_addback
+        return cash_total + mixed_total + partial_addback
         
     @property
     def payments_on_account(self):
@@ -649,7 +654,7 @@ class Sale(TenantModel):
     def calculated_refund_amount(self):
         """Refund amount due for customer."""
         disp = self.dispatched_total
-        if self.is_halted or self.is_partially_dispatched:
+        if (self.is_halted or self.is_partially_dispatched) and not self.all_items_dispatched:
             if self.amount_paid and self.amount_paid > disp:
                 return self.amount_paid - disp
             return Decimal('0.00')
@@ -915,7 +920,7 @@ class Sale(TenantModel):
         # In strict workflow, inventory is only deducted if items were actually dispatched. In standard, if completed.
         inventory_deducted = False
         if self.tenant.use_strict_sales_workflow:
-            if self.is_dispatched and self.items.filter(dispatched_quantity__gt=0).exists():
+            if self.is_dispatched or self.items.filter(dispatched_quantity__gt=0).exists():
                 inventory_deducted = True
         else:
             if self.status in ['COMPLETED', 'PENDING_DISPATCH']:
@@ -925,8 +930,10 @@ class Sale(TenantModel):
             for item in self.items.all():
                 if item.dispatched_quantity > Decimal('0'):
                     return_qty = item.dispatched_quantity
-                else:
+                elif not self.tenant.use_strict_sales_workflow:
                     return_qty = item.quantity
+                else:
+                    return_qty = Decimal('0')
                 if return_qty <= Decimal('0'):
                     continue
                 InventoryLedger.objects.create(
@@ -1365,6 +1372,15 @@ class RefundRequest(TenantModel):
         default=False,
         help_text="True if this is a halt/settlement of undispatched goods in strict workflow"
     )
+    is_partial_return = models.BooleanField(
+        default=False,
+        help_text="True if this is a partial return of dispatched goods after dispatch"
+    )
+    returned_items = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="Snapshot of returned items for partial returns"
+    )
     refund_amount = models.DecimalField(
         max_digits=12,
         decimal_places=2,
@@ -1459,8 +1475,11 @@ class RefundRequest(TenantModel):
                     self.is_partial_halt = True
                     self.refund_amount = self.sale.amount_paid - self.sale.total
                     self.dispatched_total = self.sale.total
-                elif not self.is_partial_halt:
+                elif not self.is_partial_halt and not self.is_partial_return:
                     self.refund_amount = self.sale.amount_paid if (self.sale.amount_paid and self.sale.amount_paid > Decimal('0.00')) else self.sale.total
+                    self.dispatched_total = Decimal('0.00')
+        if not self.is_partial_halt and not self.is_partial_return:
+            self.dispatched_total = Decimal('0.00')
         if self.is_partial_halt and (not self.dispatched_total or self.dispatched_total <= Decimal('0.00')):
             if self.sale_id and hasattr(self, 'sale') and self.sale:
                 if self.sale.total and self.sale.total > Decimal('0.00'):
@@ -1481,6 +1500,8 @@ class RefundRequest(TenantModel):
         Provides automatic calculation for legacy or existing refund requests
         where dispatched_total was saved as 0.00.
         """
+        if not self.is_partial_halt and not self.is_partial_return:
+            return Decimal('0.00')
         if self.dispatched_total and self.dispatched_total > Decimal('0.00'):
             return self.dispatched_total
         if self.is_partial_halt:
@@ -1565,6 +1586,12 @@ class RefundRequest(TenantModel):
             if curr_paid < reconstructed_paid:
                 return reconstructed_paid
             return curr_paid
+        if self.is_partial_return:
+            ref_amt = self.refund_amount or Decimal('0.00')
+            curr_paid = self.sale.amount_paid or Decimal('0.00')
+            if self.payout_status == 'PAID':
+                return curr_paid + ref_amt
+            return curr_paid
         return self.sale.amount_paid or Decimal('0.00')
 
     def approve(self, approver, refund_method=None):
@@ -1599,7 +1626,74 @@ class RefundRequest(TenantModel):
 
             if method == 'ACCOUNT_CREDIT' or self.refund_amount <= Decimal('0.00'):
                 # Customer account credit / debt cancellation only - no physical cashier funds leave shop
-                if self.is_partial_halt:
+                if self.is_partial_return:
+                    from apps.inventory.models import InventoryLedger
+                    returned_data = self.returned_items or []
+                    for ret_it in returned_data:
+                        item_id = ret_it.get('sale_item_id')
+                        ret_qty = Decimal(str(ret_it.get('return_qty', '0')))
+                        if item_id and ret_qty > Decimal('0'):
+                            sale_item = sale.items.filter(pk=item_id).first()
+                            if sale_item:
+                                actual_cost = Decimal(str(ret_it.get('unit_price', sale_item.unit_price)))
+                                InventoryLedger.objects.create(
+                                    tenant=tenant,
+                                    product=sale_item.product,
+                                    batch=sale_item.batch,
+                                    location=sale.shop,
+                                    transaction_type='SALE_RETURN',
+                                    quantity=ret_qty,
+                                    unit_cost=actual_cost,
+                                    reference_type='Refund',
+                                    reference_id=self.pk,
+                                    notes=f"Sale return ({self.refund_number}): {ret_qty}x {sale_item.product.name}",
+                                    created_by=approver
+                                )
+                                sale_item.dispatched_quantity = max(Decimal('0'), sale_item.dispatched_quantity - ret_qty)
+                                sale_item.save(update_fields=['dispatched_quantity'])
+
+                    if self.debt_reduction_amount > Decimal('0') and sale.customer:
+                        from apps.customers.models import CustomerTransaction
+                        balance_before = sale.customer.current_balance
+                        sale.customer.current_balance -= self.debt_reduction_amount
+                        sale.customer.save(update_fields=['current_balance'])
+                        CustomerTransaction.objects.create(
+                            tenant=tenant,
+                            customer=sale.customer,
+                            transaction_type='CREDIT',
+                            amount=self.debt_reduction_amount,
+                            reference_id=sale.sale_number,
+                            balance_before=balance_before,
+                            balance_after=sale.customer.current_balance,
+                            description=f"Debt cancellation from partial return ({self.refund_number})",
+                            performed_by=approver
+                        )
+
+                    if self.refund_amount > Decimal('0'):
+                        sale.amount_paid = max(Decimal('0.00'), sale.amount_paid - self.refund_amount)
+                        p_note = f"[Partial return of {tenant.currency_symbol}{self.refund_amount} credited to customer via {self.refund_number}]"
+                        sale.notes = f"{sale.notes}\n{p_note}".strip() if sale.notes else p_note
+                        sale.save()
+                        if sale.customer:
+                            from apps.customers.models import CustomerTransaction
+                            balance_before = sale.customer.current_balance
+                            sale.customer.current_balance -= self.refund_amount
+                            sale.customer.save(update_fields=['current_balance'])
+                            CustomerTransaction.objects.create(
+                                tenant=tenant,
+                                customer=sale.customer,
+                                transaction_type='CREDIT',
+                                amount=self.refund_amount,
+                                reference_id=sale.sale_number,
+                                balance_before=balance_before,
+                                balance_after=sale.customer.current_balance,
+                                description=f"Account credit refund ({sale.sale_number})",
+                                performed_by=approver
+                            )
+                    self.payout_status = 'PAID'
+                    self.paid_by = approver
+                    self.paid_at = tz.now()
+                elif self.is_partial_halt:
                     if sale.status == 'PENDING_DISPATCH':
                         sale.halt_and_settle(user=approver, refund_req=self, refund_method=method)
                     else:
@@ -1663,8 +1757,8 @@ class RefundRequest(TenantModel):
 
         # Notify the shop manager who submitted the request
         from apps.notifications.models import Notification
-        refund_type_str = "Partial Refund & Settle" if self.is_partial_halt else "Refund"
-        amt_display = f"{tenant.currency_symbol}{self.refund_amount}" if self.is_partial_halt else f"{tenant.currency_symbol}{sale.total}"
+        refund_type_str = "Partial Return" if self.is_partial_return else ("Partial Refund & Settle" if self.is_partial_halt else "Refund")
+        amt_display = f"{tenant.currency_symbol}{self.refund_amount}" if (self.is_partial_halt or self.is_partial_return) else f"{tenant.currency_symbol}{sale.total}"
         Notification.objects.create(
             tenant=tenant,
             user=self.requested_by,
@@ -1728,7 +1822,90 @@ class RefundRequest(TenantModel):
             method = self.refund_method
 
             # 1. Execute the financial adjustments and sale status settlement
-            if self.is_partial_halt:
+            if self.is_partial_return:
+                from apps.inventory.models import InventoryLedger
+                returned_data = self.returned_items or []
+                for ret_it in returned_data:
+                    item_id = ret_it.get('sale_item_id')
+                    ret_qty = Decimal(str(ret_it.get('return_qty', '0')))
+                    if item_id and ret_qty > Decimal('0'):
+                        sale_item = sale.items.filter(pk=item_id).first()
+                        if sale_item:
+                            actual_cost = Decimal(str(ret_it.get('unit_price', sale_item.unit_price)))
+                            InventoryLedger.objects.create(
+                                tenant=tenant,
+                                product=sale_item.product,
+                                batch=sale_item.batch,
+                                location=sale.shop,
+                                transaction_type='SALE_RETURN',
+                                quantity=ret_qty,
+                                unit_cost=actual_cost,
+                                reference_type='Refund',
+                                reference_id=self.pk,
+                                notes=f"Sale return ({self.refund_number}): {ret_qty}x {sale_item.product.name}",
+                                created_by=disburser
+                            )
+                            sale_item.dispatched_quantity = max(Decimal('0'), sale_item.dispatched_quantity - ret_qty)
+                            sale_item.save(update_fields=['dispatched_quantity'])
+
+                if self.debt_reduction_amount > Decimal('0') and sale.customer:
+                    from apps.customers.models import CustomerTransaction
+                    balance_before = sale.customer.current_balance
+                    sale.customer.current_balance -= self.debt_reduction_amount
+                    sale.customer.save(update_fields=['current_balance'])
+                    CustomerTransaction.objects.create(
+                        tenant=tenant,
+                        customer=sale.customer,
+                        transaction_type='CREDIT',
+                        amount=self.debt_reduction_amount,
+                        reference_id=sale.sale_number,
+                        balance_before=balance_before,
+                        balance_after=sale.customer.current_balance,
+                        description=f"Debt cancellation from partial return ({self.refund_number})",
+                        performed_by=disburser
+                    )
+
+                if self.refund_amount > Decimal('0.00'):
+                    sale.amount_paid = max(Decimal('0.00'), sale.amount_paid - self.refund_amount)
+                    p_note = f"[Partial return of {tenant.currency_symbol}{self.refund_amount} disbursed via {self.refund_number}]"
+                    sale.notes = f"{sale.notes}\n{p_note}".strip() if sale.notes else p_note
+                    sale.save()
+
+                orig_pay_method = sale.payment_method
+                if method == 'MOMO' and orig_pay_method != 'MOMO' and self.refund_amount > Decimal('0.00'):
+                    from apps.accounting.models import DigitalFundWithdrawal
+                    DigitalFundWithdrawal.objects.create(
+                        tenant=tenant,
+                        shop=sale.shop,
+                        accountant=disburser,
+                        amount=abs(self.refund_amount),
+                        fund_source='MOMO',
+                        notes=f"Partial return payout by cashier (Cross-payment): Sale {sale.sale_number} [{self.refund_number}]"
+                    )
+                elif method == 'CASH' and orig_pay_method == 'MOMO' and self.refund_amount > Decimal('0.00'):
+                    from apps.accounting.models import DigitalFundWithdrawal
+                    DigitalFundWithdrawal.objects.create(
+                        tenant=tenant,
+                        shop=sale.shop,
+                        accountant=disburser,
+                        amount=-abs(self.refund_amount),
+                        fund_source='MOMO',
+                        notes=f"Refund reversal (Cross-payment): Sale {sale.sale_number} [{self.refund_number}]"
+                    )
+                elif method == 'ECASH' and self.refund_amount > Decimal('0.00'):
+                    from apps.payments.models import ECashLedger
+                    if not ECashLedger.objects.filter(reference_type='RefundRequest', reference_id=self.pk).exists():
+                        ECashLedger.objects.create(
+                            tenant=tenant,
+                            transaction_type='REFUND',
+                            amount=-abs(self.refund_amount),
+                            reference_type='RefundRequest',
+                            reference_id=self.pk,
+                            shop=sale.shop,
+                            created_by=disburser,
+                            notes=f"Partial return disbursed by cashier: Sale {sale.sale_number} [{self.refund_number}]"
+                        )
+            elif self.is_partial_halt:
                 # Settle the sale to actual dispatched items and reduce amount_paid
                 if sale.status == 'PENDING_DISPATCH':
                     sale.settle_halted_sale(user=disburser, refund_req=self, refund_method=method)
@@ -1803,8 +1980,8 @@ class RefundRequest(TenantModel):
         # 4. Notify the shop manager who submitted the request
         if self.requested_by:
             from apps.notifications.models import Notification
-            refund_type_str = "Partial Refund & Settle" if self.is_partial_halt else "Refund"
-            amt_display = f"{tenant.currency_symbol}{self.refund_amount}" if self.is_partial_halt else f"{tenant.currency_symbol}{sale.total}"
+            refund_type_str = "Partial Return" if self.is_partial_return else ("Partial Refund & Settle" if self.is_partial_halt else "Refund")
+            amt_display = f"{tenant.currency_symbol}{self.refund_amount}" if (self.is_partial_halt or self.is_partial_return) else f"{tenant.currency_symbol}{sale.total}"
             Notification.objects.create(
                 tenant=tenant,
                 user=self.requested_by,

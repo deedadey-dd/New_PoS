@@ -1000,6 +1000,30 @@ def api_sale_detail(request, pk_or_number):
     else:
         sale = get_object_or_404(queryset, pk=val_str, tenant=request.user.tenant)
         
+    active_rf = (
+        sale.refund_requests.filter(status='PENDING').first() or
+        sale.refund_requests.filter(status='APPROVED', payout_status='PENDING').first() or
+        sale.refund_requests.filter(status='APPROVED', payout_status='PAID').first() or
+        sale.refund_requests.first()
+    )
+
+    is_partial_return = bool(active_rf and active_rf.is_partial_return)
+    is_partial_halt = bool((active_rf and active_rf.is_partial_halt) or (not active_rf and sale.is_halted))
+    is_full_refund = bool(
+        sale.status == 'REFUNDED' or
+        (active_rf and not is_partial_halt and not is_partial_return)
+    )
+    is_refunding = bool(sale.is_halted or sale.status == 'REFUNDED' or (active_rf and active_rf.status in ['PENDING', 'APPROVED']))
+
+    returned_items_map = {}
+    if is_partial_return and active_rf and active_rf.returned_items:
+        for entry in active_rf.returned_items:
+            try:
+                it_id = int(entry.get('sale_item_id') or entry.get('id'))
+                returned_items_map[it_id] = entry
+            except (ValueError, TypeError):
+                pass
+
     items = []
     for item in sale.items.all():
         qty = item.quantity or Decimal('0.00')
@@ -1013,6 +1037,33 @@ def api_sale_detail(request, pk_or_number):
             disp_val = Decimal('0.00')
             rem_val = Decimal('0.00')
 
+        if is_partial_return:
+            ret_entry = returned_items_map.get(item.id)
+            if ret_entry:
+                ret_qty = Decimal(str(ret_entry.get('return_qty', '0'))).quantize(Decimal('0.01'))
+                ret_val = Decimal(str(ret_entry.get('return_val', ret_qty * item.unit_price))).quantize(Decimal('0.01'))
+            else:
+                ret_qty = Decimal('0.00')
+                ret_val = Decimal('0.00')
+            if active_rf and active_rf.payout_status == 'PAID':
+                kept_qty = disp_qty.quantize(Decimal('0.01'))
+                kept_val = disp_val.quantize(Decimal('0.01'))
+                disp_qty = (kept_qty + ret_qty).quantize(Decimal('0.01'))
+                disp_val = (kept_val + ret_val).quantize(Decimal('0.01'))
+            else:
+                kept_qty = max(Decimal('0.00'), disp_qty - ret_qty).quantize(Decimal('0.01'))
+                kept_val = max(Decimal('0.00'), disp_val - ret_val).quantize(Decimal('0.01'))
+        elif is_full_refund:
+            ret_qty = disp_qty if disp_qty > Decimal('0.00') else qty
+            ret_val = tot
+            kept_qty = Decimal('0.00')
+            kept_val = Decimal('0.00')
+        else:
+            ret_qty = Decimal('0.00')
+            ret_val = Decimal('0.00')
+            kept_qty = disp_qty
+            kept_val = disp_val
+
         items.append({
             'id': item.id,
             'product_name': item.product.name,
@@ -1020,6 +1071,10 @@ def api_sale_detail(request, pk_or_number):
             'quantity': str(qty),
             'dispatched_quantity': str(disp_qty),
             'remaining_quantity': str(rem_qty),
+            'returned_quantity': str(ret_qty),
+            'returned_value': str(ret_val),
+            'retained_quantity': str(kept_qty),
+            'retained_value': str(kept_val),
             'is_fully_dispatched': item.is_fully_dispatched,
             'unit_price': str(item.unit_price),
             'total': str(tot),
@@ -1090,33 +1145,25 @@ def api_sale_detail(request, pk_or_number):
     else:
         calc_debt_red = calc_undisp_total
 
-    active_rf = (
-        sale.refund_requests.filter(status='PENDING').first() or
-        sale.refund_requests.filter(status='APPROVED', payout_status='PENDING').first() or
-        sale.refund_requests.filter(status='APPROVED', payout_status='PAID').first() or
-        sale.refund_requests.first()
-    )
-
     if active_rf:
         effective_paid = active_rf.effective_amount_paid
         effective_disp = active_rf.effective_dispatched_total
         effective_orig_total = active_rf.original_sale_total
         active_refund_val = active_rf.refund_amount
         active_debt_red = active_rf.debt_reduction_amount
-        is_refunding = bool(sale.is_halted or sale.status == 'REFUNDED' or active_rf.status in ['PENDING', 'APPROVED'])
     else:
         effective_paid = sale.amount_paid or Decimal('0.00')
-        effective_disp = calc_disp_total
+        effective_disp = calc_disp_total if not is_full_refund else Decimal('0.00')
         effective_orig_total = sale.total or Decimal('0.00')
         active_refund_val = calc_refund_amt
         active_debt_red = calc_debt_red
-        is_refunding = bool(sale.is_halted or sale.status == 'REFUNDED')
 
     if (sale.is_halted or (active_rf and active_rf.is_partial_halt)) and (effective_disp + active_refund_val) > effective_paid:
         effective_paid = effective_disp + active_refund_val
 
-    if sale.status == 'REFUNDED':
+    if is_full_refund:
         net_retained = Decimal('0.00')
+        effective_disp = Decimal('0.00')
     elif is_refunding:
         net_retained = effective_disp
     else:
@@ -1161,6 +1208,10 @@ def api_sale_detail(request, pk_or_number):
         'is_dispatched': sale.is_dispatched,
         'all_items_dispatched': sale.all_items_dispatched,
         'is_partially_dispatched': sale.is_partially_dispatched,
+        'is_full_refund': is_full_refund,
+        'is_partial_return': is_partial_return,
+        'is_partial_halt': is_partial_halt,
+        'returned_items': active_rf.returned_items if (active_rf and active_rf.is_partial_return) else None,
         'allow_partial_dispatch': sale.shop.allow_partial_dispatch if sale.shop else True,
         'is_halted': sale.is_halted,
         'can_be_resumed': sale.can_be_resumed,
@@ -1181,6 +1232,8 @@ def api_sale_detail(request, pk_or_number):
                 'payout_status': rf_obj.get_payout_status_display(),
                 'refund_amount': str(rf_obj.refund_amount),
                 'is_partial_halt': rf_obj.is_partial_halt,
+                'is_partial_return': rf_obj.is_partial_return,
+                'returned_items': rf_obj.returned_items,
                 'debt_reduction_amount': str(rf_obj.debt_reduction_amount),
                 'dispatched_total': str(rf_obj.effective_dispatched_total),
                 'undispatched_total': str(rf_obj.undispatched_total),
@@ -1197,6 +1250,8 @@ def api_sale_detail(request, pk_or_number):
             'id': sale.refund_requests.filter(status='PENDING').first().id,
             'refund_number': sale.refund_requests.filter(status='PENDING').first().refund_number,
             'is_partial_halt': sale.refund_requests.filter(status='PENDING').first().is_partial_halt,
+            'is_partial_return': sale.refund_requests.filter(status='PENDING').first().is_partial_return,
+            'returned_items': sale.refund_requests.filter(status='PENDING').first().returned_items,
             'refund_amount': str(sale.refund_requests.filter(status='PENDING').first().refund_amount),
             'dispatched_total': str(sale.refund_requests.filter(status='PENDING').first().effective_dispatched_total),
             'undispatched_total': str(sale.refund_requests.filter(status='PENDING').first().undispatched_total),
@@ -1211,6 +1266,8 @@ def api_sale_detail(request, pk_or_number):
             'id': sale.refund_requests.filter(status='APPROVED', payout_status='PENDING').first().id,
             'refund_number': sale.refund_requests.filter(status='APPROVED', payout_status='PENDING').first().refund_number,
             'is_partial_halt': sale.refund_requests.filter(status='APPROVED', payout_status='PENDING').first().is_partial_halt,
+            'is_partial_return': sale.refund_requests.filter(status='APPROVED', payout_status='PENDING').first().is_partial_return,
+            'returned_items': sale.refund_requests.filter(status='APPROVED', payout_status='PENDING').first().returned_items,
             'refund_amount': str(sale.refund_requests.filter(status='APPROVED', payout_status='PENDING').first().refund_amount),
             'dispatched_total': str(sale.refund_requests.filter(status='APPROVED', payout_status='PENDING').first().effective_dispatched_total),
             'undispatched_total': str(sale.refund_requests.filter(status='APPROVED', payout_status='PENDING').first().undispatched_total),
@@ -1275,22 +1332,94 @@ def api_refund_sale(request, pk):
         return JsonResponse({'success': False, 'error': 'An approved refund request for this sale is already awaiting cashier disbursement.'}, status=400)
 
     try:
-        data = json.loads(request.body)
+        data = json.loads(request.body) if request.body else {}
         reason = data.get('reason', 'Customer requested refund')
+        returned_items_raw = data.get('returned_items', [])
     except Exception:
         reason = 'Customer requested refund'
+        returned_items_raw = []
 
-    # Accountants and Admins refund immediately
-    if role_name in ['ACCOUNTANT', 'ADMIN']:
+    validated_returns = []
+    sale_items_map = {item.id: item for item in sale.items.select_related('product').all()}
+    if returned_items_raw and isinstance(returned_items_raw, list):
+        for entry in returned_items_raw:
+            try:
+                item_id = int(entry.get('sale_item_id') or entry.get('id'))
+                ret_qty = Decimal(str(entry.get('return_qty', 0)))
+            except (ValueError, TypeError, InvalidOperation):
+                continue
+            if ret_qty <= Decimal('0'):
+                continue
+            item = sale_items_map.get(item_id)
+            if not item:
+                continue
+            disp_qty = item.dispatched_quantity if item.dispatched_quantity > Decimal('0') else (
+                item.quantity if not tenant.use_strict_sales_workflow else Decimal('0')
+            )
+            if ret_qty > disp_qty:
+                return JsonResponse({
+                    'success': False,
+                    'error': f"Cannot return {ret_qty} of '{item.product.name}' — only {disp_qty} dispatched."
+                }, status=400)
+            eff_price = (item.total / item.quantity).quantize(Decimal('0.01')) if item.quantity > Decimal('0') else item.unit_price
+            ret_val = (eff_price * ret_qty).quantize(Decimal('0.01'))
+            validated_returns.append({
+                'sale_item_id': item.id,
+                'product_id': item.product_id,
+                'product_name': item.product.name,
+                'sku': item.product.sku,
+                'return_qty': str(ret_qty),
+                'unit_price': str(eff_price),
+                'return_val': str(ret_val),
+            })
+
+    if validated_returns:
+        # Partial return of dispatched goods
+        is_partial_return = True
+        is_partial_halt = False
+        total_return_val = sum(Decimal(it['return_val']) for it in validated_returns)
+        kept_val = max(Decimal('0.00'), (sale.dispatched_total or sale.total) - total_return_val)
+        if sale.amount_paid and sale.amount_paid > kept_val:
+            refund_amount = min(total_return_val, sale.amount_paid - kept_val)
+            debt_reduction_amount = total_return_val - refund_amount
+        else:
+            refund_amount = Decimal('0.00')
+            debt_reduction_amount = total_return_val
+        dispatched_total = kept_val
+
+        if role_name in ['ACCOUNTANT', 'ADMIN']:
+            try:
+                with transaction.atomic():
+                    refund_req = RefundRequest.objects.create(
+                        tenant=tenant,
+                        sale=sale,
+                        requested_by=request.user,
+                        reason=reason,
+                        status='PENDING',
+                        is_partial_halt=False,
+                        is_partial_return=True,
+                        refund_amount=refund_amount,
+                        dispatched_total=dispatched_total,
+                        debt_reduction_amount=debt_reduction_amount,
+                        returned_items=validated_returns,
+                    )
+                    refund_req.approve(request.user)
+                    if refund_req.payout_status == 'PENDING':
+                        refund_req.execute_payout(request.user)
+                return JsonResponse({'success': True, 'message': f'Sale {sale.sale_number} return processed successfully.'})
+            except Exception as e:
+                return JsonResponse({'success': False, 'error': str(e)}, status=400)
+    elif role_name in ['ACCOUNTANT', 'ADMIN']:
+        # Accountants and Admins execute full refund immediately
         try:
             with transaction.atomic():
                 sale.refund(reason=reason, user=request.user)
             return JsonResponse({'success': True, 'message': f'Sale {sale.sale_number} successfully refunded.'})
         except Exception as e:
             return JsonResponse({'success': False, 'error': str(e)}, status=400)
-
-    # Determine refund amount and whether this is a partial halt refund
-    if sale.is_halted or (sale.amount_paid and sale.total and sale.amount_paid > sale.total):
+    elif (sale.is_halted or (sale.is_partially_dispatched and not sale.all_items_dispatched)) or (sale.amount_paid and sale.total and sale.amount_paid > sale.total):
+        # Determine refund amount for partial halt refund
+        is_partial_return = False
         dispatched_total = Decimal('0.00')
         for item in sale.items.all():
             if item.quantity > Decimal('0') and item.dispatched_quantity > Decimal('0'):
@@ -1313,9 +1442,11 @@ def api_refund_sale(request, pk):
 
         is_partial_halt = has_dispatched_items
     else:
+        # Full sale refund request (0 goods retained by customer)
         is_partial_halt = False
+        is_partial_return = False
         refund_amount = sale.amount_paid or Decimal('0.00')
-        dispatched_total = sale.total
+        dispatched_total = Decimal('0.00')
         debt_reduction_amount = max(Decimal('0.00'), sale.total - sale.amount_paid) if sale.amount_paid else sale.total
 
     # Shop Managers / Cashiers — create a pending RefundRequest
@@ -1328,6 +1459,8 @@ def api_refund_sale(request, pk):
                 reason=reason,
                 status='PENDING',
                 is_partial_halt=is_partial_halt,
+                is_partial_return=is_partial_return,
+                returned_items=validated_returns if is_partial_return else None,
                 refund_amount=refund_amount,
                 dispatched_total=dispatched_total,
                 debt_reduction_amount=debt_reduction_amount,

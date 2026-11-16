@@ -751,6 +751,42 @@
                     </div>
                 </div>
 
+                <!-- Refund Scope Selection (shown when sale has dispatched items) -->
+                <div id="saleRefundTypeSelection" class="mb-3 d-none">
+                    <label class="form-label small fw-bold text-muted text-uppercase mb-2">Refund Scope</label>
+                    <div class="btn-group w-100" role="group">
+                        <input type="radio" class="btn-check" name="saleRefundScopeRadio" id="saleRefundScopeFull" value="FULL" checked autocomplete="off">
+                        <label class="btn btn-outline-danger btn-sm py-2 fw-semibold" for="saleRefundScopeFull">
+                            <i class="bi bi-arrow-repeat me-1"></i>Full Refund
+                        </label>
+                        <input type="radio" class="btn-check" name="saleRefundScopeRadio" id="saleRefundScopeItems" value="ITEMS" autocomplete="off">
+                        <label class="btn btn-outline-danger btn-sm py-2 fw-semibold" for="saleRefundScopeItems">
+                            <i class="bi bi-box-arrow-in-left me-1"></i>Return Specific Items
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Items Return Selection Table (shown when Return Specific Items is active) -->
+                <div id="saleRefundItemsReturnBox" class="mb-3 d-none border rounded-3 p-2 bg-light">
+                    <div class="d-flex justify-content-between align-items-center mb-2 px-1">
+                        <span class="small fw-bold text-dark"><i class="bi bi-boxes me-1 text-danger"></i>Items Being Returned:</span>
+                        <span class="badge bg-secondary" id="saleRefundDispatchedItemsCount">0 items</span>
+                    </div>
+                    <div class="table-responsive" style="max-height: 220px;">
+                        <table class="table table-sm table-borderless align-middle mb-0 bg-white rounded border">
+                            <thead class="table-light small">
+                                <tr>
+                                    <th>Product</th>
+                                    <th class="text-center" style="width: 70px;">Disp.</th>
+                                    <th class="text-center" style="width: 85px;">Return</th>
+                                    <th class="text-end" style="width: 85px;">Refund</th>
+                                </tr>
+                            </thead>
+                            <tbody id="saleRefundItemsReturnTbody" class="small"></tbody>
+                        </table>
+                    </div>
+                </div>
+
                 <!-- Refund Amount Summary Card -->
                 <div class="card border-0 mb-3" id="saleRefundAmountCard" style="background-color: #fff5f5; border: 1px solid #fecaca !important; border-radius: 12px;">
                     <div class="card-body p-3">
@@ -1033,6 +1069,11 @@ document.addEventListener('DOMContentLoaded', function() {
     function renderSaleDetail(data) {
         let html = '';
 
+        const isRefundingState = Boolean(data.is_refunding || data.is_halted || data.has_pending_refund || data.has_approved_pending_payout || data.status_code === 'REFUNDED');
+        const isPartialReturn = Boolean(data.is_partial_return);
+        const isPartialHalt = Boolean(data.is_partial_halt && !isPartialReturn);
+        const isFullRefund = Boolean(data.is_full_refund || (isRefundingState && !isPartialHalt && !isPartialReturn));
+
         // Header info
         html += '<div class="row mb-3">';
         html += '<div class="col-sm-6">';
@@ -1047,7 +1088,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         if (data.has_approved_pending_payout) {
             const rInfo = data.approved_refund_info || {};
-            const rType = rInfo.is_partial_halt ? 'Halt & Settle' : 'Refund';
+            const rType = isPartialReturn ? 'Sale Return' : (rInfo.is_partial_halt ? 'Halt & Settle' : 'Full Refund');
             const rNum = rInfo.refund_number ? `(${rInfo.refund_number})` : '';
             const refundAmt = parseFloat(rInfo.refund_amount || 0);
             let origPaid = parseFloat(rInfo.effective_amount_paid || data.amount_paid || 0);
@@ -1061,18 +1102,26 @@ document.addEventListener('DOMContentLoaded', function() {
                     <span class="badge bg-info text-dark border border-info">Awaiting Payout</span>
                 </div>
                 <div class="small text-muted mb-2">Request ${rNum} has been approved by the Accountant and is awaiting disbursement by the Cashier.</div>
-                ${rInfo.is_partial_halt ? `
+                ${isPartialReturn ? `
+                <div class="p-2 rounded bg-white bg-opacity-75 border small mb-2">
+                    <div class="d-flex justify-content-between text-muted mb-1"><span>Original Amount Paid:</span><span class="fw-medium text-dark">${currencySymbol}${origPaid.toFixed(2)}</span></div>
+                    <div class="d-flex justify-content-between text-muted mb-1"><span>Retained Goods Value (Kept):</span><span class="fw-medium text-dark">${currencySymbol}${dispTotal.toFixed(2)}</span></div>
+                    <div class="d-flex justify-content-between border-top pt-1 fw-bold text-dark"><span>Return Refund Due:</span><span class="text-success fs-6">${currencySymbol}${refundAmt.toFixed(2)}</span></div>
+                </div>` : (rInfo.is_partial_halt ? `
                 <div class="p-2 rounded bg-white bg-opacity-75 border small mb-2">
                     <div class="d-flex justify-content-between text-muted mb-1"><span>Original Amount Paid:</span><span class="fw-medium text-dark">${currencySymbol}${origPaid.toFixed(2)}</span></div>
                     <div class="d-flex justify-content-between text-muted mb-1"><span>Dispatched Goods Value (Kept):</span><span class="fw-medium text-dark">${currencySymbol}${dispTotal.toFixed(2)}</span></div>
                     <div class="d-flex justify-content-between border-top pt-1 fw-bold text-dark"><span>Undispatched Excess Refund Due:</span><span class="text-success fs-6">${currencySymbol}${refundAmt.toFixed(2)}</span></div>
                 </div>` : `
-                <div class="mt-1 fw-bold text-success fs-5">Refund Amount: ${currencySymbol}${refundAmt.toFixed(2)}</div>
-                `}
+                <div class="p-2 rounded bg-white bg-opacity-75 border small mb-2">
+                    <div class="d-flex justify-content-between text-muted mb-1"><span>Original Amount Paid:</span><span class="fw-medium text-dark">${currencySymbol}${origPaid.toFixed(2)}</span></div>
+                    <div class="d-flex justify-content-between text-muted mb-1"><span>Goods Value Returned:</span><span class="fw-medium text-danger">-${currencySymbol}${origPaid.toFixed(2)}</span></div>
+                    <div class="d-flex justify-content-between border-top pt-1 fw-bold text-dark"><span>Full Refund Due:</span><span class="text-success fs-6">${currencySymbol}${refundAmt.toFixed(2)}</span></div>
+                </div>`)}
             </div>`;
         } else if (data.has_pending_refund) {
             const rInfo = data.pending_refund_info || {};
-            const rType = rInfo.is_partial_halt ? 'Halt & Settle' : 'Refund';
+            const rType = isPartialReturn ? 'Sale Return' : (rInfo.is_partial_halt ? 'Halt & Settle' : 'Full Refund');
             const rNum = rInfo.refund_number ? `(${rInfo.refund_number})` : '';
             const refundAmt = parseFloat(rInfo.refund_amount || 0);
             let origPaid = parseFloat(rInfo.effective_amount_paid || data.amount_paid || 0);
@@ -1086,14 +1135,22 @@ document.addEventListener('DOMContentLoaded', function() {
                     <span class="badge bg-warning text-dark border border-warning">Pending Approval</span>
                 </div>
                 <div class="small text-muted mb-2">Request ${rNum} is currently awaiting review by the Accountant.</div>
-                ${rInfo.is_partial_halt ? `
+                ${isPartialReturn ? `
+                <div class="p-2 rounded bg-white bg-opacity-75 border small mb-2">
+                    <div class="d-flex justify-content-between text-muted mb-1"><span>Original Amount Paid:</span><span class="fw-medium text-dark">${currencySymbol}${origPaid.toFixed(2)}</span></div>
+                    <div class="d-flex justify-content-between text-muted mb-1"><span>Retained Goods Value (Kept):</span><span class="fw-medium text-dark">${currencySymbol}${dispTotal.toFixed(2)}</span></div>
+                    <div class="d-flex justify-content-between border-top pt-1 fw-bold text-dark"><span>Return Refund Due:</span><span class="text-success fs-6">${currencySymbol}${refundAmt.toFixed(2)}</span></div>
+                </div>` : (rInfo.is_partial_halt ? `
                 <div class="p-2 rounded bg-white bg-opacity-75 border small mb-2">
                     <div class="d-flex justify-content-between text-muted mb-1"><span>Original Amount Paid:</span><span class="fw-medium text-dark">${currencySymbol}${origPaid.toFixed(2)}</span></div>
                     <div class="d-flex justify-content-between text-muted mb-1"><span>Dispatched Goods Value (Kept):</span><span class="fw-medium text-dark">${currencySymbol}${dispTotal.toFixed(2)}</span></div>
                     <div class="d-flex justify-content-between border-top pt-1 fw-bold text-dark"><span>Undispatched Excess Refund Due:</span><span class="text-success fs-6">${currencySymbol}${refundAmt.toFixed(2)}</span></div>
                 </div>` : `
-                <div class="mt-1 fw-bold text-dark fs-5">Refund Amount: ${currencySymbol}${refundAmt.toFixed(2)}</div>
-                `}
+                <div class="p-2 rounded bg-white bg-opacity-75 border small mb-2">
+                    <div class="d-flex justify-content-between text-muted mb-1"><span>Original Amount Paid:</span><span class="fw-medium text-dark">${currencySymbol}${origPaid.toFixed(2)}</span></div>
+                    <div class="d-flex justify-content-between text-muted mb-1"><span>Goods Value Returned:</span><span class="fw-medium text-danger">-${currencySymbol}${origPaid.toFixed(2)}</span></div>
+                    <div class="d-flex justify-content-between border-top pt-1 fw-bold text-dark"><span>Full Refund Due:</span><span class="text-success fs-6">${currencySymbol}${refundAmt.toFixed(2)}</span></div>
+                </div>`)}
             </div>`;
         } else if (data.is_halted || data.calculated_is_partial_halt) {
             const refundAmt = parseFloat(data.calculated_refund_amount || 0);
@@ -1185,7 +1242,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         // Items table
-        const isRefundingState = Boolean(data.is_refunding || data.is_halted || data.has_pending_refund || data.has_approved_pending_payout || data.status_code === 'REFUNDED');
         const showDispatchCols = data.is_partially_dispatched || data.is_halted || data.status_code === 'PENDING_DISPATCH' || data.items.some(i => parseFloat(i.dispatched_quantity || 0) > 0) || isRefundingState;
         html += '<h6 class="border-bottom pb-2 mb-0">Items</h6>';
         html += '<div class="table-responsive">';
@@ -1193,7 +1249,11 @@ document.addEventListener('DOMContentLoaded', function() {
         html += '<thead class="table-light"><tr>';
         html += '<th>Product</th><th class="text-center">Ordered</th>';
         if (showDispatchCols) {
-            if (isRefundingState) {
+            if (isFullRefund) {
+                html += '<th class="text-center text-primary">Dispatched</th><th class="text-center text-danger">Returned (Refund)</th>';
+            } else if (isPartialReturn) {
+                html += '<th class="text-center text-primary">Dispatched</th><th class="text-center text-danger">Returned</th><th class="text-center text-success">Kept</th>';
+            } else if (isPartialHalt) {
                 html += '<th class="text-center text-success">Dispatched (Kept)</th><th class="text-center text-danger">Undispatched (Refund)</th>';
             } else {
                 html += '<th class="text-center">Dispatched</th><th class="text-center">Remaining</th>';
@@ -1209,10 +1269,21 @@ document.addEventListener('DOMContentLoaded', function() {
             if (showDispatchCols) {
                 const dispQty = parseFloat(item.dispatched_quantity || 0);
                 const remQty = parseFloat(item.remaining_quantity || 0);
+                const retQty = parseFloat(item.returned_quantity || 0);
+                const keptQty = parseFloat(item.retained_quantity != null ? item.retained_quantity : (dispQty - retQty));
+                const retVal = parseFloat(item.returned_value || 0);
                 const dispVal = parseFloat(item.dispatched_value || (dispQty * parseFloat(item.unit_price || 0)) || 0);
                 const remVal = parseFloat(item.remaining_value || (remQty * parseFloat(item.unit_price || 0)) || 0);
+                const itemTot = parseFloat(item.total || 0);
 
-                if (isRefundingState) {
+                if (isFullRefund) {
+                    html += '<td class="text-center text-primary fw-bold">' + dispQty + '</td>';
+                    html += '<td class="text-center text-danger fw-bold">' + (dispQty > 0 ? dispQty : parseFloat(item.quantity)) + '<br><small class="text-danger fw-semibold">-' + currencySymbol + itemTot.toFixed(2) + '</small></td>';
+                } else if (isPartialReturn) {
+                    html += '<td class="text-center text-primary fw-bold">' + dispQty + '</td>';
+                    html += '<td class="text-center ' + (retQty > 0 ? 'text-danger fw-bold' : 'text-muted') + '">' + (retQty > 0 ? (retQty + '<br><small class="text-danger fw-semibold">-' + currencySymbol + retVal.toFixed(2) + '</small>') : '0') + '</td>';
+                    html += '<td class="text-center text-success fw-bold">' + keptQty + '</td>';
+                } else if (isPartialHalt) {
                     html += '<td class="text-center text-success fw-bold">' + dispQty;
                     if (dispQty > 0) {
                         html += '<br><small class="text-success fw-semibold">' + currencySymbol + dispVal.toFixed(2) + '</small>';
@@ -1260,11 +1331,11 @@ document.addEventListener('DOMContentLoaded', function() {
             const dispTotal = parseFloat(data.effective_dispatched_total || data.dispatched_total || 0);
             const refundAmt = parseFloat(data.active_refund_amount || data.calculated_refund_amount || 0);
             const debtRed = parseFloat(data.active_debt_reduction || data.calculated_debt_reduction || 0);
-            let netRetained = parseFloat(data.net_retained_amount != null ? data.net_retained_amount : dispTotal);
-            if (data.status_code === 'REFUNDED') {
+            let netRetained = parseFloat(data.net_retained_amount != null ? data.net_retained_amount : (isFullRefund ? 0 : dispTotal));
+            if (data.status_code === 'REFUNDED' || isFullRefund) {
                 netRetained = 0;
             }
-            if ((dispTotal + refundAmt) > origPaid) {
+            if ((dispTotal + refundAmt) > origPaid && isPartialHalt) {
                 origPaid = dispTotal + refundAmt;
             }
 
@@ -1283,13 +1354,13 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             if (refundAmt > 0) {
-                let refundLabel = 'Refund in Progress';
+                let refundLabel = isPartialReturn ? 'Sale Return Refund' : 'Refund in Progress';
                 let refundColor = 'text-warning-emphasis';
                 if (data.has_approved_pending_payout) {
-                    refundLabel = 'Approved Refund (Awaiting Payout)';
+                    refundLabel = isPartialReturn ? 'Approved Return (Awaiting Payout)' : 'Approved Refund (Awaiting Payout)';
                     refundColor = 'text-info-emphasis';
                 } else if (data.status_code === 'REFUNDED' || (data.refunds && data.refunds.some(r => r.payout_status === 'Paid / Completed'))) {
-                    refundLabel = 'Refund Disbursed / Paid';
+                    refundLabel = isPartialReturn ? 'Return Refund Disbursed / Paid' : 'Refund Disbursed / Paid';
                     refundColor = 'text-danger';
                 } else if (data.is_halted && !data.has_pending_refund) {
                     refundLabel = 'Undispatched Excess to Refund';
@@ -1410,6 +1481,11 @@ document.addEventListener('DOMContentLoaded', function() {
         const reasonInput = document.getElementById('saleRefundReasonInput');
         const feedback = document.getElementById('saleRefundReasonFeedback');
         const errAlert = document.getElementById('saleRefundErrorAlert');
+        const typeSelection = document.getElementById('saleRefundTypeSelection');
+        const itemsReturnBox = document.getElementById('saleRefundItemsReturnBox');
+        const itemsReturnTbody = document.getElementById('saleRefundItemsReturnTbody');
+        const radioFull = document.getElementById('saleRefundScopeFull');
+        const radioItems = document.getElementById('saleRefundScopeItems');
 
         if (numEl) numEl.textContent = '#' + saleNumber;
         if (custEl) custEl.textContent = opts.customer || 'Walk-in Customer';
@@ -1422,8 +1498,67 @@ document.addEventListener('DOMContentLoaded', function() {
             errAlert.classList.add('d-none');
             errAlert.textContent = '';
         }
+        if (typeSelection) typeSelection.classList.add('d-none');
+        if (itemsReturnBox) itemsReturnBox.classList.add('d-none');
+        if (radioFull) radioFull.checked = true;
+
+        let currentOpts = {};
+
+        function recalcItemReturns() {
+            let totalReturnVal = 0;
+            let returnCount = 0;
+            document.querySelectorAll('.return-item-qty').forEach(function(inp) {
+                let q = parseFloat(inp.value || 0);
+                const maxQ = parseFloat(inp.dataset.max || 0);
+                if (q < 0) { q = 0; inp.value = 0; }
+                if (q > maxQ) { q = maxQ; inp.value = maxQ; }
+                const price = parseFloat(inp.dataset.price || 0);
+                const lineVal = q * price;
+                totalReturnVal += lineVal;
+                if (q > 0) returnCount++;
+                const lineValEl = inp.closest('tr').querySelector('.line-return-val');
+                if (lineValEl) lineValEl.textContent = currencySymbol + lineVal.toFixed(2);
+            });
+
+            const countBadge = document.getElementById('saleRefundDispatchedItemsCount');
+            if (countBadge) countBadge.textContent = returnCount + ' item(s) selected';
+
+            const total = parseFloat(currentOpts.total || 0);
+            const amountPaid = parseFloat(currentOpts.amountPaid || 0);
+            const dispTotal = parseFloat(currentOpts.dispatchedTotal || 0);
+            const retainedVal = Math.max(0, dispTotal - totalReturnVal);
+
+            let refundDue = 0;
+            let debtRed = 0;
+            if (amountPaid > retainedVal) {
+                refundDue = Math.min(totalReturnVal, amountPaid - retainedVal);
+                debtRed = totalReturnVal - refundDue;
+            } else {
+                refundDue = 0;
+                debtRed = totalReturnVal;
+            }
+
+            if (typeBadge) {
+                typeBadge.innerHTML = '<i class="bi bi-box-arrow-in-left me-1"></i>Partial Sale Return';
+                typeBadge.className = 'text-uppercase small fw-bold text-warning-emphasis';
+            }
+            if (amountDisplay) amountDisplay.textContent = currencySymbol + refundDue.toFixed(2);
+            if (origPaidEl) origPaidEl.textContent = currencySymbol + amountPaid.toFixed(2);
+            if (dispValEl) dispValEl.textContent = currencySymbol + retainedVal.toFixed(2);
+            if (undispatchedDueEl) undispatchedDueEl.textContent = currencySymbol + refundDue.toFixed(2);
+            if (partialBox) partialBox.classList.remove('d-none');
+
+            if (debtRed > 0) {
+                if (debtRedEl) debtRedEl.textContent = currencySymbol + debtRed.toFixed(2);
+                if (creditNotice) creditNotice.classList.remove('d-none');
+            } else {
+                if (creditNotice) creditNotice.classList.add('d-none');
+            }
+            if (btnText) btnText.textContent = 'Submit Return Request (' + currencySymbol + (refundDue > 0 ? refundDue.toFixed(2) : debtRed.toFixed(2)) + ')';
+        }
 
         function populateModal(dataOpts) {
+            currentOpts = dataOpts;
             const total = parseFloat(dataOpts.total || 0);
             const amountPaid = parseFloat(dataOpts.amountPaid || 0);
             let refundDue = parseFloat(dataOpts.refundAmount || 0);
@@ -1433,6 +1568,38 @@ document.addEventListener('DOMContentLoaded', function() {
 
             if (methodBadge) methodBadge.textContent = paymentDisplay;
             if (custEl) custEl.textContent = dataOpts.customer || 'Walk-in Customer';
+
+            // Check if there are dispatched items eligible for specific return
+            const hasDispatchedItems = dataOpts.items && dataOpts.items.some(it => parseFloat(it.dispatched_quantity || 0) > 0);
+            if (hasDispatchedItems && !isPartialHalt) {
+                if (typeSelection) typeSelection.classList.remove('d-none');
+                if (itemsReturnTbody) {
+                    let rowsHtml = '';
+                    dataOpts.items.forEach(function(it) {
+                        const dQty = parseFloat(it.dispatched_quantity || 0);
+                        if (dQty > 0) {
+                            const uPrice = parseFloat(it.unit_price || 0);
+                            rowsHtml += `<tr>
+                                <td><div class="fw-semibold">${it.product_name}</div><small class="text-muted font-monospace">${currencySymbol}${uPrice.toFixed(2)}/unit</small></td>
+                                <td class="text-center font-monospace fw-medium">${dQty}</td>
+                                <td class="text-center">
+                                    <input type="number" class="form-control form-control-sm text-center return-item-qty font-monospace"
+                                           data-item-id="${it.id}" data-price="${uPrice}" data-max="${dQty}"
+                                           min="0" max="${dQty}" step="any" value="0">
+                                </td>
+                                <td class="text-end font-monospace fw-bold line-return-val">${currencySymbol}0.00</td>
+                            </tr>`;
+                        }
+                    });
+                    itemsReturnTbody.innerHTML = rowsHtml;
+                    itemsReturnTbody.querySelectorAll('.return-item-qty').forEach(function(inp) {
+                        inp.addEventListener('input', recalcItemReturns);
+                    });
+                }
+            } else {
+                if (typeSelection) typeSelection.classList.add('d-none');
+                if (itemsReturnBox) itemsReturnBox.classList.add('d-none');
+            }
 
             if (isPartialHalt) {
                 if (refundDue <= 0 && dispatchedVal > 0 && amountPaid > dispatchedVal) {
@@ -1511,6 +1678,23 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
 
+        if (radioFull) {
+            radioFull.onchange = function() {
+                if (this.checked) {
+                    if (itemsReturnBox) itemsReturnBox.classList.add('d-none');
+                    populateModal(currentOpts);
+                }
+            };
+        }
+        if (radioItems) {
+            radioItems.onchange = function() {
+                if (this.checked) {
+                    if (itemsReturnBox) itemsReturnBox.classList.remove('d-none');
+                    recalcItemReturns();
+                }
+            };
+        }
+
         populateModal(opts);
 
         // Fetch detail API to populate exact items and figures
@@ -1557,6 +1741,28 @@ document.addEventListener('DOMContentLoaded', function() {
             if (feedback) feedback.style.display = 'none';
             if (errAlert) errAlert.classList.add('d-none');
 
+            // Check if returning specific items
+            let returnedItems = [];
+            const radioItems = document.getElementById('saleRefundScopeItems');
+            if (radioItems && radioItems.checked) {
+                document.querySelectorAll('.return-item-qty').forEach(function(inp) {
+                    const q = parseFloat(inp.value || 0);
+                    if (q > 0) {
+                        returnedItems.push({
+                            sale_item_id: parseInt(inp.dataset.itemId),
+                            return_qty: q
+                        });
+                    }
+                });
+                if (returnedItems.length === 0) {
+                    if (errAlert) {
+                        errAlert.textContent = 'Please specify at least one item quantity to return.';
+                        errAlert.classList.remove('d-none');
+                    }
+                    return;
+                }
+            }
+
             confirmSaleRefundBtn.disabled = true;
             const originalHtml = confirmSaleRefundBtn.innerHTML;
             confirmSaleRefundBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Submitting...';
@@ -1568,7 +1774,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     'Content-Type': 'application/json',
                     'X-CSRFToken': csrfToken
                 },
-                body: JSON.stringify({ reason: reason })
+                body: JSON.stringify({
+                    reason: reason,
+                    returned_items: returnedItems
+                })
             })
             .then(function(response) {
                 if (!response.ok) {

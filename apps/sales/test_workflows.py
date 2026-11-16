@@ -3410,6 +3410,290 @@ class WorkflowIntegrationTests(TestCase):
         self.assertEqual(rf.dispatched_total, Decimal("140.00"))
         self.assertTrue(rf.is_partial_halt)
 
+    def test_36_full_refund_after_full_dispatch(self):
+        """
+        Verify that a sale that was fully dispatched can be refunded in full:
+        1. calculated_refund_amount returns the full amount_paid (not 0.00).
+        2. RefundRequest records dispatched_total = 0.00 (customer keeps no goods).
+        3. On disbursement, SALE_RETURN entries are created in InventoryLedger for all dispatched items.
+        4. SaleItem dispatched_quantity is set to 0.
+        5. Sale status becomes REFUNDED.
+        6. api_sale_detail reports is_full_refund=True and net_retained_amount=0.00.
+        """
+        import json
+        self.tenant.enable_refunds = True
+        self.tenant.use_strict_sales_workflow = True
+        self.tenant.save()
+
+        sale = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.attendant_user,
+            cashier=self.cashier_user,
+            total=Decimal("100.00"),
+            amount_paid=Decimal("100.00"),
+            payment_method='CASH',
+            status='COMPLETED',
+            is_dispatched=True,
+        )
+        item = SaleItem.objects.create(
+            tenant=self.tenant,
+            sale=sale,
+            product=self.product,
+            quantity=Decimal("4.00"),
+            dispatched_quantity=Decimal("4.00"),
+            unit_price=Decimal("25.00"),
+            total=Decimal("100.00"),
+        )
+        # Record initial dispatch ledger
+        InventoryLedger.objects.create(
+            tenant=self.tenant,
+            product=self.product,
+            location=self.shop_location,
+            quantity=Decimal("-4.00"),
+            transaction_type='SALE',
+            reference_id=sale.pk,
+            created_by=self.manager_user,
+        )
+
+        # 1. Verify calculated_refund_amount
+        self.assertEqual(sale.calculated_refund_amount, Decimal("100.00"))
+        self.client.force_login(self.cashier_user)
+        resp = self.client.get(f"/sales/api/{sale.pk}/detail/")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['calculated_refund_amount'], "100.00")
+
+        # 2. Cashier requests full refund
+        req_resp = self.client.post(
+            f"/sales/api/{sale.pk}/refund/",
+            data=json.dumps({'reason': 'Customer returned all items intact'}),
+            content_type='application/json'
+        )
+        self.assertEqual(req_resp.status_code, 200)
+        rf = RefundRequest.objects.get(sale=sale)
+        self.assertEqual(rf.refund_amount, Decimal("100.00"))
+        self.assertEqual(rf.dispatched_total, Decimal("0.00"))
+        self.assertFalse(rf.is_partial_halt)
+        self.assertFalse(rf.is_partial_return)
+
+        # 3. Accountant approves
+        rf.approve(self.accountant_user, refund_method='CASH')
+        self.assertEqual(rf.status, 'APPROVED')
+        self.assertEqual(rf.payout_status, 'PENDING')
+
+        # 4. Cashier disburses payout
+        rf.execute_payout(self.cashier_user)
+        self.assertEqual(rf.payout_status, 'PAID')
+
+        # 5. Verify database changes
+        sale.refresh_from_db()
+        self.assertEqual(sale.status, 'REFUNDED')
+        item.refresh_from_db()
+        self.assertEqual(item.dispatched_quantity, Decimal("0.00"))
+
+        return_ledger = InventoryLedger.objects.filter(
+            reference_id=sale.pk,
+            transaction_type='SALE_RETURN',
+            product=self.product
+        ).first()
+        self.assertIsNotNone(return_ledger)
+        self.assertEqual(return_ledger.quantity, Decimal("4.00"))
+
+        # 6. Verify api_sale_detail output
+        resp = self.client.get(f"/sales/api/{sale.pk}/detail/")
+        data = resp.json()
+        self.assertTrue(data['is_full_refund'])
+        self.assertEqual(data['net_retained_amount'], "0.00")
+        item_data = data['items'][0]
+        self.assertEqual(item_data['returned_quantity'], "4.00")
+        self.assertEqual(item_data['retained_quantity'], "0.00")
+
+    def test_37_partial_return_after_full_dispatch(self):
+        """
+        Verify partial item return (Sale Return) on a fully dispatched sale:
+        1. Submitting returned_items creates a RefundRequest with is_partial_return=True.
+        2. Computed refund amount equals returned goods value; dispatched_total equals retained goods value.
+        3. Approving and disbursing creates SALE_RETURN only for the returned items.
+        4. Dispatched quantity on returned line items is decremented by returned quantity.
+        5. Sale amount_paid is adjusted.
+        6. api_sale_detail reports is_partial_return=True and net_retained_amount accurately.
+        """
+        import json
+        self.tenant.enable_refunds = True
+        self.tenant.use_strict_sales_workflow = True
+        self.tenant.save()
+
+        sale = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.attendant_user,
+            cashier=self.cashier_user,
+            total=Decimal("200.00"),
+            amount_paid=Decimal("200.00"),
+            payment_method='CASH',
+            status='COMPLETED',
+            is_dispatched=True,
+        )
+        item1 = SaleItem.objects.create(
+            tenant=self.tenant,
+            sale=sale,
+            product=self.product,
+            quantity=Decimal("4.00"),
+            dispatched_quantity=Decimal("4.00"),
+            unit_price=Decimal("25.00"),
+            total=Decimal("100.00"),
+        )
+        p2 = Product.objects.create(
+            tenant=self.tenant,
+            name="Keyboard",
+            sku=f"KEY-{self.unique_suffix}",
+            category=self.category,
+            default_selling_price=Decimal("50.00"),
+        )
+        item2 = SaleItem.objects.create(
+            tenant=self.tenant,
+            sale=sale,
+            product=p2,
+            quantity=Decimal("2.00"),
+            dispatched_quantity=Decimal("2.00"),
+            unit_price=Decimal("50.00"),
+            total=Decimal("100.00"),
+        )
+
+        # 1. Cashier submits partial return: return 1 unit of item1 (25.00)
+        self.client.force_login(self.cashier_user)
+        req_resp = self.client.post(
+            f"/sales/api/{sale.pk}/refund/",
+            data=json.dumps({
+                'reason': 'Returned 1 unit defective',
+                'returned_items': [
+                    {'sale_item_id': item1.pk, 'return_qty': 1}
+                ]
+            }),
+            content_type='application/json'
+        )
+        self.assertEqual(req_resp.status_code, 200)
+        rf = RefundRequest.objects.get(sale=sale)
+        self.assertTrue(rf.is_partial_return)
+        self.assertFalse(rf.is_partial_halt)
+        self.assertEqual(rf.refund_amount, Decimal("25.00"))
+        self.assertEqual(rf.dispatched_total, Decimal("175.00"))
+        self.assertEqual(len(rf.returned_items), 1)
+
+        # 2. Accountant approves
+        rf.approve(self.accountant_user, refund_method='CASH')
+        self.assertEqual(rf.status, 'APPROVED')
+        self.assertEqual(rf.payout_status, 'PENDING')
+
+        # 3. Cashier disburses payout
+        rf.execute_payout(self.cashier_user)
+        self.assertEqual(rf.payout_status, 'PAID')
+
+        # 4. Check inventory and quantities
+        item1.refresh_from_db()
+        item2.refresh_from_db()
+        self.assertEqual(item1.dispatched_quantity, Decimal("3.00"))  # 4 - 1
+        self.assertEqual(item2.dispatched_quantity, Decimal("2.00"))  # unchanged
+
+        sale.refresh_from_db()
+        self.assertEqual(sale.amount_paid, Decimal("175.00"))  # 200 - 25
+
+        # Inventory return created for item1 only
+        ret_entry1 = InventoryLedger.objects.filter(
+            reference_id=sale.pk,
+            transaction_type='SALE_RETURN',
+            product=self.product
+        ).first()
+        self.assertIsNotNone(ret_entry1)
+        self.assertEqual(ret_entry1.quantity, Decimal("1.00"))
+
+        ret_entry2 = InventoryLedger.objects.filter(
+            reference_id=sale.pk,
+            transaction_type='SALE_RETURN',
+            product=p2
+        ).first()
+        self.assertIsNone(ret_entry2)
+
+        # 5. Check api_sale_detail
+        resp = self.client.get(f"/sales/api/{sale.pk}/detail/")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data['is_partial_return'])
+        self.assertEqual(data['net_retained_amount'], "175.00")
+
+        item1_data = next(i for i in data['items'] if i['id'] == item1.pk)
+        self.assertEqual(item1_data['returned_quantity'], "1.00")
+        self.assertEqual(item1_data['retained_quantity'], "3.00")
+        self.assertEqual(item1_data['returned_value'], "25.00")
+
+        item2_data = next(i for i in data['items'] if i['id'] == item2.pk)
+        self.assertEqual(item2_data['returned_quantity'], "0.00")
+        self.assertEqual(item2_data['retained_quantity'], "2.00")
+
+    def test_38_cash_sale_overpayment_change_does_not_bloat_cash_on_hand(self):
+        """
+        Verify that when a cashier enters an amount_paid greater than the sale total
+        (e.g. paying 200.00 for a 130.00 sale with 70.00 change given to the customer),
+        the cash_on_hand in the navbar and the shift expected_cash increase ONLY by
+        the actual sale total (130.00) and NOT the full amount tendered (200.00).
+        """
+        import json
+        from apps.sales.models import Shift
+
+        self.tenant.use_strict_sales_workflow = True
+        self.tenant.save()
+
+        # Cashier opens a shift
+        shift = Shift.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.cashier_user,
+            opening_cash=Decimal("100.00"),
+            status='OPEN'
+        )
+
+        ctx_before = self.get_navbar_context(self.cashier_user)
+        cash_before = ctx_before['cash_on_hand']
+
+        # Complete a sale of 130.00 where customer hands over 200.00 (change of 70.00)
+        sale = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.cashier_user,
+            cashier=self.cashier_user,
+            shift=shift,
+            total=Decimal("130.00"),
+            subtotal=Decimal("130.00"),
+            status='PENDING'
+        )
+        SaleItem.objects.create(
+            tenant=self.tenant,
+            sale=sale,
+            product=self.product,
+            quantity=Decimal("1.00"),
+            unit_price=Decimal("130.00"),
+            total=Decimal("130.00"),
+        )
+
+        # Complete sale with amount_paid = 200.00
+        sale.complete(amount_paid=Decimal("200.00"), payment_method='CASH', cashier=self.cashier_user)
+        sale.refresh_from_db()
+
+        self.assertEqual(sale.total, Decimal("130.00"))
+        self.assertEqual(sale.amount_paid, Decimal("200.00"))
+        self.assertEqual(sale.change_given, Decimal("70.00"))
+
+        # Verify shift expected cash: opening (100) + sale (130) = 230 (NOT 300!)
+        self.assertEqual(shift.total_sales, Decimal("130.00"))
+        self.assertEqual(shift.expected_cash, Decimal("230.00"))
+
+        # Verify navbar cash_on_hand: increased by 130.00 (NOT 200.00!)
+        ctx_after = self.get_navbar_context(self.cashier_user)
+        self.assertEqual(ctx_after['cash_on_hand'], cash_before + Decimal("130.00"))
+
+
+
 
 
 
