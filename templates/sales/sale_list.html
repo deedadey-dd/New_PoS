@@ -241,11 +241,14 @@
             <div class="col-md-2">
                 <label class="form-label">Status</label>
                 <select name="status" class="form-select">
-                    <option value="">All</option>
+                    <option value="">All Statuses</option>
                     <option value="COMPLETED" {% if selected_status == 'COMPLETED' %}selected{% endif %}>Completed</option>
                     <option value="PENDING_DISPATCH" {% if selected_status == 'PENDING_DISPATCH' %}selected{% endif %}>Pending Dispatch</option>
+                    <option value="PARTIALLY_DISPATCHED" {% if selected_status == 'PARTIALLY_DISPATCHED' %}selected{% endif %}>Partially Dispatched</option>
+                    <option value="HELD" {% if selected_status == 'HELD' %}selected{% endif %}>Held</option>
+                    <option value="REFUNDED" {% if selected_status == 'REFUNDED' %}selected{% endif %}>Refunded</option>
+                    <option value="PENDING" {% if selected_status == 'PENDING' %}selected{% endif %}>Pending Invoice</option>
                     <option value="VOIDED" {% if selected_status == 'VOIDED' %}selected{% endif %}>Voided</option>
-                    <option value="PENDING" {% if selected_status == 'PENDING' %}selected{% endif %}>Pending</option>
                 </select>
             </div>
             <div class="col-md-2">
@@ -436,10 +439,18 @@
                         <td>
                             {% if sale.status == 'COMPLETED' %}
                             <span class="badge bg-success">Completed</span>
+                            {% elif sale.status == 'PARTIALLY_DISPATCHED' %}
+                            <span class="badge bg-info text-dark">Partially Dispatched</span>
+                            {% elif sale.status == 'PENDING_DISPATCH' %}
+                            <span class="badge bg-warning text-dark">Pending Dispatch</span>
                             {% elif sale.status == 'VOIDED' %}
                             <span class="badge bg-danger">Voided</span>
+                            {% elif sale.status == 'REFUNDED' %}
+                            <span class="badge bg-secondary">Refunded</span>
+                            {% elif sale.status == 'HELD' %}
+                            <span class="badge bg-warning text-dark">Held</span>
                             {% elif sale.status == 'PENDING' %}
-                            <span class="badge bg-warning">Pending</span>
+                            <span class="badge bg-primary">Pending Invoice</span>
                             {% else %}
                             <span class="badge bg-secondary">{{ sale.get_status_display }}</span>
                             {% endif %}
@@ -479,7 +490,7 @@
                                             data-has-customer="{% if sale.customer %}true{% else %}false{% endif %}">
                                         Pay
                                     </button>
-                                {% elif sale.status == 'COMPLETED' or sale.status == 'PENDING_DISPATCH' %}
+                                {% elif sale.status == 'COMPLETED' or sale.status == 'PENDING_DISPATCH' or sale.status == 'PARTIALLY_DISPATCHED' %}
                                     {% if current_tenant.enable_refunds %}
                                         {% if sale.has_approved_pending_payout %}
                                         <a href="{% url 'sales:refund_request_list' %}?status=PENDING_PAYOUT" class="btn btn-sm btn-outline-info me-1" data-bs-toggle="tooltip" title="Refund approved by Accountant; click to disburse payout">
@@ -489,8 +500,8 @@
                                         <button class="btn btn-sm btn-outline-secondary me-1 disabled" data-bs-toggle="tooltip" title="Refund request already pending Accountant approval">
                                             <i class="bi bi-clock-history me-1"></i>Pending
                                         </button>
-                                        {% elif sale.status == 'PENDING_DISPATCH' and not sale.is_halted %}
-                                        <button class="btn btn-sm btn-outline-secondary me-1 disabled" data-bs-toggle="tooltip" title="Pending dispatch — Shop Manager must halt dispatch before a refund can be requested">
+                                        {% elif sale.status == 'PENDING_DISPATCH' and not sale.is_halted or sale.status == 'PARTIALLY_DISPATCHED' and not sale.is_halted %}
+                                        <button class="btn btn-sm btn-outline-secondary me-1 disabled" data-bs-toggle="tooltip" title="Undispatched items — Shop Manager must halt dispatch before a refund can be requested">
                                             <i class="bi bi-box-seam me-1"></i>Pending Dispatch
                                         </button>
                                         {% else %}
@@ -518,7 +529,7 @@
                                     {% endif %}
                                 {% endif %}
                             {% elif role_name == 'SHOP_MANAGER' and request.user.tenant.use_strict_sales_workflow %}
-                                {% if sale.status == 'PENDING_DISPATCH' %}
+                                {% if sale.status == 'PENDING_DISPATCH' or sale.status == 'PARTIALLY_DISPATCHED' %}
                                     {% if sale.has_approved_pending_payout %}
                                     <button type="button" 
                                             class="btn btn-sm btn-info text-dark open-dispatch-modal me-1 rounded-pill px-3"
@@ -923,7 +934,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     
                     const dispatchBtn = document.getElementById('saleDetailDispatchBtn');
                     if (dispatchBtn) {
-                        if (data.status_code === 'PENDING_DISPATCH' || (data.status_code === 'COMPLETED' && !data.is_dispatched)) {
+                        if (data.status_code === 'PENDING_DISPATCH' || data.status_code === 'PARTIALLY_DISPATCHED' || (data.status_code === 'COMPLETED' && !data.is_dispatched)) {
                             dispatchBtn.style.display = 'inline-block';
                             dispatchBtn.dataset.saleId = saleId;
                             dispatchBtn.dataset.saleNumber = data.sale_number;
@@ -982,7 +993,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             refundBtn.disabled = true;
                             refundBtn.className = 'btn btn-secondary';
                             refundBtn.innerHTML = '<i class="bi bi-clock-history me-1"></i>Refund Pending Approval';
-                        } else if (data.status_code === 'PENDING_DISPATCH') {
+                        } else if (data.status_code === 'PENDING_DISPATCH' || data.status_code === 'PARTIALLY_DISPATCHED') {
                             if (data.is_halted) {
                                 refundBtn.style.display = 'inline-block';
                                 refundBtn.disabled = false;
@@ -1049,8 +1060,12 @@ document.addEventListener('DOMContentLoaded', function() {
     function getStatusBadge(statusCode, statusDisplay) {
         const colors = {
             'COMPLETED': 'success',
+            'PARTIALLY_DISPATCHED': 'info text-dark',
+            'PENDING_DISPATCH': 'warning text-dark',
             'VOIDED': 'danger',
-            'PENDING': 'warning',
+            'REFUNDED': 'secondary',
+            'HELD': 'warning text-dark',
+            'PENDING': 'primary',
         };
         const color = colors[statusCode] || 'secondary';
         return '<span class="badge bg-' + color + '">' + statusDisplay + '</span>';

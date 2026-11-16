@@ -896,6 +896,9 @@
             <button class="btn btn-outline-warning btn-sm" id="btn-pending-ecash" style="display: none;" onclick="showPendingEcashModal()" title="Pending Digital Payments">
                 <i class="bi bi-hourglass-split"></i> Pending <span id="pending-ecash-badge" class="badge bg-danger ms-1">0</span>
             </button>
+            <button class="btn btn-outline-info btn-sm" onclick="openShortcutsHelpModal()" title="Keyboard Shortcuts (?)">
+                <i class="bi bi-keyboard"></i>
+            </button>
             <span class="text-light">{% if user %}{{ user.get_full_name|default:user.email }}{% else %}-{% endif %}</span>
             <a href="{% url 'core:logout' %}" class="btn btn-outline-light btn-sm">
                 <i class="bi bi-box-arrow-right"></i>
@@ -924,7 +927,7 @@
             <div class="search-box">
                 <i class="bi bi-search"></i>
                 <input type="text" id="product-search" class="form-control"
-                    placeholder="Search products by name, SKU, or barcode..." autocomplete="off">
+                    placeholder="Search products by name, SKU, or barcode... (F1 or / to focus)" autocomplete="off">
                 <div class="search-suggestions" id="search-suggestions"></div>
             </div>
 
@@ -980,7 +983,7 @@
                 <div class="input-group input-group-sm">
                     <span class="input-group-text bg-dark border-secondary"><i class="bi bi-person"></i></span>
                     <input type="text" id="customer-search" class="form-control bg-dark text-white border-secondary"
-                        placeholder="Customer (optional)">
+                        placeholder="Customer (optional - F6 to focus)">
                     <button class="btn btn-outline-secondary" type="button" id="btn-clear-customer"
                         style="display: none;">
                         <i class="bi bi-x"></i>
@@ -1001,28 +1004,31 @@
 
             <div class="cart-actions">
                 {% if not request.user.tenant.use_strict_sales_workflow %}
-                <button class="btn-pay btn-pay-cash" id="btn-pay-cash" disabled>
-                    <i class="bi bi-cash"></i> Pay Cash
+                <button class="btn-pay btn-pay-cash" id="btn-pay-cash" disabled title="Pay Cash (F2)">
+                    <i class="bi bi-cash"></i> <span>Pay Cash</span>
+                    <kbd class="badge bg-black bg-opacity-25 px-1 py-0 small text-white-50 ms-auto" style="font-size:0.68rem; font-weight:normal;">F2</kbd>
                 </button>
                 {% endif %}
                 {% if request.user.tenant.use_cashier_workflow or request.user.tenant.use_strict_sales_workflow %}
                 <button class="btn-pay" id="btn-create-invoice" disabled
-                    style="background: #7c3aed; color:#fff;">
-                    <i class="bi bi-receipt"></i> Create Invoice
+                    style="background: #7c3aed; color:#fff;" title="Create Invoice (F2 / F8)">
+                    <i class="bi bi-receipt"></i> <span>Create Invoice</span>
+                    <kbd class="badge bg-black bg-opacity-25 px-1 py-0 small text-white-50 ms-auto" style="font-size:0.68rem; font-weight:normal;">F2</kbd>
                 </button>
                 {% endif %}
                 {% if not request.user.tenant.use_strict_sales_workflow %}
                 <button class="btn-pay btn-pay-credit" id="btn-pay-credit" disabled
-                    style="background: #e11d48; display: none;">
-                    <i class="bi bi-credit-card-2-front"></i> Sell on Credit
+                    style="background: #e11d48; display: none;" title="Sell on Credit">
+                    <i class="bi bi-credit-card-2-front"></i> <span>Sell on Credit</span>
                 </button>
                 {% endif %}
                 {% if not request.user.tenant.use_strict_sales_workflow %}
                 <div class="d-flex gap-2 mb-2">
                     {% if shop_settings.enable_ecash_payment %}
                     <div class="btn-group flex-fill">
-                        <button class="btn-pay btn-pay-ecash w-100" id="btn-pay-ecash" disabled>
-                            <i class="bi bi-credit-card"></i> Pay E-Cash
+                        <button class="btn-pay btn-pay-ecash w-100" id="btn-pay-ecash" disabled title="Pay E-Cash (F4)">
+                            <i class="bi bi-credit-card"></i> <span>Pay E-Cash</span>
+                            <kbd class="badge bg-black bg-opacity-25 px-1 py-0 small text-white-50 ms-auto" style="font-size:0.68rem; font-weight:normal;">F4</kbd>
                         </button>
                         {% if available_providers|length > 1 %}
                         <button class="btn-pay btn-pay-ecash" style="border-left: 1px solid rgba(255,255,255,0.2); padding: 0 12px; flex-grow: 0;" id="btn-change-ecash-provider" onclick="showProviderSelectModal(false)" title="Change E-Cash Platform">
@@ -1032,18 +1038,21 @@
                     </div>
                     {% endif %}
                     {% if shop_settings.enable_momo_payment and request.user.tenant.allow_momo_payments %}
-                    <button class="btn-pay btn-pay-momo flex-fill" id="btn-pay-momo" disabled>
-                        <i class="bi bi-phone"></i> Local Momo
+                    <button class="btn-pay btn-pay-momo flex-fill" id="btn-pay-momo" disabled title="Local Momo (F3)">
+                        <i class="bi bi-phone"></i> <span>Local Momo</span>
+                        <kbd class="badge bg-black bg-opacity-25 px-1 py-0 small text-white-50 ms-auto" style="font-size:0.68rem; font-weight:normal;">F3</kbd>
                     </button>
                     {% endif %}
                 </div>
                 {% endif %}
                 <div class="d-flex gap-2">
-                    <button class="btn btn-outline-warning flex-fill" id="btn-discount">
-                        <i class="bi bi-percent"></i> Discount
+                    <button class="btn btn-outline-warning flex-fill d-flex align-items-center justify-content-center gap-1" id="btn-discount" title="Apply Discount (F7)">
+                        <i class="bi bi-percent"></i> <span>Discount</span>
+                        <kbd class="badge bg-black bg-opacity-25 px-1 py-0 small text-warning text-opacity-75 ms-1" style="font-size:0.68rem; font-weight:normal;">F7</kbd>
                     </button>
-                    <button class="btn btn-outline-danger flex-fill" id="btn-clear-cart">
-                        <i class="bi bi-trash"></i> Clear
+                    <button class="btn btn-outline-danger flex-fill d-flex align-items-center justify-content-center gap-1" id="btn-clear-cart" title="Clear Cart (F9)">
+                        <i class="bi bi-trash"></i> <span>Clear</span>
+                        <kbd class="badge bg-black bg-opacity-25 px-1 py-0 small text-danger text-opacity-75 ms-1" style="font-size:0.68rem; font-weight:normal;">F9</kbd>
                     </button>
                 </div>
             </div>
@@ -1073,16 +1082,20 @@
             </div>
 
             <div class="mb-4" id="amount-received-container">
-                <label class="form-label">Amount Received</label>
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <label class="form-label mb-0">Amount Received</label>
+                    <small class="text-muted"><kbd class="bg-secondary text-white px-1" style="font-size:0.75rem;">Enter</kbd> to submit</small>
+                </div>
                 <input type="number" class="checkout-input" id="amount-received" step="0.01" min="0" inputmode="decimal" autofocus>
+                <div class="form-text text-muted text-center mt-1 small">Press <kbd class="bg-dark text-white px-1">Enter</kbd> to submit (leave blank for exact amount)</div>
             </div>
             <div class="mb-4" id="change-container">
                 <label class="form-label">Change</label>
                 <div class="h3" id="modal-change">{{ currency_symbol }}0.00</div>
             </div>
             <div class="d-flex gap-2">
-                <button class="btn btn-secondary flex-fill" onclick="closeCheckoutModal()">Cancel</button>
-                <button class="btn btn-success flex-fill" id="btn-complete-sale">Complete Sale</button>
+                <button class="btn btn-secondary flex-fill" onclick="closeCheckoutModal()">Cancel <kbd class="bg-dark text-white-50 ms-1 px-1 small">Esc</kbd></button>
+                <button class="btn btn-success flex-fill" id="btn-complete-sale">Complete Sale <kbd class="bg-dark text-white-50 ms-1 px-1 small">Enter</kbd></button>
             </div>
         </div>
     </div>
@@ -1123,19 +1136,21 @@
                 <label class="form-label">Customer Name <span class="text-danger">*</span></label>
                 <input type="text" class="checkout-input" id="invoice-customer-name"
                     placeholder="Enter full name" style="font-size:1rem; padding:0.75rem;">
+                <div class="form-text text-muted small">Press <kbd class="bg-dark text-white px-1">Enter</kbd> to move to phone</div>
             </div>
             <div class="mb-4">
                 <label class="form-label">Phone Number <span class="text-danger">*</span></label>
                 <input type="tel" class="checkout-input" id="invoice-customer-phone"
                     placeholder="e.g. 0244000000" style="font-size:1rem; padding:0.75rem;">
+                <div class="form-text text-muted small">Press <kbd class="bg-dark text-white px-1">Enter</kbd> to save invoice</div>
             </div>
             <div id="invoice-error" class="alert alert-danger py-2 small" style="display:none;"></div>
             <div class="d-flex gap-2">
-                <button class="btn btn-secondary flex-fill" onclick="closeCreateInvoiceModal()">Cancel</button>
+                <button class="btn btn-secondary flex-fill" onclick="closeCreateInvoiceModal()">Cancel <kbd class="bg-dark text-white-50 ms-1 px-1 small">Esc</kbd></button>
                 <button class="btn flex-fill" id="btn-save-invoice"
                     style="background:#7c3aed;color:#fff;"
                     onclick="saveInvoice()">
-                    <i class="bi bi-save me-1"></i>Save Invoice
+                    <i class="bi bi-save me-1"></i>Save Invoice <kbd class="bg-dark text-white-50 ms-1 px-1 small">Enter</kbd>
                 </button>
             </div>
         </div>
@@ -1213,11 +1228,12 @@
             </div>
             <div class="mb-4">
                 <input type="number" class="checkout-input" id="discount-input" step="any" inputmode="decimal" placeholder="0.00">
+                <div class="form-text text-muted text-center mt-1 small">Press <kbd class="bg-dark text-white px-1">Enter</kbd> to apply</div>
             </div>
             <div class="d-flex gap-2">
-                <button class="btn btn-secondary flex-fill" onclick="closeDiscountModal()">Cancel</button>
+                <button class="btn btn-secondary flex-fill" onclick="closeDiscountModal()">Cancel <kbd class="bg-dark text-white-50 ms-1 px-1 small">Esc</kbd></button>
                 <button class="btn flex-fill" id="btn-discount-submit" style="background:#7c3aed;color:#fff;" onclick="submitDiscount()">
-                    Apply
+                    Apply <kbd class="bg-dark text-white-50 ms-1 px-1 small">Enter</kbd>
                 </button>
             </div>
         </div>
@@ -1237,6 +1253,35 @@
             <div class="d-flex gap-2">
                 <button class="btn btn-secondary flex-fill" onclick="closePendingEcashModal()">Close</button>
             </div>
+        </div>
+    </div>
+
+    <!-- ── Keyboard Shortcuts Modal ────────────────────────────── -->
+    <div class="checkout-modal" id="shortcuts-modal">
+        <div class="checkout-dialog" style="max-width:500px;">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h4 class="mb-0 text-warning"><i class="bi bi-keyboard me-2"></i>POS Keyboard Shortcuts</h4>
+                <button type="button" class="btn-close btn-close-white" onclick="closeShortcutsHelpModal()"></button>
+            </div>
+            <div class="table-responsive small mb-3">
+                <table class="table table-dark table-sm table-borderless align-middle mb-0">
+                    <tbody>
+                        <tr class="border-bottom border-secondary border-opacity-25"><td style="width:130px;"><kbd class="bg-secondary text-white px-2 py-1">Enter</kbd></td><td>Submit amount in checkout (or auto-fills exact amount if empty)</td></tr>
+                        <tr class="border-bottom border-secondary border-opacity-25"><td><kbd class="bg-secondary text-white px-2 py-1">Enter</kbd> (Search)</td><td>Add selected product to cart / Open checkout if search is empty</td></tr>
+                        <tr class="border-bottom border-secondary border-opacity-25"><td><kbd class="bg-secondary text-white px-2 py-1">Esc</kbd></td><td>Close any active modal or clear product/customer search</td></tr>
+                        <tr class="border-bottom border-secondary border-opacity-25"><td><kbd class="bg-secondary text-white px-2 py-1">F1</kbd> or <kbd class="bg-secondary text-white px-2 py-1">/</kbd></td><td>Focus Product Search (or scan barcode)</td></tr>
+                        <tr class="border-bottom border-secondary border-opacity-25"><td><kbd class="bg-secondary text-white px-2 py-1">F2</kbd></td><td>Pay Cash (or Create Invoice in Strict Workflow)</td></tr>
+                        <tr class="border-bottom border-secondary border-opacity-25"><td><kbd class="bg-secondary text-white px-2 py-1">F3</kbd></td><td>Local Mobile Money (Momo)</td></tr>
+                        <tr class="border-bottom border-secondary border-opacity-25"><td><kbd class="bg-secondary text-white px-2 py-1">F4</kbd></td><td>Pay E-Cash (Paystack)</td></tr>
+                        <tr class="border-bottom border-secondary border-opacity-25"><td><kbd class="bg-secondary text-white px-2 py-1">F6</kbd></td><td>Focus Customer Search (<kbd>&darr;</kbd> <kbd>&uarr;</kbd> <kbd>Enter</kbd> to select)</td></tr>
+                        <tr class="border-bottom border-secondary border-opacity-25"><td><kbd class="bg-secondary text-white px-2 py-1">F7</kbd></td><td>Apply Discount (<kbd>Enter</kbd> applies)</td></tr>
+                        <tr class="border-bottom border-secondary border-opacity-25"><td><kbd class="bg-secondary text-white px-2 py-1">F8</kbd></td><td>Create Invoice (<kbd>Enter</kbd> saves)</td></tr>
+                        <tr class="border-bottom border-secondary border-opacity-25"><td><kbd class="bg-secondary text-white px-2 py-1">F9</kbd></td><td>Clear Cart</td></tr>
+                        <tr><td><kbd class="bg-secondary text-white px-2 py-1">?</kbd></td><td>Show this keyboard shortcuts guide</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <button class="btn btn-secondary w-100" onclick="closeShortcutsHelpModal()">Close <kbd class="bg-dark text-white-50 ms-1 px-1 small">Esc</kbd></button>
         </div>
     </div>
 
@@ -1272,6 +1317,7 @@
         const HAS_SHIFT = {% if shift %}true{% else %}false{% endif %};
         const WAIVE_SHIFT = {% if request.user.tenant.waive_shift_requirement %}true{% else %}false{% endif %};
         const ALLOW_NEGATIVE_STOCK = {% if allow_negative_stock %}true{% else %}false{% endif %};
+        const DISALLOW_MANUAL_MOMO = {% if shop_settings.disallow_manual_momo_amount %}true{% else %}false{% endif %};
 
         // --- POS Toast Notification System ---
         function showPosToast(message, type = 'warning', durationMs = 3500) {
@@ -1459,15 +1505,73 @@
             document.getElementById('btn-discount').addEventListener('click', applyDiscount);
 
             // Checkout modal
-            document.getElementById('amount-received').addEventListener('input', updateChange);
+            const amountReceivedInput = document.getElementById('amount-received');
+            amountReceivedInput.addEventListener('input', updateChange);
             document.getElementById('btn-complete-sale').addEventListener('click', completeSale);
 
             // Block 'e', 'E', '+', '-' keys in amount input (number inputs allow these for scientific notation)
-            document.getElementById('amount-received').addEventListener('keydown', function (e) {
+            // and handle Enter (submit/tender exact) and Escape (close modal)
+            amountReceivedInput.addEventListener('keydown', function (e) {
                 if (['e', 'E', '+', '-'].includes(e.key)) {
                     e.preventDefault();
+                    return;
+                }
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (!this.value.trim()) {
+                        const total = calculateTotal();
+                        if (total > 0 && (paymentMode === 'CASH' || paymentMode === 'MOMO')) {
+                            this.value = total.toFixed(2);
+                            updateChange();
+                        }
+                    }
+                    const completeBtn = document.getElementById('btn-complete-sale');
+                    if (completeBtn && !completeBtn.disabled) completeBtn.click();
+                } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    closeCheckoutModal();
                 }
             });
+
+            // Discount modal keyboard handling
+            const discountInput = document.getElementById('discount-input');
+            if (discountInput) {
+                discountInput.addEventListener('keydown', function (e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        submitDiscount();
+                    } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        closeDiscountModal();
+                    }
+                });
+            }
+
+            // Create Invoice inputs keyboard handling
+            const invCustName = document.getElementById('invoice-customer-name');
+            const invCustPhone = document.getElementById('invoice-customer-phone');
+            if (invCustName) {
+                invCustName.addEventListener('keydown', function (e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (invCustPhone) invCustPhone.focus();
+                    } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        closeCreateInvoiceModal();
+                    }
+                });
+            }
+            if (invCustPhone) {
+                invCustPhone.addEventListener('keydown', function (e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        saveInvoice();
+                    } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        closeCreateInvoiceModal();
+                    }
+                });
+            }
 
             // Mobile: Cart header click to toggle
             const cartHeader = document.querySelector('.cart-header');
@@ -1501,25 +1605,39 @@
             const searchInput = document.getElementById('customer-search');
             const suggestions = document.getElementById('customer-suggestions');
             const clearBtn = document.getElementById('btn-clear-customer');
+            let selectedCustIndex = -1;
+            let currentCustMatches = [];
+
+            function updateCustSuggestionSelection(items, index) {
+                items.forEach((item, i) => {
+                    item.classList.toggle('active', i === index);
+                });
+                if (index >= 0 && items[index]) {
+                    items[index].scrollIntoView({ block: 'nearest' });
+                }
+            }
 
             searchInput.addEventListener('input', function () {
                 const query = this.value.trim().toLowerCase();
                 suggestions.innerHTML = '';
+                selectedCustIndex = -1;
 
                 if (query.length < 1) {
+                    currentCustMatches = [];
                     suggestions.classList.remove('show');
                     return;
                 }
 
-                const matches = CUSTOMERS.filter(c =>
+                currentCustMatches = CUSTOMERS.filter(c =>
                     c.name.toLowerCase().includes(query) ||
                     c.phone.includes(query)
                 );
 
-                if (matches.length > 0) {
-                    matches.forEach(c => {
+                if (currentCustMatches.length > 0) {
+                    currentCustMatches.forEach((c, idx) => {
                         const div = document.createElement('div');
                         div.className = 'suggestion-item';
+                        div.dataset.index = idx;
                         div.innerHTML = `
                             <div>
                                 <div>${c.name}</div>
@@ -1529,11 +1647,55 @@
                                 ${CURRENCY}${c.current_balance}
                             </div>
                         `;
-                        div.onclick = () => selectCustomer(c);
+                        div.onclick = () => {
+                            selectCustomer(c);
+                            const prodSearch = document.getElementById('product-search');
+                            if (prodSearch) prodSearch.focus();
+                        };
                         suggestions.appendChild(div);
                     });
                     suggestions.classList.add('show');
                 } else {
+                    suggestions.classList.remove('show');
+                }
+            });
+
+            // Keyboard navigation for customer suggestions
+            searchInput.addEventListener('keydown', function (e) {
+                const items = suggestions.querySelectorAll('.suggestion-item');
+
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    if (items.length > 0) {
+                        selectedCustIndex = Math.min(selectedCustIndex + 1, items.length - 1);
+                        updateCustSuggestionSelection(items, selectedCustIndex);
+                    }
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    if (items.length > 0) {
+                        selectedCustIndex = Math.max(selectedCustIndex - 1, -1);
+                        updateCustSuggestionSelection(items, selectedCustIndex);
+                    }
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (selectedCustIndex >= 0 && currentCustMatches[selectedCustIndex]) {
+                        selectCustomer(currentCustMatches[selectedCustIndex]);
+                        const prodSearch = document.getElementById('product-search');
+                        if (prodSearch) prodSearch.focus();
+                    } else if (currentCustMatches.length === 1) {
+                        selectCustomer(currentCustMatches[0]);
+                        const prodSearch = document.getElementById('product-search');
+                        if (prodSearch) prodSearch.focus();
+                    }
+                } else if (e.key === 'Escape') {
+                    suggestions.classList.remove('show');
+                    searchInput.blur();
+                }
+            });
+
+            // Hide suggestions when clicking outside
+            document.addEventListener('click', function (e) {
+                if (!searchInput.contains(e.target) && !suggestions.contains(e.target)) {
                     suggestions.classList.remove('show');
                 }
             });
@@ -1603,7 +1765,9 @@
             const total = calculateTotal();
 
             document.getElementById('modal-total').textContent = CURRENCY + total.toFixed(2);
-            document.getElementById('amount-received').value = '';
+            const amountInput = document.getElementById('amount-received');
+            amountInput.value = '';
+            amountInput.placeholder = total > 0 ? total.toFixed(2) : '0.00';
             document.getElementById('modal-change').textContent = CURRENCY + '0.00';
 
             // UI Toggle based on mode
@@ -1615,6 +1779,7 @@
             if (isPaymentOnAccount) {
                 // Payment on account mode - paying into customer's account
                 title.innerHTML = '<i class="bi bi-wallet me-2"></i>Payment on Account';
+                amountInput.readOnly = false;
                 creditInfo.style.display = 'block';
                 amountContainer.style.display = 'block';
                 changeContainer.style.display = 'none';
@@ -1627,6 +1792,7 @@
 
             } else if (mode === 'CREDIT') {
                 title.innerHTML = '<i class="bi bi-credit-card-2-front me-2"></i>Pay on Credit';
+                amountInput.readOnly = false;
                 creditInfo.style.display = 'block';
                 amountContainer.style.display = 'none';
                 changeContainer.style.display = 'none';
@@ -1651,8 +1817,17 @@
             } else if (mode === 'MOMO') {
                 title.innerHTML = '<i class="bi bi-phone me-2"></i>Mobile Money Payment';
                 amountContainer.style.display = 'block';
-                changeContainer.style.display = 'block';
                 document.getElementById('btn-complete-sale').disabled = false;
+
+                if (DISALLOW_MANUAL_MOMO) {
+                    amountInput.value = total.toFixed(2);
+                    amountInput.readOnly = true;
+                    changeContainer.style.display = 'none';
+                    document.getElementById('modal-change').textContent = CURRENCY + '0.00';
+                } else {
+                    amountInput.readOnly = false;
+                    changeContainer.style.display = 'block';
+                }
 
                 if (selectedCustomer) {
                     creditInfo.style.display = 'block';
@@ -1666,6 +1841,7 @@
             } else {
                 // CASH payment mode
                 title.innerHTML = '<i class="bi bi-cash-coin me-2"></i>Cash Payment';
+                amountInput.readOnly = false;
                 amountContainer.style.display = 'block';
                 changeContainer.style.display = 'block';
                 document.getElementById('btn-complete-sale').disabled = false;
@@ -1694,7 +1870,7 @@
         }
 
         function openCashCheckout() {
-            openCheckout('CASH');
+            if (checkShiftBeforePayment('CASH')) openCheckout('CASH');
         }
 
         // Search Autocomplete
@@ -1779,6 +1955,15 @@
                         searchInput.value = '';
                         suggestions.classList.remove('show');
                         renderProducts('');
+                    } else if (searchInput.value.trim() === '' && cart.length > 0) {
+                        // Empty search with items in cart: trigger cash payment or invoice
+                        const cashBtn = document.getElementById('btn-pay-cash');
+                        if (cashBtn && !cashBtn.disabled) {
+                            cashBtn.click();
+                        } else {
+                            const invBtn = document.getElementById('btn-create-invoice');
+                            if (invBtn && !invBtn.disabled) invBtn.click();
+                        }
                     }
                 } else if (e.key === 'Escape') {
                     suggestions.classList.remove('show');
@@ -1795,8 +1980,14 @@
 
             // Focus search on any keypress (for barcode scanners)
             document.addEventListener('keydown', function (e) {
+                // Do NOT hijack focus if any modal or dialog is open
+                if (document.querySelector('.checkout-modal.active, .modal.show, .modal.fade.show')) {
+                    return;
+                }
+
                 // Only focus if not already in an input and not a special key
                 if (document.activeElement.tagName !== 'INPUT' &&
+                    document.activeElement.tagName !== 'TEXTAREA' &&
                     !e.ctrlKey && !e.altKey && !e.metaKey &&
                     e.key.length === 1) {
                     searchInput.focus();
@@ -2083,15 +2274,6 @@
             closeDiscountModal();
         }
 
-        function openCashCheckout() {
-            const total = calculateTotal();
-            document.getElementById('modal-total').textContent = CURRENCY + total.toFixed(2);
-            document.getElementById('amount-received').value = '';
-            document.getElementById('modal-change').textContent = CURRENCY + '0.00';
-            document.getElementById('checkout-modal').classList.add('active');
-            document.getElementById('amount-received').focus();
-        }
-
         function closeCheckoutModal() {
             document.getElementById('checkout-modal').classList.remove('active');
         }
@@ -2144,31 +2326,152 @@
             return true;
         }
 
-        // Enter key handler for checkout modal
+        // Comprehensive Modal & Global Keyboard Routing
         document.addEventListener('keydown', function (e) {
+            const shortcutsModal = document.getElementById('shortcuts-modal');
             const checkoutModal = document.getElementById('checkout-modal');
             const shiftModal = document.getElementById('shift-prompt-modal');
+            const discountModal = document.getElementById('discount-modal');
+            const invoiceModal = document.getElementById('create-invoice-modal');
+            const invoiceCreatedModal = document.getElementById('invoice-created-modal');
+            const providerModal = document.getElementById('provider-select-modal');
+            const pendingEcashModal = document.getElementById('pending-ecash-modal');
 
-            if (e.key === 'Enter') {
-                // Complete sale if checkout modal is open
-                if (checkoutModal.classList.contains('active')) {
+            const isShortcutsOpen = shortcutsModal && shortcutsModal.classList.contains('active');
+            const isCheckoutOpen = checkoutModal && checkoutModal.classList.contains('active');
+            const isShiftOpen = shiftModal && shiftModal.classList.contains('active');
+            const isDiscountOpen = discountModal && discountModal.classList.contains('active');
+            const isInvoiceOpen = invoiceModal && invoiceModal.classList.contains('active');
+            const isInvoiceCreatedOpen = invoiceCreatedModal && invoiceCreatedModal.classList.contains('active');
+            const isProviderOpen = providerModal && providerModal.classList.contains('active');
+            const isPendingEcashOpen = pendingEcashModal && pendingEcashModal.classList.contains('active');
+            const anyModalOpen = isShortcutsOpen || isCheckoutOpen || isShiftOpen || isDiscountOpen || 
+                                 isInvoiceOpen || isInvoiceCreatedOpen || isProviderOpen || isPendingEcashOpen ||
+                                 document.querySelector('.modal.show, .modal.fade.show');
+
+            // ESCAPE key closes the topmost modal
+            if (e.key === 'Escape') {
+                if (isShortcutsOpen) { closeShortcutsHelpModal(); e.preventDefault(); return; }
+                if (isDiscountOpen) { closeDiscountModal(); e.preventDefault(); return; }
+                if (isInvoiceOpen) { closeCreateInvoiceModal(); e.preventDefault(); return; }
+                if (isInvoiceCreatedOpen) { closeInvoiceCreatedModal(); e.preventDefault(); return; }
+                if (isProviderOpen) { closeProviderSelectModal(); e.preventDefault(); return; }
+                if (isPendingEcashOpen) { closePendingEcashModal(); e.preventDefault(); return; }
+                if (isCheckoutOpen) { closeCheckoutModal(); e.preventDefault(); return; }
+                if (isShiftOpen) { closeShiftPromptModal(); e.preventDefault(); return; }
+                
+                const bsBundleModal = document.getElementById('posBundlesModal');
+                if (bsBundleModal && bsBundleModal.classList.contains('show')) {
+                    const inst = bootstrap.Modal.getInstance(bsBundleModal);
+                    if (inst) inst.hide();
                     e.preventDefault();
-                    document.getElementById('btn-complete-sale').click();
+                    return;
                 }
-                // Default action (Open Shift) if shift prompt is open
-                if (shiftModal.classList.contains('active')) {
+                return;
+            }
+
+            // ENTER key submits/confirms in active modal
+            if (e.key === 'Enter') {
+                if (isInvoiceCreatedOpen) {
+                    e.preventDefault();
+                    closeInvoiceCreatedModal();
+                    return;
+                }
+                if (isShiftOpen) {
                     e.preventDefault();
                     openShiftAndReturn();
+                    return;
+                }
+                if (isCheckoutOpen) {
+                    e.preventDefault();
+                    const amountInput = document.getElementById('amount-received');
+                    if (amountInput && !amountInput.value.trim()) {
+                        const total = calculateTotal();
+                        if (total > 0 && (paymentMode === 'CASH' || paymentMode === 'MOMO')) {
+                            amountInput.value = total.toFixed(2);
+                            updateChange();
+                        }
+                    }
+                    const completeBtn = document.getElementById('btn-complete-sale');
+                    if (completeBtn && !completeBtn.disabled) completeBtn.click();
+                    return;
+                }
+                if (isDiscountOpen) {
+                    e.preventDefault();
+                    submitDiscount();
+                    return;
+                }
+                if (isInvoiceOpen) {
+                    // Only auto-submit if focus is not on customer name (which advances to phone)
+                    if (document.activeElement !== document.getElementById('invoice-customer-name')) {
+                        e.preventDefault();
+                        saveInvoice();
+                    }
+                    return;
                 }
             }
-            // Escape key to close modals
-            if (e.key === 'Escape') {
-                if (checkoutModal.classList.contains('active')) {
-                    closeCheckoutModal();
+
+            // In provider select modal, digits 1-9 select provider
+            if (isProviderOpen && e.key >= '1' && e.key <= '9') {
+                const idx = parseInt(e.key) - 1;
+                const buttons = document.querySelectorAll('#provider-list-container button');
+                if (buttons[idx]) {
+                    e.preventDefault();
+                    buttons[idx].click();
+                    return;
                 }
-                if (shiftModal.classList.contains('active')) {
-                    closeShiftPromptModal();
+            }
+
+            // If any modal is open, do NOT trigger background function keys/shortcuts
+            if (anyModalOpen) return;
+
+            // Global Function Keys & POS Shortcuts (when no modal is open)
+            if (e.key === 'F1') {
+                e.preventDefault();
+                const prodSearch = document.getElementById('product-search');
+                if (prodSearch) {
+                    prodSearch.focus();
+                    prodSearch.select();
                 }
+            } else if (e.key === 'F2') {
+                e.preventDefault();
+                const cashBtn = document.getElementById('btn-pay-cash');
+                if (cashBtn && !cashBtn.disabled) {
+                    cashBtn.click();
+                } else {
+                    const invBtn = document.getElementById('btn-create-invoice');
+                    if (invBtn && !invBtn.disabled) invBtn.click();
+                }
+            } else if (e.key === 'F3') {
+                e.preventDefault();
+                const momoBtn = document.getElementById('btn-pay-momo');
+                if (momoBtn && !momoBtn.disabled) momoBtn.click();
+            } else if (e.key === 'F4') {
+                e.preventDefault();
+                const ecashBtn = document.getElementById('btn-pay-ecash');
+                if (ecashBtn && !ecashBtn.disabled) ecashBtn.click();
+            } else if (e.key === 'F6') {
+                e.preventDefault();
+                const custSearch = document.getElementById('customer-search');
+                if (custSearch) {
+                    custSearch.focus();
+                    custSearch.select();
+                }
+            } else if (e.key === 'F7') {
+                e.preventDefault();
+                const discBtn = document.getElementById('btn-discount');
+                if (discBtn && !discBtn.disabled) discBtn.click();
+            } else if (e.key === 'F8') {
+                e.preventDefault();
+                const invBtn = document.getElementById('btn-create-invoice');
+                if (invBtn && !invBtn.disabled) invBtn.click();
+            } else if (e.key === 'F9') {
+                e.preventDefault();
+                const clearBtn = document.getElementById('btn-clear-cart');
+                if (clearBtn && !clearBtn.disabled && cart.length > 0) clearBtn.click();
+            } else if (e.key === '?' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+                e.preventDefault();
+                openShortcutsHelpModal();
             }
         });
         function closeProviderSelectModal() {
@@ -2610,12 +2913,34 @@
         }
 
         async function completeSale() {
+            const btn = document.getElementById('btn-complete-sale');
+            if (!btn || btn.disabled) return;
+
             // Allow if cart has items OR payment on account (customer selected with empty cart)
             const isPaymentOnAccount = cart.length === 0 && selectedCustomer;
             if (cart.length === 0 && !isPaymentOnAccount) return;
 
-            const received = parseFloat(document.getElementById('amount-received').value) || 0;
+            const amountInput = document.getElementById('amount-received');
             const total = calculateTotal();
+            let received = parseFloat(amountInput.value);
+
+            // If Local Momo with manual entry disallowed, always force exact total
+            if (paymentMode === 'MOMO' && DISALLOW_MANUAL_MOMO && !isPaymentOnAccount) {
+                received = total;
+                amountInput.value = total.toFixed(2);
+                updateChange();
+            }
+
+            // If empty in CASH or MOMO mode (and not payment on account), default to total (exact tendered)
+            if (isNaN(received) || amountInput.value.trim() === '') {
+                if (paymentMode === 'CASH' || paymentMode === 'MOMO') {
+                    received = total;
+                    amountInput.value = total.toFixed(2);
+                    updateChange();
+                } else {
+                    received = 0;
+                }
+            }
 
             // For CASH without customer, require full payment
             if (paymentMode === 'CASH' && received < total && !selectedCustomer) {
@@ -2629,7 +2954,6 @@
                 return;
             }
 
-            const btn = document.getElementById('btn-complete-sale');
             const originalText = btn.innerHTML;
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Processing...';
@@ -2761,6 +3085,8 @@
             document.getElementById('selected-customer-info').style.display = 'none';
             updateCart();
             saveCartToStorage();
+            const prodSearch = document.getElementById('product-search');
+            if (prodSearch) prodSearch.focus();
         }
 
         async function saveInvoice() {
@@ -2824,6 +3150,17 @@
                 btn.disabled = false;
                 btn.innerHTML = '<i class="bi bi-save me-1"></i>Save Invoice';
             }
+        }
+
+        // Shortcuts Modal Helper Functions
+        function openShortcutsHelpModal() {
+            const modal = document.getElementById('shortcuts-modal');
+            if (modal) modal.classList.add('active');
+        }
+
+        function closeShortcutsHelpModal() {
+            const modal = document.getElementById('shortcuts-modal');
+            if (modal) modal.classList.remove('active');
         }
     </script>
 

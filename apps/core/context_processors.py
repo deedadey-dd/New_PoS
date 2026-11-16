@@ -91,7 +91,7 @@ def tenant_context(request):
                     default=F('total')
                 )
                 all_sales_agg = Sale.objects.filter(
-                    tenant=tenant, shop=location, status__in=['COMPLETED', 'PENDING_DISPATCH']
+                    tenant=tenant, shop=location, status__in=['COMPLETED', 'PENDING_DISPATCH', 'PARTIALLY_DISPATCHED']
                 ).aggregate(
                     cash_sales=Sum(cash_paid_expr, filter=Q(payment_method='CASH')),
                     mixed_paid=Sum('amount_paid', filter=Q(payment_method='MIXED')),
@@ -176,7 +176,7 @@ def tenant_context(request):
                     tenant=tenant,
                     payment_method='CASH'
                 ).filter(
-                    Q(status__in=['COMPLETED', 'PENDING_DISPATCH']) |
+                    Q(status__in=['COMPLETED', 'PENDING_DISPATCH', 'PARTIALLY_DISPATCHED']) |
                     Q(status='REFUNDED', id__in=cash_refunded_sale_ids)
                 ).filter(
                     Q(cashier=user) | Q(cashier__isnull=True, attendant=user)
@@ -186,7 +186,7 @@ def tenant_context(request):
                     tenant=tenant,
                     payment_method='MIXED'
                 ).filter(
-                    Q(status__in=['COMPLETED', 'PENDING_DISPATCH']) |
+                    Q(status__in=['COMPLETED', 'PENDING_DISPATCH', 'PARTIALLY_DISPATCHED']) |
                     Q(status='REFUNDED', id__in=cash_refunded_sale_ids)
                 ).filter(
                     Q(cashier=user) | Q(cashier__isnull=True, attendant=user)
@@ -334,18 +334,34 @@ def tenant_context(request):
             try:
                 # MOMO BALANCE
                 if tenant.allow_momo_payments:
-                    momo_sales_q = Q(tenant=tenant, status__in=['COMPLETED', 'PENDING_DISPATCH'], payment_method='MOMO')
+                    momo_sales_q = Q(tenant=tenant, status__in=['COMPLETED', 'PENDING_DISPATCH', 'PARTIALLY_DISPATCHED'], payment_method='MOMO')
                     momo_ct_q = Q(tenant=tenant, transaction_type='CREDIT', description__icontains='MOMO')
                     
                     if role_name in ['SHOP_MANAGER', 'SHOP_CASHIER', 'ADMIN'] and user.location and user.location.location_type == 'SHOP':
-                        # Shop sees all momo MINUS DigitalFundWithdrawal
-                        shop_sales = Sale.objects.filter(momo_sales_q, shop=user.location).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+                        # Shop sees all net momo MINUS DigitalFundWithdrawal and MoMo refunds
+                        from django.db.models import Case, When, F, Value
+                        from django.db.models.functions import Coalesce
+                        momo_paid_expr = Case(
+                            When(amount_paid__gt=Decimal('0.00'), then=F('amount_paid') - Coalesce(F('change_given'), Value(Decimal('0.00')))),
+                            default=F('total')
+                        )
+                        shop_sales = Sale.objects.filter(momo_sales_q, shop=user.location).aggregate(total=Sum(momo_paid_expr))['total'] or Decimal('0')
                         shop_ct = CustomerTransaction.objects.filter(momo_ct_q, performed_by__location=user.location).aggregate(total=Sum('amount'))['total'] or Decimal('0')
                         from apps.accounting.models import DigitalFundWithdrawal
                         withdrawn = DigitalFundWithdrawal.objects.filter(tenant=tenant, shop=user.location, fund_source='MOMO').aggregate(total=Sum('amount'))['total'] or Decimal('0')
-                        context['momo_balance'] = shop_sales + shop_ct - withdrawn
+                        
+                        from apps.sales.models import RefundRequest
+                        momo_refunds = RefundRequest.objects.filter(
+                            tenant=tenant,
+                            sale__shop=user.location,
+                            status='APPROVED',
+                            payout_status='PAID',
+                            refund_method='MOMO'
+                        ).aggregate(total=Sum('refund_amount'))['total'] or Decimal('0')
+                        
+                        context['momo_balance'] = shop_sales + shop_ct - withdrawn - momo_refunds
                     else:
-                        # Accountant sees Total Withdrawn Momo minus BANK TRANSFERS
+                        # Accountant sees Total Withdrawn Momo minus BANK TRANSFERS and Accountant MoMo refunds
                         from apps.accounting.models import DigitalFundWithdrawal
                         total_withdrawn = DigitalFundWithdrawal.objects.filter(tenant=tenant, fund_source='MOMO').aggregate(total=Sum('amount'))['total'] or Decimal('0')
                         
@@ -361,7 +377,16 @@ def tenant_context(request):
                         from apps.accounting.models import BankTransfer
                         banked_momo = BankTransfer.objects.filter(tenant=tenant, fund_source='MOMO').aggregate(total=Sum('amount'))['total'] or Decimal('0')
                         
-                        context['momo_balance'] = (total_withdrawn + customer_momo_payments) - banked_momo
+                        from apps.sales.models import RefundRequest
+                        accountant_momo_refunds = RefundRequest.objects.filter(
+                            tenant=tenant,
+                            paid_by=user,
+                            status='APPROVED',
+                            payout_status='PAID',
+                            refund_method='MOMO'
+                        ).aggregate(total=Sum('refund_amount'))['total'] or Decimal('0')
+                        
+                        context['momo_balance'] = (total_withdrawn + customer_momo_payments) - banked_momo - accountant_momo_refunds
             except Exception:
                 context['momo_balance'] = Decimal('0')
         

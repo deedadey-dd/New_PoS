@@ -106,6 +106,10 @@ class ShopSettings(TenantModel):
     enable_credit_payment = models.BooleanField(default=True)
     enable_ecash_payment = models.BooleanField(default=True)
     enable_momo_payment = models.BooleanField(default=True)
+    disallow_manual_momo_amount = models.BooleanField(
+        default=True,
+        help_text="Disallow manual entry of payment amount for Local Momo (automatically locks to exact sale total)."
+    )
     
     # Paystack settings for E-Cash
     paystack_public_key = models.CharField(max_length=255, blank=True)
@@ -240,7 +244,7 @@ class Shift(TenantModel):
             )
         valid_refunded_ids = in_shift_cash_refund_sale_ids | post_shift_refund_sale_ids
         return base_qs.filter(
-            Q(status__in=['COMPLETED', 'PENDING_DISPATCH']) |
+            Q(status__in=['COMPLETED', 'PENDING_DISPATCH', 'PARTIALLY_DISPATCHED']) |
             Q(status='REFUNDED', id__in=valid_refunded_ids)
         )
 
@@ -384,6 +388,7 @@ class Sale(TenantModel):
     STATUS_CHOICES = [
         ('PENDING', 'Pending'),
         ('PENDING_DISPATCH', 'Pending Dispatch'),
+        ('PARTIALLY_DISPATCHED', 'Partially Dispatched'),
         ('COMPLETED', 'Completed'),
         ('VOIDED', 'Voided'),
         ('REFUNDED', 'Refunded'),
@@ -671,9 +676,11 @@ class Sale(TenantModel):
 
     @property
     def is_partially_dispatched(self):
-        """True when a PENDING_DISPATCH sale has some dispatched quantity and some remaining undispatched quantity."""
+        """True when a sale has some dispatched quantity and some remaining undispatched quantity."""
         if hasattr(self, '_is_partially_dispatched'):
             return bool(self._is_partially_dispatched)
+        if self.status == 'PARTIALLY_DISPATCHED':
+            return True
         if self.status != 'PENDING_DISPATCH':
             return False
         has_dispatched = self.items.filter(dispatched_quantity__gt=0).exists()
@@ -891,7 +898,7 @@ class Sale(TenantModel):
             raise ValidationError("Sale is already voided.")
         
         # If completed or pending dispatch, reverse inventory
-        if self.status in ['COMPLETED', 'PENDING_DISPATCH']:
+        if self.status in ['COMPLETED', 'PENDING_DISPATCH', 'PARTIALLY_DISPATCHED']:
             for item in self.items.all():
                 InventoryLedger.objects.create(
                     tenant=self.tenant,
@@ -923,7 +930,7 @@ class Sale(TenantModel):
             if self.is_dispatched or self.items.filter(dispatched_quantity__gt=0).exists():
                 inventory_deducted = True
         else:
-            if self.status in ['COMPLETED', 'PENDING_DISPATCH']:
+            if self.status in ['COMPLETED', 'PENDING_DISPATCH', 'PARTIALLY_DISPATCHED']:
                 inventory_deducted = True
                 
         if inventory_deducted:
@@ -996,7 +1003,7 @@ class Sale(TenantModel):
         Locks dispatching and allows the cashier to request a refund for undispatched goods.
         Sale remains in PENDING_DISPATCH with is_halted=True and all line items intact.
         """
-        if self.status != 'PENDING_DISPATCH':
+        if self.status not in ['PENDING_DISPATCH', 'PARTIALLY_DISPATCHED']:
             raise ValidationError(f"Cannot halt dispatch for sale in {self.status} status.")
 
         self.is_halted = True
@@ -1228,8 +1235,9 @@ class Sale(TenantModel):
             else:
                 self.calculate_totals()
 
-            # 3. Reset sale status back to PENDING_DISPATCH
-            self.status = 'PENDING_DISPATCH'
+            # 3. Reset sale status back to PENDING_DISPATCH or PARTIALLY_DISPATCHED
+            has_dispatched = self.items.filter(dispatched_quantity__gt=0).exists()
+            self.status = 'PARTIALLY_DISPATCHED' if has_dispatched else 'PENDING_DISPATCH'
             self.is_dispatched = False
             self.dispatched_at = None
             self.dispatched_by = None
@@ -1694,7 +1702,7 @@ class RefundRequest(TenantModel):
                     self.paid_by = approver
                     self.paid_at = tz.now()
                 elif self.is_partial_halt:
-                    if sale.status == 'PENDING_DISPATCH':
+                    if sale.status in ['PENDING_DISPATCH', 'PARTIALLY_DISPATCHED']:
                         sale.halt_and_settle(user=approver, refund_req=self, refund_method=method)
                     else:
                         if self.refund_amount > Decimal('0.00'):
@@ -1742,7 +1750,7 @@ class RefundRequest(TenantModel):
             else:
                 # CASH, MOMO, ECASH: Approved by accountant, awaiting cashier payout disbursement.
                 # Settle the sale to actual dispatched items upon approval.
-                if self.is_partial_halt and sale.status == 'PENDING_DISPATCH':
+                if self.is_partial_halt and sale.status in ['PENDING_DISPATCH', 'PARTIALLY_DISPATCHED']:
                     sale.settle_halted_sale(user=approver, refund_req=self, refund_method=method)
                 # Crucial: NO physical fund deductions occur upon approval (only upon payout).
                 self.payout_status = 'PENDING'
@@ -1907,7 +1915,7 @@ class RefundRequest(TenantModel):
                         )
             elif self.is_partial_halt:
                 # Settle the sale to actual dispatched items and reduce amount_paid
-                if sale.status == 'PENDING_DISPATCH':
+                if sale.status in ['PENDING_DISPATCH', 'PARTIALLY_DISPATCHED']:
                     sale.settle_halted_sale(user=disburser, refund_req=self, refund_method=method)
                 if self.refund_amount > Decimal('0.00') and sale.amount_paid > sale.total:
                     sale.amount_paid = max(Decimal('0.00'), sale.amount_paid - self.refund_amount)
@@ -2155,7 +2163,13 @@ class RefundRequest(TenantModel):
                 if sale.tenant.use_strict_sales_workflow:
                     from django.db.models import F
                     has_undispatched = sale.items.filter(dispatched_quantity__lt=F('quantity')).exists()
-                    sale.status = 'PENDING_DISPATCH' if has_undispatched else 'COMPLETED'
+                    has_dispatched = sale.items.filter(dispatched_quantity__gt=0).exists()
+                    if has_undispatched and has_dispatched:
+                        sale.status = 'PARTIALLY_DISPATCHED'
+                    elif has_undispatched:
+                        sale.status = 'PENDING_DISPATCH'
+                    else:
+                        sale.status = 'COMPLETED'
                 else:
                     sale.status = 'COMPLETED'
 

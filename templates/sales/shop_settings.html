@@ -143,12 +143,20 @@
 
                     <hr>
                     <h5 class="mb-3"><i class="bi bi-wallet2 me-2"></i>Payment Settings</h5>
-                    <div class="mb-4 form-check form-switch">
+                    <div class="mb-3 form-check form-switch">
                         {{ form.enable_momo_payment }}
                         <label class="form-check-label ms-2 fw-bold" for="{{ form.enable_momo_payment.id_for_label }}">
                             Enable Mobile Money (Momo)
                         </label>
                         <div class="form-text">Allow attendants to accept Mobile Money payments at this shop.</div>
+                    </div>
+
+                    <div class="mb-4 form-check form-switch">
+                        {{ form.disallow_manual_momo_amount }}
+                        <label class="form-check-label ms-2 fw-bold" for="{{ form.disallow_manual_momo_amount.id_for_label }}">
+                            Disallow Manual Momo Amount (Exact Amount Only)
+                        </label>
+                        <div class="form-text">If enabled, attendants cannot enter custom or excess amount figures for Local Momo in POS; the exact invoice total is locked to prevent change errors.</div>
                     </div>
 
                     <div class="text-end mt-4 pt-3 border-top">

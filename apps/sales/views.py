@@ -547,7 +547,7 @@ def api_shift_detail(request, pk):
         # Calculate sales breakdown
         from django.db.models import Sum
         from decimal import Decimal
-        sales_qs = shift.sales.filter(status__in=['COMPLETED', 'PENDING_DISPATCH'])
+        sales_qs = shift.sales.filter(status__in=['COMPLETED', 'PENDING_DISPATCH', 'PARTIALLY_DISPATCHED'])
         ecash_sales = sales_qs.filter(payment_method='ECASH').aggregate(total=Sum('total'))['total'] or Decimal('0')
         momo_sales = sales_qs.filter(payment_method='MOMO').aggregate(total=Sum('total'))['total'] or Decimal('0')
         credit_sales = sales_qs.filter(payment_method='CREDIT').aggregate(total=Sum('total'))['total'] or Decimal('0')
@@ -644,7 +644,7 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
                 RefundRequest.objects.filter(sale=OuterRef('pk'), status='APPROVED', payout_status='PENDING')
             ),
             _is_partially_dispatched=ExpressionWrapper(
-                Q(status='PENDING_DISPATCH')
+                Q(status__in=['PENDING_DISPATCH', 'PARTIALLY_DISPATCHED'])
                 & Exists(SaleItem.objects.filter(sale=OuterRef('pk'), dispatched_quantity__gt=0))
                 & Exists(SaleItem.objects.filter(sale=OuterRef('pk'), dispatched_quantity__lt=F('quantity'))),
                 output_field=BooleanField()
@@ -741,10 +741,10 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
         if dispatch_status == 'pending':
             from django.db.models import Q
             queryset = queryset.filter(
-                Q(status='PENDING_DISPATCH') | Q(status__in=['COMPLETED', 'PENDING_DISPATCH'], is_dispatched=False)
+                Q(status__in=['PENDING_DISPATCH', 'PARTIALLY_DISPATCHED']) | Q(status__in=['COMPLETED', 'PENDING_DISPATCH', 'PARTIALLY_DISPATCHED'], is_dispatched=False)
             )
         elif dispatch_status in ['dispatched', 'completed']:
-            queryset = queryset.filter(status__in=['COMPLETED', 'PENDING_DISPATCH'], is_dispatched=True)
+            queryset = queryset.filter(status__in=['COMPLETED', 'PENDING_DISPATCH', 'PARTIALLY_DISPATCHED'], is_dispatched=True)
             
         # Text search (Invoice Number, Customer Name, Customer Phone)
         q = self.request.GET.get('q', '').strip()
@@ -777,16 +777,17 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
             total_count=Count('id'),
             completed_count=Count('id', filter=Q(status='COMPLETED')),
             pending_dispatch_count=Count('id', filter=Q(status='PENDING_DISPATCH')),
+            partially_dispatched_count=Count('id', filter=Q(status='PARTIALLY_DISPATCHED')),
             voided_count=Count('id', filter=Q(status='VOIDED')),
             voided_value=Sum('total', filter=Q(status='VOIDED')),
-            cash_sales_full=Sum('total', filter=Q(payment_method='CASH', status__in=['COMPLETED', 'PENDING_DISPATCH'])),
-            cash_sales_mixed=Sum('amount_paid', filter=Q(payment_method='MIXED', status__in=['COMPLETED', 'PENDING_DISPATCH'])),
-            other_cash_sales=Sum('amount_paid', filter=~Q(payment_method__in=['CASH', 'ECASH', 'MOMO', 'CREDIT', 'PENDING_INVOICE', 'MIXED']) & Q(status__in=['COMPLETED', 'PENDING_DISPATCH'])),
-            ecash_sales_value=Sum('total', filter=Q(payment_method='ECASH', status__in=['COMPLETED', 'PENDING_DISPATCH'])),
-            momo_sales_value=Sum('total', filter=Q(payment_method='MOMO', status__in=['COMPLETED', 'PENDING_DISPATCH'])),
-            credit_sales_full=Sum('total', filter=Q(payment_method__in=['CREDIT', 'PENDING_INVOICE'], status__in=['COMPLETED', 'PENDING_DISPATCH'])),
-            mixed_sales_total=Sum('total', filter=Q(payment_method='MIXED', status__in=['COMPLETED', 'PENDING_DISPATCH'])),
-            dispatched_count=Count('id', filter=Q(is_dispatched=True, status__in=['COMPLETED', 'PENDING_DISPATCH'])),
+            cash_sales_full=Sum('total', filter=Q(payment_method='CASH', status__in=['COMPLETED', 'PENDING_DISPATCH', 'PARTIALLY_DISPATCHED'])),
+            cash_sales_mixed=Sum('amount_paid', filter=Q(payment_method='MIXED', status__in=['COMPLETED', 'PENDING_DISPATCH', 'PARTIALLY_DISPATCHED'])),
+            other_cash_sales=Sum('amount_paid', filter=~Q(payment_method__in=['CASH', 'ECASH', 'MOMO', 'CREDIT', 'PENDING_INVOICE', 'MIXED']) & Q(status__in=['COMPLETED', 'PENDING_DISPATCH', 'PARTIALLY_DISPATCHED'])),
+            ecash_sales_value=Sum('total', filter=Q(payment_method='ECASH', status__in=['COMPLETED', 'PENDING_DISPATCH', 'PARTIALLY_DISPATCHED'])),
+            momo_sales_value=Sum('total', filter=Q(payment_method='MOMO', status__in=['COMPLETED', 'PENDING_DISPATCH', 'PARTIALLY_DISPATCHED'])),
+            credit_sales_full=Sum('total', filter=Q(payment_method__in=['CREDIT', 'PENDING_INVOICE'], status__in=['COMPLETED', 'PENDING_DISPATCH', 'PARTIALLY_DISPATCHED'])),
+            mixed_sales_total=Sum('total', filter=Q(payment_method='MIXED', status__in=['COMPLETED', 'PENDING_DISPATCH', 'PARTIALLY_DISPATCHED'])),
+            dispatched_count=Count('id', filter=Q(is_dispatched=True, status__in=['COMPLETED', 'PENDING_DISPATCH', 'PARTIALLY_DISPATCHED'])),
         )
 
         cash_full = summary['cash_sales_full'] or Decimal('0.00')
@@ -802,6 +803,7 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
         context['summary_total_count'] = summary['total_count'] or 0
         context['summary_completed_count'] = summary['completed_count'] or 0
         context['summary_pending_dispatch_count'] = summary['pending_dispatch_count'] or 0
+        context['summary_partially_dispatched_count'] = summary['partially_dispatched_count'] or 0
         context['summary_dispatched_count'] = summary['dispatched_count'] or 0
         context['summary_voided_count'] = summary['voided_count'] or 0
         context['summary_voided_value'] = summary['voided_value'] or Decimal('0.00')
@@ -1315,11 +1317,11 @@ def api_refund_sale(request, pk):
     if sale.status == 'REFUNDED':
         return JsonResponse({'success': False, 'error': 'Sale is already refunded.'}, status=400)
 
-    if sale.status == 'PENDING_DISPATCH':
+    if sale.status in ['PENDING_DISPATCH', 'PARTIALLY_DISPATCHED']:
         if not sale.is_halted:
             return JsonResponse({
                 'success': False,
-                'error': "This sale is pending dispatch. The Shop Manager must halt dispatch before a refund can be requested."
+                'error': "This sale has undispatched items. The Shop Manager must halt dispatch before a refund can be requested."
             }, status=400)
     elif sale.status != 'COMPLETED':
         return JsonResponse({'success': False, 'error': 'Only completed or halted sales can be refunded.'}, status=400)
@@ -2182,7 +2184,7 @@ def api_dispatch_sale(request, pk):
         Sale,
         pk=pk,
         tenant=request.user.tenant,
-        status__in=['COMPLETED', 'PENDING_DISPATCH']
+        status__in=['COMPLETED', 'PENDING_DISPATCH', 'PARTIALLY_DISPATCHED']
     )
 
     if sale.is_dispatched:
@@ -2280,7 +2282,7 @@ def api_dispatch_sale(request, pk):
             ).exists()
 
             if fully_dispatched:
-                if sale.status == 'PENDING_DISPATCH':
+                if sale.status in ['PENDING_DISPATCH', 'PARTIALLY_DISPATCHED']:
                     sale.status = 'COMPLETED'
                 sale.is_dispatched = True
                 sale.dispatched_at = timezone.now()
@@ -2288,10 +2290,11 @@ def api_dispatch_sale(request, pk):
                 sale.save()
                 status_msg = 'All goods dispatched. Sale completed.'
             else:
-                # Partially dispatched — record who last dispatched and when
+                # Partially dispatched — change status to PARTIALLY_DISPATCHED
+                sale.status = 'PARTIALLY_DISPATCHED'
                 sale.dispatched_by = request.user
                 sale.dispatched_at = timezone.now()
-                sale.save(update_fields=['dispatched_by', 'dispatched_at'])
+                sale.save(update_fields=['status', 'dispatched_by', 'dispatched_at'])
                 status_msg = 'Partial dispatch recorded successfully.'
 
         from django.urls import reverse
@@ -2334,7 +2337,7 @@ def api_halt_and_request_refund(request, pk):
         Sale,
         pk=pk,
         tenant=tenant,
-        status='PENDING_DISPATCH'
+        status__in=['PENDING_DISPATCH', 'PARTIALLY_DISPATCHED']
     )
 
     if role_name == 'SHOP_MANAGER' and sale.shop != request.user.location:
@@ -2632,7 +2635,7 @@ class ShopSalesReportView(LoginRequiredMixin, View):
         sales_filter = Q(
             tenant=user.tenant,
             shop=shop,
-            status__in=['COMPLETED', 'PENDING_DISPATCH'],
+            status__in=['COMPLETED', 'PENDING_DISPATCH', 'PARTIALLY_DISPATCHED'],
             created_at__date__gte=date_from,
             created_at__date__lte=date_to
         )
@@ -2649,7 +2652,7 @@ class ShopSalesReportView(LoginRequiredMixin, View):
         items_filter = {
             'sale__tenant': user.tenant,
             'sale__shop': shop,
-            'sale__status__in': ['COMPLETED', 'PENDING_DISPATCH'],
+            'sale__status__in': ['COMPLETED', 'PENDING_DISPATCH', 'PARTIALLY_DISPATCHED'],
             'sale__created_at__date__gte': date_from,
             'sale__created_at__date__lte': date_to,
         }
@@ -3591,7 +3594,7 @@ class ShopSalesReportExportView(LoginRequiredMixin, View):
 
         # Build sales filter
         sales_filter = Q(
-            tenant=user.tenant, shop=shop, status__in=['COMPLETED', 'PENDING_DISPATCH'],
+            tenant=user.tenant, shop=shop, status__in=['COMPLETED', 'PENDING_DISPATCH', 'PARTIALLY_DISPATCHED'],
             created_at__date__gte=date_from, created_at__date__lte=date_to
         )
         if attendant_id:
@@ -3624,7 +3627,7 @@ class ShopSalesReportExportView(LoginRequiredMixin, View):
         items_filter = {
             'sale__tenant': user.tenant,
             'sale__shop': shop,
-            'sale__status__in': ['COMPLETED', 'PENDING_DISPATCH'],
+            'sale__status__in': ['COMPLETED', 'PENDING_DISPATCH', 'PARTIALLY_DISPATCHED'],
             'sale__created_at__date__gte': date_from,
             'sale__created_at__date__lte': date_to,
         }
@@ -3776,7 +3779,7 @@ class CustomerFootprintView(LoginRequiredMixin, View):
         # Base queryset — only paid sales
         qs = Sale.objects.filter(
             tenant=tenant,
-            status__in=['COMPLETED', 'PENDING_DISPATCH']
+            status__in=['COMPLETED', 'PENDING_DISPATCH', 'PARTIALLY_DISPATCHED']
         )
 
         # Restrict shop managers and cashiers to their own shop
@@ -3961,7 +3964,7 @@ class FootprintItemAggregationAPIView(LoginRequiredMixin, View):
         
         sales = Sale.objects.filter(
             tenant=tenant, 
-            status__in=['COMPLETED', 'PENDING_DISPATCH']
+            status__in=['COMPLETED', 'PENDING_DISPATCH', 'PARTIALLY_DISPATCHED']
         )
         if role_name == 'SHOP_MANAGER':
             sales = sales.filter(shop=user.location)

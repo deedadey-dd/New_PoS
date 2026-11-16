@@ -187,6 +187,22 @@ At the end of your shift:
 4. Any discrepancy will be highlighted
 5. Click **Close Shift**
 
+### Sale Transaction Statuses & Lifecycle
+
+Every transaction in the system progresses through explicit operational statuses. These can be filtered using the **Status** dropdown on the **Sales History** page (`/sales/`):
+
+| Status Code | Display Name | Operational Meaning & Lifecycle Phase | Relevant Workflow |
+| :--- | :--- | :--- | :--- |
+| `PENDING` | **Pending Invoice** | Invoice created and saved by attendant at POS; awaiting cashier to collect payment. | Cashier & Strict Sales Workflow |
+| `PENDING_DISPATCH` | **Pending Dispatch** | Payment has been received and verified by Cashier; **0 items released** from shop/store so far. Inventory remains in stock. | Strict Sales Workflow |
+| `PARTIALLY_DISPATCHED` | **Partially Dispatched** | Shop Manager has released some items or partial quantities; **remaining items/quantities are still pending dispatch**. Inventory deducted only for dispatched quantities. | Strict Sales Workflow |
+| `COMPLETED` | **Completed** | In Standard Workflow: paid and released immediately at POS. In Strict Workflow: **100% of all invoice items/quantities have been dispatched**. | All Workflows |
+| `HELD` | **Dispatch Halted** | Dispatch frozen by Shop Manager due to stock shortage or customer request; awaiting Accountant partial refund approval or resumption. | Strict Sales Workflow |
+| `REFUNDED` | **Refunded** | Transaction refunded in full or undispatched portion refunded after halt. Funds disbursed via Cash, MoMo, E-Cash, or Customer Account Credit. | All Workflows |
+| `VOIDED` | **Voided** | Transaction cancelled before payment or dispatch. No financial movement took place. | All Workflows |
+
+> **Local Mobile Money (MoMo) Amount Safeguard:** Under *Shop Settings → Payment Settings*, managers can enable **"Disallow Manual Momo Amount"**. When active, the POS automatically locks the MoMo amount to the exact sale total, eliminating manual entry errors and preventing unintended change calculation.
+
 ---
 
 ## Refund Management & Dispatch Halt

@@ -140,6 +140,14 @@
             </a>
         </div>
         <div class="col-md-3 mb-3">
+            <a href="#sale-statuses" class="card shadow-sm text-decoration-none h-100">
+                <div class="card-body text-center">
+                    <i class="bi bi-tag-fill fs-1 mb-2 text-primary"></i>
+                    <h5 class="text-dark">Sale Statuses</h5>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-3 mb-3">
             <a href="#refunds" class="card shadow-sm text-decoration-none h-100">
                 <div class="card-body text-center">
                     <i class="bi bi-arrow-counterclockwise fs-1 mb-2 text-danger"></i>
@@ -966,6 +974,78 @@
                         <p class="small mb-0">Admins can disable partial dispatch on a per-shop basis. Go to <strong>Settings → Locations → Edit Shop</strong> and toggle <strong>"Allow Partial Dispatch"</strong>. When disabled, the Dispatch Goods modal will only show the <strong>Full Dispatch</strong> button, enforcing a single complete release of all items.</p>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sale Transaction Statuses & Meanings -->
+    <div class="card shadow-sm mb-4" id="sale-statuses">
+        <div class="card-header bg-dark text-white">
+            <h4 class="mb-0"><i class="bi bi-tag-fill me-2 text-info"></i>Sale Transaction Statuses &amp; Meanings</h4>
+        </div>
+        <div class="card-body">
+            <p>Every transaction in the system progresses through well-defined lifecycle statuses depending on the workflow mode (Standard vs. Strict Sales Workflow). You can filter sales by any of these statuses using the <strong>Status</strong> dropdown in the filter card on the <strong>Sales History</strong> page (<code>/sales/</code>):</p>
+            
+            <div class="table-responsive">
+                <table class="table table-bordered table-hover align-middle">
+                    <thead class="table-dark">
+                        <tr>
+                            <th style="width: 190px;">Status</th>
+                            <th style="width: 160px;">Badge</th>
+                            <th>Description &amp; Operational Meaning</th>
+                            <th>Applicable Workflows</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>PENDING</strong><br><small class="text-muted">Pending Invoice</small></td>
+                            <td><span class="badge bg-primary">Pending Invoice</span></td>
+                            <td>The invoice has been drafted and saved at the POS by an attendant, but payment has not yet been collected. It is awaiting the Cashier to search the invoice and receive payment.</td>
+                            <td>Cashier &amp; Strict Sales Workflow</td>
+                        </tr>
+                        <tr>
+                            <td><strong>PENDING_DISPATCH</strong><br><small class="text-muted">Pending Dispatch</small></td>
+                            <td><span class="badge bg-warning text-dark">Pending Dispatch</span></td>
+                            <td>Payment has been collected and confirmed by the Cashier, but <strong>no goods have been released</strong> from the shop/store yet. Inventory remains in stock awaiting dispatch.</td>
+                            <td>Strict Sales Workflow</td>
+                        </tr>
+                        <tr>
+                            <td><strong>PARTIALLY_DISPATCHED</strong><br><small class="text-muted">Partially Dispatched</small></td>
+                            <td><span class="badge bg-info text-dark">Partially Dispatched</span></td>
+                            <td>The Shop Manager has released some items or partial quantities, but <strong>remaining items/quantities are still pending dispatch</strong>. Inventory has been deducted only for dispatched quantities. The sale remains open for further dispatch releases.</td>
+                            <td>Strict Sales Workflow</td>
+                        </tr>
+                        <tr>
+                            <td><strong>COMPLETED</strong><br><small class="text-muted">Completed</small></td>
+                            <td><span class="badge bg-success">Completed</span></td>
+                            <td>In Standard Workflow: payment was made and goods handed over immediately at POS. In Strict Workflow: <strong>100% of all invoice line items and quantities have been fully dispatched</strong> to the customer.</td>
+                            <td>All Workflows</td>
+                        </tr>
+                        <tr>
+                            <td><strong>HELD</strong><br><small class="text-muted">Dispatch Halted</small></td>
+                            <td><span class="badge bg-warning text-dark">Held</span></td>
+                            <td>Dispatch was paused/halted by the Shop Manager (e.g. stock shortfall, customer changed their mind). Dispatching is frozen while awaiting an Accountant partial refund approval or resumption.</td>
+                            <td>Strict Sales Workflow</td>
+                        </tr>
+                        <tr>
+                            <td><strong>REFUNDED</strong><br><small class="text-muted">Refunded</small></td>
+                            <td><span class="badge bg-secondary">Refunded</span></td>
+                            <td>The transaction was refunded in full (or undispatched items in a partial halt were refunded). Funds were formally disbursed to the customer (via Cash, MoMo, E-Cash, or Customer Account Credit).</td>
+                            <td>All Workflows</td>
+                        </tr>
+                        <tr>
+                            <td><strong>VOIDED</strong><br><small class="text-muted">Voided</small></td>
+                            <td><span class="badge bg-danger">Voided</span></td>
+                            <td>The invoice or sale was cancelled/voided before completion or dispatch. No funds or inventory were committed.</td>
+                            <td>All Workflows</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="alert alert-info mt-3 mb-0">
+                <i class="bi bi-info-circle me-2"></i>
+                <strong>Local Mobile Money (MoMo) Settings:</strong> In addition to Cash safeguards, shops can enforce <strong>"Disallow Manual Momo Amount"</strong> under <em>Shop Settings → Payment Settings</em>. When enabled, POS automatically locks the MoMo amount to the exact invoice total, preventing cashier over-entry or unintended change calculation.
             </div>
         </div>
     </div>

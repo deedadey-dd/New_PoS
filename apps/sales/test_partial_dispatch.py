@@ -154,8 +154,8 @@ class PartialDispatchTests(TestCase):
         self.assertFalse(data['fully_dispatched'])
 
         self.sale.refresh_from_db()
-        self.assertEqual(self.sale.status, 'PENDING_DISPATCH',
-                         "Sale should stay PENDING_DISPATCH after partial dispatch")
+        self.assertEqual(self.sale.status, 'PARTIALLY_DISPATCHED',
+                         "Sale should transition to PARTIALLY_DISPATCHED after partial dispatch")
         self.assertFalse(self.sale.is_dispatched)
 
     def test_partial_dispatch_updates_dispatched_quantity(self):
@@ -234,8 +234,8 @@ class PartialDispatchTests(TestCase):
             {'sale_item_id': self.item_b.id, 'qty': 5},
         ])
         self.sale.refresh_from_db()
-        self.assertEqual(self.sale.status, 'PENDING_DISPATCH',
-                         "After first partial dispatch, sale should still be PENDING_DISPATCH")
+        self.assertEqual(self.sale.status, 'PARTIALLY_DISPATCHED',
+                         "After first partial dispatch, sale should be PARTIALLY_DISPATCHED")
 
         # Round 2: dispatch remaining 3 of item_a
         response = self._dispatch(items=[

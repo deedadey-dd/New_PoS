@@ -42,6 +42,18 @@
                             Enable E-Cash (Mobile Money / Cards)
                         </label>
                     </div>
+                    <div class="mb-2 form-check form-switch">
+                        {{ form.enable_momo_payment }}
+                        <label class="form-check-label fw-bold ms-2" for="{{ form.enable_momo_payment.id_for_label }}">
+                            Enable Local Mobile Money (Momo)
+                        </label>
+                    </div>
+                    <div class="mb-2 form-check form-switch">
+                        {{ form.disallow_manual_momo_amount }}
+                        <label class="form-check-label fw-bold ms-2" for="{{ form.disallow_manual_momo_amount.id_for_label }}">
+                            Disallow Manual Momo Amount (Lock to Exact Total)
+                        </label>
+                    </div>
                     <div class="mb-4 form-check form-switch">
                         {{ form.enable_credit_payment }}
                         <label class="form-check-label fw-bold ms-2" for="{{ form.enable_credit_payment.id_for_label }}">

@@ -8,7 +8,7 @@ from django.core.exceptions import ValidationError
 from django.db.models import Sum
 
 from apps.core.models import Tenant, Role, User, Location
-from apps.sales.models import Shift, Sale, SaleItem, RefundRequest
+from apps.sales.models import Shift, Sale, SaleItem, RefundRequest, ShopSettings
 from apps.accounting.models import (
     CashTransfer, BankTransfer, ExpenditureCategory, ExpenditureRequest, ExpenditureItem
 )
@@ -1550,15 +1550,15 @@ class WorkflowIntegrationTests(TestCase):
         self.assertEqual(halt_resp.status_code, 200)
         data = halt_resp.json()
         self.assertTrue(data['success'])
-        self.assertEqual(data['status'], 'PENDING_DISPATCH')
+        self.assertEqual(data['status'], 'PARTIALLY_DISPATCHED')
         self.assertTrue(data['is_halted'])
         self.assertEqual(data['dispatched_total'], "50.00")
 
         self.assertFalse(RefundRequest.objects.filter(sale=sale).exists())
 
-        # Sale remains in PENDING_DISPATCH with is_halted=True; all line items intact
+        # Sale remains in PARTIALLY_DISPATCHED with is_halted=True; all line items intact
         sale.refresh_from_db()
-        self.assertEqual(sale.status, 'PENDING_DISPATCH')
+        self.assertEqual(sale.status, 'PARTIALLY_DISPATCHED')
         self.assertTrue(sale.is_halted)
         self.assertFalse(sale.is_dispatched)
         self.assertEqual(sale.total, Decimal("100.00"))
@@ -1688,7 +1688,7 @@ class WorkflowIntegrationTests(TestCase):
         )
         self.assertEqual(halt_resp.status_code, 200)
         data = halt_resp.json()
-        self.assertEqual(data['status'], 'PENDING_DISPATCH')
+        self.assertEqual(data['status'], 'PARTIALLY_DISPATCHED')
         self.assertTrue(data['is_halted'])
         self.assertEqual(data['dispatched_total'], "50.00")
         self.assertFalse(RefundRequest.objects.filter(sale=sale).exists())
@@ -2022,7 +2022,7 @@ class WorkflowIntegrationTests(TestCase):
         self.assertFalse(RefundRequest.objects.filter(sale=sale).exists())
 
         sale.refresh_from_db()
-        self.assertEqual(sale.status, 'PENDING_DISPATCH')
+        self.assertEqual(sale.status, 'PARTIALLY_DISPATCHED')
         self.assertTrue(sale.is_halted)
 
         # 3. Cashier requests refund and Accountant approves -> settles sale to 3 items
@@ -2115,7 +2115,7 @@ class WorkflowIntegrationTests(TestCase):
         self.assertFalse(RefundRequest.objects.filter(sale=sale).exists())
 
         sale.refresh_from_db()
-        self.assertEqual(sale.status, 'PENDING_DISPATCH')
+        self.assertEqual(sale.status, 'PARTIALLY_DISPATCHED')
         self.assertTrue(sale.is_halted)
 
         # 2b. Cashier requests refund on the halted sale (60.00 undispatched)
@@ -2933,7 +2933,7 @@ class WorkflowIntegrationTests(TestCase):
         self.assertFalse(RefundRequest.objects.filter(sale=sale).exists())
 
         sale.refresh_from_db()
-        self.assertEqual(sale.status, 'PENDING_DISPATCH')
+        self.assertEqual(sale.status, 'PARTIALLY_DISPATCHED')
         self.assertTrue(sale.is_halted)
         self.assertEqual(sale.total, Decimal("100.00"))
 
@@ -3148,7 +3148,7 @@ class WorkflowIntegrationTests(TestCase):
         self.assertEqual(halt_resp.status_code, 200)
 
         sale.refresh_from_db()
-        self.assertEqual(sale.status, 'PENDING_DISPATCH')
+        self.assertEqual(sale.status, 'PARTIALLY_DISPATCHED')
         self.assertFalse(sale.is_dispatched)
         self.assertTrue(sale.is_halted)
         self.assertTrue(sale.can_be_resumed)
@@ -3177,7 +3177,7 @@ class WorkflowIntegrationTests(TestCase):
         self.assertIn("resumed", resume_resp.json()['message'].lower())
 
         sale.refresh_from_db()
-        self.assertEqual(sale.status, 'PENDING_DISPATCH')
+        self.assertEqual(sale.status, 'PARTIALLY_DISPATCHED')
         self.assertFalse(sale.is_dispatched)
         self.assertFalse(sale.is_halted)
         self.assertFalse(sale.can_be_resumed)
@@ -3286,7 +3286,7 @@ class WorkflowIntegrationTests(TestCase):
         )
         self.assertEqual(res_ok.status_code, 200)
         sale.refresh_from_db()
-        self.assertEqual(sale.status, 'PENDING_DISPATCH')
+        self.assertEqual(sale.status, 'PARTIALLY_DISPATCHED')
 
     def test_34_legacy_refund_request_effective_dispatched_total(self):
         """
@@ -3691,6 +3691,131 @@ class WorkflowIntegrationTests(TestCase):
         # Verify navbar cash_on_hand: increased by 130.00 (NOT 200.00!)
         ctx_after = self.get_navbar_context(self.cashier_user)
         self.assertEqual(ctx_after['cash_on_hand'], cash_before + Decimal("130.00"))
+
+    def test_39_momo_sale_with_change_does_not_inflate_momo_balance(self):
+        """
+        Verify that when a Momo sale is made for 130.00 with amount entered as 200.00 (change 70.00),
+        the momo_balance in the navbar increases by exactly 130.00 (the net sale total),
+        NOT by the full 200.00.
+        Also verifies ShopSettings disallow_manual_momo_amount default.
+        """
+        self.tenant.allow_momo_payments = True
+        self.tenant.save()
+
+        # Check default setting
+        settings, _ = ShopSettings.objects.get_or_create(
+            shop=self.shop_location,
+            defaults={'tenant': self.tenant}
+        )
+        self.assertTrue(settings.disallow_manual_momo_amount)
+
+        ctx_before = self.get_navbar_context(self.manager_user)
+        momo_before = ctx_before['momo_balance']
+
+        # Complete a MOMO sale of 130.00 with amount_paid = 200.00
+        sale = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.manager_user,
+            total=Decimal("130.00"),
+            subtotal=Decimal("130.00"),
+            status='PENDING'
+        )
+        SaleItem.objects.create(
+            tenant=self.tenant,
+            sale=sale,
+            product=self.product,
+            quantity=Decimal("1.00"),
+            unit_price=Decimal("130.00"),
+            total=Decimal("130.00"),
+        )
+        sale.complete(amount_paid=Decimal("200.00"), payment_method='MOMO', cashier=self.manager_user)
+        sale.refresh_from_db()
+
+        self.assertEqual(sale.total, Decimal("130.00"))
+        self.assertEqual(sale.amount_paid, Decimal("200.00"))
+        self.assertEqual(sale.change_given, Decimal("70.00"))
+
+        ctx_after = self.get_navbar_context(self.manager_user)
+        # Verify momo_balance in navbar increased by 130.00, NOT 200.00
+        self.assertEqual(ctx_after['momo_balance'], momo_before + Decimal("130.00"))
+
+    def test_40_partial_dispatch_status_and_sales_page_filtering(self):
+        """
+        Verify that:
+        1. When a strict workflow sale has some (not all) items dispatched,
+           its status transitions to 'PARTIALLY_DISPATCHED'.
+        2. When filtering on /sales/?status=PARTIALLY_DISPATCHED, only partially dispatched
+           sales are returned.
+        3. When filtering by other statuses (COMPLETED, PENDING_DISPATCH), it is correctly partitioned.
+        4. When the remaining items are dispatched, status transitions to 'COMPLETED'.
+        """
+        self.tenant.use_strict_sales_workflow = True
+        self.tenant.save()
+
+        sale = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.attendant_user,
+            cashier=self.cashier_user,
+            total=Decimal("100.00"),
+            amount_paid=Decimal("100.00"),
+            payment_method='CASH',
+            status='PENDING_DISPATCH'
+        )
+        item = SaleItem.objects.create(
+            tenant=self.tenant,
+            sale=sale,
+            product=self.product,
+            batch=self.shop_batch,
+            quantity=Decimal("10.00"),
+            unit_price=Decimal("10.00"),
+            dispatched_quantity=Decimal("0.00")
+        )
+
+        self.assertEqual(sale.status, 'PENDING_DISPATCH')
+        self.assertFalse(sale.is_partially_dispatched)
+
+        # 1. Partial dispatch 4 units out of 10
+        self.client.force_login(self.manager_user)
+        disp_resp = self.client.post(
+            f"/sales/api/sales/{sale.pk}/dispatch/",
+            data=json.dumps({'items': [{'sale_item_id': item.pk, 'qty': 4}]}),
+            content_type='application/json'
+        )
+        self.assertEqual(disp_resp.status_code, 200)
+        self.assertFalse(disp_resp.json()['fully_dispatched'])
+
+        sale.refresh_from_db()
+        # Status MUST now be PARTIALLY_DISPATCHED
+        self.assertEqual(sale.status, 'PARTIALLY_DISPATCHED')
+        self.assertTrue(sale.is_partially_dispatched)
+        self.assertFalse(sale.is_dispatched)
+
+        # 2. Filter /sales/?status=PARTIALLY_DISPATCHED
+        resp_pd = self.client.get(f"/sales/?status=PARTIALLY_DISPATCHED")
+        self.assertEqual(resp_pd.status_code, 200)
+        sales_in_pd = list(resp_pd.context['object_list'])
+        self.assertIn(sale, sales_in_pd)
+
+        # 3. Filter /sales/?status=COMPLETED should NOT include it
+        resp_comp = self.client.get(f"/sales/?status=COMPLETED")
+        self.assertEqual(resp_comp.status_code, 200)
+        self.assertNotIn(sale, list(resp_comp.context['object_list']))
+
+        # 4. Dispatch the remaining 6 units
+        disp_resp2 = self.client.post(
+            f"/sales/api/sales/{sale.pk}/dispatch/",
+            data=json.dumps({'items': [{'sale_item_id': item.pk, 'qty': 6}]}),
+            content_type='application/json'
+        )
+        self.assertEqual(disp_resp2.status_code, 200)
+        self.assertTrue(disp_resp2.json()['fully_dispatched'])
+
+        sale.refresh_from_db()
+        self.assertEqual(sale.status, 'COMPLETED')
+        self.assertTrue(sale.is_dispatched)
+        self.assertFalse(sale.is_partially_dispatched)
 
 
 

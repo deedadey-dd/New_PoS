@@ -325,7 +325,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     
                     const dispatchBtn = document.getElementById('saleDetailDispatchBtn');
                     if (dispatchBtn) {
-                        if (data.status_code === 'PENDING_DISPATCH' || (data.status_code === 'COMPLETED' && !data.is_dispatched)) {
+                        if (data.status_code === 'PENDING_DISPATCH' || data.status_code === 'PARTIALLY_DISPATCHED' || (data.status_code === 'COMPLETED' && !data.is_dispatched)) {
                             dispatchBtn.style.display = 'inline-block';
                             dispatchBtn.dataset.saleId = saleId;
                             dispatchBtn.dataset.saleNumber = data.sale_number;
