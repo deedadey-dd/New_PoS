@@ -43,50 +43,171 @@ class ProductLifecycleView(LoginRequiredMixin, AuditAccessMixin, SortableMixin, 
     Track a product's complete lifecycle from entry to exit.
     Shows: Entry points, distribution (transfers), and exits (sales, damage, etc.)
     """
+    allowed_roles = ['AUDITOR', 'ACCOUNTANT', 'ADMIN', 'SHOP_MANAGER', 'PRODUCTION_MANAGER', 'STORES_MANAGER']
     template_name = 'audit/product_lifecycle.html'
     sortable_fields = ['created_at', 'transaction_type', 'quantity', 'location__name', 'batch__batch_number']
     default_sort = '-created_at'
     
     def get(self, request, pk=None):
+        from datetime import datetime
         tenant = request.user.tenant
+        user = request.user
+        role_name = user.role.name if user.role else ''
+
+        # Role-based location scoping & filtering permissions
+        is_hq_role = role_name in ['AUDITOR', 'ACCOUNTANT', 'ADMIN', 'STORES_MANAGER', 'PRODUCTION_MANAGER']
+        can_filter_locations = is_hq_role or tenant.shops_can_see_other_stock or role_name == 'SHOP_MANAGER'
+
+        if is_hq_role or tenant.shops_can_see_other_stock:
+            available_locations = Location.objects.filter(tenant=tenant, is_active=True).order_by('location_type', 'name')
+        elif role_name == 'SHOP_MANAGER':
+            available_locations = Location.objects.filter(
+                tenant=tenant, is_active=True
+            ).filter(Q(location_type='SHOP') | Q(pk=user.location_id if user.location else None)).order_by('name')
+        elif user.location:
+            available_locations = Location.objects.filter(pk=user.location_id)
+        else:
+            available_locations = Location.objects.none()
+
+        location_id = request.GET.get('location', '').strip()
+        selected_location = None
+        if location_id:
+            try:
+                selected_location = available_locations.get(pk=location_id)
+            except (Location.DoesNotExist, ValueError):
+                selected_location = None
+        elif not can_filter_locations and user.location:
+            selected_location = user.location
+
         context = {
-            'products': Product.objects.filter(tenant=tenant, is_active=True).order_by('name')
+            'products': Product.objects.filter(tenant=tenant, is_active=True).order_by('name'),
+            'can_filter_locations': can_filter_locations,
+            'available_locations': available_locations,
+            'selected_location': selected_location,
+            'selected_location_id': selected_location.id if selected_location else '',
+            'current_range': 'all',
         }
         
         if pk:
             product = get_object_or_404(Product, pk=pk, tenant=tenant)
             context['selected_product'] = product
             
-            # Get date range
-            date_from = request.GET.get('date_from', '').strip()
-            date_to = request.GET.get('date_to', '').strip()
-            
-            # Validate: swap if date_from > date_to
-            if date_from and date_to and date_from > date_to:
-                date_from, date_to = date_to, date_from
+            # Parse Date Range & Presets
+            date_range = request.GET.get('range', 'all')
+            date_from_str = request.GET.get('date_from', '').strip()
+            date_to_str = request.GET.get('date_to', '').strip()
+
+            today = timezone.now().date()
+            start_date = None
+            end_date = None
+
+            if date_from_str and date_to_str:
+                try:
+                    start_date = datetime.strptime(date_from_str, '%Y-%m-%d').date()
+                    end_date = datetime.strptime(date_to_str, '%Y-%m-%d').date()
+                    date_range = 'custom'
+                except ValueError:
+                    pass
+            elif date_from_str:
+                try:
+                    start_date = datetime.strptime(date_from_str, '%Y-%m-%d').date()
+                    end_date = today
+                    date_range = 'custom'
+                except ValueError:
+                    pass
+            elif date_to_str:
+                try:
+                    end_date = datetime.strptime(date_to_str, '%Y-%m-%d').date()
+                    start_date = today - timedelta(days=30)
+                    date_range = 'custom'
+                except ValueError:
+                    pass
+
+            if not start_date or not end_date:
+                if date_range == 'today':
+                    start_date = today
+                    end_date = today
+                elif date_range == 'yesterday':
+                    start_date = today - timedelta(days=1)
+                    end_date = today - timedelta(days=1)
+                elif date_range == 'week':
+                    start_date = today - timedelta(days=7)
+                    end_date = today
+                elif date_range == 'this_month':
+                    start_date = today.replace(day=1)
+                    end_date = today
+                elif date_range == 'month':
+                    start_date = today - timedelta(days=30)
+                    end_date = today
+                elif date_range == 'year':
+                    start_date = today - timedelta(days=365)
+                    end_date = today
+                else:
+                    date_range = 'all'
+
+            if start_date and end_date and start_date > end_date:
+                start_date, end_date = end_date, start_date
                 messages.info(request, 'Start date was after end date; dates have been swapped.')
-            
+
             # Base query for all time
             all_time_ledger = InventoryLedger.objects.filter(
                 tenant=tenant, product=product
             )
             
-            # Period filters
+            # Period and Location filters
             period_filters = Q(tenant=tenant, product=product)
             has_date_filter = False
-            if date_from:
-                period_filters &= Q(created_at__date__gte=date_from)
-                context['date_from'] = date_from
+            if start_date and end_date:
+                period_filters &= Q(created_at__date__gte=start_date, created_at__date__lte=end_date)
+                context['date_from'] = start_date.strftime('%Y-%m-%d')
+                context['date_to'] = end_date.strftime('%Y-%m-%d')
                 has_date_filter = True
-            if date_to:
-                period_filters &= Q(created_at__date__lte=date_to)
-                context['date_to'] = date_to
+            elif date_from_str:
+                period_filters &= Q(created_at__date__gte=start_date)
+                context['date_from'] = start_date.strftime('%Y-%m-%d')
+                has_date_filter = True
+            elif date_to_str:
+                period_filters &= Q(created_at__date__lte=end_date)
+                context['date_to'] = end_date.strftime('%Y-%m-%d')
                 has_date_filter = True
             
+            if selected_location:
+                period_filters &= Q(location=selected_location)
+
+            context['current_range'] = date_range
+
             ledger = InventoryLedger.objects.filter(period_filters).select_related(
                 'location', 'batch', 'created_by'
             )
             ledger = self.apply_sorting(ledger)
+
+            # CSV Export support
+            if request.GET.get('export') == 'csv':
+                import csv
+                from django.http import HttpResponse
+
+                response = HttpResponse(content_type='text/csv')
+                response['Content-Disposition'] = f'attachment; filename="lifecycle_{product.sku}_{timezone.now().strftime("%Y%m%d_%H%M")}.csv"'
+                writer = csv.writer(response)
+                writer.writerow(['Product', 'SKU', 'Date/Time', 'Type', 'Location', 'Batch', 'Quantity', 'Unit Cost', 'Total Cost', 'Reference Type', 'Reference ID', 'Notes', 'Logged By'])
+                for entry in ledger:
+                    tot_cost = (Decimal(str(entry.quantity or 0)) * Decimal(str(entry.unit_cost or 0))) if entry.unit_cost else Decimal('0')
+                    writer.writerow([
+                        product.name,
+                        product.sku,
+                        entry.created_at.strftime('%Y-%m-%d %H:%M'),
+                        entry.get_transaction_type_display(),
+                        entry.location.name if entry.location else '',
+                        entry.batch.batch_number if entry.batch else '',
+                        entry.quantity,
+                        entry.unit_cost or '',
+                        tot_cost,
+                        entry.reference_type or '',
+                        entry.reference_id or '',
+                        entry.notes or '',
+                        entry.created_by.get_full_name() if entry.created_by else 'System'
+                    ])
+                return response
             
             # ── 1. Stock Entries (Inflows) Breakdown ──────────────────
             in_entries = ledger.filter(transaction_type='IN', quantity__gt=0)
@@ -199,6 +320,9 @@ class ProductLifecycleView(LoginRequiredMixin, AuditAccessMixin, SortableMixin, 
                     dispatched_quantity__lt=F('quantity')
                 ).exclude(sale__status__in=['VOIDED', 'REFUNDED']).select_related('sale', 'sale__shop', 'sale__customer')
 
+                if selected_location:
+                    pending_sales_items = pending_sales_items.filter(sale__shop=selected_location)
+
                 total_pending_dispatch_qty = pending_sales_items.aggregate(
                     pending=Sum(F('quantity') - F('dispatched_quantity'))
                 )['pending'] or Decimal('0')
@@ -218,7 +342,11 @@ class ProductLifecycleView(LoginRequiredMixin, AuditAccessMixin, SortableMixin, 
 
             # ── 4. Stock by Location & Overall Total Stock ────────────
             # True current total physical stock of the product across all locations (all-time)
-            current_total_stock = all_time_ledger.aggregate(total=Sum('quantity'))['total'] or Decimal('0')
+            overall_total_stock = all_time_ledger.aggregate(total=Sum('quantity'))['total'] or Decimal('0')
+            if selected_location:
+                current_total_stock = all_time_ledger.filter(location=selected_location).aggregate(total=Sum('quantity'))['total'] or Decimal('0')
+            else:
+                current_total_stock = overall_total_stock
             available_total_stock = current_total_stock - total_pending_dispatch_qty
             total_sales_committed = abs(sales_qty) + total_pending_dispatch_qty
 
@@ -296,6 +424,7 @@ class ProductLifecycleView(LoginRequiredMixin, AuditAccessMixin, SortableMixin, 
                 'summary': summary,
                 'location_balances': location_balances,
                 'current_total_stock': current_total_stock,
+                'overall_total_stock': overall_total_stock,
                 'total_stock': current_total_stock,
                 'available_total_stock': available_total_stock,
                 'total_pending_dispatch_qty': total_pending_dispatch_qty,

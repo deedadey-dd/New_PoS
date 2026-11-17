@@ -3,121 +3,298 @@
 
 {% block title %}Product Lifecycle Tracking{% endblock %}
 
+{% block extra_css %}
+<style>
+.summary-card-mini {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.summary-card-mini:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 .5rem 1rem rgba(0,0,0,.08) !important;
+}
+.summary-icon-box {
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    font-size: 1.25rem;
+}
+.selection-summary-bar {
+    border-radius: 10px;
+    animation: fadeIn 0.2s ease-in-out;
+}
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.table tbody tr.row-selected {
+    background-color: rgba(13, 110, 253, 0.08) !important;
+}
+.table-checkbox-col {
+    width: 38px;
+    text-align: center;
+    vertical-align: middle;
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid py-4">
     <!-- Page Header -->
     <div class="row mb-4">
         <div class="col-12">
-            <div class="d-flex justify-content-between align-items-center">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
                 <div>
                     <h1 class="h3 mb-1">
                         <i class="bi bi-diagram-3 text-primary me-2"></i>
                         Product Lifecycle Tracking
                     </h1>
-                    <p class="text-muted mb-0">Track product flow from entry to exit through the system</p>
+                    <p class="text-muted mb-0">Audit product flows from supplier receiving through transfers, production, and customer dispatches</p>
                 </div>
+                {% if selected_product %}
+                <div class="d-flex gap-2">
+                    <a href="?export=csv{% if selected_location_id %}&location={{ selected_location_id }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}{% if current_range %}&range={{ current_range }}{% endif %}" class="btn btn-outline-success">
+                        <i class="bi bi-file-earmark-spreadsheet me-1"></i>Export CSV
+                    </a>
+                    <a href="{% url 'inventory:product_detail' selected_product.pk %}" class="btn btn-outline-primary">
+                        <i class="bi bi-box-arrow-up-right me-1"></i>Product View
+                    </a>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
 
-    <!-- Product Selector -->
-    <div class="card shadow-sm mb-4">
-        <div class="card-body">
-            <form method="get" class="row g-3 align-items-end">
-                <div class="col-md-4">
-                    <label class="form-label fw-semibold">Product Search</label>
+    <!-- Product & Filter Card -->
+    <div class="card shadow-sm mb-4 border-0 rounded-4 bg-white">
+        <div class="card-body p-3 p-lg-4">
+            <form method="get" id="lifecycleFilterForm" class="row g-3 align-items-end">
+                <!-- Product Autocomplete Search -->
+                <div class="col-12 col-md-4 col-lg-3">
+                    <label class="form-label small fw-semibold text-muted mb-1">
+                        <i class="bi bi-search me-1 text-primary"></i>Product Search
+                    </label>
                     <div class="input-group position-relative">
-                        <span class="input-group-text"><i class="bi bi-search"></i></span>
+                        <span class="input-group-text bg-white"><i class="bi bi-box-seam"></i></span>
                         <input type="text" id="productSearch" class="form-control" 
-                            placeholder="Search product name or SKU..." value="{% if selected_product %}{{ selected_product.name }}{% endif %}" autocomplete="off">
+                            placeholder="Search name or SKU..." value="{% if selected_product %}{{ selected_product.name }}{% endif %}" autocomplete="off">
                         <!-- Autocomplete dropdown -->
-                        <div id="searchSuggestions" class="dropdown-menu w-100"
-                            style="display: none; max-height: 300px; overflow-y: auto; position: absolute; top: 100%; left: 0; z-index: 1000;">
+                        <div id="searchSuggestions" class="dropdown-menu w-100 shadow"
+                            style="display: none; max-height: 320px; overflow-y: auto; position: absolute; top: 100%; left: 0; z-index: 1050;">
                         </div>
                     </div>
                 </div>
+
                 {% if selected_product %}
-                <div class="col-md-3">
-                    <label class="form-label fw-semibold">From Date</label>
-                    <input type="date" name="date_from" class="form-control" value="{{ date_from|default:'' }}">
+                <!-- Location Filter (Permitted Roles) -->
+                <div class="col-12 col-md-4 col-lg-2">
+                    <label class="form-label small fw-semibold text-muted mb-1">
+                        <i class="bi bi-geo-alt me-1 text-info"></i>Location
+                    </label>
+                    {% if can_filter_locations %}
+                    <select name="location" class="form-select" id="locationFilter">
+                        <option value="">All Accessible Locations</option>
+                        {% for loc in available_locations %}
+                        <option value="{{ loc.id }}" {% if selected_location_id|stringformat:"s" == loc.id|stringformat:"s" %}selected{% endif %}>
+                            {{ loc.name }} ({{ loc.get_location_type_display }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                    {% else %}
+                    <input type="text" class="form-control bg-light" value="{{ user.location.name|default:'Assigned Location' }}" readonly disabled>
+                    {% if user.location %}
+                    <input type="hidden" name="location" value="{{ user.location.id }}">
+                    {% endif %}
+                    {% endif %}
                 </div>
-                <div class="col-md-3">
-                    <label class="form-label fw-semibold">To Date</label>
-                    <input type="date" name="date_to" class="form-control" value="{{ date_to|default:'' }}">
+
+                <!-- Date Range Preset -->
+                <div class="col-12 col-md-4 col-lg-2">
+                    <label class="form-label small fw-semibold text-muted mb-1">
+                        <i class="bi bi-calendar3 me-1 text-primary"></i>Period
+                    </label>
+                    <select name="range" class="form-select" id="datePresetSelect">
+                        <option value="all" {% if current_range == 'all' %}selected{% endif %}>All Time</option>
+                        <option value="today" {% if current_range == 'today' %}selected{% endif %}>Today</option>
+                        <option value="yesterday" {% if current_range == 'yesterday' %}selected{% endif %}>Yesterday</option>
+                        <option value="week" {% if current_range == 'week' %}selected{% endif %}>Last 7 Days</option>
+                        <option value="this_month" {% if current_range == 'this_month' %}selected{% endif %}>This Month</option>
+                        <option value="month" {% if current_range == 'month' %}selected{% endif %}>Last 30 Days</option>
+                        <option value="year" {% if current_range == 'year' %}selected{% endif %}>Last 365 Days</option>
+                        <option value="custom" {% if current_range == 'custom' %}selected{% endif %}>Custom Range</option>
+                    </select>
                 </div>
-                <div class="col-md-2 d-flex gap-2">
-                    <button type="submit" class="btn btn-primary flex-grow-1">
-                        <i class="bi bi-filter me-1"></i> Filter
+
+                <!-- Date From -->
+                <div class="col-6 col-md-3 col-lg-2">
+                    <label class="form-label small fw-semibold text-muted mb-1">From</label>
+                    <input type="date" name="date_from" id="dateFromInput" class="form-control" value="{{ date_from|default:'' }}">
+                </div>
+
+                <!-- Date To -->
+                <div class="col-6 col-md-3 col-lg-2">
+                    <label class="form-label small fw-semibold text-muted mb-1">To</label>
+                    <input type="date" name="date_to" id="dateToInput" class="form-control" value="{{ date_to|default:'' }}">
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="col-12 col-md-6 col-lg-1 d-flex gap-2">
+                    <button type="submit" class="btn btn-primary flex-grow-1" title="Apply Filters">
+                        <i class="bi bi-funnel"></i>
                     </button>
-                    {% if date_from or date_to %}
-                    <a href="{% url 'audit:product_lifecycle_detail' selected_product.pk %}" class="btn btn-outline-secondary" title="Clear Date Filter">
-                        <i class="bi bi-x-circle"></i>
+                    {% if selected_location_id or current_range != 'all' or date_from or date_to %}
+                    <a href="{% url 'audit:product_lifecycle_detail' selected_product.pk %}" class="btn btn-outline-secondary" title="Reset Filters">
+                        <i class="bi bi-arrow-counterclockwise"></i>
                     </a>
                     {% endif %}
                 </div>
                 {% endif %}
             </form>
+
+            <!-- Active Filter Pills -->
+            {% if selected_product %}
+                {% if selected_location or current_range and current_range != 'all' or date_from or date_to %}
+                <div class="d-flex flex-wrap align-items-center gap-2 mt-3 pt-3 border-top">
+                    <span class="small text-muted fw-semibold"><i class="bi bi-sliders me-1"></i>Active Filters:</span>
+                    {% if selected_location %}
+                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill py-1 px-3">
+                        <i class="bi bi-geo-alt me-1"></i>Location: {{ selected_location.name }}
+                    </span>
+                    {% endif %}
+                    {% if date_from or date_to %}
+                    <span class="badge bg-info-subtle text-info border border-info-subtle rounded-pill py-1 px-3">
+                        <i class="bi bi-calendar-event me-1"></i>Date: {{ date_from|default:"Beginning" }} &rarr; {{ date_to|default:"Today" }}
+                    </span>
+                    {% elif current_range and current_range != 'all' %}
+                    <span class="badge bg-info-subtle text-info border border-info-subtle rounded-pill py-1 px-3">
+                        <i class="bi bi-calendar-event me-1"></i>Period: {{ current_range|title }}
+                    </span>
+                    {% endif %}
+                    <a href="{% url 'audit:product_lifecycle_detail' selected_product.pk %}" class="small text-danger text-decoration-none ms-auto">
+                        <i class="bi bi-x-circle me-1"></i>Clear all filters
+                    </a>
+                </div>
+                {% endif %}
+            {% endif %}
         </div>
     </div>
 
     {% if selected_product %}
-    <!-- Product Info -->
-    <div class="card shadow-sm mb-4 border-primary">
-        <div class="card-header bg-primary text-white">
-            <h5 class="mb-0">
-                <i class="bi bi-box-seam me-2"></i>
-                {{ selected_product.name }}
-                <span class="badge bg-light text-primary ms-2">{{ selected_product.sku }}</span>
-            </h5>
+    <!-- Product Info & Metric Cards -->
+    <div class="row g-3 mb-4">
+        <!-- 1. Stock Status & On Hand -->
+        <div class="col-6 col-lg-3">
+            <div class="card border-0 shadow-sm rounded-4 h-100 summary-card-mini bg-white">
+                <div class="card-body p-3">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <span class="text-muted small fw-semibold text-uppercase d-block mb-1" id="kpi-lifecycle-stock-label" data-orig="{% if selected_location %}Stock ({{ selected_location.name }}){% else %}Total Stock on Hand{% endif %}">
+                                {% if selected_location %}Stock ({{ selected_location.name }}){% else %}Total Stock on Hand{% endif %}
+                            </span>
+                            <h4 class="fw-bold mb-0 text-primary" id="kpi-lifecycle-stock-val" data-orig="{{ current_total_stock|floatformat:'2g' }}">{{ current_total_stock|floatformat:"2g" }}</h4>
+                            <div id="kpi-lifecycle-stock-subtext">
+                                {% if selected_location and overall_total_stock != current_total_stock %}
+                                <div class="small text-muted mt-1" style="font-size: 0.72rem;">
+                                    Across all shops: {{ overall_total_stock|floatformat:"2g" }}
+                                </div>
+                                {% endif %}
+                                {% if has_strict_workflow and total_pending_dispatch_qty > 0 %}
+                                <div class="small mt-1">
+                                    <span class="badge bg-success-subtle text-success rounded-pill" style="font-size: 0.7rem;">
+                                        Avail: {{ available_total_stock|floatformat:"2g" }}
+                                    </span>
+                                    <span class="badge bg-warning-subtle text-warning-emphasis rounded-pill ms-1" style="font-size: 0.7rem;">
+                                        {{ total_pending_dispatch_qty|floatformat:"2g" }} pending
+                                    </span>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="summary-icon-box bg-primary-subtle text-primary">
+                            <i class="bi bi-boxes"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
-        <div class="card-body">
-            <div class="row">
-                <div class="col-md-3">
-                    <div class="text-muted small">Category</div>
-                    <div class="fw-semibold">{{ selected_product.category.name|default:"Uncategorized" }}</div>
-                </div>
-                <div class="col-md-3">
-                    <div class="text-muted small">Unit</div>
-                    <div class="fw-semibold">{{ selected_product.get_unit_of_measure_display }}</div>
-                </div>
-                <div class="col-md-3">
-                    <div class="text-muted small">Default Price</div>
-                    <div class="fw-semibold">
-                        {{ currency_symbol }}{{ selected_product.default_selling_price|floatformat:"2g" }}</div>
-                </div>
-                <div class="col-md-3">
-                    <div class="text-muted small">Current Total Stock</div>
-                    <div class="fw-bold text-primary fs-4">{{ current_total_stock|floatformat:"2g" }}</div>
-                    {% if has_strict_workflow and total_pending_dispatch_qty > 0 %}
-                    <div class="small mt-1">
-                        <span class="text-muted">Available:</span>
-                        <span class="fw-bold text-success">{{ available_total_stock|floatformat:"2g" }}</span>
-                        <span class="badge bg-warning text-dark ms-1" title="Items sold in strict workflow awaiting dispatch">{{ total_pending_dispatch_qty|floatformat:"2g" }} pending</span>
+
+        <!-- 2. Period Net Movement -->
+        <div class="col-6 col-lg-3">
+            <div class="card border-0 shadow-sm rounded-4 h-100 summary-card-mini bg-white">
+                <div class="card-body p-3">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <span class="text-muted small fw-semibold text-uppercase d-block mb-1" id="kpi-lifecycle-mov-label" data-orig="Period Net Movement">Period Net Movement</span>
+                            <h4 class="fw-bold mb-0 {% if period_net_movement > 0 %}text-success{% elif period_net_movement < 0 %}text-danger{% else %}text-dark{% endif %}" id="kpi-lifecycle-mov-val" data-orig="{% if period_net_movement > 0 %}+{% endif %}{{ period_net_movement|floatformat:'2g' }}" data-orig-class="{% if period_net_movement > 0 %}text-success{% elif period_net_movement < 0 %}text-danger{% else %}text-dark{% endif %}">
+                                {% if period_net_movement > 0 %}+{% endif %}{{ period_net_movement|floatformat:"2g" }}
+                            </h4>
+                            <div id="kpi-lifecycle-mov-subtext">
+                                <span class="badge bg-secondary-subtle text-secondary rounded-pill mt-1" style="font-size: 0.72rem;">
+                                    Inflows: +{{ total_entries_qty|floatformat:"2g" }} | Exits: {{ total_exits_qty|floatformat:"2g" }}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="summary-icon-box bg-info-subtle text-info">
+                            <i class="bi bi-arrow-left-right"></i>
+                        </div>
                     </div>
-                    {% endif %}
-                    {% if has_date_filter %}
-                    <div class="small">
-                        <span class="text-muted">Period Net:</span>
-                        <span class="fw-semibold {% if period_net_movement >= 0 %}text-success{% else %}text-danger{% endif %}">
-                            {% if period_net_movement > 0 %}+{% endif %}{{ period_net_movement|floatformat:"2g" }}
-                        </span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. Selling Valuation -->
+        <div class="col-6 col-lg-3">
+            <div class="card border-0 shadow-sm rounded-4 h-100 summary-card-mini bg-white">
+                <div class="card-body p-3">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <span class="text-muted small fw-semibold text-uppercase d-block mb-1">Selling Price</span>
+                            <h4 class="fw-bold mb-0 text-dark">{{ currency_symbol }}{{ selected_product.default_selling_price|floatformat:"2g" }}</h4>
+                            <span class="badge bg-light text-secondary border rounded-pill mt-1" style="font-size: 0.72rem;">
+                                {{ selected_product.category.name|default:"Uncategorized" }} &bull; {{ selected_product.get_unit_of_measure_display }}
+                            </span>
+                        </div>
+                        <div class="summary-icon-box bg-success-subtle text-success">
+                            <i class="bi bi-tag"></i>
+                        </div>
                     </div>
-                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- 4. SKU & Code Identifier -->
+        <div class="col-6 col-lg-3">
+            <div class="card border-0 shadow-sm rounded-4 h-100 summary-card-mini bg-white">
+                <div class="card-body p-3">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <span class="text-muted small fw-semibold text-uppercase d-block mb-1">Product SKU</span>
+                            <h5 class="fw-bold mb-0 font-monospace text-dark text-truncate" style="max-width: 170px;">{{ selected_product.sku }}</h5>
+                            <span class="badge {% if selected_product.is_active %}bg-success{% else %}bg-secondary{% endif %} rounded-pill mt-1" style="font-size: 0.72rem;">
+                                {% if selected_product.is_active %}Active in Catalog{% else %}Inactive{% endif %}
+                            </span>
+                        </div>
+                        <div class="summary-icon-box bg-secondary-subtle text-secondary">
+                            <i class="bi bi-upc-scan"></i>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- Summary Cards -->
-    <div class="row mb-4">
+    <div class="row mb-4 g-4">
         <!-- Entries -->
         <div class="col-md-4">
-            <div class="card shadow-sm h-100 border-success">
-                <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
-                    <div>
-                        <i class="bi bi-box-arrow-in-down me-2"></i> Stock Entries
+            <div class="card shadow-sm h-100 border-0 rounded-4">
+                <div class="card-header bg-success text-white rounded-top-4 d-flex justify-content-between align-items-center py-3 px-3">
+                    <div class="fw-bold">
+                        <i class="bi bi-box-arrow-in-down me-2"></i> Stock Entries (Inflows)
                     </div>
-                    <span class="badge bg-light text-success">{{ total_entries_count }} entries</span>
+                    <span class="badge bg-light text-success" id="card-entries-count-badge" data-orig="{{ total_entries_count }} entries">{{ total_entries_count }} entries</span>
                 </div>
                 <div class="card-body p-0">
                     <table class="table table-sm table-hover mb-0">
@@ -214,7 +391,7 @@
                         <tfoot class="table-success border-top border-2">
                             <tr>
                                 <th class="ps-3">Total Stock Entries</th>
-                                <th class="text-end pe-3 fw-bold text-success">
+                                <th class="text-end pe-3 fw-bold text-success" id="card-entries-total-val" data-orig="+{{ total_entries_qty|floatformat:'2g' }}">
                                     +{{ total_entries_qty|floatformat:"2g" }}
                                 </th>
                             </tr>
@@ -226,12 +403,12 @@
 
         <!-- Exits -->
         <div class="col-md-4">
-            <div class="card shadow-sm h-100 border-danger">
-                <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center">
-                    <div>
-                        <i class="bi bi-box-arrow-up me-2"></i> Stock Exits
+            <div class="card shadow-sm h-100 border-0 rounded-4">
+                <div class="card-header bg-danger text-white rounded-top-4 d-flex justify-content-between align-items-center py-3 px-3">
+                    <div class="fw-bold">
+                        <i class="bi bi-box-arrow-up me-2"></i> Stock Exits (Outflows)
                     </div>
-                    <span class="badge bg-light text-danger">{{ total_exits_count }} exits</span>
+                    <span class="badge bg-light text-danger" id="card-exits-count-badge" data-orig="{{ total_exits_count }} exits">{{ total_exits_count }} exits</span>
                 </div>
                 <div class="card-body p-0">
                     <table class="table table-sm table-hover mb-0">
@@ -311,7 +488,7 @@
                         <tfoot class="table-danger border-top border-2">
                             <tr>
                                 <th class="ps-3">Total Stock Exits</th>
-                                <th class="text-end pe-3 fw-bold text-danger">
+                                <th class="text-end pe-3 fw-bold text-danger" id="card-exits-total-val" data-orig="{{ total_exits_qty|floatformat:'2g' }}">
                                     {{ total_exits_qty|floatformat:"2g" }}
                                 </th>
                             </tr>
@@ -326,9 +503,9 @@
                         </tfoot>
                     </table>
                 </div>
-                <div class="card-footer bg-light py-2 d-flex justify-content-between align-items-center">
-                    <span class="small fw-semibold text-muted">Period Net Movement:</span>
-                    <span class="fw-bold {% if period_net_movement >= 0 %}text-success{% else %}text-danger{% endif %}">
+                <div class="card-footer bg-light py-2 d-flex justify-content-between align-items-center rounded-bottom-4">
+                    <span class="small fw-semibold text-muted" id="card-exits-net-label" data-orig="Period Net Movement:">Period Net Movement:</span>
+                    <span class="fw-bold {% if period_net_movement >= 0 %}text-success{% else %}text-danger{% endif %}" id="card-exits-net-val" data-orig="{% if period_net_movement > 0 %}+{% endif %}{{ period_net_movement|floatformat:'2g' }}" data-orig-class="{% if period_net_movement >= 0 %}text-success{% else %}text-danger{% endif %}">
                         {% if period_net_movement > 0 %}+{% endif %}{{ period_net_movement|floatformat:"2g" }}
                     </span>
                 </div>
@@ -337,9 +514,9 @@
 
         <!-- Location Balances -->
         <div class="col-md-4">
-            <div class="card shadow-sm h-100 border-info">
-                <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
-                    <div>
+            <div class="card shadow-sm h-100 border-0 rounded-4">
+                <div class="card-header bg-info text-dark rounded-top-4 d-flex justify-content-between align-items-center py-3 px-3">
+                    <div class="fw-bold">
                         <i class="bi bi-geo-alt me-2"></i> Stock by Location
                     </div>
                     {% if has_strict_workflow and total_pending_dispatch_qty > 0 %}
@@ -349,11 +526,32 @@
                     {% endif %}
                 </div>
                 <div class="card-body p-0">
+                    <!-- Location Selection Live Summary Banner -->
+                    <div id="location-lifecycle-bar" class="alert alert-info border-info-subtle selection-summary-bar d-none py-2 px-3 mx-2 my-2 d-flex flex-wrap align-items-center justify-content-between gap-2 shadow-sm">
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <span class="badge bg-info text-dark rounded-pill px-2 py-1 small">
+                                <i class="bi bi-check-circle-fill me-1"></i><span id="loc-lifecycle-count">0</span> Selected
+                            </span>
+                            <span class="small text-muted">Combined Stock:</span>
+                            <strong class="text-dark" id="loc-lifecycle-stock">0.00</strong>
+                            {% if has_strict_workflow %}
+                            <span class="small text-muted ms-1">Available:</span>
+                            <strong class="text-success" id="loc-lifecycle-avail">0.00</strong>
+                            {% endif %}
+                        </div>
+                        <button type="button" class="btn btn-sm btn-link text-decoration-none py-0 px-1" id="clear-loc-lifecycle">
+                            <i class="bi bi-x-circle"></i>
+                        </button>
+                    </div>
+
                     <div class="table-responsive">
-                        <table class="table table-sm table-hover mb-0">
+                        <table class="table table-sm table-hover mb-0" id="locationLifecycleTable">
                             <thead class="table-light">
                                 <tr>
-                                    <th class="ps-3">Location</th>
+                                    <th class="table-checkbox-col ps-2">
+                                        <input type="checkbox" class="form-check-input" id="select-all-loc-lifecycle" title="Select all locations">
+                                    </th>
+                                    <th>Location</th>
                                     {% if has_date_filter %}
                                     <th class="text-end text-muted small">Period Net</th>
                                     {% endif %}
@@ -368,8 +566,11 @@
                             </thead>
                             <tbody>
                                 {% for loc in location_balances %}
-                                <tr>
-                                    <td class="ps-3">
+                                <tr class="loc-lifecycle-row" data-stock="{{ loc.current_stock|default:0 }}" data-avail="{{ loc.available_stock|default:0 }}">
+                                    <td class="table-checkbox-col ps-2">
+                                        <input type="checkbox" class="form-check-input loc-lifecycle-check">
+                                    </td>
+                                    <td>
                                         {{ loc.location__name }}
                                         <span class="badge bg-secondary ms-1">{{ loc.location__location_type }}</span>
                                     </td>
@@ -392,19 +593,20 @@
                                 </tr>
                                 {% empty %}
                                 <tr>
-                                    <td colspan="{% if has_strict_workflow and total_pending_dispatch_qty > 0 %}5{% elif has_date_filter %}3{% else %}2{% endif %}" class="text-muted text-center py-3">No stock data</td>
+                                    <td colspan="{% if has_strict_workflow and total_pending_dispatch_qty > 0 %}6{% elif has_date_filter %}4{% else %}3{% endif %}" class="text-muted text-center py-3">No stock data</td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
-                            <tfoot class="table-info border-top border-2">
+                            <tfoot class="table-light border-top border-2">
                                 <tr>
-                                    <th class="ps-3">Total</th>
+                                    <th></th>
+                                    <th>Total</th>
                                     {% if has_date_filter %}
                                     <th class="text-end text-muted small">
                                         {% if period_net_movement > 0 %}+{% endif %}{{ period_net_movement|floatformat:"2g" }}
                                     </th>
                                     {% endif %}
-                                    <th class="text-end {% if has_strict_workflow and total_pending_dispatch_qty > 0 %}px-2{% else %}pe-3{% endif %} fw-bold text-primary">
+                                    <th class="text-end {% if has_strict_workflow and total_pending_dispatch_qty > 0 %}px-2{% else %}pe-3{% endif %} fw-bold text-primary" id="card-loc-total-val" data-orig="{{ current_total_stock|floatformat:'2g' }}">
                                         {{ current_total_stock|floatformat:"2g" }}
                                     </th>
                                     {% if has_strict_workflow and total_pending_dispatch_qty > 0 %}
@@ -425,19 +627,54 @@
     </div>
 
     <!-- Detailed Ledger -->
-    <div class="card shadow-sm">
-        <div class="card-header bg-light">
-            <h5 class="mb-0">
-                <i class="bi bi-journal-text me-2"></i>
+    <div class="card shadow-sm border-0 rounded-4">
+        <div class="card-header bg-light rounded-top-4 py-3 px-3 d-flex justify-content-between align-items-center">
+            <h5 class="mb-0 fw-bold">
+                <i class="bi bi-journal-text me-2 text-primary"></i>
                 Inventory Ledger Details
                 <span class="badge bg-primary ms-2">{{ ledger_entries|length }} entries</span>
             </h5>
+            <small class="text-muted">Select movement rows to see live total inflow, outflow, and net quantity</small>
         </div>
         <div class="card-body p-0">
+            <!-- Ledger Selection Live Summary Banner -->
+            <div id="ledger-selection-bar" class="alert alert-primary border-primary-subtle selection-summary-bar d-none py-2 px-3 mx-3 mt-3 mb-2 d-flex flex-wrap align-items-center justify-content-between gap-3 shadow-sm">
+                <div class="d-flex align-items-center gap-3 flex-wrap">
+                    <span class="badge bg-primary rounded-pill px-3 py-1">
+                        <i class="bi bi-check-circle-fill me-1"></i><span id="ledger-selected-count">0</span> Movements Selected
+                    </span>
+                    <div>
+                        <span class="small text-muted d-block" style="font-size: 0.72rem;">Inflow (+)</span>
+                        <strong class="text-success" id="ledger-selected-inflow">+0.00</strong>
+                    </div>
+                    <div class="vr d-none d-md-block"></div>
+                    <div>
+                        <span class="small text-muted d-block" style="font-size: 0.72rem;">Outflow (-)</span>
+                        <strong class="text-danger" id="ledger-selected-outflow">-0.00</strong>
+                    </div>
+                    <div class="vr d-none d-md-block"></div>
+                    <div>
+                        <span class="small text-muted d-block" style="font-size: 0.72rem;">Net Movement</span>
+                        <strong class="text-dark" id="ledger-selected-net">0.00</strong>
+                    </div>
+                    <div class="vr d-none d-md-block"></div>
+                    <div>
+                        <span class="small text-muted d-block" style="font-size: 0.72rem;">Transaction Valuation</span>
+                        <strong class="text-primary" id="ledger-selected-cost">{{ currency_symbol }}0.00</strong>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" id="clear-ledger-selection">
+                    <i class="bi bi-x me-1"></i>Clear Selection
+                </button>
+            </div>
+
             <div class="table-responsive">
-                <table class="table table-hover table-striped mb-0">
+                <table class="table table-hover table-striped mb-0 align-middle" id="lifecycleLedgerTable">
                     <thead class="table-dark">
                         <tr>
+                            <th class="table-checkbox-col">
+                                <input type="checkbox" class="form-check-input" id="select-all-ledger" title="Select all movements">
+                            </th>
                             <th class="text-white">{% sort_link "Date/Time" "created_at" "text-white" %}</th>
                             <th class="text-white">{% sort_link "Type" "transaction_type" "text-white" %}</th>
                             <th class="text-white">{% sort_link "Location" "location__name" "text-white" %}</th>
@@ -450,9 +687,12 @@
                     </thead>
                     <tbody>
                         {% for entry in ledger_entries %}
-                        <tr>
+                        <tr class="ledger-row" data-qty="{{ entry.quantity|default:0 }}" data-cost="{{ entry.unit_cost|default:0 }}">
+                            <td class="table-checkbox-col">
+                                <input type="checkbox" class="form-check-input ledger-select-check">
+                            </td>
                             <td>
-                                <small>{{ entry.created_at|date:"d M Y" }}</small><br>
+                                <small class="fw-semibold">{{ entry.created_at|date:"d M Y" }}</small><br>
                                 <small class="text-muted">{{ entry.created_at|time:"H:i" }}</small>
                             </td>
                             <td>
@@ -463,16 +703,17 @@
                             <td>{{ entry.location.name }}</td>
                             <td>
                                 {% if entry.batch %}
-                                <small>{{ entry.batch.batch_number }}</small>
+                                <a href="{% url 'inventory:batch_detail' entry.batch.pk %}" class="badge bg-light text-dark border text-decoration-none">
+                                    {{ entry.batch.batch_number }}
+                                </a>
                                 {% else %}
                                 <span class="text-muted">-</span>
                                 {% endif %}
                             </td>
-                            <td
-                                class="text-end fw-semibold {% if entry.quantity > 0 %}text-success{% else %}text-danger{% endif %}">
+                            <td class="text-end fw-bold {% if entry.quantity > 0 %}text-success{% else %}text-danger{% endif %}">
                                 {% if entry.quantity > 0 %}+{% endif %}{{ entry.quantity|floatformat:"2g" }}
                             </td>
-                            <td class="text-end">
+                            <td class="text-end text-muted">
                                 {% if entry.unit_cost %}
                                 {{ currency_symbol }}{{ entry.unit_cost|floatformat:"2g" }}
                                 {% else %}
@@ -491,7 +732,7 @@
                             </td>
                             <td>
                                 {% if entry.created_by %}
-                                <small>{% if entry.created_by %}{{ entry.created_by.get_full_name|default:entry.created_by.email }}{% else %}-{% endif %}</small>
+                                <small>{{ entry.created_by.get_full_name|default:entry.created_by.email }}</small>
                                 {% else %}
                                 <span class="text-muted">System</span>
                                 {% endif %}
@@ -499,9 +740,9 @@
                         </tr>
                         {% empty %}
                         <tr>
-                            <td colspan="8" class="text-center text-muted py-4">
+                            <td colspan="9" class="text-center text-muted py-4">
                                 <i class="bi bi-inbox fs-1 d-block mb-2"></i>
-                                No inventory movements found for this product
+                                No inventory movements found for this product matching the current filters.
                             </td>
                         </tr>
                         {% endfor %}
@@ -514,10 +755,10 @@
 
     {% if has_strict_workflow and pending_sales_items %}
     <!-- Pending Dispatches / Strict Workflow Section -->
-    <div class="card shadow-sm mt-4 border-warning">
-        <div class="card-header bg-warning bg-opacity-25 d-flex justify-content-between align-items-center">
-            <h5 class="mb-0 text-dark">
-                <i class="bi bi-clock-history text-warning me-2"></i>
+    <div class="card shadow-sm mt-4 border-warning rounded-4">
+        <div class="card-header bg-warning bg-opacity-25 d-flex justify-content-between align-items-center py-3 px-3 rounded-top-4">
+            <h5 class="mb-0 text-dark fw-bold">
+                <i class="bi bi-clock-history text-warning-emphasis me-2"></i>
                 Orders Awaiting Dispatch (Strict Sales Workflow)
                 <span class="badge bg-warning text-dark ms-2">{{ pending_dispatch_count }} item{{ pending_dispatch_count|pluralize }}</span>
             </h5>
@@ -527,7 +768,7 @@
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
-                <table class="table table-hover table-sm mb-0">
+                <table class="table table-hover table-sm mb-0 align-middle">
                     <thead class="table-light">
                         <tr>
                             <th class="ps-3">Sale #</th>
@@ -572,11 +813,11 @@
 
     {% else %}
     <!-- No Product Selected -->
-    <div class="card shadow-sm">
+    <div class="card shadow-sm border-0 rounded-4">
         <div class="card-body text-center py-5">
             <i class="bi bi-box-seam text-muted" style="font-size: 4rem;"></i>
             <h4 class="mt-3 text-muted">Select a Product</h4>
-            <p class="text-muted">Choose a product from the dropdown above to view its lifecycle tracking.</p>
+            <p class="text-muted">Search and select a product from the search bar above to view its complete lifecycle audit trail.</p>
         </div>
     </div>
     {% endif %}
@@ -588,6 +829,353 @@
     document.addEventListener('DOMContentLoaded', function () {
         const searchInput = document.getElementById('productSearch');
         const suggestions = document.getElementById('searchSuggestions');
+        const CURRENCY_SYMBOL = "{{ currency_symbol|default:'$'|escapejs }}";
+
+        function formatNum(val, decimals = 2) {
+            return Number(val).toLocaleString(undefined, {
+                minimumFractionDigits: decimals,
+                maximumFractionDigits: decimals
+            });
+        }
+
+        function toISODate(d) {
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        // ==========================================
+        // 1. Date Preset Quick Pickers
+        // ==========================================
+        const presetSelect = document.getElementById('datePresetSelect');
+        const dateFromInput = document.getElementById('dateFromInput');
+        const dateToInput = document.getElementById('dateToInput');
+
+        if (presetSelect && dateFromInput && dateToInput) {
+            presetSelect.addEventListener('change', function () {
+                const val = this.value;
+                const now = new Date();
+
+                if (val === 'all') {
+                    dateFromInput.value = '';
+                    dateToInput.value = '';
+                } else if (val === 'today') {
+                    dateFromInput.value = toISODate(now);
+                    dateToInput.value = toISODate(now);
+                } else if (val === 'yesterday') {
+                    const yest = new Date();
+                    yest.setDate(yest.getDate() - 1);
+                    dateFromInput.value = toISODate(yest);
+                    dateToInput.value = toISODate(yest);
+                } else if (val === 'week') {
+                    const weekAgo = new Date();
+                    weekAgo.setDate(weekAgo.getDate() - 7);
+                    dateFromInput.value = toISODate(weekAgo);
+                    dateToInput.value = toISODate(now);
+                } else if (val === 'this_month') {
+                    const startMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+                    dateFromInput.value = toISODate(startMonth);
+                    dateToInput.value = toISODate(now);
+                } else if (val === 'month') {
+                    const monthAgo = new Date();
+                    monthAgo.setDate(monthAgo.getDate() - 30);
+                    dateFromInput.value = toISODate(monthAgo);
+                    dateToInput.value = toISODate(now);
+                } else if (val === 'year') {
+                    const yearAgo = new Date();
+                    yearAgo.setDate(yearAgo.getDate() - 365);
+                    dateFromInput.value = toISODate(yearAgo);
+                    dateToInput.value = toISODate(now);
+                }
+            });
+
+            [dateFromInput, dateToInput].forEach(inp => {
+                inp.addEventListener('input', function () {
+                    if (presetSelect.value !== 'custom') {
+                        presetSelect.value = 'custom';
+                    }
+                });
+            });
+        }
+
+        // ==========================================
+        // 2. Ledger Items Selection & Live Summary
+        // ==========================================
+        const ledgerSelectAll = document.getElementById('select-all-ledger');
+        const ledgerChecks = document.querySelectorAll('.ledger-select-check');
+        const ledgerBar = document.getElementById('ledger-selection-bar');
+        const ledgerClearBtn = document.getElementById('clear-ledger-selection');
+
+        // Elements & Original Data for Live KPI & Summary Cards Updates
+        const kpiMovVal = document.getElementById('kpi-lifecycle-mov-val');
+        const kpiMovLabel = document.getElementById('kpi-lifecycle-mov-label');
+        const kpiMovSubtext = document.getElementById('kpi-lifecycle-mov-subtext');
+
+        const cardEntriesCount = document.getElementById('card-entries-count-badge');
+        const cardEntriesTotal = document.getElementById('card-entries-total-val');
+        const cardExitsCount = document.getElementById('card-exits-count-badge');
+        const cardExitsTotal = document.getElementById('card-exits-total-val');
+        const cardExitsNetLabel = document.getElementById('card-exits-net-label');
+        const cardExitsNetVal = document.getElementById('card-exits-net-val');
+
+        const origMovVal = kpiMovVal ? kpiMovVal.getAttribute('data-orig') : '';
+        const origMovLabel = kpiMovLabel ? kpiMovLabel.getAttribute('data-orig') : '';
+        const origMovClass = kpiMovVal ? kpiMovVal.getAttribute('data-orig-class') : '';
+        const origMovSubtextHtml = kpiMovSubtext ? kpiMovSubtext.innerHTML : '';
+
+        const origEntriesCount = cardEntriesCount ? cardEntriesCount.getAttribute('data-orig') : '';
+        const origEntriesTotal = cardEntriesTotal ? cardEntriesTotal.getAttribute('data-orig') : '';
+        const origExitsCount = cardExitsCount ? cardExitsCount.getAttribute('data-orig') : '';
+        const origExitsTotal = cardExitsTotal ? cardExitsTotal.getAttribute('data-orig') : '';
+        const origExitsNetLabel = cardExitsNetLabel ? cardExitsNetLabel.getAttribute('data-orig') : '';
+        const origExitsNetVal = cardExitsNetVal ? cardExitsNetVal.getAttribute('data-orig') : '';
+        const origExitsNetClass = cardExitsNetVal ? cardExitsNetVal.getAttribute('data-orig-class') : '';
+
+        const kpiStockVal = document.getElementById('kpi-lifecycle-stock-val');
+        const kpiStockLabel = document.getElementById('kpi-lifecycle-stock-label');
+        const kpiStockSubtext = document.getElementById('kpi-lifecycle-stock-subtext');
+        const cardLocTotal = document.getElementById('card-loc-total-val');
+
+        const origStockVal = kpiStockVal ? kpiStockVal.getAttribute('data-orig') : '';
+        const origStockLabel = kpiStockLabel ? kpiStockLabel.getAttribute('data-orig') : '';
+        const origStockSubtextHtml = kpiStockSubtext ? kpiStockSubtext.innerHTML : '';
+        const origLocTotal = cardLocTotal ? cardLocTotal.getAttribute('data-orig') : '';
+
+        function updateLedgerSummary() {
+            let count = 0;
+            let inflow = 0;
+            let outflow = 0;
+            let inflowCount = 0;
+            let outflowCount = 0;
+            let totalValuation = 0;
+
+            ledgerChecks.forEach(chk => {
+                const tr = chk.closest('tr');
+                if (chk.checked) {
+                    count++;
+                    tr.classList.add('row-selected');
+                    const qty = parseFloat(tr.getAttribute('data-qty')) || 0;
+                    const cost = parseFloat(tr.getAttribute('data-cost')) || 0;
+                    if (qty > 0) {
+                        inflow += qty;
+                        inflowCount++;
+                    } else {
+                        outflow += Math.abs(qty);
+                        outflowCount++;
+                    }
+                    totalValuation += Math.abs(qty) * cost;
+                } else {
+                    tr.classList.remove('row-selected');
+                }
+            });
+
+            const net = inflow - outflow;
+
+            if (count > 0) {
+                if (ledgerBar) ledgerBar.classList.remove('d-none');
+                const selCnt = document.getElementById('ledger-selected-count');
+                const selIn = document.getElementById('ledger-selected-inflow');
+                const selOut = document.getElementById('ledger-selected-outflow');
+                const selNet = document.getElementById('ledger-selected-net');
+                const selCost = document.getElementById('ledger-selected-cost');
+
+                if (selCnt) selCnt.textContent = count;
+                if (selIn) selIn.textContent = '+' + formatNum(inflow, 2);
+                if (selOut) selOut.textContent = '-' + formatNum(outflow, 2);
+                if (selNet) {
+                    selNet.textContent = (net > 0 ? '+' : '') + formatNum(net, 2);
+                    selNet.className = net > 0 ? 'text-success fw-bold' : (net < 0 ? 'text-danger fw-bold' : 'text-dark fw-bold');
+                }
+                if (selCost) selCost.textContent = CURRENCY_SYMBOL + formatNum(totalValuation, 2);
+
+                // --- Live update Top KPI Card 2 (Net Movement) ---
+                if (kpiMovVal) {
+                    kpiMovVal.textContent = (net > 0 ? '+' : '') + formatNum(net, 2);
+                    kpiMovVal.className = 'fw-bold mb-0 ' + (net > 0 ? 'text-success' : (net < 0 ? 'text-danger' : 'text-dark'));
+                }
+                if (kpiMovLabel) {
+                    kpiMovLabel.innerHTML = `<i class="bi bi-check-circle-fill text-primary me-1"></i>Selected Net Movement (${count})`;
+                }
+                if (kpiMovSubtext) {
+                    kpiMovSubtext.innerHTML = `<span class="badge bg-primary-subtle text-primary rounded-pill mt-1" style="font-size: 0.72rem;">In: +${formatNum(inflow, 2)} | Out: -${formatNum(outflow, 2)}</span>`;
+                }
+
+                // --- Live update Stock Entries Breakdown Card ---
+                if (cardEntriesCount) cardEntriesCount.textContent = `${inflowCount} selected`;
+                if (cardEntriesTotal) cardEntriesTotal.textContent = `+${formatNum(inflow, 2)}`;
+
+                // --- Live update Stock Exits Breakdown Card ---
+                if (cardExitsCount) cardExitsCount.textContent = `${outflowCount} selected`;
+                if (cardExitsTotal) cardExitsTotal.textContent = `-${formatNum(outflow, 2)}`;
+                if (cardExitsNetLabel) cardExitsNetLabel.textContent = `Selected Net Movement:`;
+                if (cardExitsNetVal) {
+                    cardExitsNetVal.textContent = (net > 0 ? '+' : '') + formatNum(net, 2);
+                    cardExitsNetVal.className = 'fw-bold ' + (net >= 0 ? 'text-success' : 'text-danger');
+                }
+            } else {
+                if (ledgerBar) ledgerBar.classList.add('d-none');
+
+                // --- Restore Top KPI Card 2 ---
+                if (kpiMovVal) {
+                    kpiMovVal.textContent = origMovVal;
+                    kpiMovVal.className = 'fw-bold mb-0 ' + origMovClass;
+                }
+                if (kpiMovLabel) kpiMovLabel.textContent = origMovLabel;
+                if (kpiMovSubtext) kpiMovSubtext.innerHTML = origMovSubtextHtml;
+
+                // --- Restore Stock Entries Card ---
+                if (cardEntriesCount) cardEntriesCount.textContent = origEntriesCount;
+                if (cardEntriesTotal) cardEntriesTotal.textContent = origEntriesTotal;
+
+                // --- Restore Stock Exits Card ---
+                if (cardExitsCount) cardExitsCount.textContent = origExitsCount;
+                if (cardExitsTotal) cardExitsTotal.textContent = origExitsTotal;
+                if (cardExitsNetLabel) cardExitsNetLabel.textContent = origExitsNetLabel;
+                if (cardExitsNetVal) {
+                    cardExitsNetVal.textContent = origExitsNetVal;
+                    cardExitsNetVal.className = 'fw-bold ' + origExitsNetClass;
+                }
+            }
+
+            if (ledgerSelectAll && ledgerChecks.length > 0) {
+                ledgerSelectAll.checked = (count === ledgerChecks.length);
+                ledgerSelectAll.indeterminate = (count > 0 && count < ledgerChecks.length);
+            }
+        }
+
+        if (ledgerSelectAll) {
+            ledgerSelectAll.addEventListener('change', function () {
+                const checked = this.checked;
+                ledgerChecks.forEach(chk => { chk.checked = checked; });
+                updateLedgerSummary();
+            });
+        }
+
+        ledgerChecks.forEach(chk => {
+            chk.addEventListener('change', updateLedgerSummary);
+        });
+
+        document.querySelectorAll('.ledger-row').forEach(tr => {
+            tr.style.cursor = 'pointer';
+            tr.addEventListener('click', function(e) {
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'A' || e.target.closest('a') || e.target.closest('button')) return;
+                const chk = this.querySelector('.ledger-select-check');
+                if (chk) {
+                    chk.checked = !chk.checked;
+                    updateLedgerSummary();
+                }
+            });
+        });
+
+        if (ledgerClearBtn) {
+            ledgerClearBtn.addEventListener('click', function () {
+                if (ledgerSelectAll) {
+                    ledgerSelectAll.checked = false;
+                    ledgerSelectAll.indeterminate = false;
+                }
+                ledgerChecks.forEach(chk => { chk.checked = false; });
+                updateLedgerSummary();
+            });
+        }
+
+        // ==========================================
+        // 3. Location Table Selection & Live Summary
+        // ==========================================
+        const locSelectAll = document.getElementById('select-all-loc-lifecycle');
+        const locChecks = document.querySelectorAll('.loc-lifecycle-check');
+        const locBar = document.getElementById('location-lifecycle-bar');
+        const locClearBtn = document.getElementById('clear-loc-lifecycle');
+
+        function updateLocSummary() {
+            let count = 0;
+            let totalStock = 0;
+            let totalAvail = 0;
+
+            locChecks.forEach(chk => {
+                const tr = chk.closest('tr');
+                if (chk.checked) {
+                    count++;
+                    tr.classList.add('row-selected');
+                    totalStock += parseFloat(tr.getAttribute('data-stock')) || 0;
+                    totalAvail += parseFloat(tr.getAttribute('data-avail')) || 0;
+                } else {
+                    tr.classList.remove('row-selected');
+                }
+            });
+
+            if (count > 0 && locBar) {
+                locBar.classList.remove('d-none');
+                const cntEl = document.getElementById('loc-lifecycle-count');
+                const stEl = document.getElementById('loc-lifecycle-stock');
+                const avEl = document.getElementById('loc-lifecycle-avail');
+                if (cntEl) cntEl.textContent = count;
+                if (stEl) stEl.textContent = formatNum(totalStock, 2);
+                if (avEl) avEl.textContent = formatNum(totalAvail, 2);
+
+                // --- Live update Top KPI Card 1 (Stock on Hand) ---
+                if (kpiStockVal) kpiStockVal.textContent = formatNum(totalStock, 2);
+                if (kpiStockLabel) kpiStockLabel.innerHTML = `<i class="bi bi-check-circle-fill text-info me-1"></i>Selected Stock (${count} Locs)`;
+                if (kpiStockSubtext) kpiStockSubtext.innerHTML = `<span class="badge bg-info text-dark rounded-pill mt-1" style="font-size:0.72rem;">${count} Locations Selected</span>`;
+
+                // --- Live update Stock by Location Breakdown Card Footer ---
+                if (cardLocTotal) cardLocTotal.textContent = formatNum(totalStock, 2);
+            } else {
+                if (locBar) locBar.classList.add('d-none');
+
+                // --- Restore Top KPI Card 1 ---
+                if (kpiStockVal) kpiStockVal.textContent = origStockVal;
+                if (kpiStockLabel) kpiStockLabel.textContent = origStockLabel;
+                if (kpiStockSubtext) kpiStockSubtext.innerHTML = origStockSubtextHtml;
+
+                // --- Restore Stock by Location Breakdown Card Footer ---
+                if (cardLocTotal) cardLocTotal.textContent = origLocTotal;
+            }
+
+            if (locSelectAll && locChecks.length > 0) {
+                locSelectAll.checked = (count === locChecks.length);
+                locSelectAll.indeterminate = (count > 0 && count < locChecks.length);
+            }
+        }
+
+        if (locSelectAll) {
+            locSelectAll.addEventListener('change', function () {
+                const checked = this.checked;
+                locChecks.forEach(chk => { chk.checked = checked; });
+                updateLocSummary();
+            });
+        }
+
+        locChecks.forEach(chk => {
+            chk.addEventListener('change', updateLocSummary);
+        });
+
+        document.querySelectorAll('.loc-lifecycle-row').forEach(tr => {
+            tr.style.cursor = 'pointer';
+            tr.addEventListener('click', function(e) {
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'A' || e.target.closest('a') || e.target.closest('button')) return;
+                const chk = this.querySelector('.loc-lifecycle-check');
+                if (chk) {
+                    chk.checked = !chk.checked;
+                    updateLocSummary();
+                }
+            });
+        });
+
+        if (locClearBtn) {
+            locClearBtn.addEventListener('click', function () {
+                if (locSelectAll) {
+                    locSelectAll.checked = false;
+                    locSelectAll.indeterminate = false;
+                }
+                locChecks.forEach(chk => { chk.checked = false; });
+                updateLocSummary();
+            });
+        }
+
+        // ==========================================
+        // 4. Product Autocomplete & Keyboard Nav
+        // ==========================================
         let debounceTimer;
         let selectedIndex = -1;
 
@@ -610,11 +1198,11 @@
                             suggestions.innerHTML = '<div class="dropdown-item text-muted">No products found</div>';
                         } else {
                             suggestions.innerHTML = data.products.map((p, index) => `
-                            <a href="#" class="dropdown-item d-flex justify-content-between align-items-center suggestion-item" 
+                            <a href="#" class="dropdown-item d-flex justify-content-between align-items-center suggestion-item py-2" 
                                data-index="${index}" data-id="${p.id}" data-name="${p.name}">
                                 <div>
-                                    <strong>${p.name}</strong>
-                                    <small class="text-muted ms-2">${p.sku}</small>
+                                    <strong class="d-block">${p.name}</strong>
+                                    <small class="text-muted font-monospace">${p.sku}</small>
                                 </div>
                                 ${p.category ? `<span class="badge bg-secondary">${p.category}</span>` : ''}
                             </a>

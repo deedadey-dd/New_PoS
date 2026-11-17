@@ -3,141 +3,495 @@
 
 {% block title %}{{ product.name }} - {{ current_tenant.name }}{% endblock %}
 
+{% block extra_css %}
+<style>
+.summary-card-mini {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.summary-card-mini:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 .5rem 1rem rgba(0,0,0,.08) !important;
+}
+.summary-icon-box {
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    font-size: 1.25rem;
+}
+.selection-summary-bar {
+    border-radius: 10px;
+    animation: fadeIn 0.2s ease-in-out;
+}
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.table tbody tr.row-selected {
+    background-color: rgba(13, 110, 253, 0.08) !important;
+}
+.table-checkbox-col {
+    width: 38px;
+    text-align: center;
+    vertical-align: middle;
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="mb-4">
     <nav aria-label="breadcrumb">
-        <ol class="breadcrumb">
-            <li class="breadcrumb-item"><a href="{% url 'inventory:product_list' %}">Products</a></li>
-            <li class="breadcrumb-item active">{{ product.name }}</li>
+        <ol class="breadcrumb mb-2">
+            <li class="breadcrumb-item"><a href="{% url 'inventory:product_list' %}" class="text-decoration-none">Products</a></li>
+            {% if product.category %}
+            <li class="breadcrumb-item"><a href="{% url 'inventory:product_list' %}?category={{ product.category.pk }}" class="text-decoration-none">{{ product.category.name }}</a></li>
+            {% endif %}
+            <li class="breadcrumb-item active text-truncate" style="max-width: 300px;">{{ product.name }}</li>
         </ol>
     </nav>
-    <div class="d-flex justify-content-between align-items-start">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
         <div>
-            <h2 class="mb-1">{{ product.name }}</h2>
-            <p class="text-muted mb-0"><code>{{ product.sku }}</code></p>
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <h2 class="mb-0 fw-bold">{{ product.name }}</h2>
+                {% if product.is_active %}
+                <span class="badge bg-success">Active</span>
+                {% else %}
+                <span class="badge bg-secondary">Inactive</span>
+                {% endif %}
+                <span class="badge bg-{{ stock_status_badge }}-subtle text-{{ stock_status_badge }} border border-{{ stock_status_badge }}-subtle">
+                    {{ stock_status_label }}
+                </span>
+            </div>
+            <p class="text-muted mb-0 mt-1">
+                <code>{{ product.sku }}</code>
+                {% if product.barcode %}
+                <span class="ms-2 text-secondary"><i class="bi bi-upc me-1"></i>{{ product.barcode }}</span>
+                {% endif %}
+            </p>
         </div>
-        <div>
-            <a href="{% url 'inventory:product_edit' product.pk %}" class="btn btn-outline-primary">
-                <i class="bi bi-pencil me-1"></i>Edit
+        <div class="d-flex gap-2">
+            <a href="{% url 'inventory:batch_create' %}?product={{ product.pk }}" class="btn btn-outline-success">
+                <i class="bi bi-plus-circle me-1"></i>Receive Stock
             </a>
+            <a href="{% url 'inventory:product_edit' product.pk %}" class="btn btn-outline-primary">
+                <i class="bi bi-pencil me-1"></i>Edit Product
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Top Filters Card -->
+<div class="card border-0 shadow-sm rounded-4 mb-4 bg-white">
+    <div class="card-body p-3 p-lg-4">
+        <form method="get" id="productFilterForm" class="row g-3 align-items-end">
+            <!-- Location Filter (Permitted Roles) -->
+            <div class="col-12 col-md-4 col-lg-3">
+                <label class="form-label small fw-semibold text-muted mb-1">
+                    <i class="bi bi-geo-alt me-1 text-primary"></i>Location Filter
+                </label>
+                {% if can_filter_locations %}
+                <select name="location" class="form-select" id="locationFilter">
+                    <option value="">All Accessible Locations</option>
+                    {% for loc in available_locations %}
+                    <option value="{{ loc.id }}" {% if selected_location_id|stringformat:"s" == loc.id|stringformat:"s" %}selected{% endif %}>
+                        {{ loc.name }} ({{ loc.get_location_type_display }})
+                    </option>
+                    {% endfor %}
+                </select>
+                {% else %}
+                <input type="text" class="form-control bg-light" value="{{ user.location.name|default:'Assigned Location' }}" readonly disabled>
+                {% if user.location %}
+                <input type="hidden" name="location" value="{{ user.location.id }}">
+                {% endif %}
+                {% endif %}
+            </div>
+
+            <!-- Date Preset -->
+            <div class="col-12 col-md-4 col-lg-3">
+                <label class="form-label small fw-semibold text-muted mb-1">
+                    <i class="bi bi-calendar3 me-1 text-info"></i>Date Period
+                </label>
+                <select name="range" class="form-select" id="datePresetSelect">
+                    <option value="all" {% if current_range == 'all' %}selected{% endif %}>All Time</option>
+                    <option value="today" {% if current_range == 'today' %}selected{% endif %}>Today</option>
+                    <option value="yesterday" {% if current_range == 'yesterday' %}selected{% endif %}>Yesterday</option>
+                    <option value="week" {% if current_range == 'week' %}selected{% endif %}>Last 7 Days</option>
+                    <option value="this_month" {% if current_range == 'this_month' %}selected{% endif %}>This Month</option>
+                    <option value="month" {% if current_range == 'month' %}selected{% endif %}>Last 30 Days</option>
+                    <option value="year" {% if current_range == 'year' %}selected{% endif %}>Last 365 Days</option>
+                    <option value="custom" {% if current_range == 'custom' %}selected{% endif %}>Custom Range</option>
+                </select>
+            </div>
+
+            <!-- Date From -->
+            <div class="col-6 col-md-2 col-lg-2">
+                <label class="form-label small fw-semibold text-muted mb-1">From</label>
+                <input type="date" name="date_from" id="dateFromInput" class="form-control" value="{{ date_from }}">
+            </div>
+
+            <!-- Date To -->
+            <div class="col-6 col-md-2 col-lg-2">
+                <label class="form-label small fw-semibold text-muted mb-1">To</label>
+                <input type="date" name="date_to" id="dateToInput" class="form-control" value="{{ date_to }}">
+            </div>
+
+            <!-- Filter Actions -->
+            <div class="col-12 col-md-12 col-lg-2 d-flex gap-2">
+                <button type="submit" class="btn btn-primary flex-grow-1">
+                    <i class="bi bi-funnel me-1"></i>Filter
+                </button>
+                {% if selected_location_id or current_range != 'all' or date_from or date_to %}
+                <a href="{% url 'inventory:product_detail' product.pk %}" class="btn btn-outline-secondary" title="Reset Filters">
+                    <i class="bi bi-arrow-counterclockwise"></i>
+                </a>
+                {% endif %}
+            </div>
+        </form>
+
+        <!-- Active Filter Pills -->
+        {% if selected_location or current_range != 'all' or date_from or date_to %}
+        <div class="d-flex flex-wrap align-items-center gap-2 mt-3 pt-3 border-top">
+            <span class="small text-muted fw-semibold"><i class="bi bi-sliders me-1"></i>Active Filters:</span>
+            {% if selected_location %}
+            <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill py-1 px-3">
+                <i class="bi bi-geo-alt me-1"></i>Location: {{ selected_location.name }}
+            </span>
+            {% endif %}
+            {% if date_from or date_to %}
+            <span class="badge bg-info-subtle text-info border border-info-subtle rounded-pill py-1 px-3">
+                <i class="bi bi-calendar-event me-1"></i>Date: {{ date_from|default:"Beginning" }} &rarr; {{ date_to|default:"Today" }}
+            </span>
+            {% elif current_range != 'all' %}
+            <span class="badge bg-info-subtle text-info border border-info-subtle rounded-pill py-1 px-3">
+                <i class="bi bi-calendar-event me-1"></i>Period: {{ current_range|title }}
+            </span>
+            {% endif %}
+            <a href="{% url 'inventory:product_detail' product.pk %}" class="small text-danger text-decoration-none ms-auto">
+                <i class="bi bi-x-circle me-1"></i>Clear all filters
+            </a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Summary KPI Cards -->
+<div class="row g-3 mb-4">
+    <!-- 1. Stock Level -->
+    <div class="col-6 col-lg-3">
+        <div class="card border-0 shadow-sm rounded-4 h-100 summary-card-mini bg-white">
+            <div class="card-body p-3">
+                <div class="d-flex align-items-center justify-content-between">
+                    <div>
+                        <span class="text-muted small fw-semibold text-uppercase d-block mb-1" id="kpi-product-stock-label" data-orig="{% if selected_location %}Stock ({{ selected_location.name }}){% else %}Total Stock{% endif %}">
+                            {% if selected_location %}Stock ({{ selected_location.name }}){% else %}Total Stock{% endif %}
+                        </span>
+                        <h4 class="fw-bold mb-0 text-dark" id="kpi-product-stock-val" data-orig="{{ total_stock_scope|floatformat:2|intcomma }}">{{ total_stock_scope|floatformat:2|intcomma }}</h4>
+                        <div id="kpi-product-stock-subtext">
+                            <span class="badge bg-{{ stock_status_badge }}-subtle text-{{ stock_status_badge }} rounded-pill mt-1" style="font-size: 0.72rem;">
+                                {{ stock_status_label }}
+                            </span>
+                            {% if selected_location and overall_total_stock != total_stock_scope %}
+                            <div class="small text-muted mt-1" style="font-size: 0.75rem;">
+                                All locations: {{ overall_total_stock|floatformat:2|intcomma }}
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="summary-icon-box bg-{{ stock_status_badge }}-subtle text-{{ stock_status_badge }}">
+                        <i class="bi bi-boxes"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. Retail Valuation -->
+    <div class="col-6 col-lg-3">
+        <div class="card border-0 shadow-sm rounded-4 h-100 summary-card-mini bg-white">
+            <div class="card-body p-3">
+                <div class="d-flex align-items-center justify-content-between">
+                    <div>
+                        <span class="text-muted small fw-semibold text-uppercase d-block mb-1" id="kpi-product-val-label" data-orig="Retail Valuation">Retail Valuation</span>
+                        <h4 class="fw-bold mb-0 text-primary" id="kpi-product-val-val" data-orig="{{ currency_symbol }}{{ scope_retail_value|floatformat:2|intcomma }}">{{ currency_symbol }}{{ scope_retail_value|floatformat:2|intcomma }}</h4>
+                        <div id="kpi-product-val-subtext">
+                            <span class="badge bg-primary-subtle text-primary rounded-pill mt-1" style="font-size: 0.72rem;">
+                                @ {{ currency_symbol }}{{ product.default_selling_price|floatformat:2|intcomma }} / {{ product.get_unit_of_measure_display }}
+                            </span>
+                        </div>
+                    </div>
+                    <div class="summary-icon-box bg-primary-subtle text-primary">
+                        <i class="bi bi-cash-stack"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. Active Batches -->
+    <div class="col-6 col-lg-3">
+        <div class="card border-0 shadow-sm rounded-4 h-100 summary-card-mini bg-white">
+            <div class="card-body p-3">
+                <div class="d-flex align-items-center justify-content-between">
+                    <div>
+                        <span class="text-muted small fw-semibold text-uppercase d-block mb-1" id="kpi-product-batch-label" data-orig="Active Batches">Active Batches</span>
+                        <h4 class="fw-bold mb-0 text-dark" id="kpi-product-batch-val" data-orig="{{ batches|length }} <span class='fs-6 fw-normal text-muted'>({{ total_batch_qty|floatformat:0|intcomma }} units)</span>">{{ batches|length }} <span class="fs-6 fw-normal text-muted">({{ total_batch_qty|floatformat:0|intcomma }} units)</span></h4>
+                        <div id="kpi-product-batch-subtext">
+                            <span class="badge bg-secondary-subtle text-secondary rounded-pill mt-1" style="font-size: 0.72rem;">
+                                Cost: {{ currency_symbol }}{{ total_batch_cost|floatformat:2|intcomma }}
+                            </span>
+                            {% if expiring_soon_count > 0 %}
+                            <div class="mt-1">
+                                <span class="badge bg-warning-subtle text-warning-emphasis rounded-pill" style="font-size: 0.7rem;">
+                                    <i class="bi bi-clock-history me-1"></i>{{ expiring_soon_count }} expiring soon
+                                </span>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="summary-icon-box bg-secondary-subtle text-secondary">
+                        <i class="bi bi-layers"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4. Activity Movements -->
+    <div class="col-6 col-lg-3">
+        <div class="card border-0 shadow-sm rounded-4 h-100 summary-card-mini bg-white">
+            <div class="card-body p-3">
+                <div class="d-flex align-items-center justify-content-between">
+                    <div>
+                        <span class="text-muted small fw-semibold text-uppercase d-block mb-1" id="kpi-product-mov-label" data-orig="Period Movement">Period Movement</span>
+                        <h4 class="fw-bold mb-0 {% if net_movement > 0 %}text-success{% elif net_movement < 0 %}text-danger{% else %}text-dark{% endif %}" id="kpi-product-mov-val" data-orig="{% if net_movement > 0 %}+{% endif %}{{ net_movement|floatformat:2|intcomma }}">
+                            {% if net_movement > 0 %}+{% endif %}{{ net_movement|floatformat:2|intcomma }}
+                        </h4>
+                        <div class="small text-muted mt-1" id="kpi-product-mov-subtext" style="font-size: 0.72rem;">
+                            <span class="text-success">+{{ total_inflow|floatformat:0 }}</span> / 
+                            <span class="text-danger">-{{ total_outflow|floatformat:0 }}</span>
+                            {% if period_sales > 0 %}
+                            &bull; {{ period_sales|floatformat:0 }} sold
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="summary-icon-box bg-info-subtle text-info">
+                        <i class="bi bi-arrow-left-right"></i>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 </div>
 
 <div class="row g-4">
     <!-- Product Info -->
-    <div class="col-md-4">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="mb-0">Product Information</h5>
+    <div class="col-lg-7 col-xl-8">
+        <div class="card border-0 shadow-sm rounded-4 h-100">
+            <div class="card-header bg-transparent border-0 pt-3 px-3 px-lg-4">
+                <h5 class="mb-0 fw-bold"><i class="bi bi-info-circle me-2 text-primary"></i>Product Details</h5>
             </div>
-            <div class="card-body">
-                <dl class="row mb-0">
-                    <dt class="col-5">Category</dt>
-                    <dd class="col-7">{{ product.category.name|default:"-" }}</dd>
+            <div class="card-body px-3 px-lg-4">
+                <dl class="row mb-0 g-2">
+                    <dt class="col-sm-4 text-muted">Category</dt>
+                    <dd class="col-sm-8 fw-semibold">{{ product.category.name|default:"-" }}</dd>
 
-                    <dt class="col-5">Unit</dt>
-                    <dd class="col-7">{{ product.get_unit_of_measure_display }}</dd>
+                    <dt class="col-sm-4 text-muted">Unit of Measure</dt>
+                    <dd class="col-sm-8 fw-semibold">{{ product.get_unit_of_measure_display }}</dd>
 
-                    <dt class="col-5">Price</dt>
-                    <dd class="col-7">{{ currency_symbol }}{{ product.default_selling_price|floatformat:2|intcomma }}</dd>
+                    <dt class="col-sm-4 text-muted">Selling Price</dt>
+                    <dd class="col-sm-8 fw-bold text-primary">{{ currency_symbol }}{{ product.default_selling_price|floatformat:2|intcomma }}</dd>
 
-                    <dt class="col-5">Reorder Level</dt>
-                    <dd class="col-7">{{ product.reorder_level|floatformat:2|intcomma }}</dd>
+                    <dt class="col-sm-4 text-muted">Reorder Level</dt>
+                    <dd class="col-sm-8 fw-semibold">{{ product.reorder_level|floatformat:2|intcomma }}</dd>
 
-                    <dt class="col-5">Status</dt>
-                    <dd class="col-7">
+                    <dt class="col-sm-4 text-muted">Status</dt>
+                    <dd class="col-sm-8">
                         {% if product.is_active %}
                         <span class="badge bg-success">Active</span>
                         {% else %}
                         <span class="badge bg-secondary">Inactive</span>
                         {% endif %}
                     </dd>
+
+                    {% if product.description %}
+                    <dt class="col-12 text-muted mt-2">Description</dt>
+                    <dd class="col-12 text-secondary small">{{ product.description }}</dd>
+                    {% endif %}
                 </dl>
             </div>
         </div>
     </div>
 
-    <!-- Stock by Location -->
-    <div class="col-md-8">
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="mb-0">Stock by Location</h5>
-                <a href="{% url 'inventory:batch_create' %}" class="btn btn-sm btn-primary">
-                    <i class="bi bi-plus me-1"></i>Receive Stock
-                </a>
+    <!-- Stock by Location (Reduced Compact Width) -->
+    <div class="col-lg-5 col-xl-4">
+        <div class="card border-0 shadow-sm rounded-4 h-100">
+            <div class="card-header bg-transparent border-0 pt-3 px-3 px-lg-4 d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 fw-bold"><i class="bi bi-geo-alt me-2 text-info"></i>Stock by Location</h5>
+                <span class="text-muted small">Select locations to summarize</span>
             </div>
-            <div class="card-body">
+            <div class="card-body px-3 px-lg-4 pt-1">
+                <!-- Location Selection Summary Banner -->
+                <div id="location-selection-bar" class="alert alert-info border-info-subtle selection-summary-bar d-none py-2 px-3 mb-3 d-flex flex-wrap align-items-center justify-content-between gap-2 shadow-sm">
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <span class="badge bg-info text-dark rounded-pill px-3 py-1">
+                            <i class="bi bi-check-circle-fill me-1"></i><span id="loc-selected-count">0</span> Selected
+                        </span>
+                        <div class="vr mx-1 d-none d-md-block"></div>
+                        <span class="small text-muted">Combined Stock:</span>
+                        <strong class="text-dark"><span id="loc-selected-stock">0.00</span> {{ product.get_unit_of_measure_display }}</strong>
+                        <div class="vr mx-1 d-none d-md-block"></div>
+                        <span class="small text-muted">Retail Valuation:</span>
+                        <strong class="text-primary" id="loc-selected-value">{{ currency_symbol }}0.00</strong>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" id="clear-location-selection">
+                        <i class="bi bi-x me-1"></i>Clear
+                    </button>
+                </div>
+
                 {% if stock_by_location %}
-                <table class="table table-sm mb-0">
-                    <thead>
-                        <tr>
-                            <th>Location</th>
-                            <th>Type</th>
-                            <th class="text-end">Quantity</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for stock in stock_by_location %}
-                        <tr>
-                            <td>{{ stock.location__name }}</td>
-                            <td>
-                                <span
-                                    class="badge bg-{% if stock.location__location_type == 'PRODUCTION' %}primary{% elif stock.location__location_type == 'STORES' %}info{% else %}success{% endif %}">
-                                    {{ stock.location__location_type }}
-                                </span>
-                            </td>
-                            <td class="text-end">
-                                <strong>{{ stock.total_stock|floatformat:2|intcomma }}</strong> {{ product.get_unit_of_measure_display }}
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0" id="locationTable">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="table-checkbox-col">
+                                    <input type="checkbox" class="form-check-input" id="select-all-locations" title="Select all locations">
+                                </th>
+                                <th>Location</th>
+                                <th>Type</th>
+                                <th class="text-end">Quantity</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for stock in stock_by_location %}
+                            <tr class="location-row" data-stock="{{ stock.total_stock|default:0 }}">
+                                <td class="table-checkbox-col">
+                                    <input type="checkbox" class="form-check-input location-select-check">
+                                </td>
+                                <td>
+                                    <strong>{{ stock.location__name }}</strong>
+                                </td>
+                                <td>
+                                    <span class="badge bg-{% if stock.location__location_type == 'PRODUCTION' %}primary{% elif stock.location__location_type == 'STORES' %}info{% else %}success{% endif %}">
+                                        {{ stock.location__location_type }}
+                                    </span>
+                                </td>
+                                <td class="text-end">
+                                    <strong>{{ stock.total_stock|floatformat:2|intcomma }}</strong> {{ product.get_unit_of_measure_display }}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
                 {% else %}
-                <p class="text-muted text-center mb-0">No stock available</p>
+                <div class="text-center py-4 text-muted">
+                    <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+                    No stock records found for the selected location criteria.
+                </div>
                 {% endif %}
             </div>
         </div>
     </div>
 </div>
 
-<!-- Batches -->
-<div class="card mt-4">
-    <div class="card-header">
-        <h5 class="mb-0">Active Batches</h5>
+<!-- Batches Table & Selection Summary -->
+<div class="card border-0 shadow-sm rounded-4 mt-4">
+    <div class="card-header bg-transparent border-0 pt-3 px-3 px-lg-4 d-flex justify-content-between align-items-center">
+        <div>
+            <h5 class="mb-0 fw-bold"><i class="bi bi-layers me-2 text-primary"></i>Active Batches</h5>
+            <small class="text-muted">Select batches to see combined quantity, valuation, weighted cost, and projected margin</small>
+        </div>
+        {% if batches %}
+        <span class="badge bg-primary-subtle text-primary">{{ batches|length }} available</span>
+        {% endif %}
     </div>
-    <div class="card-body">
+    <div class="card-body px-3 px-lg-4 pt-1">
+        <!-- Batches Selection Summary Banner -->
+        <div id="batch-selection-bar" class="alert alert-primary border-primary-subtle selection-summary-bar d-none py-2 px-3 mb-3 d-flex flex-wrap align-items-center justify-content-between gap-2 shadow-sm">
+            <div class="d-flex align-items-center gap-3 flex-wrap">
+                <span class="badge bg-primary rounded-pill px-3 py-1">
+                    <i class="bi bi-check-circle-fill me-1"></i><span id="batch-selected-count">0</span> Batches Selected
+                </span>
+                <div>
+                    <span class="small text-muted d-block" style="font-size: 0.75rem;">Selected Qty</span>
+                    <strong class="text-dark"><span id="batch-selected-qty">0.00</span> {{ product.get_unit_of_measure_display }}</strong>
+                </div>
+                <div class="vr d-none d-md-block"></div>
+                <div>
+                    <span class="small text-muted d-block" style="font-size: 0.75rem;">Total Cost</span>
+                    <strong class="text-dark" id="batch-selected-cost">{{ currency_symbol }}0.00</strong>
+                </div>
+                <div class="vr d-none d-md-block"></div>
+                <div>
+                    <span class="small text-muted d-block" style="font-size: 0.75rem;">Avg Unit Cost</span>
+                    <strong class="text-dark" id="batch-selected-avg-cost">{{ currency_symbol }}0.00</strong>
+                </div>
+                <div class="vr d-none d-md-block"></div>
+                <div>
+                    <span class="small text-muted d-block" style="font-size: 0.75rem;">Retail Valuation</span>
+                    <strong class="text-primary" id="batch-selected-retail">{{ currency_symbol }}0.00</strong>
+                </div>
+                <div class="vr d-none d-md-block"></div>
+                <div>
+                    <span class="small text-muted d-block" style="font-size: 0.75rem;">Projected Margin</span>
+                    <strong class="text-success" id="batch-selected-profit">{{ currency_symbol }}0.00</strong>
+                    <span class="badge bg-success-subtle text-success rounded-pill ms-1" id="batch-selected-margin">0%</span>
+                </div>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" id="clear-batch-selection">
+                <i class="bi bi-x me-1"></i>Clear
+            </button>
+        </div>
+
         {% if batches %}
         <div class="table-responsive">
-            <table class="table table-sm">
-                <thead>
+            <table class="table table-hover align-middle mb-0" id="batchTable">
+                <thead class="table-light">
                     <tr>
+                        <th class="table-checkbox-col">
+                            <input type="checkbox" class="form-check-input" id="select-all-batches" title="Select all batches">
+                        </th>
                         <th>Batch #</th>
                         <th>Location</th>
                         <th class="text-end">Quantity</th>
                         <th class="text-end">Unit Cost</th>
+                        <th class="text-end">Batch Cost Value</th>
                         <th>Expiry Date</th>
                         <th>Status</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for batch in batches %}
-                    <tr>
-                        <td>
-                            <a href="{% url 'inventory:batch_detail' batch.pk %}">{{ batch.batch_number }}</a>
+                    <tr class="batch-row" data-qty="{{ batch.current_quantity|default:0 }}" data-cost="{{ batch.unit_cost|default:0 }}">
+                        <td class="table-checkbox-col">
+                            <input type="checkbox" class="form-check-input batch-select-check">
                         </td>
-                        <td>{{ batch.location.name }}</td>
-                        <td class="text-end">{{ batch.current_quantity|floatformat:2|intcomma }}</td>
-                        <td class="text-end">{{ currency_symbol }}{{ batch.unit_cost|floatformat:2|intcomma }}</td>
+                        <td>
+                            <a href="{% url 'inventory:batch_detail' batch.pk %}" class="fw-bold text-decoration-none">
+                                {{ batch.batch_number }}
+                            </a>
+                        </td>
+                        <td>
+                            <span class="badge bg-light text-dark border">{{ batch.location.name }}</span>
+                        </td>
+                        <td class="text-end fw-semibold">{{ batch.current_quantity|floatformat:2|intcomma }}</td>
+                        <td class="text-end text-muted">{{ currency_symbol }}{{ batch.unit_cost|floatformat:2|intcomma }}</td>
+                        <td class="text-end fw-semibold text-dark">
+                            {{ currency_symbol }}{% widthratio batch.current_quantity 1 batch.unit_cost as b_val %}{{ batch.current_quantity|floatformat:2|intcomma }}
+                        </td>
                         <td>
                             {% if batch.expiry_date %}
-                            {{ batch.expiry_date }}
-                            {% if batch.days_until_expiry < 30 %} <span class="badge bg-warning">{{ batch.days_until_expiry }} days</span>
-                                {% endif %}
-                                {% else %}
-                                -
-                                {% endif %}
+                            <span>{{ batch.expiry_date|date:"M d, Y" }}</span>
+                            {% if batch.days_until_expiry <= 0 %}
+                            <span class="badge bg-danger ms-1">Expired</span>
+                            {% elif batch.days_until_expiry < 30 %}
+                            <span class="badge bg-warning text-dark ms-1">{{ batch.days_until_expiry }}d</span>
+                            {% endif %}
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
                         </td>
                         <td><span class="badge bg-success">{{ batch.status }}</span></td>
                     </tr>
@@ -146,53 +500,528 @@
             </table>
         </div>
         {% else %}
-        <p class="text-muted text-center mb-0">No active batches</p>
+        <div class="text-center py-4 text-muted">
+            <i class="bi bi-layers fs-2 d-block mb-2"></i>
+            No active batches for the current location criteria.
+        </div>
         {% endif %}
     </div>
 </div>
 
-<!-- Recent Activity -->
-<div class="card mt-4">
-    <div class="card-header">
-        <h5 class="mb-0">Recent Inventory Activity</h5>
+<!-- Recent Activity & Movements -->
+<div class="card border-0 shadow-sm rounded-4 mt-4">
+    <div class="card-header bg-transparent border-0 pt-3 px-3 px-lg-4 d-flex justify-content-between align-items-center">
+        <div>
+            <h5 class="mb-0 fw-bold"><i class="bi bi-arrow-left-right me-2 text-info"></i>Inventory Movements & Activity</h5>
+            <small class="text-muted">Filtered by location & date range. Select entries to calculate total inflow, outflow, and net movement.</small>
+        </div>
+        {% if recent_entries %}
+        <span class="badge bg-info-subtle text-info">{{ recent_entries|length }} movements</span>
+        {% endif %}
     </div>
-    <div class="card-body">
+    <div class="card-body px-3 px-lg-4 pt-1">
+        <!-- Activity Selection Summary Banner -->
+        <div id="activity-selection-bar" class="alert alert-secondary border-secondary-subtle selection-summary-bar d-none py-2 px-3 mb-3 d-flex flex-wrap align-items-center justify-content-between gap-2 shadow-sm">
+            <div class="d-flex align-items-center gap-3 flex-wrap">
+                <span class="badge bg-dark rounded-pill px-3 py-1">
+                    <i class="bi bi-check-circle-fill me-1"></i><span id="act-selected-count">0</span> Entries Selected
+                </span>
+                <div>
+                    <span class="small text-muted d-block" style="font-size: 0.75rem;">Inflow (+)</span>
+                    <strong class="text-success" id="act-selected-inflow">+0.00</strong>
+                </div>
+                <div class="vr d-none d-md-block"></div>
+                <div>
+                    <span class="small text-muted d-block" style="font-size: 0.75rem;">Outflow (-)</span>
+                    <strong class="text-danger" id="act-selected-outflow">-0.00</strong>
+                </div>
+                <div class="vr d-none d-md-block"></div>
+                <div>
+                    <span class="small text-muted d-block" style="font-size: 0.75rem;">Net Movement</span>
+                    <strong class="text-dark"><span id="act-selected-net">0.00</span> {{ product.get_unit_of_measure_display }}</strong>
+                </div>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" id="clear-activity-selection">
+                <i class="bi bi-x me-1"></i>Clear
+            </button>
+        </div>
+
         {% if recent_entries %}
         <div class="table-responsive">
-            <table class="table table-sm">
-                <thead>
+            <table class="table table-hover align-middle mb-0" id="activityTable">
+                <thead class="table-light">
                     <tr>
-                        <th>Date</th>
-                        <th>Type</th>
+                        <th class="table-checkbox-col">
+                            <input type="checkbox" class="form-check-input" id="select-all-activity" title="Select all entries">
+                        </th>
+                        <th>Date & Time</th>
+                        <th>Transaction Type</th>
                         <th>Location</th>
                         <th class="text-end">Quantity</th>
+                        <th>Batch</th>
                         <th>Notes</th>
-                        <th>By</th>
+                        <th>Logged By</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for entry in recent_entries %}
-                    <tr>
-                        <td>{{ entry.created_at|date:"M d, H:i" }}</td>
+                    <tr class="activity-row" data-qty="{{ entry.quantity|default:0 }}">
+                        <td class="table-checkbox-col">
+                            <input type="checkbox" class="form-check-input activity-select-check">
+                        </td>
+                        <td>{{ entry.created_at|date:"M d, Y H:i" }}</td>
                         <td>
                             <span class="badge bg-{% if entry.quantity > 0 %}success{% else %}danger{% endif %}">
                                 {{ entry.get_transaction_type_display }}
                             </span>
                         </td>
                         <td>{{ entry.location.name }}</td>
-                        <td class="text-end">
+                        <td class="text-end fw-bold {% if entry.quantity > 0 %}text-success{% else %}text-danger{% endif %}">
                             {% if entry.quantity > 0 %}+{% endif %}{{ entry.quantity|floatformat:2|intcomma }}
                         </td>
-                        <td>{{ entry.notes|truncatewords:5 }}</td>
-                        <td>{% if entry.created_by %}{{ entry.created_by.get_full_name|default:entry.created_by.email }}{% else %}-{% endif %}</td>
+                        <td>
+                            {% if entry.batch %}
+                            <a href="{% url 'inventory:batch_detail' entry.batch.pk %}" class="badge bg-light text-dark border text-decoration-none">
+                                {{ entry.batch.batch_number }}
+                            </a>
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td class="small text-secondary">{{ entry.notes|default:"-"|truncatewords:6 }}</td>
+                        <td>
+                            {% if entry.created_by %}
+                            <span class="small">{{ entry.created_by.get_full_name|default:entry.created_by.email }}</span>
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
         {% else %}
-        <p class="text-muted text-center mb-0">No activity yet</p>
+        <div class="text-center py-4 text-muted">
+            <i class="bi bi-clock-history fs-2 d-block mb-2"></i>
+            No inventory activity recorded for the selected filter range.
+        </div>
         {% endif %}
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const SELLING_PRICE = parseFloat("{{ product.default_selling_price|default:'0' }}") || 0;
+    const CURRENCY_SYMBOL = "{{ currency_symbol|default:'$'|escapejs }}";
+
+    function formatNumber(val, decimals = 2) {
+        return Number(val).toLocaleString(undefined, {
+            minimumFractionDigits: decimals,
+            maximumFractionDigits: decimals
+        });
+    }
+
+    function formatCurrency(val) {
+        return CURRENCY_SYMBOL + formatNumber(val, 2);
+    }
+
+    function toISODate(d) {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
+    // ==========================================
+    // 1. Date Preset Quick Pickers
+    // ==========================================
+    const presetSelect = document.getElementById('datePresetSelect');
+    const dateFromInput = document.getElementById('dateFromInput');
+    const dateToInput = document.getElementById('dateToInput');
+
+    if (presetSelect && dateFromInput && dateToInput) {
+        presetSelect.addEventListener('change', function () {
+            const val = this.value;
+            const now = new Date();
+
+            if (val === 'all') {
+                dateFromInput.value = '';
+                dateToInput.value = '';
+            } else if (val === 'today') {
+                dateFromInput.value = toISODate(now);
+                dateToInput.value = toISODate(now);
+            } else if (val === 'yesterday') {
+                const yest = new Date();
+                yest.setDate(yest.getDate() - 1);
+                dateFromInput.value = toISODate(yest);
+                dateToInput.value = toISODate(yest);
+            } else if (val === 'week') {
+                const weekAgo = new Date();
+                weekAgo.setDate(weekAgo.getDate() - 7);
+                dateFromInput.value = toISODate(weekAgo);
+                dateToInput.value = toISODate(now);
+            } else if (val === 'this_month') {
+                const startMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+                dateFromInput.value = toISODate(startMonth);
+                dateToInput.value = toISODate(now);
+            } else if (val === 'month') {
+                const monthAgo = new Date();
+                monthAgo.setDate(monthAgo.getDate() - 30);
+                dateFromInput.value = toISODate(monthAgo);
+                dateToInput.value = toISODate(now);
+            } else if (val === 'year') {
+                const yearAgo = new Date();
+                yearAgo.setDate(yearAgo.getDate() - 365);
+                dateFromInput.value = toISODate(yearAgo);
+                dateToInput.value = toISODate(now);
+            }
+        });
+
+        // If user manually edits date inputs, switch preset to custom
+        [dateFromInput, dateToInput].forEach(inp => {
+            inp.addEventListener('input', function () {
+                if (presetSelect.value !== 'custom') {
+                    presetSelect.value = 'custom';
+                }
+            });
+        });
+    }
+
+    // ==========================================
+    // 2. Batches Selection & Live Summary
+    // ==========================================
+    const batchSelectAll = document.getElementById('select-all-batches');
+    const batchChecks = document.querySelectorAll('.batch-select-check');
+    const batchBar = document.getElementById('batch-selection-bar');
+    const batchClearBtn = document.getElementById('clear-batch-selection');
+
+        // Cache original values
+        const origStockVal = document.getElementById('kpi-product-stock-val')?.dataset.orig || '';
+        const origStockLabel = document.getElementById('kpi-product-stock-label')?.dataset.orig || '';
+        const origStockSubtextHtml = document.getElementById('kpi-product-stock-subtext')?.innerHTML || '';
+
+        const origValVal = document.getElementById('kpi-product-val-val')?.dataset.orig || '';
+        const origValLabel = document.getElementById('kpi-product-val-label')?.dataset.orig || '';
+        const origValSubtextHtml = document.getElementById('kpi-product-val-subtext')?.innerHTML || '';
+
+        const origBatchVal = document.getElementById('kpi-product-batch-val')?.dataset.orig || '';
+        const origBatchLabel = document.getElementById('kpi-product-batch-label')?.dataset.orig || '';
+        const origBatchSubtextHtml = document.getElementById('kpi-product-batch-subtext')?.innerHTML || '';
+
+        const origMovVal = document.getElementById('kpi-product-mov-val')?.dataset.orig || '';
+        const origMovLabel = document.getElementById('kpi-product-mov-label')?.dataset.orig || '';
+        const origMovSubtextHtml = document.getElementById('kpi-product-mov-subtext')?.innerHTML || '';
+
+        function updateBatchSummary() {
+            let count = 0;
+            let totalQty = 0;
+            let totalCost = 0;
+
+            batchChecks.forEach(chk => {
+                const tr = chk.closest('tr');
+                if (chk.checked) {
+                    count++;
+                    tr.classList.add('row-selected');
+                    const qty = parseFloat(tr.getAttribute('data-qty')) || 0;
+                    const cost = parseFloat(tr.getAttribute('data-cost')) || 0;
+                    totalQty += qty;
+                    totalCost += (qty * cost);
+                } else {
+                    tr.classList.remove('row-selected');
+                }
+            });
+
+            const kpiBatchVal = document.getElementById('kpi-product-batch-val');
+            const kpiBatchLabel = document.getElementById('kpi-product-batch-label');
+            const kpiBatchSubtext = document.getElementById('kpi-product-batch-subtext');
+
+            if (count > 0) {
+                batchBar.classList.remove('d-none');
+                document.getElementById('batch-selected-count').textContent = count;
+                document.getElementById('batch-selected-qty').textContent = formatNumber(totalQty, 2);
+                document.getElementById('batch-selected-cost').textContent = formatCurrency(totalCost);
+
+                const avgCost = totalQty > 0 ? (totalCost / totalQty) : 0;
+                document.getElementById('batch-selected-avg-cost').textContent = formatCurrency(avgCost);
+
+                const retailValue = totalQty * SELLING_PRICE;
+                document.getElementById('batch-selected-retail').textContent = formatCurrency(retailValue);
+
+                const profit = retailValue - totalCost;
+                document.getElementById('batch-selected-profit').textContent = formatCurrency(profit);
+
+                const marginPct = retailValue > 0 ? ((profit / retailValue) * 100) : 0;
+                const marginBadge = document.getElementById('batch-selected-margin');
+                marginBadge.textContent = marginPct.toFixed(1) + '%';
+                if (marginPct < 0) {
+                    marginBadge.className = 'badge bg-danger-subtle text-danger rounded-pill ms-1';
+                } else {
+                    marginBadge.className = 'badge bg-success-subtle text-success rounded-pill ms-1';
+                }
+
+                // Update Top KPI Card 3 (Active Batches)
+                if (kpiBatchVal) kpiBatchVal.innerHTML = `${count} Selected <span class="fs-6 fw-normal text-muted">(${formatNumber(totalQty, 0)} units)</span>`;
+                if (kpiBatchLabel) kpiBatchLabel.innerHTML = `<i class="bi bi-check-circle-fill text-primary me-1"></i>Selected Batches (${count})`;
+                if (kpiBatchSubtext) kpiBatchSubtext.innerHTML = `<span class="badge bg-primary-subtle text-primary rounded-pill mt-1" style="font-size:0.72rem;">Cost: ${formatCurrency(totalCost)} | Avg: ${formatCurrency(avgCost)}</span>`;
+            } else {
+                batchBar.classList.add('d-none');
+                if (kpiBatchVal) kpiBatchVal.innerHTML = origBatchVal;
+                if (kpiBatchLabel) kpiBatchLabel.textContent = origBatchLabel;
+                if (kpiBatchSubtext) kpiBatchSubtext.innerHTML = origBatchSubtextHtml;
+            }
+
+            if (batchSelectAll) {
+                if (batchChecks.length > 0) {
+                    batchSelectAll.checked = (count === batchChecks.length);
+                    batchSelectAll.indeterminate = (count > 0 && count < batchChecks.length);
+                }
+            }
+        }
+
+        if (batchSelectAll) {
+            batchSelectAll.addEventListener('change', function () {
+                const checked = this.checked;
+                batchChecks.forEach(chk => { chk.checked = checked; });
+                updateBatchSummary();
+            });
+        }
+
+        batchChecks.forEach(chk => {
+            chk.addEventListener('change', updateBatchSummary);
+        });
+
+        document.querySelectorAll('.batch-row').forEach(tr => {
+            tr.style.cursor = 'pointer';
+            tr.addEventListener('click', function(e) {
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'A' || e.target.closest('a') || e.target.closest('button')) return;
+                const chk = this.querySelector('.batch-select-check');
+                if (chk) {
+                    chk.checked = !chk.checked;
+                    updateBatchSummary();
+                }
+            });
+        });
+
+        if (batchClearBtn) {
+            batchClearBtn.addEventListener('click', function () {
+                if (batchSelectAll) {
+                    batchSelectAll.checked = false;
+                    batchSelectAll.indeterminate = false;
+                }
+                batchChecks.forEach(chk => { chk.checked = false; });
+                updateBatchSummary();
+            });
+        }
+
+        // ==========================================
+        // 3. Location Stock Selection & Live Summary
+        // ==========================================
+        const locSelectAll = document.getElementById('select-all-locations');
+        const locChecks = document.querySelectorAll('.location-select-check');
+        const locBar = document.getElementById('location-selection-bar');
+        const locClearBtn = document.getElementById('clear-location-selection');
+
+        function updateLocationSummary() {
+            let count = 0;
+            let totalStock = 0;
+
+            locChecks.forEach(chk => {
+                const tr = chk.closest('tr');
+                if (chk.checked) {
+                    count++;
+                    tr.classList.add('row-selected');
+                    const stock = parseFloat(tr.getAttribute('data-stock')) || 0;
+                    totalStock += stock;
+                } else {
+                    tr.classList.remove('row-selected');
+                }
+            });
+
+            const kpiStockVal = document.getElementById('kpi-product-stock-val');
+            const kpiStockLabel = document.getElementById('kpi-product-stock-label');
+            const kpiStockSubtext = document.getElementById('kpi-product-stock-subtext');
+
+            const kpiValVal = document.getElementById('kpi-product-val-val');
+            const kpiValLabel = document.getElementById('kpi-product-val-label');
+            const kpiValSubtext = document.getElementById('kpi-product-val-subtext');
+
+            if (count > 0) {
+                locBar.classList.remove('d-none');
+                document.getElementById('loc-selected-count').textContent = count;
+                document.getElementById('loc-selected-stock').textContent = formatNumber(totalStock, 2);
+                document.getElementById('loc-selected-value').textContent = formatCurrency(totalStock * SELLING_PRICE);
+
+                // Live update Top Summary Cards 1 & 2!
+                if (kpiStockVal) kpiStockVal.textContent = formatNumber(totalStock, 2);
+                if (kpiStockLabel) kpiStockLabel.innerHTML = `<i class="bi bi-check-circle-fill text-info me-1"></i>Selected Stock (${count} Locs)`;
+                if (kpiStockSubtext) kpiStockSubtext.innerHTML = `<span class="badge bg-info text-dark rounded-pill mt-1" style="font-size:0.72rem;">${count} Locations Selected</span>`;
+
+                if (kpiValVal) kpiValVal.textContent = formatCurrency(totalStock * SELLING_PRICE);
+                if (kpiValLabel) kpiValLabel.innerHTML = `<i class="bi bi-check-circle-fill text-primary me-1"></i>Selected Valuation`;
+                if (kpiValSubtext) kpiValSubtext.innerHTML = `<span class="badge bg-primary-subtle text-primary rounded-pill mt-1" style="font-size:0.72rem;">Valuation of ${count} Selected Locations</span>`;
+            } else {
+                locBar.classList.add('d-none');
+
+                // Restore Top Summary Cards 1 & 2
+                if (kpiStockVal) kpiStockVal.textContent = origStockVal;
+                if (kpiStockLabel) kpiStockLabel.textContent = origStockLabel;
+                if (kpiStockSubtext) kpiStockSubtext.innerHTML = origStockSubtextHtml;
+
+                if (kpiValVal) kpiValVal.textContent = origValVal;
+                if (kpiValLabel) kpiValLabel.textContent = origValLabel;
+                if (kpiValSubtext) kpiValSubtext.innerHTML = origValSubtextHtml;
+            }
+
+            if (locSelectAll && locChecks.length > 0) {
+                locSelectAll.checked = (count === locChecks.length);
+                locSelectAll.indeterminate = (count > 0 && count < locChecks.length);
+            }
+        }
+
+        if (locSelectAll) {
+            locSelectAll.addEventListener('change', function () {
+                const checked = this.checked;
+                locChecks.forEach(chk => { chk.checked = checked; });
+                updateLocationSummary();
+            });
+        }
+
+        locChecks.forEach(chk => {
+            chk.addEventListener('change', updateLocationSummary);
+        });
+
+        document.querySelectorAll('.location-row').forEach(tr => {
+            tr.style.cursor = 'pointer';
+            tr.addEventListener('click', function(e) {
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'A' || e.target.closest('a') || e.target.closest('button')) return;
+                const chk = this.querySelector('.location-select-check');
+                if (chk) {
+                    chk.checked = !chk.checked;
+                    updateLocationSummary();
+                }
+            });
+        });
+
+        if (locClearBtn) {
+            locClearBtn.addEventListener('click', function () {
+                if (locSelectAll) {
+                    locSelectAll.checked = false;
+                    locSelectAll.indeterminate = false;
+                }
+                locChecks.forEach(chk => { chk.checked = false; });
+                updateLocationSummary();
+            });
+        }
+
+        // ==========================================
+        // 4. Activity Movements Selection & Live Summary
+        // ==========================================
+        const actSelectAll = document.getElementById('select-all-activity');
+        const actChecks = document.querySelectorAll('.activity-select-check');
+        const actBar = document.getElementById('activity-selection-bar');
+        const actClearBtn = document.getElementById('clear-activity-selection');
+
+        function updateActivitySummary() {
+            let count = 0;
+            let inflow = 0;
+            let outflow = 0;
+
+            actChecks.forEach(chk => {
+                const tr = chk.closest('tr');
+                if (chk.checked) {
+                    count++;
+                    tr.classList.add('row-selected');
+                    const qty = parseFloat(tr.getAttribute('data-qty')) || 0;
+                    if (qty > 0) {
+                        inflow += qty;
+                    } else {
+                        outflow += Math.abs(qty);
+                    }
+                } else {
+                    tr.classList.remove('row-selected');
+                }
+            });
+
+            const kpiMovVal = document.getElementById('kpi-product-mov-val');
+            const kpiMovLabel = document.getElementById('kpi-product-mov-label');
+            const kpiMovSubtext = document.getElementById('kpi-product-mov-subtext');
+
+            if (count > 0) {
+                actBar.classList.remove('d-none');
+                document.getElementById('act-selected-count').textContent = count;
+                document.getElementById('act-selected-inflow').textContent = '+' + formatNumber(inflow, 2);
+                document.getElementById('act-selected-outflow').textContent = '-' + formatNumber(outflow, 2);
+                const net = inflow - outflow;
+                const netEl = document.getElementById('act-selected-net');
+                netEl.textContent = (net > 0 ? '+' : '') + formatNumber(net, 2);
+                if (net > 0) {
+                    netEl.className = 'text-success fw-bold';
+                } else if (net < 0) {
+                    netEl.className = 'text-danger fw-bold';
+                } else {
+                    netEl.className = 'text-dark fw-bold';
+                }
+
+                // Update Top KPI Card 4 (Period Movement)
+                if (kpiMovVal) {
+                    kpiMovVal.textContent = (net > 0 ? '+' : '') + formatNumber(net, 2);
+                    kpiMovVal.className = 'fw-bold mb-0 ' + (net > 0 ? 'text-success' : (net < 0 ? 'text-danger' : 'text-dark'));
+                }
+                if (kpiMovLabel) kpiMovLabel.innerHTML = `<i class="bi bi-check-circle-fill text-info me-1"></i>Selected Movement (${count})`;
+                if (kpiMovSubtext) kpiMovSubtext.innerHTML = `<span class="badge bg-info-subtle text-info rounded-pill" style="font-size:0.72rem;">+${formatNumber(inflow, 0)} In / -${formatNumber(outflow, 0)} Out (${count} selected)</span>`;
+            } else {
+                actBar.classList.add('d-none');
+                if (kpiMovVal) {
+                    kpiMovVal.textContent = origMovVal;
+                    kpiMovVal.className = 'fw-bold mb-0 ' + (parseFloat(origMovVal) > 0 ? 'text-success' : (parseFloat(origMovVal) < 0 ? 'text-danger' : 'text-dark'));
+                }
+                if (kpiMovLabel) kpiMovLabel.textContent = origMovLabel;
+                if (kpiMovSubtext) kpiMovSubtext.innerHTML = origMovSubtextHtml;
+            }
+
+            if (actSelectAll && actChecks.length > 0) {
+                actSelectAll.checked = (count === actChecks.length);
+                actSelectAll.indeterminate = (count > 0 && count < actChecks.length);
+            }
+        }
+
+        if (actSelectAll) {
+            actSelectAll.addEventListener('change', function () {
+                const checked = this.checked;
+                actChecks.forEach(chk => { chk.checked = checked; });
+                updateActivitySummary();
+            });
+        }
+
+        actChecks.forEach(chk => {
+            chk.addEventListener('change', updateActivitySummary);
+        });
+
+        document.querySelectorAll('.activity-row').forEach(tr => {
+            tr.style.cursor = 'pointer';
+            tr.addEventListener('click', function(e) {
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'A' || e.target.closest('a') || e.target.closest('button')) return;
+                const chk = this.querySelector('.activity-select-check');
+                if (chk) {
+                    chk.checked = !chk.checked;
+                    updateActivitySummary();
+                }
+            });
+        });
+
+        if (actClearBtn) {
+            actClearBtn.addEventListener('click', function () {
+                if (actSelectAll) {
+                    actSelectAll.checked = false;
+                    actSelectAll.indeterminate = false;
+                }
+                actChecks.forEach(chk => { chk.checked = false; });
+                updateActivitySummary();
+            });
+        }
+});
+</script>
 {% endblock %}

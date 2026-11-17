@@ -132,7 +132,7 @@
                                     </a>
                                 </li>
                                 {% endif %}
-                                {% if role_name in 'SHOP_MANAGER,ACCOUNTANT,AUDITOR,ADMIN,SHOP_CASHIER' %}
+                                {% if role_name in 'SHOP_MANAGER,ACCOUNTANT,AUDITOR,ADMIN,SHOP_CASHIER,PRODUCTION_MANAGER,STORES_MANAGER' %}
                                 <li class="nav-item">
                                     <a class="nav-link text-white-50 py-1 {% if '/sales/' in request.path and '/pos/' not in request.path and 'report' not in request.path and 'refund' not in request.path and 'dispatches' not in request.path %}text-white{% endif %}"
                                         href="{% url 'sales:sale_list' %}">

@@ -742,7 +742,7 @@ class Sale(TenantModel):
                 return False
             if self.status != 'COMPLETED':
                 return False
-        if self.status not in ['PENDING_DISPATCH', 'COMPLETED']:
+        if self.status not in ['PENDING_DISPATCH', 'PARTIALLY_DISPATCHED', 'COMPLETED']:
             return False
         # If any refund request is approved or disbursed, cannot resume
         active_refunds = self.refund_requests.filter(status__in=['APPROVED', 'DISBURSED']).exists() or self.refund_requests.filter(payout_status='PAID').exists()

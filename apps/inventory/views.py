@@ -378,7 +378,7 @@ class ToggleFavoriteView(LoginRequiredMixin, View):
 
 
 class ProductDetailView(LoginRequiredMixin, DetailView):
-    """View product details including stock levels."""
+    """View product details including stock levels, batches, and movements with location & date filtering."""
     model = Product
     template_name = 'inventory/product_detail.html'
     context_object_name = 'product'
@@ -387,30 +387,217 @@ class ProductDetailView(LoginRequiredMixin, DetailView):
         return Product.objects.filter(tenant=self.request.user.tenant)
     
     def get_context_data(self, **kwargs):
+        from datetime import datetime, timedelta
+        from decimal import Decimal
+        from django.utils import timezone
+        from django.db.models import Sum, Count, Q
+
         context = super().get_context_data(**kwargs)
         product = self.object
+        user = self.request.user
+        tenant = user.tenant
+        role_name = user.role.name if user.role else ''
+
+        # Determine role-based location filtering permissions
+        is_hq_role = role_name in ['ADMIN', 'ACCOUNTANT', 'AUDITOR', 'STORES_MANAGER', 'PRODUCTION_MANAGER']
+        can_filter_locations = is_hq_role or tenant.shops_can_see_other_stock or role_name == 'SHOP_MANAGER'
+
+        if is_hq_role or tenant.shops_can_see_other_stock:
+            available_locations = Location.objects.filter(
+                tenant=tenant, is_active=True
+            ).order_by('location_type', 'name')
+        elif role_name == 'SHOP_MANAGER':
+            # Shop managers can see all shop locations (or their assigned location if stores)
+            available_locations = Location.objects.filter(
+                tenant=tenant, is_active=True
+            ).filter(Q(location_type='SHOP') | Q(pk=user.location_id if user.location else None)).order_by('name')
+        elif user.location:
+            available_locations = Location.objects.filter(pk=user.location_id)
+        else:
+            available_locations = Location.objects.none()
+
+        # Parse Location Filter
+        location_id = self.request.GET.get('location', '').strip()
+        selected_location = None
+        if location_id:
+            try:
+                selected_location = available_locations.get(pk=location_id)
+            except (Location.DoesNotExist, ValueError):
+                selected_location = None
+        elif not can_filter_locations and user.location:
+            selected_location = user.location
+
+        # Parse Date Filter
+        date_range = self.request.GET.get('range', 'all')
+        date_from_str = self.request.GET.get('date_from', '').strip()
+        date_to_str = self.request.GET.get('date_to', '').strip()
+
+        today = timezone.now().date()
+        start_date = None
+        end_date = None
+
+        if date_from_str and date_to_str:
+            try:
+                start_date = datetime.strptime(date_from_str, '%Y-%m-%d').date()
+                end_date = datetime.strptime(date_to_str, '%Y-%m-%d').date()
+                date_range = 'custom'
+            except ValueError:
+                pass
+        elif date_from_str:
+            try:
+                start_date = datetime.strptime(date_from_str, '%Y-%m-%d').date()
+                end_date = today
+                date_range = 'custom'
+            except ValueError:
+                pass
+        elif date_to_str:
+            try:
+                end_date = datetime.strptime(date_to_str, '%Y-%m-%d').date()
+                start_date = today - timedelta(days=30)
+                date_range = 'custom'
+            except ValueError:
+                pass
+
+        if not start_date or not end_date:
+            if date_range == 'today':
+                start_date = today
+                end_date = today
+            elif date_range == 'yesterday':
+                start_date = today - timedelta(days=1)
+                end_date = today - timedelta(days=1)
+            elif date_range == 'week':
+                start_date = today - timedelta(days=7)
+                end_date = today
+            elif date_range == 'month':
+                start_date = today - timedelta(days=30)
+                end_date = today
+            elif date_range == 'this_month':
+                start_date = today.replace(day=1)
+                end_date = today
+            elif date_range == 'year':
+                start_date = today - timedelta(days=365)
+                end_date = today
+            else:
+                date_range = 'all'
+
+        # --- 1. Stock by Location ---
+        ledger_stock_base = InventoryLedger.objects.filter(product=product)
         
-        # Get stock by location
-        context['stock_by_location'] = InventoryLedger.objects.filter(
-            product=product
-        ).values(
-            'location__name', 'location__location_type'
+        stock_by_loc_qs = ledger_stock_base
+        if not can_filter_locations and user.location:
+            stock_by_loc_qs = stock_by_loc_qs.filter(location=user.location)
+        elif selected_location:
+            stock_by_loc_qs = stock_by_loc_qs.filter(location=selected_location)
+        elif available_locations.exists():
+            stock_by_loc_qs = stock_by_loc_qs.filter(location__in=available_locations)
+
+        stock_by_location = list(stock_by_loc_qs.values(
+            'location__id', 'location__name', 'location__location_type'
         ).annotate(
             total_stock=Sum('quantity')
-        ).order_by('location__name')
-        
-        # Get active batches
-        context['batches'] = Batch.objects.filter(
+        ).order_by('location__name'))
+
+        total_stock_scope = sum(Decimal(str(item['total_stock'] or 0)) for item in stock_by_location)
+        overall_total_stock = ledger_stock_base.aggregate(total=Sum('quantity'))['total'] or Decimal('0')
+
+        reorder_level = product.reorder_level or Decimal('0')
+        if total_stock_scope <= 0:
+            stock_status = 'OUT_OF_STOCK'
+            stock_status_label = 'Out of Stock'
+            stock_status_badge = 'danger'
+        elif total_stock_scope <= reorder_level:
+            stock_status = 'LOW_STOCK'
+            stock_status_label = 'Low Stock'
+            stock_status_badge = 'warning'
+        else:
+            stock_status = 'NORMAL'
+            stock_status_label = 'Optimal'
+            stock_status_badge = 'success'
+
+        # --- 2. Active Batches ---
+        batches_qs = Batch.objects.filter(
             product=product,
             status='AVAILABLE',
             current_quantity__gt=0
-        ).select_related('location').order_by('expiry_date')
-        
-        # Get recent ledger entries
-        context['recent_entries'] = InventoryLedger.objects.filter(
+        ).select_related('location')
+
+        if not can_filter_locations and user.location:
+            batches_qs = batches_qs.filter(location=user.location)
+        elif selected_location:
+            batches_qs = batches_qs.filter(location=selected_location)
+        elif available_locations.exists():
+            batches_qs = batches_qs.filter(location__in=available_locations)
+
+        batches = list(batches_qs.order_by('expiry_date', 'created_at'))
+
+        total_batch_qty = sum(Decimal(str(b.current_quantity or 0)) for b in batches)
+        total_batch_cost = sum(Decimal(str(b.current_quantity or 0)) * Decimal(str(b.unit_cost or 0)) for b in batches)
+        avg_batch_cost = (total_batch_cost / total_batch_qty) if total_batch_qty > 0 else Decimal('0')
+        expiring_soon_count = sum(1 for b in batches if b.days_until_expiry is not None and b.days_until_expiry <= 30)
+
+        # --- 3. Inventory Activity & Movements ---
+        activity_qs = InventoryLedger.objects.filter(
             product=product
-        ).select_related('location', 'created_by')[:20]
-        
+        ).select_related('location', 'created_by', 'batch')
+
+        if not can_filter_locations and user.location:
+            activity_qs = activity_qs.filter(location=user.location)
+        elif selected_location:
+            activity_qs = activity_qs.filter(location=selected_location)
+        elif available_locations.exists():
+            activity_qs = activity_qs.filter(location__in=available_locations)
+
+        if start_date and end_date:
+            activity_qs = activity_qs.filter(created_at__date__gte=start_date, created_at__date__lte=end_date)
+
+        activity_metrics = activity_qs.aggregate(
+            inflow=Sum('quantity', filter=Q(quantity__gt=0)),
+            outflow=Sum('quantity', filter=Q(quantity__lt=0)),
+            sales_qty=Sum('quantity', filter=Q(transaction_type='SALE')),
+            count=Count('id'),
+        )
+        total_inflow = activity_metrics['inflow'] or Decimal('0')
+        total_outflow = activity_metrics['outflow'] or Decimal('0')
+        net_movement = total_inflow + total_outflow
+        period_sales = abs(activity_metrics['sales_qty'] or Decimal('0'))
+
+        recent_entries = list(activity_qs.order_by('-created_at')[:100])
+
+        # Value calculations
+        selling_price = product.default_selling_price or Decimal('0')
+        scope_retail_value = total_stock_scope * selling_price
+
+        context.update({
+            'can_filter_locations': can_filter_locations,
+            'available_locations': available_locations,
+            'selected_location': selected_location,
+            'selected_location_id': selected_location.id if selected_location else '',
+            
+            'current_range': date_range,
+            'date_from': start_date.strftime('%Y-%m-%d') if start_date else '',
+            'date_to': end_date.strftime('%Y-%m-%d') if end_date else '',
+            
+            'stock_by_location': stock_by_location,
+            'total_stock_scope': total_stock_scope,
+            'overall_total_stock': overall_total_stock,
+            'scope_retail_value': scope_retail_value,
+            'stock_status': stock_status,
+            'stock_status_label': stock_status_label,
+            'stock_status_badge': stock_status_badge,
+            
+            'batches': batches,
+            'total_batch_qty': total_batch_qty,
+            'total_batch_cost': total_batch_cost,
+            'avg_batch_cost': avg_batch_cost,
+            'expiring_soon_count': expiring_soon_count,
+            
+            'recent_entries': recent_entries,
+            'activity_count': activity_metrics['count'] or 0,
+            'total_inflow': total_inflow,
+            'total_outflow': abs(total_outflow),
+            'net_movement': net_movement,
+            'period_sales': period_sales,
+        })
         return context
 
 

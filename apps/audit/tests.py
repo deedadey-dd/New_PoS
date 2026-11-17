@@ -444,5 +444,60 @@ class ProductLifecycleViewTests(TestCase):
         self.assertEqual(response_empty.status_code, 200)
         self.assertIn('No products found matching "NonExistentSKUXYZ"', response_empty.content.decode())
 
+    def test_product_lifecycle_location_filter_and_export(self):
+        """Test filtering by location and CSV export in ProductLifecycleView."""
+        # Ledger for Location A
+        InventoryLedger.objects.create(
+            tenant=self.tenant,
+            product=self.product,
+            location=self.location_a,
+            transaction_type='IN',
+            quantity=Decimal('25.00'),
+            unit_cost=Decimal('5.00')
+        )
+        # Ledger for Location B
+        InventoryLedger.objects.create(
+            tenant=self.tenant,
+            product=self.product,
+            location=self.location_b,
+            transaction_type='IN',
+            quantity=Decimal('15.00'),
+            unit_cost=Decimal('5.00')
+        )
+
+        self.client.force_login(self.user)
+
+        # 1. Filter by Location A
+        url = f'/audit/product-lifecycle/{self.product.pk}/?location={self.location_a.pk}'
+        resp = self.client.get(url)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.context['current_total_stock'], Decimal('25.00'))
+        self.assertEqual(resp.context['overall_total_stock'], Decimal('40.00'))
+        self.assertEqual(len(resp.context['ledger_entries']), 1)
+
+        # 2. Date preset filter
+        url_preset = f'/audit/product-lifecycle/{self.product.pk}/?range=today'
+        resp_preset = self.client.get(url_preset)
+        self.assertEqual(resp_preset.status_code, 200)
+        self.assertEqual(resp_preset.context['current_range'], 'today')
+
+        # 3. CSV export
+        url_csv = f'/audit/product-lifecycle/{self.product.pk}/?export=csv'
+        resp_csv = self.client.get(url_csv)
+        self.assertEqual(resp_csv.status_code, 200)
+        self.assertEqual(resp_csv['Content-Type'], 'text/csv')
+        self.assertIn(self.product.sku.encode(), resp_csv.content)
+
+    def test_product_lifecycle_without_pk_renders_selection_prompt(self):
+        """Test accessing /audit/product-lifecycle/ with no PK renders cleanly without NoReverseMatch."""
+        self.client.force_login(self.user)
+        resp = self.client.get('/audit/product-lifecycle/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'Select a Product')
+
+        resp_with_query = self.client.get('/audit/product-lifecycle/?range=week')
+        self.assertEqual(resp_with_query.status_code, 200)
+        self.assertContains(resp_with_query, 'Select a Product')
+
 
 

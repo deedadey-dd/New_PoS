@@ -364,18 +364,9 @@ def tenant_context(request):
                         from apps.accounting.models import DigitalFundWithdrawal
                         withdrawn = DigitalFundWithdrawal.objects.filter(tenant=tenant, shop=user.location, fund_source='MOMO').aggregate(total=Sum('amount'))['total'] or Decimal('0')
                         
-                        from apps.sales.models import RefundRequest
-                        momo_refunds = RefundRequest.objects.filter(
-                            tenant=tenant,
-                            sale__shop=user.location,
-                            status='APPROVED',
-                            payout_status='PAID',
-                            refund_method='MOMO'
-                        ).aggregate(total=Sum('refund_amount'))['total'] or Decimal('0')
-                        
-                        context['momo_balance'] = shop_sales + shop_ct - withdrawn - momo_refunds
+                        context['momo_balance'] = shop_sales + shop_ct - withdrawn
                     else:
-                        # Accountant sees Total Withdrawn Momo minus BANK TRANSFERS and Accountant MoMo refunds
+                        # Accountant sees Total Withdrawn Momo minus BANK TRANSFERS
                         from apps.accounting.models import DigitalFundWithdrawal
                         total_withdrawn = DigitalFundWithdrawal.objects.filter(tenant=tenant, fund_source='MOMO').aggregate(total=Sum('amount'))['total'] or Decimal('0')
                         
@@ -391,16 +382,7 @@ def tenant_context(request):
                         from apps.accounting.models import BankTransfer
                         banked_momo = BankTransfer.objects.filter(tenant=tenant, fund_source='MOMO').aggregate(total=Sum('amount'))['total'] or Decimal('0')
                         
-                        from apps.sales.models import RefundRequest
-                        accountant_momo_refunds = RefundRequest.objects.filter(
-                            tenant=tenant,
-                            paid_by=user,
-                            status='APPROVED',
-                            payout_status='PAID',
-                            refund_method='MOMO'
-                        ).aggregate(total=Sum('refund_amount'))['total'] or Decimal('0')
-                        
-                        context['momo_balance'] = (total_withdrawn + customer_momo_payments) - banked_momo - accountant_momo_refunds
+                        context['momo_balance'] = (total_withdrawn + customer_momo_payments) - banked_momo
             except Exception:
                 context['momo_balance'] = Decimal('0')
         

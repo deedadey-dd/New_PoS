@@ -1087,7 +1087,7 @@
                     <small class="text-muted"><kbd class="bg-secondary text-white px-1" style="font-size:0.75rem;">Enter</kbd> to submit</small>
                 </div>
                 <input type="number" class="checkout-input" id="amount-received" step="0.01" min="0" inputmode="decimal" autofocus>
-                <div class="form-text text-muted text-center mt-1 small">Press <kbd class="bg-dark text-white px-1">Enter</kbd> to submit (leave blank for exact amount)</div>
+                <div class="form-text text-muted text-center mt-1 small" id="amount-received-subhint">Press <kbd class="bg-dark text-white px-1">Enter</kbd> to submit (leave blank for exact amount)</div>
             </div>
             <div class="mb-4" id="change-container">
                 <label class="form-label">Change</label>
@@ -1300,24 +1300,46 @@
     <script src="{% static 'js/db.js' %}"></script>
     <script src="{% static 'js/unified-sync-manager.js' %}"></script>
     
+    <!-- POS Initial Context Data (Safe JSON Elements to avoid IDE/Linter syntax errors) -->
+    <script id="pos-context-data" type="application/json">
+    {
+        "tenantId": {{ request.user.tenant.id|default:"null" }},
+        "shopId": {{ shop.id|default:"null" }},
+        "userId": {{ request.user.id|default:"null" }},
+        "currency": "{{ currency_symbol|default:'$'|escapejs }}",
+        "csrfToken": "{{ csrf_token }}",
+        "syncUrl": "{% url 'sales:api_sync_offline_sales' %}",
+        "checkoutUrl": "/sales/api/checkout/",
+        "hasShift": {% if shift %}true{% else %}false{% endif %},
+        "waiveShift": {% if request.user.tenant.waive_shift_requirement %}true{% else %}false{% endif %},
+        "allowNegativeStock": {% if allow_negative_stock %}true{% else %}false{% endif %},
+        "disallowManualMomo": {% if shop_settings.disallow_manual_momo_amount %}true{% else %}false{% endif %}
+    }
+    </script>
+    <script id="pos-products-data" type="application/json">{{ products|default:"[]"|safe }}</script>
+    <script id="pos-bundles-data" type="application/json">{{ bundles|default:"[]"|safe }}</script>
+    <script id="pos-customers-data" type="application/json">{{ customers|default:"[]"|safe }}</script>
+    <script id="pos-providers-data" type="application/json">{{ available_providers|default:"[]"|safe }}</script>
+
     <script>
         // Global Context for Offline Sync
-        const TENANT_ID = {{ request.user.tenant.id|default:"null" }};
-        const SHOP_ID = {{ shop.id|default:"null" }};
-        const USER_ID = {{ request.user.id|default:"null" }};
+        const _posContext = JSON.parse(document.getElementById('pos-context-data').textContent || '{}');
+        const TENANT_ID = _posContext.tenantId;
+        const SHOP_ID = _posContext.shopId;
+        const USER_ID = _posContext.userId;
+        const CURRENCY = _posContext.currency;
+        const CSRF_TOKEN = _posContext.csrfToken;
+        const SYNC_URL = _posContext.syncUrl;
+        const CHECKOUT_URL = _posContext.checkoutUrl;
+        const HAS_SHIFT = _posContext.hasShift;
+        const WAIVE_SHIFT = _posContext.waiveShift;
+        const ALLOW_NEGATIVE_STOCK = _posContext.allowNegativeStock;
+        const DISALLOW_MANUAL_MOMO = _posContext.disallowManualMomo;
 
-        const CURRENCY = '{{ currency_symbol }}';
-        const PRODUCTS = {{ products| safe }};
-        const BUNDLES = {{ bundles|default:"[]"|safe }};
-        const CUSTOMERS = {{ customers| safe }};
-        const AVAILABLE_PROVIDERS = {{ available_providers|default:"[]"|safe }};
-        const CSRF_TOKEN = '{{ csrf_token }}';
-        const SYNC_URL = '{% url "sales:api_sync_offline_sales" %}';
-        const CHECKOUT_URL = '/sales/api/checkout/';
-        const HAS_SHIFT = {% if shift %}true{% else %}false{% endif %};
-        const WAIVE_SHIFT = {% if request.user.tenant.waive_shift_requirement %}true{% else %}false{% endif %};
-        const ALLOW_NEGATIVE_STOCK = {% if allow_negative_stock %}true{% else %}false{% endif %};
-        const DISALLOW_MANUAL_MOMO = {% if shop_settings.disallow_manual_momo_amount %}true{% else %}false{% endif %};
+        const PRODUCTS = JSON.parse(document.getElementById('pos-products-data').textContent || '[]');
+        const BUNDLES = JSON.parse(document.getElementById('pos-bundles-data').textContent || '[]');
+        const CUSTOMERS = JSON.parse(document.getElementById('pos-customers-data').textContent || '[]');
+        const AVAILABLE_PROVIDERS = JSON.parse(document.getElementById('pos-providers-data').textContent || '[]');
 
         // --- POS Toast Notification System ---
         function showPosToast(message, type = 'warning', durationMs = 3500) {
@@ -1509,9 +1531,28 @@
             amountReceivedInput.addEventListener('input', updateChange);
             document.getElementById('btn-complete-sale').addEventListener('click', completeSale);
 
-            // Block 'e', 'E', '+', '-' keys in amount input (number inputs allow these for scientific notation)
+            // Block manual entry for Momo if DISALLOW_MANUAL_MOMO is active,
+            // block 'e', 'E', '+', '-' keys in amount input (number inputs allow these for scientific notation),
             // and handle Enter (submit/tender exact) and Escape (close modal)
             amountReceivedInput.addEventListener('keydown', function (e) {
+                const isPaymentOnAccount = cart.length === 0 && selectedCustomer;
+                if (paymentMode === 'MOMO' && DISALLOW_MANUAL_MOMO && !isPaymentOnAccount) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const completeBtn = document.getElementById('btn-complete-sale');
+                        if (completeBtn && !completeBtn.disabled) completeBtn.click();
+                        return;
+                    } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        closeCheckoutModal();
+                        return;
+                    } else if (e.key === 'Tab') {
+                        return;
+                    }
+                    e.preventDefault();
+                    return;
+                }
+
                 if (['e', 'E', '+', '-'].includes(e.key)) {
                     e.preventDefault();
                     return;
@@ -1530,6 +1571,20 @@
                 } else if (e.key === 'Escape') {
                     e.preventDefault();
                     closeCheckoutModal();
+                }
+            });
+
+            amountReceivedInput.addEventListener('beforeinput', function (e) {
+                const isPaymentOnAccount = cart.length === 0 && selectedCustomer;
+                if (paymentMode === 'MOMO' && DISALLOW_MANUAL_MOMO && !isPaymentOnAccount) {
+                    e.preventDefault();
+                }
+            });
+
+            amountReceivedInput.addEventListener('paste', function (e) {
+                const isPaymentOnAccount = cart.length === 0 && selectedCustomer;
+                if (paymentMode === 'MOMO' && DISALLOW_MANUAL_MOMO && !isPaymentOnAccount) {
+                    e.preventDefault();
                 }
             });
 
@@ -1768,7 +1823,16 @@
             const amountInput = document.getElementById('amount-received');
             amountInput.value = '';
             amountInput.placeholder = total > 0 ? total.toFixed(2) : '0.00';
+            amountInput.disabled = false;
+            amountInput.readOnly = false;
+            amountInput.classList.remove('bg-light');
+            amountInput.style.pointerEvents = '';
+            amountInput.style.cursor = '';
             document.getElementById('modal-change').textContent = CURRENCY + '0.00';
+            const subhint = document.getElementById('amount-received-subhint');
+            if (subhint) {
+                subhint.innerHTML = 'Press <kbd class="bg-dark text-white px-1">Enter</kbd> to submit (leave blank for exact amount)';
+            }
 
             // UI Toggle based on mode
             const title = document.getElementById('checkout-title');
@@ -1780,6 +1844,7 @@
                 // Payment on account mode - paying into customer's account
                 title.innerHTML = '<i class="bi bi-wallet me-2"></i>Payment on Account';
                 amountInput.readOnly = false;
+                amountInput.disabled = false;
                 creditInfo.style.display = 'block';
                 amountContainer.style.display = 'block';
                 changeContainer.style.display = 'none';
@@ -1793,6 +1858,7 @@
             } else if (mode === 'CREDIT') {
                 title.innerHTML = '<i class="bi bi-credit-card-2-front me-2"></i>Pay on Credit';
                 amountInput.readOnly = false;
+                amountInput.disabled = false;
                 creditInfo.style.display = 'block';
                 amountContainer.style.display = 'none';
                 changeContainer.style.display = 'none';
@@ -1819,13 +1885,24 @@
                 amountContainer.style.display = 'block';
                 document.getElementById('btn-complete-sale').disabled = false;
 
-                if (DISALLOW_MANUAL_MOMO) {
+                if (DISALLOW_MANUAL_MOMO && !isPaymentOnAccount) {
                     amountInput.value = total.toFixed(2);
                     amountInput.readOnly = true;
+                    amountInput.disabled = true;
+                    amountInput.classList.add('bg-light');
+                    amountInput.style.pointerEvents = 'none';
+                    amountInput.style.cursor = 'not-allowed';
                     changeContainer.style.display = 'none';
                     document.getElementById('modal-change').textContent = CURRENCY + '0.00';
+                    if (subhint) {
+                        subhint.innerHTML = '<span class="text-success fw-bold"><i class="bi bi-lock-fill me-1"></i>Exact amount locked for Local MoMo. Press <kbd class="bg-dark text-white px-1">Enter</kbd> to complete sale.</span>';
+                    }
                 } else {
                     amountInput.readOnly = false;
+                    amountInput.disabled = false;
+                    amountInput.classList.remove('bg-light');
+                    amountInput.style.pointerEvents = '';
+                    amountInput.style.cursor = '';
                     changeContainer.style.display = 'block';
                 }
 
@@ -1842,6 +1919,10 @@
                 // CASH payment mode
                 title.innerHTML = '<i class="bi bi-cash-coin me-2"></i>Cash Payment';
                 amountInput.readOnly = false;
+                amountInput.disabled = false;
+                amountInput.classList.remove('bg-light');
+                amountInput.style.pointerEvents = '';
+                amountInput.style.cursor = '';
                 amountContainer.style.display = 'block';
                 changeContainer.style.display = 'block';
                 document.getElementById('btn-complete-sale').disabled = false;
@@ -1859,7 +1940,13 @@
             }
 
             modal.classList.add('active');
-            if (mode === 'CASH' || mode === 'MOMO' || isPaymentOnAccount) {
+            if (mode === 'MOMO' && DISALLOW_MANUAL_MOMO && !isPaymentOnAccount) {
+                // Focus directly on the Complete Sale button so pressing Enter tenders immediately
+                setTimeout(() => {
+                    const completeBtn = document.getElementById('btn-complete-sale');
+                    if (completeBtn) completeBtn.focus();
+                }, 100);
+            } else if (mode === 'CASH' || mode === 'MOMO' || isPaymentOnAccount) {
                 // Use setTimeout to ensure focus after modal is fully rendered
                 setTimeout(() => {
                     const amountInput = document.getElementById('amount-received');
@@ -2276,6 +2363,16 @@
 
         function closeCheckoutModal() {
             document.getElementById('checkout-modal').classList.remove('active');
+            const amountInput = document.getElementById('amount-received');
+            amountInput.disabled = false;
+            amountInput.readOnly = false;
+            amountInput.classList.remove('bg-light');
+            amountInput.style.pointerEvents = '';
+            amountInput.style.cursor = '';
+            const subhint = document.getElementById('amount-received-subhint');
+            if (subhint) {
+                subhint.innerHTML = 'Press <kbd class="bg-dark text-white px-1">Enter</kbd> to submit (leave blank for exact amount)';
+            }
         }
 
         // Shift prompt modal functions
@@ -2885,7 +2982,24 @@
 
         function updateChange() {
             const total = calculateTotal();
-            const received = parseFloat(document.getElementById('amount-received').value) || 0;
+            const isPaymentOnAccount = cart.length === 0 && selectedCustomer;
+            const amountInput = document.getElementById('amount-received');
+
+            if (paymentMode === 'MOMO' && DISALLOW_MANUAL_MOMO && !isPaymentOnAccount) {
+                amountInput.value = total.toFixed(2);
+                document.getElementById('modal-change').textContent = CURRENCY + '0.00';
+                if (selectedCustomer) {
+                    const currentBalance = parseFloat(selectedCustomer.current_balance);
+                    const newBalanceEl = document.getElementById('credit-new-balance');
+                    if (newBalanceEl) {
+                        newBalanceEl.textContent = CURRENCY + currentBalance.toFixed(2);
+                        newBalanceEl.className = currentBalance > 0 ? 'text-danger' : 'text-success';
+                    }
+                }
+                return;
+            }
+
+            const received = parseFloat(amountInput.value) || 0;
             const change = Math.max(0, received - total);
             document.getElementById('modal-change').textContent = CURRENCY + change.toFixed(2);
 

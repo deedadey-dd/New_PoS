@@ -3286,7 +3286,7 @@ class WorkflowIntegrationTests(TestCase):
         )
         self.assertEqual(res_ok.status_code, 200)
         sale.refresh_from_db()
-        self.assertEqual(sale.status, 'PARTIALLY_DISPATCHED')
+        self.assertEqual(sale.status, 'PENDING_DISPATCH')
 
     def test_34_legacy_refund_request_effective_dispatched_total(self):
         """
@@ -3895,6 +3895,69 @@ class WorkflowIntegrationTests(TestCase):
         # Amount paid MUST be locked to exact total (150.00), change MUST be 0.00
         self.assertEqual(sale.amount_paid, Decimal('150.00'))
         self.assertEqual(sale.change_given, Decimal('0.00'))
+
+    def test_42_pos_standard_workflow_disallow_manual_momo(self):
+        """
+        Verify that in the standard sales workflow POS interface:
+        1. When disallow_manual_momo_amount is active on the shop, DISALLOW_MANUAL_MOMO is true.
+        2. Even if an inflated amount is sent to api_complete_sale with Momo,
+           the backend overrides amount_paid to exact total with change_given = 0.
+        """
+        self.tenant.use_strict_sales_workflow = False
+        self.tenant.save()
+
+        settings, _ = ShopSettings.objects.get_or_create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            defaults={'receipt_printer_type': 'THERMAL_80MM', 'disallow_manual_momo_amount': True}
+        )
+        settings.disallow_manual_momo_amount = True
+        settings.save()
+
+        # Open shift for manager
+        Shift.objects.filter(tenant=self.tenant, shop=self.shop_location, attendant=self.manager_user, status='OPEN').update(status='CLOSED')
+        shift = Shift.objects.create(
+            tenant=self.tenant,
+            shop=self.shop_location,
+            attendant=self.manager_user,
+            opening_cash=Decimal('100.00'),
+            status='OPEN'
+        )
+
+        # 1. View POS page
+        self.client.force_login(self.manager_user)
+        resp = self.client.get('/sales/pos/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(
+            'const DISALLOW_MANUAL_MOMO = true;' in resp.content.decode('utf-8') or
+            '"disallowManualMomo": true' in resp.content.decode('utf-8')
+        )
+
+        # 2. Complete sale with MOMO sending inflated amount (e.g. 200 for a 30 sale)
+        # Unit price is 15.00 * 2 = 30.00
+        sale_resp = self.client.post(
+            '/sales/api/checkout/',
+            data=json.dumps({
+                'items': [{
+                    'product_id': self.product.pk,
+                    'quantity': 2,
+                    'unit_price': 15.00,
+                }],
+                'amount_paid': 200.00,
+                'payment_method': 'MOMO',
+                'discount_amount': 0,
+            }),
+            content_type='application/json'
+        )
+        self.assertEqual(sale_resp.status_code, 200)
+        self.assertTrue(sale_resp.json()['success'])
+
+        sale = Sale.objects.get(pk=sale_resp.json()['sale_id'])
+        self.assertEqual(sale.total, Decimal('30.00'))
+        self.assertEqual(sale.payment_method, 'MOMO')
+        self.assertEqual(sale.amount_paid, Decimal('30.00'))
+        self.assertEqual(sale.change_given, Decimal('0.00'))
+
 
 
 

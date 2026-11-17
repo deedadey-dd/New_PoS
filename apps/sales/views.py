@@ -960,11 +960,15 @@ class DispatchListView(SaleListView):
     template_name = 'sales/dispatch_list.html'
 
     def get_queryset(self):
-        from django.db.models import Q
+        from django.db.models import Q, Exists, OuterRef
+        from .models import SaleItem
         queryset = super().get_queryset()
+        has_dispatched_items = Exists(
+            SaleItem.objects.filter(sale=OuterRef('pk'), dispatched_quantity__gt=0)
+        )
         return queryset.filter(
-            Q(is_dispatched=True) | Q(items__dispatched_quantity__gt=0)
-        ).distinct()
+            Q(is_dispatched=True) | has_dispatched_items
+        )
 
 
 class SaleDetailView(LoginRequiredMixin, DetailView):
@@ -2048,6 +2052,17 @@ def api_complete_sale(request):
             
             # Calculate totals
             sale.calculate_totals()
+
+            if payment_method == 'MOMO':
+                shop_settings = getattr(shop, 'shop_settings', None)
+                if not shop_settings and shop:
+                    try:
+                        from apps.sales.models import ShopSettings
+                        shop_settings = ShopSettings.objects.get(shop=shop)
+                    except ShopSettings.DoesNotExist:
+                        shop_settings = None
+                if shop_settings and shop_settings.disallow_manual_momo_amount:
+                    amount_paid = sale.total
             
             # Handle overpayment for customer (reduces their balance)
             if customer and amount_paid > sale.total:
@@ -3430,6 +3445,17 @@ def api_sync_offline_sales(request):
 
             # Calculate totals
             sale.calculate_totals()
+
+            if payment_method == 'MOMO':
+                shop_settings = getattr(shop, 'shop_settings', None)
+                if not shop_settings and shop:
+                    try:
+                        from apps.sales.models import ShopSettings
+                        shop_settings = ShopSettings.objects.get(shop=shop)
+                    except ShopSettings.DoesNotExist:
+                        shop_settings = None
+                if shop_settings and shop_settings.disallow_manual_momo_amount:
+                    amount_paid = sale.total
 
             # Flag sync conflicts if any
             if sync_conflicts:
