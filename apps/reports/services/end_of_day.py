@@ -25,7 +25,7 @@ def build_management_end_of_day_report(tenant, start_date, end_date, shop=None, 
         tenant=tenant,
         created_at__date__gte=start_date,
         created_at__date__lte=end_date,
-        status__in=['COMPLETED', 'PENDING_DISPATCH']
+        status__in=['COMPLETED', 'PENDING_DISPATCH', 'PARTIALLY_DISPATCHED']
     )
 
     shop_filter_for_inventory = None
@@ -349,10 +349,10 @@ def build_management_end_of_day_report(tenant, start_date, end_date, shop=None, 
         for s in shifts_list:
             s_base = s.sales.filter(Q(cashier=s.attendant) | Q(cashier__isnull=True))
             c_tot = s_base.filter(
-                status__in=['COMPLETED', 'PENDING_DISPATCH', 'REFUNDED'], payment_method='CASH'
+                status__in=['COMPLETED', 'PENDING_DISPATCH', 'PARTIALLY_DISPATCHED', 'REFUNDED'], payment_method='CASH'
             ).aggregate(t=Sum('total'))['t'] or Decimal('0.00')
             m_tot = s_base.filter(
-                status__in=['COMPLETED', 'PENDING_DISPATCH', 'REFUNDED'], payment_method='MIXED'
+                status__in=['COMPLETED', 'PENDING_DISPATCH', 'PARTIALLY_DISPATCHED', 'REFUNDED'], payment_method='MIXED'
             ).aggregate(t=Sum('amount_paid'))['t'] or Decimal('0.00')
             raw_shift_cash_sales += (c_tot + m_tot)
 

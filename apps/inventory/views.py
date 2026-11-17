@@ -399,18 +399,14 @@ class ProductDetailView(LoginRequiredMixin, DetailView):
         role_name = user.role.name if user.role else ''
 
         # Determine role-based location filtering permissions
-        is_hq_role = role_name in ['ADMIN', 'ACCOUNTANT', 'AUDITOR', 'STORES_MANAGER', 'PRODUCTION_MANAGER']
-        can_filter_locations = is_hq_role or tenant.shops_can_see_other_stock or role_name == 'SHOP_MANAGER'
+        # Shop managers and branch staff should only see their assigned shop on the detailed product page
+        is_hq_role = bool(user.is_superuser or role_name in ['ADMIN', 'ACCOUNTANT', 'AUDITOR', 'STORES_MANAGER', 'PRODUCTION_MANAGER'])
+        can_filter_locations = is_hq_role
 
-        if is_hq_role or tenant.shops_can_see_other_stock:
+        if is_hq_role:
             available_locations = Location.objects.filter(
                 tenant=tenant, is_active=True
             ).order_by('location_type', 'name')
-        elif role_name == 'SHOP_MANAGER':
-            # Shop managers can see all shop locations (or their assigned location if stores)
-            available_locations = Location.objects.filter(
-                tenant=tenant, is_active=True
-            ).filter(Q(location_type='SHOP') | Q(pk=user.location_id if user.location else None)).order_by('name')
         elif user.location:
             available_locations = Location.objects.filter(pk=user.location_id)
         else:
@@ -419,7 +415,7 @@ class ProductDetailView(LoginRequiredMixin, DetailView):
         # Parse Location Filter
         location_id = self.request.GET.get('location', '').strip()
         selected_location = None
-        if location_id:
+        if is_hq_role and location_id:
             try:
                 selected_location = available_locations.get(pk=location_id)
             except (Location.DoesNotExist, ValueError):
@@ -498,7 +494,60 @@ class ProductDetailView(LoginRequiredMixin, DetailView):
         ).order_by('location__name'))
 
         total_stock_scope = sum(Decimal(str(item['total_stock'] or 0)) for item in stock_by_location)
-        overall_total_stock = ledger_stock_base.aggregate(total=Sum('quantity'))['total'] or Decimal('0')
+        if can_filter_locations:
+            overall_total_stock = ledger_stock_base.aggregate(total=Sum('quantity'))['total'] or Decimal('0')
+        else:
+            overall_total_stock = total_stock_scope
+
+        # --- Strict Sales Workflow: Pending Dispatch ---
+        has_strict_workflow = bool(tenant.use_strict_sales_workflow)
+        total_pending_dispatch_qty = Decimal('0')
+        pending_dispatch_count = 0
+        pending_dispatch_sales_count = 0
+        loc_pending_map = {}
+
+        if has_strict_workflow:
+            from apps.sales.models import SaleItem
+            from django.db.models import F
+
+            pending_items_qs = SaleItem.objects.filter(
+                sale__tenant=tenant,
+                product=product,
+                sale__status__in=['PENDING_DISPATCH', 'PARTIALLY_DISPATCHED', 'COMPLETED'],
+                dispatched_quantity__lt=F('quantity')
+            ).exclude(
+                Q(sale__status__in=['VOIDED', 'REFUNDED']) | Q(sale__is_halted=True)
+            )
+
+            # Apply location filter if active or restricted
+            if not can_filter_locations and user.location:
+                pending_items_qs = pending_items_qs.filter(sale__shop=user.location)
+            elif selected_location:
+                pending_items_qs = pending_items_qs.filter(sale__shop=selected_location)
+            elif available_locations.exists():
+                pending_items_qs = pending_items_qs.filter(sale__shop__in=available_locations)
+
+            pending_agg = pending_items_qs.aggregate(
+                total_pending=Sum(F('quantity') - F('dispatched_quantity')),
+                items_count=Count('id'),
+                sales_count=Count('sale_id', distinct=True)
+            )
+            total_pending_dispatch_qty = pending_agg['total_pending'] or Decimal('0')
+            pending_dispatch_count = pending_agg['items_count'] or 0
+            pending_dispatch_sales_count = pending_agg['sales_count'] or 0
+
+            loc_pending_map = {
+                item['sale__shop_id']: item['pending']
+                for item in pending_items_qs.order_by().values('sale__shop_id').annotate(
+                    pending=Sum(F('quantity') - F('dispatched_quantity'))
+                )
+            }
+
+        # Annotate pending dispatch into stock_by_location
+        for item in stock_by_location:
+            loc_id = item['location__id']
+            item['pending_dispatch'] = loc_pending_map.get(loc_id, Decimal('0'))
+            item['net_available'] = (item['total_stock'] or Decimal('0')) - item['pending_dispatch']
 
         reorder_level = product.reorder_level or Decimal('0')
         if total_stock_scope <= 0:
@@ -584,6 +633,12 @@ class ProductDetailView(LoginRequiredMixin, DetailView):
             'stock_status': stock_status,
             'stock_status_label': stock_status_label,
             'stock_status_badge': stock_status_badge,
+
+            'has_strict_workflow': has_strict_workflow,
+            'total_pending_dispatch_qty': total_pending_dispatch_qty,
+            'pending_dispatch_count': pending_dispatch_count,
+            'pending_dispatch_sales_count': pending_dispatch_sales_count,
+            'net_available_stock': max(Decimal('0'), total_stock_scope - total_pending_dispatch_qty),
             
             'batches': batches,
             'total_batch_qty': total_batch_qty,
@@ -1612,32 +1667,60 @@ class StockAdjustmentView(LoginRequiredMixin, View):
                 status='PENDING' if needs_approval else 'APPROVED',
             )
             
-            if needs_approval:
-                # Notify the Auditors and Admins
-                from apps.notifications.models import Notification
-                from apps.core.models import User
-                
-                # Find Auditors and Admins
-                target_users = User.objects.filter(
+            # Notify Accountants, Auditors, and Admins
+            from apps.notifications.models import Notification, BulletinPost
+            from apps.core.models import User, Role
+            
+            target_users = User.objects.filter(
+                tenant=user.tenant,
+                is_active=True,
+            ).filter(
+                Q(role__name='ACCOUNTANT') |
+                Q(role__name='AUDITOR') |
+                Q(role__name='ADMIN')
+            ).exclude(pk=user.pk)
+            
+            status_title = 'Stock Adjustment Pending Approval' if needs_approval else 'Stock Adjustment Recorded'
+            notification_msg = (
+                f"{user.get_full_name() or user.email} has {('requested a stock adjustment' if needs_approval else 'recorded a stock adjustment')} "
+                f"of {quantity} for {product.name} at {location.name}. "
+                f"Type: {adjustment.get_adjustment_type_display()}. Reason: {reason}"
+            )
+            
+            for target_user in target_users:
+                Notification.objects.create(
                     tenant=user.tenant,
-                    is_active=True,
-                ).filter(
-                    Q(role__name='AUDITOR') |
-                    Q(role__name='ADMIN')
-                ).exclude(pk=user.pk)
-                
-                for target_user in target_users:
-                    Notification.objects.create(
-                        tenant=user.tenant,
-                        user=target_user,
-                        title='Stock Adjustment Pending Approval',
-                        message=f'{user.get_full_name() or user.email} has requested a stock adjustment of {quantity} '
-                                f'for {product.name} at {location.name}. Reason: {reason}',
-                        notification_type='STOCK_ADJUSTMENT',
-                        reference_type='StockAdjustment',
-                        reference_id=adjustment.pk,
-                    )
-                
+                    user=target_user,
+                    title=status_title,
+                    message=notification_msg,
+                    notification_type='STOCK_ADJUSTMENT',
+                    reference_type='StockAdjustment',
+                    reference_id=adjustment.pk,
+                )
+            
+            # Post bulletin for attention of Accountants, Auditors, and Management
+            adj_sign = '+' if (quantity > 0 and adjustment_type == 'ADJUST') else ('-' if quantity > 0 else '')
+            bulletin = BulletinPost.objects.create(
+                tenant=user.tenant,
+                created_by=user,
+                title=f"Stock Adjustment: {product.name} ({adj_sign}{abs(quantity)} at {location.name})",
+                body=(
+                    f"A stock adjustment has been {('submitted for approval' if needs_approval else 'recorded and applied')}.\n\n"
+                    f"• Product: {product.name} ({product.sku})\n"
+                    f"• Location: {location.name}\n"
+                    f"• Quantity: {adj_sign}{abs(quantity)}\n"
+                    f"• Adjustment Type: {adjustment.get_adjustment_type_display()}\n"
+                    f"• Reason: {reason}\n"
+                    f"• Submitted By: {user.get_full_name() or user.email}\n"
+                    f"• Status: {adjustment.get_status_display()}"
+                ),
+                post_type='ANNOUNCEMENT',
+                is_pinned=needs_approval
+            )
+            roles_to_target = Role.objects.filter(name__in=['ACCOUNTANT', 'AUDITOR', 'ADMIN', 'SHOP_MANAGER'])
+            bulletin.target_roles.set(roles_to_target)
+
+            if needs_approval:
                 messages.info(request, 
                     f'Stock adjustment for {product.name} at {location.name} has been submitted for approval.'
                 )
@@ -1763,6 +1846,7 @@ class ReviewAdjustmentView(LoginRequiredMixin, View):
         review_notes = request.POST.get('review_notes', '')
         
         from apps.notifications.models import Notification
+        from apps.core.models import User
         
         if action == 'approve':
             adjustment.approve(user, notes=review_notes)
@@ -1799,6 +1883,30 @@ class ReviewAdjustmentView(LoginRequiredMixin, View):
                     reference_type='StockAdjustment',
                     reference_id=adjustment.pk,
                 )
+
+        # Notify Accountants, Auditors, and Admins of the resolution
+        notify_users = User.objects.filter(
+            tenant=user.tenant,
+            is_active=True,
+        ).filter(
+            Q(role__name='ACCOUNTANT') |
+            Q(role__name='AUDITOR') |
+            Q(role__name='ADMIN')
+        ).exclude(pk=user.pk)
+        if adjustment.requested_by:
+            notify_users = notify_users.exclude(pk=adjustment.requested_by.pk)
+
+        for target_u in notify_users:
+            Notification.objects.create(
+                tenant=user.tenant,
+                user=target_u,
+                title=f'Stock Adjustment {action.capitalize()}d',
+                message=f'Stock adjustment of {adjustment.quantity} for {adjustment.product.name} at {adjustment.location.name} was {action}d by {user.get_full_name() or user.email}.'
+                        f'{" Reason: " + review_notes if review_notes else ""}',
+                notification_type='STOCK_ADJUSTMENT',
+                reference_type='StockAdjustment',
+                reference_id=adjustment.pk,
+            )
         
         return redirect('inventory:adjustment_history')
 

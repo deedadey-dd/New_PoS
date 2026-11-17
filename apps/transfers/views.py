@@ -1022,12 +1022,13 @@ class StockRequestCreateView(LoginRequiredMixin, View):
                         item.request = stock_request
                         item.save()
                 
-                # Create notification for supplier
+                # Create notification and bulletin for supplier
                 stock_request._create_notification(
-                    f"New Stock Request {stock_request.request_number}",
-                    f"{stock_request.requesting_location.name} is requesting stock.",
-                    'REQUEST_NEW',
-                    stock_request.supplying_location
+                    f"New Stock Request: {stock_request.request_number}",
+                    f"{stock_request.requesting_location.name} has requested stock from {stock_request.supplying_location.name} ({stock_request.total_items} items).",
+                    'STOCK_REQUEST',
+                    stock_request.supplying_location,
+                    is_pinned=True
                 )
                 
                 messages.success(request, f"Stock Request {stock_request.request_number} created successfully!")
@@ -1247,6 +1248,23 @@ class StockRequestCombineView(LoginRequiredMixin, View):
                     req.approved_at = now
                     req.resulting_transfer = transfer
                     req.save()
+
+                from apps.notifications.services import notify_and_bulletin
+                notify_and_bulletin(
+                    tenant=request.user.tenant,
+                    title=f"Stock Requests Combined: Transfer {transfer.transfer_number}",
+                    message=(
+                        f"{len(stock_requests)} stock requests from {first_req.requesting_location.name} "
+                        f"were combined into Transfer {transfer.transfer_number} by {request.user.get_full_name() or request.user.email}."
+                    ),
+                    notification_type='STOCK_REQUEST',
+                    target_roles=['SHOP_MANAGER', 'STORES_MANAGER', 'ADMIN'],
+                    target_locations=[first_req.requesting_location, supplying_loc],
+                    reference_type='Transfer',
+                    reference_id=transfer.pk,
+                    created_by=request.user,
+                    exclude_users=[request.user]
+                )
             
             return JsonResponse({
                 'success': True, 

@@ -529,29 +529,30 @@ class Transfer(TenantModel):
         
         self.status = 'CANCELLED'
         self.save()
+
+        self._create_notification(
+            f"Transfer {self.transfer_number} cancelled",
+            f"Transfer {self.transfer_number} from {self.source_location.name} to {self.destination_location.name} was cancelled by {user.get_full_name() or user.email}.",
+            'SYSTEM',
+            self.destination_location
+        )
     
-    def _create_notification(self, title, message, notification_type, location):
-        """Create notifications for users at a location."""
-        from apps.notifications.models import Notification
-        
-        # Get users at the location or admins
-        users = User.objects.filter(
+    def _create_notification(self, title, message, notification_type, location, target_roles=None, is_pinned=False):
+        """Create notifications and bulletin post for users at a location."""
+        from apps.notifications.services import notify_and_bulletin
+        roles = target_roles or ['SHOP_MANAGER', 'STORES_MANAGER', 'PRODUCTION_MANAGER', 'ADMIN']
+        notify_and_bulletin(
             tenant=self.tenant,
-            is_active=True
-        ).filter(
-            models.Q(location=location) | models.Q(role__name__in=['ADMIN', 'STORES_MANAGER'])
-        ).distinct()
-        
-        for user in users:
-            Notification.objects.create(
-                tenant=self.tenant,
-                user=user,
-                title=title,
-                message=message,
-                notification_type=notification_type,
-                reference_type='Transfer',
-                reference_id=self.pk
-            )
+            title=title,
+            message=message,
+            notification_type=notification_type,
+            target_roles=roles,
+            target_locations=[location] if location else None,
+            reference_type='Transfer',
+            reference_id=self.pk,
+            created_by=self.sent_by or getattr(self, 'created_by', None),
+            is_pinned=is_pinned
+        )
 
 
 class TransferItem(TenantModel):
@@ -915,6 +916,14 @@ class StockRequest(TenantModel):
         self.status = 'CONVERTED'
         self.resulting_transfer = transfer
         self.save()
+
+        # Notify requesting location & creator
+        self._create_notification(
+            f"Stock Request {self.request_number} Converted to Transfer",
+            f"Stock request {self.request_number} has been converted into Transfer {transfer.transfer_number} from {transfer.source_location.name} to {transfer.destination_location.name}.",
+            'STOCK_REQUEST',
+            self.requesting_location
+        )
         
         return transfer
     
@@ -925,28 +934,32 @@ class StockRequest(TenantModel):
         
         self.status = 'CANCELLED'
         self.save()
+
+        # Notify supplying location
+        self._create_notification(
+            f"Stock Request {self.request_number} Cancelled",
+            f"Stock request {self.request_number} from {self.requesting_location.name} was cancelled by {user.get_full_name() or user.email}.",
+            'STOCK_REQUEST',
+            self.supplying_location
+        )
     
-    def _create_notification(self, title, message, notification_type, location):
-        """Create notifications for users at a location."""
-        from apps.notifications.models import Notification
-        
-        users = User.objects.filter(
+    def _create_notification(self, title, message, notification_type, location, target_roles=None, is_pinned=False):
+        """Create notifications and bulletin post for users at a location."""
+        from apps.notifications.services import notify_and_bulletin
+        roles = target_roles or ['SHOP_MANAGER', 'STORES_MANAGER', 'PRODUCTION_MANAGER', 'ADMIN']
+        notify_and_bulletin(
             tenant=self.tenant,
-            is_active=True
-        ).filter(
-            models.Q(location=location) | models.Q(role__name='ADMIN')
-        ).distinct()
-        
-        for user in users:
-            Notification.objects.create(
-                tenant=self.tenant,
-                user=user,
-                title=title,
-                message=message,
-                notification_type=notification_type,
-                reference_type='StockRequest',
-                reference_id=self.pk
-            )
+            title=title,
+            message=message,
+            notification_type=notification_type,
+            target_roles=roles,
+            target_locations=[location] if location else None,
+            target_users=[self.requested_by] if self.requested_by else [],
+            reference_type='StockRequest',
+            reference_id=self.pk,
+            created_by=self.approved_by or getattr(self, 'requested_by', None),
+            is_pinned=is_pinned
+        )
 
 
 class StockRequestItem(TenantModel):

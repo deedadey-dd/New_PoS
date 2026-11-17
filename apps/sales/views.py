@@ -31,7 +31,7 @@ class POSView(LoginRequiredMixin, View):
     template_name = 'sales/pos.html'
     
     def get(self, request):
-        from django.db.models import Sum, Prefetch
+        from django.db.models import Sum, Prefetch, F, Q
         from apps.inventory.models import InventoryLedger, Category
         from apps.customers.models import Customer
         
@@ -66,6 +66,28 @@ class POSView(LoginRequiredMixin, View):
                 total_stock=Sum('quantity')
             ).values_list('product_id', 'total_stock')
         )
+
+        # In strict sales workflow, deduct undispatched items on active sales to compute net available stock,
+        # unless 'show_items_with_physical_stock_in_pos' is enabled for this shop.
+        if request.user.tenant.use_strict_sales_workflow and not shop_settings.show_items_with_physical_stock_in_pos:
+            pending_by_product = dict(
+                SaleItem.objects.filter(
+                    sale__tenant=request.user.tenant,
+                    sale__shop=user_shop,
+                    sale__status__in=['PENDING_DISPATCH', 'PARTIALLY_DISPATCHED', 'COMPLETED'],
+                    dispatched_quantity__lt=F('quantity')
+                ).exclude(
+                    Q(sale__status__in=['VOIDED', 'REFUNDED']) | Q(sale__is_halted=True)
+                ).values('product_id').annotate(
+                    total_pending=Sum(F('quantity') - F('dispatched_quantity'))
+                ).values_list('product_id', 'total_pending')
+            )
+            for pid, pnd in pending_by_product.items():
+                cur = stock_by_product.get(pid, 0) or 0
+                net = float(cur) - float(pnd)
+                if not request.user.tenant.allow_negative_stock:
+                    net = max(0.0, net)
+                stock_by_product[pid] = net
         
         # Get products with prefetched shop prices for THIS shop only
         shop_price_prefetch = Prefetch(
@@ -591,7 +613,7 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
     template_name = 'sales/sale_list.html'
     context_object_name = 'sales'
     sortable_fields = ['created_at', 'latest_activity', 'sale_number', 'total', 'amount_paid', 'status', 'payment_method', 'attendant__username']
-    default_sort = '-latest_activity'
+    default_sort = '-created_at'
     
     def get_paginate_by(self, queryset):
         try:
@@ -605,35 +627,17 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
         user = self.request.user
         role_name = user.role.name if user.role else None
         
-        from django.db.models import Exists, OuterRef, F, Q, ExpressionWrapper, BooleanField, Subquery
+        from django.db.models import Exists, OuterRef, F, Q
         from django.db.models.functions import Greatest, Coalesce
-        from .models import RefundRequest, SaleItem
-        from apps.inventory.models import InventoryLedger
-
-        # Subquery for latest activity across refund requests (request date, review date, payout date)
-        sub_rf = Subquery(
-            RefundRequest.objects.filter(sale=OuterRef('pk'))
-            .annotate(
-                rf_latest=Greatest(
-                    Coalesce('paid_at', F('created_at')),
-                    Coalesce('reviewed_at', F('created_at')),
-                    F('created_at')
-                )
-            )
-            .order_by('-rf_latest')
-            .values('rf_latest')[:1]
-        )
-
-        # Subquery for latest goods dispatch ledger entry
-        sub_il = Subquery(
-            InventoryLedger.objects.filter(reference_type='Sale', reference_id=OuterRef('pk'))
-            .order_by('-created_at')
-            .values('created_at')[:1]
-        )
+        from .models import RefundRequest
 
         queryset = Sale.objects.filter(
             tenant=user.tenant
-        ).select_related('shop', 'attendant', 'customer').annotate(
+        ).select_related(
+            'shop', 'shop__shop_settings', 'attendant', 'customer'
+        ).prefetch_related(
+            'items', 'refund_requests'
+        ).annotate(
             _has_pending_refund=Exists(
                 RefundRequest.objects.filter(sale=OuterRef('pk'), status='PENDING')
             ),
@@ -643,17 +647,10 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
             _has_approved_pending_payout=Exists(
                 RefundRequest.objects.filter(sale=OuterRef('pk'), status='APPROVED', payout_status='PENDING')
             ),
-            _is_partially_dispatched=ExpressionWrapper(
-                Q(status__in=['PENDING_DISPATCH', 'PARTIALLY_DISPATCHED'])
-                & Exists(SaleItem.objects.filter(sale=OuterRef('pk'), dispatched_quantity__gt=0))
-                & Exists(SaleItem.objects.filter(sale=OuterRef('pk'), dispatched_quantity__lt=F('quantity'))),
-                output_field=BooleanField()
-            ),
             latest_activity=Greatest(
                 'created_at',
                 Coalesce('updated_at', 'created_at'),
-                Coalesce(sub_rf, 'created_at'),
-                Coalesce(sub_il, 'created_at')
+                Coalesce('dispatched_at', 'created_at')
             )
         )
         
@@ -771,7 +768,7 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
         # Summary metrics on filtered queryset
         from django.db.models import Sum, Count, Q
         filtered_qs = self.get_queryset()
-        summary = filtered_qs.aggregate(
+        summary = filtered_qs.order_by().aggregate(
             total_sales_value=Sum('total', filter=~Q(status__in=['VOIDED', 'REFUNDED'])),
             total_paid_value=Sum('amount_paid', filter=~Q(status__in=['VOIDED', 'REFUNDED'])),
             total_count=Count('id'),
@@ -828,36 +825,44 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
             ).order_by('first_name', 'email')
         
         # Quick filter badge counts for refund/activity navigation pills
+        from .models import RefundRequest
         base_counts_qs = Sale.objects.filter(tenant=user.tenant)
+        rf_filter = Q(tenant=user.tenant)
         if role_name not in ['AUDITOR', 'ACCOUNTANT', 'ADMIN']:
             if user.location and user.location.location_type == 'SHOP':
                 base_counts_qs = base_counts_qs.filter(shop=user.location)
+                rf_filter &= Q(sale__shop=user.location)
             if role_name == 'SHOP_ATTENDANT':
                 base_counts_qs = base_counts_qs.filter(attendant=user)
+                rf_filter &= Q(sale__attendant=user)
         else:
             if self.request.GET.get('shop'):
                 base_counts_qs = base_counts_qs.filter(shop_id=self.request.GET.get('shop'))
+                rf_filter &= Q(sale__shop_id=self.request.GET.get('shop'))
             if self.request.GET.get('attendant'):
                 base_counts_qs = base_counts_qs.filter(attendant_id=self.request.GET.get('attendant'))
+                rf_filter &= Q(sale__attendant_id=self.request.GET.get('attendant'))
 
-        ref_counts = base_counts_qs.aggregate(
-            cnt_pending_approval=Count('id', distinct=True, filter=Q(refund_requests__status='PENDING')),
-            cnt_pending_payout=Count('id', distinct=True, filter=Q(refund_requests__status='APPROVED', refund_requests__payout_status='PENDING')),
+        sale_counts = base_counts_qs.order_by().aggregate(
             cnt_halted=Count('id', filter=Q(is_halted=True)),
             cnt_refunded=Count('id', filter=Q(status='REFUNDED')),
             cnt_total=Count('id'),
         )
-        context['count_pending_approval'] = ref_counts['cnt_pending_approval'] or 0
-        context['count_pending_payout'] = ref_counts['cnt_pending_payout'] or 0
-        context['count_halted'] = ref_counts['cnt_halted'] or 0
-        context['count_refunded'] = ref_counts['cnt_refunded'] or 0
+        rf_counts = RefundRequest.objects.filter(rf_filter).order_by().aggregate(
+            cnt_pending_approval=Count('sale_id', distinct=True, filter=Q(status='PENDING')),
+            cnt_pending_payout=Count('sale_id', distinct=True, filter=Q(status='APPROVED', payout_status='PENDING')),
+        )
+        context['count_pending_approval'] = rf_counts['cnt_pending_approval'] or 0
+        context['count_pending_payout'] = rf_counts['cnt_pending_payout'] or 0
+        context['count_halted'] = sale_counts['cnt_halted'] or 0
+        context['count_refunded'] = sale_counts['cnt_refunded'] or 0
         context['count_all_refunds'] = (
             context['count_pending_approval'] +
             context['count_pending_payout'] +
             context['count_halted'] +
             context['count_refunded']
         )
-        context['count_no_refunds'] = max(0, (ref_counts['cnt_total'] or 0) - context['count_all_refunds'])
+        context['count_no_refunds'] = max(0, (sale_counts['cnt_total'] or 0) - context['count_all_refunds'])
 
         # Preserve filter values
         context['per_page'] = self.get_paginate_by(None)
@@ -967,8 +972,34 @@ class DispatchListView(SaleListView):
             SaleItem.objects.filter(sale=OuterRef('pk'), dispatched_quantity__gt=0)
         )
         return queryset.filter(
-            Q(is_dispatched=True) | has_dispatched_items
+            Q(is_dispatched=True) | Q(status='PARTIALLY_DISPATCHED') | has_dispatched_items
         )
+
+    def get_context_data(self, **kwargs):
+        # DispatchListView only displays summary cards for dispatched goods; avoid heavy refund badge aggregations
+        context = super(SaleListView, self).get_context_data(**kwargs)
+        user = self.request.user
+        role_name = user.role.name if user.role else None
+        context['is_full_view'] = role_name in ['AUDITOR', 'ACCOUNTANT', 'ADMIN']
+        
+        from django.db.models import Sum, Count, Q
+        filtered_qs = self.get_queryset()
+        summary = filtered_qs.order_by().aggregate(
+            total_sales_value=Sum('total', filter=~Q(status__in=['VOIDED', 'REFUNDED'])),
+            total_paid_value=Sum('amount_paid', filter=~Q(status__in=['VOIDED', 'REFUNDED'])),
+            total_count=Count('id'),
+            dispatched_count=Count('id', filter=Q(is_dispatched=True)),
+        )
+        context['summary_total_sales_value'] = summary['total_sales_value'] or Decimal('0.00')
+        context['summary_total_paid_value'] = summary['total_paid_value'] or Decimal('0.00')
+        context['summary_total_count'] = summary['total_count'] or 0
+        context['summary_dispatched_count'] = summary['dispatched_count'] or 0
+        
+        context['per_page'] = self.get_paginate_by(None)
+        context['date_from'] = self.request.GET.get('date_from', '')
+        context['date_to'] = self.request.GET.get('date_to', '')
+        context['q'] = self.request.GET.get('q', '')
+        return context
 
 
 class SaleDetailView(LoginRequiredMixin, DetailView):
@@ -1495,30 +1526,25 @@ def api_refund_sale(request, pk):
                 debt_reduction_amount=debt_reduction_amount,
             )
 
-            # Notify all accountants + admins in this tenant
-            from apps.notifications.models import Notification
-            from apps.core.models import User as TenantUser
-
-            approvers = TenantUser.objects.filter(
+            # Notify all accountants + admins in this tenant via in-app notification & bulletin
+            from apps.notifications.services import notify_and_bulletin
+            notify_and_bulletin(
                 tenant=tenant,
-                role__name__in=['ACCOUNTANT', 'ADMIN'],
-                is_active=True
+                title=f"Refund Request Awaiting Approval: {refund_req.refund_number}",
+                message=(
+                    f"{request.user.get_full_name() or request.user.email} has requested a refund "
+                    f"for Sale {sale.sale_number} ({tenant.currency_symbol}{refund_amount}) "
+                    f"at {sale.shop.name}. "
+                    f"Reason: {reason[:150]}"
+                ),
+                notification_type='REFUND_REQUEST',
+                target_roles=['ACCOUNTANT', 'ADMIN', 'SHOP_MANAGER'],
+                reference_type='RefundRequest',
+                reference_id=refund_req.pk,
+                created_by=request.user,
+                exclude_users=[request.user],
+                is_pinned=True
             )
-            for approver in approvers:
-                Notification.objects.create(
-                    tenant=tenant,
-                    user=approver,
-                    title="Refund Request Awaiting Approval",
-                    message=(
-                        f"{request.user.get_full_name() or request.user.email} has requested a refund "
-                        f"for Sale {sale.sale_number} ({tenant.currency_symbol}{refund_amount}) "
-                        f"at {sale.shop.name}. "
-                        f"Reason: {reason[:150]}"
-                    ),
-                    notification_type='SYSTEM',
-                    reference_type='RefundRequest',
-                    reference_id=refund_req.pk,
-                )
 
         return JsonResponse({
             'success': True,
@@ -2428,6 +2454,26 @@ def api_halt_and_request_refund(request, pk):
         with transaction.atomic():
             sale.halt_dispatch(user=request.user, reason=reason)
 
+            from apps.notifications.services import notify_and_bulletin
+            notify_and_bulletin(
+                tenant=tenant,
+                title=f"Dispatch Halted: Sale {sale.sale_number}",
+                message=(
+                    f"Dispatch for Sale {sale.sale_number} at {sale.shop.name} was halted by "
+                    f"{request.user.get_full_name() or request.user.email}. "
+                    f"Dispatched Total: {tenant.currency_symbol}{dispatched_total}, "
+                    f"Undispatched Remaining: {tenant.currency_symbol}{undispatched_total}. "
+                    f"Reason: {reason[:150]}"
+                ),
+                notification_type='REFUND_REQUEST',
+                target_roles=['ACCOUNTANT', 'ADMIN', 'SHOP_CASHIER', 'SHOP_MANAGER'],
+                reference_type='Sale',
+                reference_id=sale.pk,
+                created_by=request.user,
+                exclude_users=[request.user],
+                is_pinned=True
+            )
+
         return JsonResponse({
             'success': True,
             'status': sale.status,
@@ -2477,6 +2523,22 @@ def api_resume_dispatch(request, pk):
     try:
         with transaction.atomic():
             sale.resume_dispatch(user=request.user, reason=reason)
+
+            from apps.notifications.services import notify_and_bulletin
+            notify_and_bulletin(
+                tenant=tenant,
+                title=f"Dispatch Resumed: Sale {sale.sale_number}",
+                message=(
+                    f"Dispatch for Sale {sale.sale_number} at {sale.shop.name} has been resumed by "
+                    f"{request.user.get_full_name() or request.user.email}."
+                ),
+                notification_type='SYSTEM',
+                target_roles=['SHOP_MANAGER', 'SHOP_CASHIER', 'ADMIN'],
+                reference_type='Sale',
+                reference_id=sale.pk,
+                created_by=request.user,
+                exclude_users=[request.user]
+            )
 
         return JsonResponse({
             'success': True,

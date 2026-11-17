@@ -151,10 +151,10 @@
         </form>
 
         <!-- Active Filter Pills -->
-        {% if selected_location or current_range != 'all' or date_from or date_to %}
+        {% if can_filter_locations and selected_location or current_range != 'all' or date_from or date_to %}
         <div class="d-flex flex-wrap align-items-center gap-2 mt-3 pt-3 border-top">
             <span class="small text-muted fw-semibold"><i class="bi bi-sliders me-1"></i>Active Filters:</span>
-            {% if selected_location %}
+            {% if can_filter_locations and selected_location %}
             <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill py-1 px-3">
                 <i class="bi bi-geo-alt me-1"></i>Location: {{ selected_location.name }}
             </span>
@@ -177,9 +177,9 @@
 </div>
 
 <!-- Summary KPI Cards -->
-<div class="row g-3 mb-4">
+<div class="row g-3 mb-4 {% if has_strict_workflow %}row-cols-2 row-cols-md-3 row-cols-xl-5{% endif %}">
     <!-- 1. Stock Level -->
-    <div class="col-6 col-lg-3">
+    <div class="{% if has_strict_workflow %}col{% else %}col-6 col-lg-3{% endif %}">
         <div class="card border-0 shadow-sm rounded-4 h-100 summary-card-mini bg-white">
             <div class="card-body p-3">
                 <div class="d-flex align-items-center justify-content-between">
@@ -192,7 +192,12 @@
                             <span class="badge bg-{{ stock_status_badge }}-subtle text-{{ stock_status_badge }} rounded-pill mt-1" style="font-size: 0.72rem;">
                                 {{ stock_status_label }}
                             </span>
-                            {% if selected_location and overall_total_stock != total_stock_scope %}
+                            {% if has_strict_workflow and total_pending_dispatch_qty > 0 %}
+                            <div class="small fw-semibold text-primary mt-1" id="kpi-product-net-stock" style="font-size: 0.75rem;">
+                                Net Avail: <span id="kpi-product-net-val">{{ net_available_stock|floatformat:2|intcomma }}</span>
+                            </div>
+                            {% endif %}
+                            {% if can_filter_locations and selected_location and overall_total_stock != total_stock_scope %}
                             <div class="small text-muted mt-1" style="font-size: 0.75rem;">
                                 All locations: {{ overall_total_stock|floatformat:2|intcomma }}
                             </div>
@@ -207,8 +212,38 @@
         </div>
     </div>
 
-    <!-- 2. Retail Valuation -->
-    <div class="col-6 col-lg-3">
+    {% if has_strict_workflow %}
+    <!-- 2. Pending Dispatch (Strict Workflow) -->
+    <div class="col">
+        <div class="card border-0 shadow-sm rounded-4 h-100 summary-card-mini bg-white border-start border-4 border-warning">
+            <div class="card-body p-3">
+                <div class="d-flex align-items-center justify-content-between">
+                    <div>
+                        <span class="text-muted small fw-semibold text-uppercase d-block mb-1" id="kpi-product-disp-label" data-orig="Pending Dispatch">Pending Dispatch</span>
+                        <h4 class="fw-bold mb-0 text-warning" id="kpi-product-disp-val" data-orig="{{ total_pending_dispatch_qty|floatformat:2|intcomma }}">{{ total_pending_dispatch_qty|floatformat:2|intcomma }}</h4>
+                        <div id="kpi-product-disp-subtext">
+                            {% if total_pending_dispatch_qty > 0 %}
+                            <span class="badge bg-warning-subtle text-warning-emphasis rounded-pill mt-1" style="font-size: 0.72rem;">
+                                <i class="bi bi-truck me-1"></i>{{ pending_dispatch_sales_count }} sale{{ pending_dispatch_sales_count|pluralize }} pending
+                            </span>
+                            {% else %}
+                            <span class="badge bg-light text-muted rounded-pill mt-1" style="font-size: 0.72rem;">
+                                <i class="bi bi-check2 me-1 text-success"></i>All Dispatched
+                            </span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="summary-icon-box bg-warning-subtle text-warning">
+                        <i class="bi bi-truck"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- 3. Retail Valuation -->
+    <div class="{% if has_strict_workflow %}col{% else %}col-6 col-lg-3{% endif %}">
         <div class="card border-0 shadow-sm rounded-4 h-100 summary-card-mini bg-white">
             <div class="card-body p-3">
                 <div class="d-flex align-items-center justify-content-between">
@@ -229,8 +264,8 @@
         </div>
     </div>
 
-    <!-- 3. Active Batches -->
-    <div class="col-6 col-lg-3">
+    <!-- 4. Active Batches -->
+    <div class="{% if has_strict_workflow %}col{% else %}col-6 col-lg-3{% endif %}">
         <div class="card border-0 shadow-sm rounded-4 h-100 summary-card-mini bg-white">
             <div class="card-body p-3">
                 <div class="d-flex align-items-center justify-content-between">
@@ -244,7 +279,7 @@
                             {% if expiring_soon_count > 0 %}
                             <div class="mt-1">
                                 <span class="badge bg-warning-subtle text-warning-emphasis rounded-pill" style="font-size: 0.7rem;">
-                                    <i class="bi bi-clock-history me-1"></i>{{ expiring_soon_count }} expiring soon
+                                     <i class="bi bi-clock-history me-1"></i>{{ expiring_soon_count }} expiring soon
                                 </span>
                             </div>
                             {% endif %}
@@ -258,8 +293,8 @@
         </div>
     </div>
 
-    <!-- 4. Activity Movements -->
-    <div class="col-6 col-lg-3">
+    <!-- 5. Activity Movements -->
+    <div class="{% if has_strict_workflow %}col{% else %}col-6 col-lg-3{% endif %}">
         <div class="card border-0 shadow-sm rounded-4 h-100 summary-card-mini bg-white">
             <div class="card-body p-3">
                 <div class="d-flex align-items-center justify-content-between">
@@ -306,6 +341,20 @@
                     <dt class="col-sm-4 text-muted">Reorder Level</dt>
                     <dd class="col-sm-8 fw-semibold">{{ product.reorder_level|floatformat:2|intcomma }}</dd>
 
+                    {% if has_strict_workflow %}
+                    <dt class="col-sm-4 text-muted">Pending Dispatch</dt>
+                    <dd class="col-sm-8">
+                        {% if total_pending_dispatch_qty > 0 %}
+                        <span class="badge bg-warning-subtle text-warning-emphasis fw-bold">
+                            <i class="bi bi-truck me-1"></i>{{ total_pending_dispatch_qty|floatformat:2|intcomma }} {{ product.get_unit_of_measure_display }}
+                        </span>
+                        <span class="small text-muted ms-1">({{ pending_dispatch_sales_count }} sale{{ pending_dispatch_sales_count|pluralize }} pending)</span>
+                        {% else %}
+                        <span class="text-muted"><i class="bi bi-check2 text-success me-1"></i>0.00 (None pending)</span>
+                        {% endif %}
+                    </dd>
+                    {% endif %}
+
                     <dt class="col-sm-4 text-muted">Status</dt>
                     <dd class="col-sm-8">
                         {% if product.is_active %}
@@ -339,10 +388,18 @@
                             <i class="bi bi-check-circle-fill me-1"></i><span id="loc-selected-count">0</span> Selected
                         </span>
                         <div class="vr mx-1 d-none d-md-block"></div>
-                        <span class="small text-muted">Combined Stock:</span>
+                        <span class="small text-muted">Stock:</span>
                         <strong class="text-dark"><span id="loc-selected-stock">0.00</span> {{ product.get_unit_of_measure_display }}</strong>
+                        {% if has_strict_workflow %}
                         <div class="vr mx-1 d-none d-md-block"></div>
-                        <span class="small text-muted">Retail Valuation:</span>
+                        <span class="small text-muted">Pending:</span>
+                        <strong class="text-warning"><span id="loc-selected-pending">0.00</span></strong>
+                        <div class="vr mx-1 d-none d-md-block"></div>
+                        <span class="small text-muted">Net:</span>
+                        <strong class="text-success"><span id="loc-selected-net">0.00</span></strong>
+                        {% endif %}
+                        <div class="vr mx-1 d-none d-md-block"></div>
+                        <span class="small text-muted">Valuation:</span>
                         <strong class="text-primary" id="loc-selected-value">{{ currency_symbol }}0.00</strong>
                     </div>
                     <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" id="clear-location-selection">
@@ -365,7 +422,7 @@
                         </thead>
                         <tbody>
                             {% for stock in stock_by_location %}
-                            <tr class="location-row" data-stock="{{ stock.total_stock|default:0 }}">
+                            <tr class="location-row" data-stock="{{ stock.total_stock|default:0 }}" data-pending="{{ stock.pending_dispatch|default:0 }}" data-net="{{ stock.net_available|default:stock.total_stock|default:0 }}">
                                 <td class="table-checkbox-col">
                                     <input type="checkbox" class="form-check-input location-select-check">
                                 </td>
@@ -378,7 +435,12 @@
                                     </span>
                                 </td>
                                 <td class="text-end">
-                                    <strong>{{ stock.total_stock|floatformat:2|intcomma }}</strong> {{ product.get_unit_of_measure_display }}
+                                    <div><strong>{{ stock.total_stock|floatformat:2|intcomma }}</strong> {{ product.get_unit_of_measure_display }}</div>
+                                    {% if has_strict_workflow and stock.pending_dispatch > 0 %}
+                                    <div class="small text-warning" style="font-size: 0.73rem;">
+                                        <i class="bi bi-truck me-1"></i>{{ stock.pending_dispatch|floatformat:2|intcomma }} pending
+                                    </div>
+                                    {% endif %}
                                 </td>
                             </tr>
                             {% endfor %}
@@ -715,6 +777,10 @@ document.addEventListener('DOMContentLoaded', function () {
         const origMovLabel = document.getElementById('kpi-product-mov-label')?.dataset.orig || '';
         const origMovSubtextHtml = document.getElementById('kpi-product-mov-subtext')?.innerHTML || '';
 
+        const origDispVal = document.getElementById('kpi-product-disp-val')?.dataset.orig || '';
+        const origDispLabel = document.getElementById('kpi-product-disp-label')?.dataset.orig || '';
+        const origDispSubtextHtml = document.getElementById('kpi-product-disp-subtext')?.innerHTML || '';
+
         function updateBatchSummary() {
             let count = 0;
             let totalQty = 0;
@@ -827,6 +893,7 @@ document.addEventListener('DOMContentLoaded', function () {
         function updateLocationSummary() {
             let count = 0;
             let totalStock = 0;
+            let totalPending = 0;
 
             locChecks.forEach(chk => {
                 const tr = chk.closest('tr');
@@ -834,7 +901,9 @@ document.addEventListener('DOMContentLoaded', function () {
                     count++;
                     tr.classList.add('row-selected');
                     const stock = parseFloat(tr.getAttribute('data-stock')) || 0;
+                    const pending = parseFloat(tr.getAttribute('data-pending')) || 0;
                     totalStock += stock;
+                    totalPending += pending;
                 } else {
                     tr.classList.remove('row-selected');
                 }
@@ -848,24 +917,45 @@ document.addEventListener('DOMContentLoaded', function () {
             const kpiValLabel = document.getElementById('kpi-product-val-label');
             const kpiValSubtext = document.getElementById('kpi-product-val-subtext');
 
+            const kpiDispVal = document.getElementById('kpi-product-disp-val');
+            const kpiDispLabel = document.getElementById('kpi-product-disp-label');
+            const kpiDispSubtext = document.getElementById('kpi-product-disp-subtext');
+
             if (count > 0) {
                 locBar.classList.remove('d-none');
                 document.getElementById('loc-selected-count').textContent = count;
                 document.getElementById('loc-selected-stock').textContent = formatNumber(totalStock, 2);
                 document.getElementById('loc-selected-value').textContent = formatCurrency(totalStock * SELLING_PRICE);
 
-                // Live update Top Summary Cards 1 & 2!
+                const locPendingEl = document.getElementById('loc-selected-pending');
+                if (locPendingEl) locPendingEl.textContent = formatNumber(totalPending, 2);
+                const locNetEl = document.getElementById('loc-selected-net');
+                if (locNetEl) locNetEl.textContent = formatNumber(Math.max(0, totalStock - totalPending), 2);
+
+                // Live update Top Summary Cards 1, 2 & Pending Dispatch!
                 if (kpiStockVal) kpiStockVal.textContent = formatNumber(totalStock, 2);
                 if (kpiStockLabel) kpiStockLabel.innerHTML = `<i class="bi bi-check-circle-fill text-info me-1"></i>Selected Stock (${count} Locs)`;
-                if (kpiStockSubtext) kpiStockSubtext.innerHTML = `<span class="badge bg-info text-dark rounded-pill mt-1" style="font-size:0.72rem;">${count} Locations Selected</span>`;
+                if (kpiStockSubtext) {
+                    let subHtml = `<span class="badge bg-info text-dark rounded-pill mt-1" style="font-size:0.72rem;">${count} Locations Selected</span>`;
+                    if (totalPending > 0) {
+                        subHtml += `<div class="small fw-semibold text-primary mt-1" style="font-size: 0.75rem;">Net Avail: ${formatNumber(Math.max(0, totalStock - totalPending), 2)}</div>`;
+                    }
+                    kpiStockSubtext.innerHTML = subHtml;
+                }
 
                 if (kpiValVal) kpiValVal.textContent = formatCurrency(totalStock * SELLING_PRICE);
                 if (kpiValLabel) kpiValLabel.innerHTML = `<i class="bi bi-check-circle-fill text-primary me-1"></i>Selected Valuation`;
                 if (kpiValSubtext) kpiValSubtext.innerHTML = `<span class="badge bg-primary-subtle text-primary rounded-pill mt-1" style="font-size:0.72rem;">Valuation of ${count} Selected Locations</span>`;
+
+                if (kpiDispVal) {
+                    kpiDispVal.textContent = formatNumber(totalPending, 2);
+                    if (kpiDispLabel) kpiDispLabel.innerHTML = `<i class="bi bi-check-circle-fill text-warning me-1"></i>Selected Pending (${count})`;
+                    if (kpiDispSubtext) kpiDispSubtext.innerHTML = `<span class="badge bg-warning-subtle text-warning-emphasis rounded-pill mt-1" style="font-size:0.72rem;">Pending in ${count} Selected Locs</span>`;
+                }
             } else {
                 locBar.classList.add('d-none');
 
-                // Restore Top Summary Cards 1 & 2
+                // Restore Top Summary Cards
                 if (kpiStockVal) kpiStockVal.textContent = origStockVal;
                 if (kpiStockLabel) kpiStockLabel.textContent = origStockLabel;
                 if (kpiStockSubtext) kpiStockSubtext.innerHTML = origStockSubtextHtml;
@@ -873,6 +963,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (kpiValVal) kpiValVal.textContent = origValVal;
                 if (kpiValLabel) kpiValLabel.textContent = origValLabel;
                 if (kpiValSubtext) kpiValSubtext.innerHTML = origValSubtextHtml;
+
+                if (kpiDispVal) {
+                    kpiDispVal.textContent = origDispVal;
+                    if (kpiDispLabel) kpiDispLabel.textContent = origDispLabel;
+                    if (kpiDispSubtext) kpiDispSubtext.innerHTML = origDispSubtextHtml;
+                }
             }
 
             if (locSelectAll && locChecks.length > 0) {

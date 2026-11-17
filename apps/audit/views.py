@@ -308,6 +308,7 @@ class ProductLifecycleView(LoginRequiredMixin, AuditAccessMixin, SortableMixin, 
 
             # Period Net Movement
             period_net_movement = total_entries_qty + total_exits_qty
+            net_dispatched_qty = max(Decimal('0'), abs(sales_qty) - returns_qty)
 
             # ── 3. Strict Sales Workflow: Pending Dispatches (Committed Stock) ──
             has_strict_workflow = bool(getattr(tenant, 'use_strict_sales_workflow', False))
@@ -474,6 +475,7 @@ class ProductLifecycleView(LoginRequiredMixin, AuditAccessMixin, SortableMixin, 
                 'other_neg_count': other_neg_count,
                 'total_exits_qty': total_exits_qty,
                 'total_exits_count': total_exits_count,
+                'net_dispatched_qty': net_dispatched_qty,
                 
                 'current_sort': self.request.GET.get('sort', ''),
                 'current_dir': self.request.GET.get('dir', 'asc'),

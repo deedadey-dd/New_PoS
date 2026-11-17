@@ -83,6 +83,11 @@ class ShopSettings(TenantModel):
         default=False,
         help_text="Hide products with zero stock from the POS interface."
     )
+    show_items_with_physical_stock_in_pos = models.BooleanField(
+        default=False,
+        verbose_name="Show products if physical stock exists",
+        help_text="In strict sales workflow, show products as long as there is physical stock in inventory, irrespective of undispatched quantities."
+    )
     auto_print_receipts = models.BooleanField(
         default=True,
         help_text="Automatically open receipt for printing after completing a sale."
@@ -598,6 +603,10 @@ class Sale(TenantModel):
             models.Index(fields=['tenant', 'shop', 'created_at']),
             models.Index(fields=['tenant', 'payment_method']),
             models.Index(fields=['tenant', 'client_sale_id']),
+            models.Index(fields=['tenant', 'updated_at']),
+            models.Index(fields=['tenant', 'shop', 'updated_at']),
+            models.Index(fields=['tenant', 'is_dispatched']),
+            models.Index(fields=['tenant', 'shop', 'is_dispatched']),
         ]
     
     def __str__(self):
@@ -670,6 +679,8 @@ class Sale(TenantModel):
     @property
     def all_items_dispatched(self):
         """True when every item in this sale has been fully dispatched."""
+        if hasattr(self, '_prefetched_objects_cache') and 'items' in self._prefetched_objects_cache:
+            return not any(item.dispatched_quantity < item.quantity for item in self.items.all())
         return not self.items.filter(
             dispatched_quantity__lt=models.F('quantity')
         ).exists()
@@ -683,6 +694,10 @@ class Sale(TenantModel):
             return True
         if self.status != 'PENDING_DISPATCH':
             return False
+        if hasattr(self, '_prefetched_objects_cache') and 'items' in self._prefetched_objects_cache:
+            has_dispatched = any(item.dispatched_quantity > 0 for item in self.items.all())
+            has_undispatched = any(item.dispatched_quantity < item.quantity for item in self.items.all())
+            return has_dispatched and has_undispatched
         has_dispatched = self.items.filter(dispatched_quantity__gt=0).exists()
         has_undispatched = self.items.filter(dispatched_quantity__lt=models.F('quantity')).exists()
         return has_dispatched and has_undispatched
@@ -692,6 +707,8 @@ class Sale(TenantModel):
         """True when this sale has an unapproved refund or halt request."""
         if hasattr(self, '_has_pending_refund'):
             return bool(self._has_pending_refund)
+        if hasattr(self, '_prefetched_objects_cache') and 'refund_requests' in self._prefetched_objects_cache:
+            return any(r.status == 'PENDING' for r in self.refund_requests.all())
         return self.refund_requests.filter(status='PENDING').exists()
 
     @property
@@ -699,6 +716,8 @@ class Sale(TenantModel):
         """True when this sale has a pending partial halt request."""
         if hasattr(self, '_has_pending_halt'):
             return bool(self._has_pending_halt)
+        if hasattr(self, '_prefetched_objects_cache') and 'refund_requests' in self._prefetched_objects_cache:
+            return any(r.status == 'PENDING' and r.is_partial_halt for r in self.refund_requests.all())
         return self.refund_requests.filter(status='PENDING', is_partial_halt=True).exists()
 
     @property
@@ -706,6 +725,8 @@ class Sale(TenantModel):
         """True when this sale has an approved refund or halt request awaiting cashier payout."""
         if hasattr(self, '_has_approved_pending_payout'):
             return bool(self._has_approved_pending_payout)
+        if hasattr(self, '_prefetched_objects_cache') and 'refund_requests' in self._prefetched_objects_cache:
+            return any(r.status == 'APPROVED' and r.payout_status == 'PENDING' for r in self.refund_requests.all())
         return self.refund_requests.filter(status='APPROVED', payout_status='PENDING').exists()
 
     @property
@@ -722,11 +743,21 @@ class Sale(TenantModel):
     @property
     def pending_refund_request(self):
         """Return the pending RefundRequest instance, if any."""
+        if hasattr(self, '_prefetched_objects_cache') and 'refund_requests' in self._prefetched_objects_cache:
+            for r in self.refund_requests.all():
+                if r.status == 'PENDING':
+                    return r
+            return None
         return self.refund_requests.filter(status='PENDING').first()
 
     @property
     def approved_pending_payout_request(self):
         """Return the approved RefundRequest instance awaiting payout, if any."""
+        if hasattr(self, '_prefetched_objects_cache') and 'refund_requests' in self._prefetched_objects_cache:
+            for r in self.refund_requests.all():
+                if r.status == 'APPROVED' and r.payout_status == 'PENDING':
+                    return r
+            return None
         return self.refund_requests.filter(status='APPROVED', payout_status='PENDING').first()
 
     @property
@@ -744,6 +775,13 @@ class Sale(TenantModel):
                 return False
         if self.status not in ['PENDING_DISPATCH', 'PARTIALLY_DISPATCHED', 'COMPLETED']:
             return False
+        if hasattr(self, '_prefetched_objects_cache') and 'refund_requests' in self._prefetched_objects_cache:
+            r_list = self.refund_requests.all()
+            if any(r.status in ['APPROVED', 'DISBURSED'] or r.payout_status == 'PAID' for r in r_list):
+                return False
+            if any(r.status == 'PENDING' for r in r_list):
+                return False
+            return True
         # If any refund request is approved or disbursed, cannot resume
         active_refunds = self.refund_requests.filter(status__in=['APPROVED', 'DISBURSED']).exists() or self.refund_requests.filter(payout_status='PAID').exists()
         if active_refunds:
@@ -1763,23 +1801,26 @@ class RefundRequest(TenantModel):
             self.reviewed_at = tz.now()
             self.save()
 
-        # Notify the shop manager who submitted the request
-        from apps.notifications.models import Notification
+        # Notify the shop manager who submitted the request, cashier and accountants via in-app & bulletin
+        from apps.notifications.services import notify_and_bulletin
         refund_type_str = "Partial Return" if self.is_partial_return else ("Partial Refund & Settle" if self.is_partial_halt else "Refund")
         amt_display = f"{tenant.currency_symbol}{self.refund_amount}" if (self.is_partial_halt or self.is_partial_return) else f"{tenant.currency_symbol}{sale.total}"
-        Notification.objects.create(
+        notify_and_bulletin(
             tenant=tenant,
-            user=self.requested_by,
-            title=f"{refund_type_str} Approved",
+            title=f"{refund_type_str} Approved: {self.refund_number}",
             message=(
-                f"Your refund request {self.refund_number} for Sale "
-                f"{sale.sale_number} ({amt_display}) "
-                f"has been approved by {approver.get_full_name() or approver.email}. "
-                f"Reason: {self.reason}"
+                f"Refund request {self.refund_number} for Sale {sale.sale_number} ({amt_display}) "
+                f"at {sale.shop.name} has been approved by {approver.get_full_name() or approver.email}. "
+                f"Ready for cashier payout/disbursement. Reason: {self.reason}"
             ),
-            notification_type='SYSTEM',
+            notification_type='REFUND_REQUEST',
+            target_roles=['SHOP_CASHIER', 'SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN'],
+            target_users=[self.requested_by] if self.requested_by else [],
             reference_type='RefundRequest',
             reference_id=self.pk,
+            created_by=approver,
+            exclude_users=[approver],
+            is_pinned=True
         )
 
     @classmethod
@@ -1985,25 +2026,26 @@ class RefundRequest(TenantModel):
                 self.payout_notes = notes_str
             self.save()
 
-        # 4. Notify the shop manager who submitted the request
-        if self.requested_by:
-            from apps.notifications.models import Notification
-            refund_type_str = "Partial Return" if self.is_partial_return else ("Partial Refund & Settle" if self.is_partial_halt else "Refund")
-            amt_display = f"{tenant.currency_symbol}{self.refund_amount}" if (self.is_partial_halt or self.is_partial_return) else f"{tenant.currency_symbol}{sale.total}"
-            Notification.objects.create(
-                tenant=tenant,
-                user=self.requested_by,
-                title=f"{refund_type_str} Disbursed",
-                message=(
-                    f"Your refund request {self.refund_number} for Sale "
-                    f"{sale.sale_number} ({amt_display}) "
-                    f"has been disbursed by {disburser.get_full_name() or disburser.email}. "
-                    f"Method: {self.get_refund_method_display()}"
-                ),
-                notification_type='SYSTEM',
-                reference_type='RefundRequest',
-                reference_id=self.pk,
-            )
+        # 4. Notify requester and roles via in-app & bulletin
+        from apps.notifications.services import notify_and_bulletin
+        refund_type_str = "Partial Return" if self.is_partial_return else ("Partial Refund & Settle" if self.is_partial_halt else "Refund")
+        amt_display = f"{tenant.currency_symbol}{self.refund_amount}" if (self.is_partial_halt or self.is_partial_return) else f"{tenant.currency_symbol}{sale.total}"
+        notify_and_bulletin(
+            tenant=tenant,
+            title=f"{refund_type_str} Disbursed: {self.refund_number}",
+            message=(
+                f"Refund {self.refund_number} for Sale {sale.sale_number} ({amt_display}) "
+                f"at {sale.shop.name} has been paid out by {disburser.get_full_name() or disburser.email} "
+                f"via {self.get_refund_method_display()}."
+            ),
+            notification_type='REFUND_REQUEST',
+            target_roles=['ACCOUNTANT', 'ADMIN', 'SHOP_MANAGER'],
+            target_users=[self.requested_by] if self.requested_by else [],
+            reference_type='RefundRequest',
+            reference_id=self.pk,
+            created_by=disburser,
+            exclude_users=[disburser]
+        )
 
     def _apply_financial_adjustment(self, approver):
         """
@@ -2118,21 +2160,24 @@ class RefundRequest(TenantModel):
         self.rejection_reason = rejection_reason
         self.save()
 
-        # Notify shop manager
-        from apps.notifications.models import Notification
-        Notification.objects.create(
+        # Notify shop manager and roles via in-app & bulletin
+        from apps.notifications.services import notify_and_bulletin
+        notify_and_bulletin(
             tenant=self.tenant,
-            user=self.requested_by,
-            title="Refund Request Rejected",
+            title=f"Refund Request Rejected: {self.refund_number}",
             message=(
-                f"Your refund request {self.refund_number} for Sale "
-                f"{self.sale.sale_number} ({self.tenant.currency_symbol}{self.sale.total}) "
-                f"was rejected by {approver.get_full_name() or approver.email}. "
+                f"Refund request {self.refund_number} for Sale {self.sale.sale_number} "
+                f"({self.tenant.currency_symbol}{self.refund_amount or self.sale.total}) "
+                f"at {self.sale.shop.name} was rejected by {approver.get_full_name() or approver.email}. "
                 f"Reason: {rejection_reason or 'No reason given'}"
             ),
-            notification_type='SYSTEM',
+            notification_type='REFUND_REQUEST',
+            target_roles=['SHOP_MANAGER', 'SHOP_CASHIER', 'ADMIN'],
+            target_users=[self.requested_by] if self.requested_by else [],
             reference_type='RefundRequest',
             reference_id=self.pk,
+            created_by=approver,
+            exclude_users=[approver]
         )
 
     def cancel_approval(self, canceller, reason=''):
@@ -2232,23 +2277,26 @@ class RefundRequest(TenantModel):
 
                 sale.save()
 
-        # Notify shop manager / requester
-        from apps.notifications.models import Notification
+        # Notify shop manager / requester and roles via in-app & bulletin
+        from apps.notifications.services import notify_and_bulletin
         refund_type_str = "Partial Refund & Settle" if self.is_partial_halt else "Refund"
         amt_display = f"{self.tenant.currency_symbol}{self.refund_amount}" if self.is_partial_halt else f"{self.tenant.currency_symbol}{self.sale.total}"
-        Notification.objects.create(
+        notify_and_bulletin(
             tenant=self.tenant,
-            user=self.requested_by,
-            title=f"{refund_type_str} Approval Cancelled",
+            title=f"{refund_type_str} Approval Cancelled: {self.refund_number}",
             message=(
                 f"The approved refund request {self.refund_number} for Sale "
-                f"{self.sale.sale_number} ({amt_display}) "
+                f"{self.sale.sale_number} ({amt_display}) at {self.sale.shop.name} "
                 f"has been cancelled by {canceller.get_full_name() or canceller.email}. "
                 f"Reason: {reason or 'No reason given'}"
             ),
-            notification_type='SYSTEM',
+            notification_type='REFUND_REQUEST',
+            target_roles=['SHOP_MANAGER', 'SHOP_CASHIER', 'ACCOUNTANT', 'ADMIN'],
+            target_users=[self.requested_by] if self.requested_by else [],
             reference_type='RefundRequest',
             reference_id=self.pk,
+            created_by=canceller,
+            exclude_users=[canceller]
         )
 
 

@@ -120,16 +120,19 @@ class CashTransfer(TenantModel):
         self.confirmed_by = user
         self.save()
         
-        # Create notification for sender
-        from apps.notifications.models import Notification
-        Notification.objects.create(
+        # Create notification and bulletin for sender and accounting
+        from apps.notifications.services import notify_and_bulletin
+        notify_and_bulletin(
             tenant=self.tenant,
-            user=self.from_user,
-            title="Cash Transfer Confirmed",
-            message=f"Your cash transfer of {self.amount} has been confirmed by {user.get_full_name() or user.email}.",
-            notification_type='SYSTEM',
+            title=f"Cash Transfer Confirmed: {self.tenant.currency_symbol}{self.amount}",
+            message=f"Cash transfer of {self.tenant.currency_symbol}{self.amount} from {self.from_user.get_full_name() or self.from_user.email} was confirmed by {user.get_full_name() or user.email}.",
+            notification_type='CASH_TRANSFER',
+            target_roles=['SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN'],
+            target_users=[self.from_user] if self.from_user else [],
             reference_type='CashTransfer',
-            reference_id=self.pk
+            reference_id=self.pk,
+            created_by=user,
+            exclude_users=[user]
         )
     
     def cancel(self, user, reason=''):
@@ -142,19 +145,20 @@ class CashTransfer(TenantModel):
         self.cancellation_reason = reason
         self.save()
         
-        # Notify both parties
-        from apps.notifications.models import Notification
-        for target_user in [self.from_user, self.to_user]:
-            if target_user != user:
-                Notification.objects.create(
-                    tenant=self.tenant,
-                    user=target_user,
-                    title="Cash Transfer Cancelled",
-                    message=f"Cash transfer of {self.amount} has been cancelled. Reason: {reason or 'Not specified'}",
-                    notification_type='SYSTEM',
-                    reference_type='CashTransfer',
-                    reference_id=self.pk
-                )
+        # Notify both parties and roles via in-app & bulletin
+        from apps.notifications.services import notify_and_bulletin
+        notify_and_bulletin(
+            tenant=self.tenant,
+            title=f"Cash Transfer Cancelled: {self.tenant.currency_symbol}{self.amount}",
+            message=f"Cash transfer of {self.tenant.currency_symbol}{self.amount} was cancelled by {user.get_full_name() or user.email}. Reason: {reason or 'Not specified'}",
+            notification_type='CASH_TRANSFER',
+            target_roles=['SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN'],
+            target_users=[self.from_user, self.to_user],
+            reference_type='CashTransfer',
+            reference_id=self.pk,
+            created_by=user,
+            exclude_users=[user]
+        )
 
 class DigitalFundWithdrawal(TenantModel):
     """
@@ -459,25 +463,24 @@ class ExpenditureItem(TenantModel):
                 )
                 ct.save()
 
-        # --- Notify the shop manager who created this voucher ---
-        manager = self.request.requested_by
-        if manager:
-            from apps.notifications.models import Notification
-            Notification.objects.create(
-                tenant=self.tenant,
-                user=manager,
-                title="Expenditure Item Approved",
-                message=(
-                    f"Your expenditure item \"{self.description}\" "
-                    f"({self.tenant.currency} {self.amount}) on voucher "
-                    f"{self.request.voucher_number} was approved by "
-                    f"{user.get_full_name()}. "
-                    f"Source: {self.get_source_of_funds_display()}."
-                ),
-                notification_type='SYSTEM',
-                reference_type='ExpenditureRequest',
-                reference_id=self.request.pk,
-            )
+        # --- Notify the shop manager and roles via in-app & bulletin ---
+        from apps.notifications.services import notify_and_bulletin
+        notify_and_bulletin(
+            tenant=self.tenant,
+            title=f"Expenditure Approved: Voucher {self.request.voucher_number}",
+            message=(
+                f"Expenditure item \"{self.description}\" ({self.tenant.currency} {self.amount}) "
+                f"on voucher {self.request.voucher_number} at {self.request.location.name} was approved by "
+                f"{user.get_full_name() or user.email}. Source: {self.get_source_of_funds_display()}."
+            ),
+            notification_type='EXPENDITURE_REQUEST',
+            target_roles=['SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN'],
+            target_users=[self.request.requested_by] if self.request.requested_by else [],
+            reference_type='ExpenditureRequest',
+            reference_id=self.request.pk,
+            created_by=user,
+            exclude_users=[user]
+        )
 
     def reject(self, user, reason):
         if self.status != 'PENDING':
@@ -489,23 +492,22 @@ class ExpenditureItem(TenantModel):
         self.save()
         self.request.update_status()
 
-        # --- Notify the shop manager who created this voucher ---
-        manager = self.request.requested_by
-        if manager:
-            from apps.notifications.models import Notification
-            Notification.objects.create(
-                tenant=self.tenant,
-                user=manager,
-                title="Expenditure Item Rejected",
-                message=(
-                    f"Your expenditure item \"{self.description}\" "
-                    f"({self.tenant.currency} {self.amount}) on voucher "
-                    f"{self.request.voucher_number} was rejected by "
-                    f"{user.get_full_name()}. "
-                    f"Reason: {reason or 'No reason given'}."
-                ),
-                notification_type='SYSTEM',
-                reference_type='ExpenditureRequest',
-                reference_id=self.request.pk,
-            )
+        # --- Notify the shop manager and roles via in-app & bulletin ---
+        from apps.notifications.services import notify_and_bulletin
+        notify_and_bulletin(
+            tenant=self.tenant,
+            title=f"Expenditure Rejected: Voucher {self.request.voucher_number}",
+            message=(
+                f"Expenditure item \"{self.description}\" ({self.tenant.currency} {self.amount}) "
+                f"on voucher {self.request.voucher_number} at {self.request.location.name} was rejected by "
+                f"{user.get_full_name() or user.email}. Reason: {reason or 'No reason given'}."
+            ),
+            notification_type='EXPENDITURE_REQUEST',
+            target_roles=['SHOP_MANAGER', 'ACCOUNTANT', 'ADMIN'],
+            target_users=[self.request.requested_by] if self.request.requested_by else [],
+            reference_type='ExpenditureRequest',
+            reference_id=self.request.pk,
+            created_by=user,
+            exclude_users=[user]
+        )
 

@@ -259,16 +259,25 @@ class CashTransferCreateView(LoginRequiredMixin, View):
 
             transfer.save()
             
-            # Create notification for recipient
-            from apps.notifications.models import Notification
-            Notification.objects.create(
+            # Create notification and bulletin for recipient and accounting roles
+            from apps.notifications.services import notify_and_bulletin
+            notify_and_bulletin(
                 tenant=transfer.tenant,
-                user=transfer.to_user,
-                title="Incoming Cash Transfer",
-                message=f"{request.user.get_full_name() or request.user.email} is sending you {transfer.tenant.currency_symbol}{transfer.amount}. Please confirm receipt.",
-                notification_type='SYSTEM',
+                title=f"Incoming Cash Transfer: {transfer.tenant.currency_symbol}{transfer.amount}",
+                message=(
+                    f"{request.user.get_full_name() or request.user.email} initiated a cash transfer of "
+                    f"{transfer.tenant.currency_symbol}{transfer.amount} to "
+                    f"{transfer.to_user.get_full_name() or transfer.to_user.email}. "
+                    f"Please confirm receipt."
+                ),
+                notification_type='CASH_TRANSFER',
+                target_roles=['ACCOUNTANT', 'ADMIN', 'SHOP_MANAGER'],
+                target_users=[transfer.to_user] if transfer.to_user else [],
                 reference_type='CashTransfer',
-                reference_id=transfer.pk
+                reference_id=transfer.pk,
+                created_by=request.user,
+                exclude_users=[request.user],
+                is_pinned=True
             )
             
             messages.success(request, f'Cash transfer of {transfer.amount} created. Waiting for confirmation.')
@@ -2786,31 +2795,27 @@ class ExpenditureCreateView(LoginRequiredMixin, View):
                 item.save()
             formset.save_m2m()
 
-            # --- Notify all accountants that a new voucher needs review ---
-            from apps.notifications.models import Notification
-            from apps.core.models import User as CoreUser
-            accountants = CoreUser.objects.filter(
-                tenant=request.user.tenant,
-                is_active=True,
-                role__name__in=['ACCOUNTANT', 'ADMIN'],
-            )
+            # --- Notify accountants and admins via in-app & bulletin ---
+            from apps.notifications.services import notify_and_bulletin
             item_count = voucher.items.count()
-            for accountant in accountants:
-                Notification.objects.create(
-                    tenant=request.user.tenant,
-                    user=accountant,
-                    title="New Expenditure Voucher Submitted",
-                    message=(
-                        f"{request.user.get_full_name()} ({voucher.location.name}) "
-                        f"submitted expenditure voucher {voucher.voucher_number} "
-                        f"with {item_count} item{'s' if item_count != 1 else ''} "
-                        f"totalling {request.user.tenant.currency} {voucher.total_amount}. "
-                        f"Please review and approve."
-                    ),
-                    notification_type='SYSTEM',
-                    reference_type='ExpenditureRequest',
-                    reference_id=voucher.pk,
-                )
+            notify_and_bulletin(
+                tenant=request.user.tenant,
+                title=f"New Expenditure Voucher: {voucher.voucher_number}",
+                message=(
+                    f"{request.user.get_full_name() or request.user.email} ({voucher.location.name}) "
+                    f"submitted expenditure voucher {voucher.voucher_number} "
+                    f"with {item_count} item{'s' if item_count != 1 else ''} "
+                    f"totalling {request.user.tenant.currency} {voucher.total_amount}. "
+                    f"Please review and approve."
+                ),
+                notification_type='EXPENDITURE_REQUEST',
+                target_roles=['ACCOUNTANT', 'ADMIN', 'AUDITOR'],
+                reference_type='ExpenditureRequest',
+                reference_id=voucher.pk,
+                created_by=request.user,
+                exclude_users=[request.user],
+                is_pinned=True
+            )
 
             messages.success(request, f"Expenditure voucher {voucher.voucher_number} submitted for approval.")
             return redirect(self.success_url)

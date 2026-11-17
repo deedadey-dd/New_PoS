@@ -14,6 +14,7 @@ class ShopManagerSettingsForm(forms.ModelForm):
         model = ShopSettings
         fields = [
             'hide_zero_stock_in_pos',
+            'show_items_with_physical_stock_in_pos',
             'auto_print_receipts',
             'receipt_printer_type', 
             'receipt_font_family',
@@ -28,6 +29,7 @@ class ShopManagerSettingsForm(forms.ModelForm):
         ]
         widgets = {
             'hide_zero_stock_in_pos': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'show_items_with_physical_stock_in_pos': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'auto_print_receipts': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'receipt_printer_type': forms.Select(attrs={'class': 'form-select', 'id': 'id_receipt_printer_type'}),
             'receipt_font_family': forms.Select(attrs={'class': 'form-select', 'id': 'id_receipt_font_family'}),
