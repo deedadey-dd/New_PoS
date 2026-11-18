@@ -357,7 +357,7 @@
                     </h2>
                     <div id="shopSettingsDoc" class="accordion-collapse collapse" data-bs-parent="#posAccordion">
                         <div class="accordion-body">
-                            <p>Shop Managers can configure their specific stationery and receipt preferences:</p>
+                            <p>Shop Managers can configure their specific stationery, receipt preferences, and POS catalog display rules:</p>
                             <ol>
                                 <li>Navigate to <strong>Shop Settings</strong> in the sidebar</li>
                                 <li>Select your <strong>Receipt Printer Type</strong>:
@@ -371,6 +371,17 @@
                                 </li>
                                 <li>Update <strong>Receipt Header/Footer</strong> text</li>
                                 <li>Toggle <strong>Include Customer Name & Phone Number on Receipts</strong> (shows/hides customer contact info on all receipt copies)</li>
+                                <li><strong>POS Display & Inventory Settings:</strong>
+                                    <ul>
+                                        <li><strong>Hide Zero-Stock Products in POS:</strong> When enabled, products with zero sellable stock are filtered out from the POS search and product grid so attendants only see available items.</li>
+                                        <li><strong>Show Items If Physical Stock Exists (Ignore Undispatched Quantity):</strong> In Strict Sales Workflow, sold items wait in <em>Pending Dispatch</em> before leaving the shop. This setting defines how "sellable stock" is measured:
+                                            <ul class="mt-1">
+                                                <li><strong>OFF (Committed-Reserve Model — For Unique / Bespoke Goods):</strong> Sellable Stock = <code>Physical Stock − Pending Dispatch</code>. Once all on-hand units are committed to paid orders, the product disappears from POS and further invoices cannot be created. Ideal for furniture, electronics, artwork, or one-of-a-kind items where stock cannot be swapped.</li>
+                                                <li><strong>ON (Physical-Floor Model — For Replaceable / Fast-Moving Goods):</strong> Sellable Stock = <code>Physical Stock</code>. Attendants can continue selling and creating invoices as long as physical units remain on the shelf, even if <code>Physical Stock − Pending Dispatch</code> is zero or negative. Incoming replenishment stock fulfills pending dispatches later.</li>
+                                            </ul>
+                                        </li>
+                                    </ul>
+                                </li>
                                 <li>Click <strong>Save Settings</strong></li>
                             </ol>
                         </div>
@@ -382,7 +393,7 @@
                     <h2 class="accordion-header">
                         <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
                             data-bs-target="#cashierWorkflow">
-                            <i class="bi bi-diagram-3 me-2"></i>Cashier Workflow — Create Invoice
+                            <i class="bi bi-diagram-3 me-2"></i>Cashier Workflow &amp; Strict Sales Cycle
                         </button>
                     </h2>
                     <div id="cashierWorkflow" class="accordion-collapse collapse" data-bs-parent="#posAccordion">
@@ -390,12 +401,12 @@
                             <div class="alert alert-info py-2 mb-3 small">
                                 <i class="bi bi-info-circle me-1"></i>
                                 This feature is only visible when your organisation has <strong>Cashier Workflow</strong>
-                                enabled in Settings. It separates the sales cycle into 3 roles:
+                                enabled in Settings. It separates the sales cycle into 3 distinct roles:
                                 <strong>Attendant → Cashier → Manager</strong>.
                             </div>
                             <h6>Attendant: Create a Pending Invoice</h6>
                             <ol>
-                                <li>Add items to the cart as usual</li>
+                                <li>Add items to the cart as usual. (Stock validation immediately verifies available inventory based on your shop's display settings).</li>
                                 <li>Click <strong>Create Invoice</strong> (purple button)</li>
                                 <li>Enter the customer's <strong>Name</strong> and <strong>Phone</strong></li>
                                 <li>Click <strong>Save Invoice</strong></li>
@@ -406,13 +417,19 @@
                             <ol>
                                 <li>Go to the <strong>Cashier Dashboard</strong></li>
                                 <li>Search for the invoice by code or customer name</li>
-                                <li>Select payment method and complete the payment</li>
+                                <li>Select payment method (Cash, MoMo, E-Cash, or Credit) and complete the payment</li>
+                                <li>The sale status changes to <code>PENDING_DISPATCH</code> (Strict Workflow)</li>
                             </ol>
                             <h6 class="mt-3">Shop Manager: Dispatch Goods</h6>
                             <ol>
-                                <li>Go to the <strong>Manager Dashboard → Pending Dispatch</strong></li>
+                                <li>Go to the <strong>Manager Dashboard → Pending Dispatch</strong> (or <strong>Sales History</strong>)</li>
+                                <li>Review items to release: choose <strong>Full Dispatch</strong> or <strong>Partial Dispatch</strong></li>
                                 <li>Confirm the customer has received their goods</li>
                             </ol>
+                            <div class="alert alert-warning py-2 mb-0 small">
+                                <i class="bi bi-shield-lock me-1"></i>
+                                <strong>Physical Dispatch Guard:</strong> When global <em>Allow Negative Stock</em> is disabled, the system prevents managers from dispatching more items than currently exist physically in stock. If stock was sold to walk-in customers under the Physical-Floor model, the manager must wait for replenishment stock (transfers or batch creation) before completing the remaining dispatch.
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -461,7 +478,7 @@
         <div class="card-body">
             <div class="row">
                 <div class="col-md-6">
-                    <h5><i class="bi bi-boxes me-2"></i>Products</h5>
+                    <h5><i class="bi bi-boxes me-2"></i>Products &amp; Location Scoping</h5>
                     <p>Products are the items you sell. Each product has:</p>
                     <ul>
                         <li><strong>SKU</strong> - Unique identifier code</li>
@@ -470,6 +487,8 @@
                         <li><strong>Default Price</strong> - Standard selling price</li>
                         <li><strong>Reorder Level</strong> - Low stock warning threshold</li>
                         <li><strong>Bulk Deletion & Archiving</strong> - Select multiple products with checkboxes and delete via popup modal. If a product cannot be hard-deleted due to historical sales or ledger entries, click <strong>Deactivate / Archive Instead</strong> to archive it safely (<code>is_active = False</code>).</li>
+                        <li><strong>Pending Dispatch Tracking:</strong> On the Product Detail page (<code>/inventory/products/&lt;id&gt;/</code>), see the exact count of units sold awaiting pickup/dispatch.</li>
+                        <li><strong>Role-Based Location Scoping:</strong> Shop Managers are strictly restricted to their assigned shop on product detail pages (viewing only their own branch's batches, stock movements, and pending dispatches). HQ roles (Admins, Stores Managers, Accountants, Auditors) can switch between any shop or view all locations combined.</li>
                     </ul>
                 </div>
                 <div class="col-md-6">
@@ -506,6 +525,10 @@
                                 </div>
                             </div>
                         </div>
+                    </div>
+                    <div class="alert alert-info py-2 mt-2 mb-0 small">
+                        <i class="bi bi-bell me-1"></i>
+                        <strong>Auditor &amp; Accountant Alerts:</strong> Stock adjustments automatically post notifications and bulletin board notices to Accountants and Auditors to ensure inventory variances are immediately tracked and reviewed.
                     </div>
                 </div>
             </div>
@@ -959,6 +982,11 @@
                         </li>
                         <li>A waybill PDF is automatically generated after a full dispatch</li>
                     </ol>
+
+                    <div class="alert alert-warning py-2 mb-0">
+                        <h6><i class="bi bi-shield-check me-1"></i>Physical Stock Dispatch Guard</h6>
+                        <p class="small mb-0">When <strong>Allow Negative Stock</strong> is disabled in settings, the dispatch action is strictly guarded. You cannot dispatch more units than exist physically in the shop's inventory. If floor stock was sold out to walk-in customers under the Physical-Floor model, the system blocks the release with a clear warning until fresh stock is transferred in or received.</p>
+                    </div>
                 </div>
                 <div class="col-md-6">
                     <h5><i class="bi bi-clock-history me-2 text-secondary"></i>Dispatch History</h5>
@@ -1198,9 +1226,10 @@
                     <div id="trouble1" class="accordion-collapse collapse">
                         <div class="accordion-body">
                             <ul>
-                                <li>Check if the product has stock at your location</li>
-                                <li>Request a stock transfer from Stores</li>
-                                <li>Verify the batch isn't expired</li>
+                                <li>Check if the product has physical stock at your location.</li>
+                                <li><strong>In Strict Sales Workflow:</strong> Check if stock is committed to <em>Pending Dispatch</em>. If your shop has <em>Show Items If Physical Stock Exists</em> turned OFF (Committed-Reserve model), available stock is <code>Physical Stock − Pending Dispatch</code>. Once all units are reserved, the item cannot be sold or invoiced until more stock arrives.</li>
+                                <li>Request a stock transfer from Stores or warehouse.</li>
+                                <li>Verify the batch isn't expired.</li>
                             </ul>
                         </div>
                     </div>
@@ -1226,16 +1255,17 @@
                     <h2 class="accordion-header">
                         <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
                             data-bs-target="#trouble3">
-                            Products not showing in search
+                            Products not showing in POS or search
                         </button>
                     </h2>
                     <div id="trouble3" class="accordion-collapse collapse">
                         <div class="accordion-body">
                             <ul>
-                                <li>The product might be inactive - contact Admin</li>
-                                <li>The product might have zero stock at your location</li>
-                                <li>Specific shop price not set - contact Shop Manager</li>
-                                <li>Try searching by SKU instead of name</li>
+                                <li>The product might be inactive &mdash; contact Admin.</li>
+                                <li><strong>Hide Zero-Stock Products in POS:</strong> If this toggle is ON in <em>Shop Settings</em>, products with 0 sellable stock are hidden automatically.</li>
+                                <li><strong>Pending Dispatch Reservation:</strong> If <em>Show Items If Physical Stock Exists</em> is OFF, units pending dispatch reduce sellable stock. If physical stock equals pending dispatch, sellable stock is 0 and the item is hidden. Turn ON <em>Show Items If Physical Stock Exists</em> if you sell replenishable goods and want floor items visible.</li>
+                                <li>Specific shop price not set &mdash; verify pricing under <em>Inventory → Shop Pricing</em>.</li>
+                                <li>Try searching by SKU instead of name.</li>
                             </ul>
                         </div>
                     </div>

@@ -135,16 +135,20 @@ Before making sales, you must open a shift:
 1. **Search for products:**
    - Type in the search bar (supports product name or SKU)
    - Click a product to add it to the cart
+   - **Catalog Visibility & Stock Availability:** Products shown in the POS search and catalog are governed by your shop's inventory settings:
+     - When **"Hide Zero-Stock Products in POS"** is enabled, out-of-stock items are automatically excluded from view.
+     - In **Strict Sales Workflow**, if **"Show Items If Physical Stock Exists (Ignore Undispatched Quantity)"** is OFF, sellable stock is calculated as `Physical Stock − Pending Dispatch` (Committed-Reserve model for unique items). If ON, products remain visible as long as physical units sit on the shelf (Physical-Floor model for replenishable items).
 
 2. **Adjust quantities:**
    - Use **+** / **-** buttons to change quantity
    - Click the **trash icon** to remove an item
+   - The backend validates that requested quantity does not exceed the shop's sellable stock limit.
 
 3. **Apply discounts (if permitted):**
    - Enter discount percentage or amount
 
 4. **Complete the sale:**
-   - Click **Checkout**
+   - Click **Checkout** (or **Create Invoice** in Cashier/Strict workflow)
    - Enter the **amount received**
    - Select **payment method**:
      - 💵 **Cash** - Traditional cash payment
@@ -155,6 +159,20 @@ Before making sales, you must open a shift:
 5. **Print receipt:**
    - A receipt will be generated automatically
    - Click **Print** or share via WhatsApp
+
+### Strict Sales Workflow & Inventory Models
+
+In businesses utilizing the **Strict Sales Workflow** (Attendant creates invoice → Cashier receives payment → Manager dispatches goods), inventory moves through distinct operational states:
+
+1. **Attendant Creates Invoice:**
+   - Stock is validated against sellable inventory.
+   - For unique goods (`Show Physical Stock = False`), stock already committed to other pending dispatches is unavailable.
+   - For replenishable goods (`Show Physical Stock = True`), floor stock can be invoiced even if pending dispatches exceed inventory.
+2. **Cashier Receives Payment:**
+   - The sale transitions to `PENDING_DISPATCH`. Goods remain physically in the shop but are now recorded as committed customer orders.
+3. **Manager Dispatches Goods:**
+   - Physical stock is formally deducted from the inventory ledger.
+   - When `Allow Negative Stock = False`, dispatch is guarded against releasing more physical items than exist on hand.
 
 ### Payment Methods
 
@@ -295,18 +313,31 @@ To ensure full audit transparency and convenient review, disbursed refunds appea
   - Cash refunds are grouped into **Financial Movements**.
   - **Reconciliation Integrity**: Cash refunds are deducted from `expected_cash` (`opening_float + cash_sales + customer_payments - expenditures - funds_to_bank - funds_to_accountant - cash_refunds`). This ensures drawer reconciliations match physical till counts without false shortages.
 
+### Physical Stock Dispatch Guard
+
+When the global setting **Allow Negative Stock** is disabled (`allow_negative_stock = False`), the dispatch workflow guarantees that physical inventory cannot be released below zero:
+- **Validation on Release:** When a Shop Manager clicks *Full Dispatch* or *Partial Dispatch*, the system compares the requested release quantity against the physical stock currently on hand in the shop.
+- **Stock Depletion Handling:** In shops configured with the *Physical-Floor Model* (`show_items_with_physical_stock_in_pos = True`), floor attendants may sell goods to walk-in customers while prior orders remain in `PENDING_DISPATCH`. If physical stock is insufficient when the earlier customer arrives:
+  1. The system blocks dispatching the missing units with a clear error: *"Cannot dispatch X units. Only Y units physically available in stock."*
+  2. The manager can execute a **Partial Dispatch** for available units.
+  3. The manager creates a **Stock Request** or receives an incoming **Stock Transfer** from central stores to replenish the balance.
+  4. Once replenished, the manager completes the remaining dispatch. Alternatively, the order can be halted using *Halt & Settle* to issue an accountant-approved refund.
+
 ---
 
 ## Inventory Management
 
 ### Products
 
-#### Viewing Products
+#### Viewing Products & Role-Based Scoping
 1. Go to **Inventory → Products**
 2. Use filters to find products:
    - Search by name or SKU
    - Filter by category
    - Filter by low stock
+3. Click on a product to view the **Product Detail Page**:
+   - **Role-Based Location Scoping:** To protect branch confidentiality, **Shop Managers** are strictly restricted to their assigned shop location. They only see batches, stock valuation, movement ledgers, and pending dispatches for their assigned shop. Organization-wide roles (**Admin, Stores Manager, Accountant, Auditor**) can toggle between individual shops or view all locations combined.
+   - **Pending Dispatch KPI:** Displays the exact quantity of products that have been sold and paid for but are awaiting customer release.
 
 #### Creating a Product
 1. Click **Add Product**
@@ -437,6 +468,20 @@ View the transfer history of individual products across all locations:
    - **Date Range** — filter by transfer date
    - **Status** — filter by transfer status
 3. View details including quantities sent/received and any discrepancies
+
+### Stock Adjustments & Approval Workflow
+
+Stock adjustments allow manual correction of inventory levels due to counting errors, damages, or discrepancies:
+- **Location Permissions:**
+  - **Shop Managers** can only adjust stock for their assigned shop location.
+  - **Stores Managers** can request adjustments for any location, but cross-location adjustments require approval.
+- **Workflow:**
+  1. Navigate to **Inventory → Adjustment** (`/inventory/stock/adjustment/`).
+  2. Select the **Location** and **Product**. The current available stock is displayed.
+  3. Enter the **Adjustment Quantity** (positive to add, negative to deduct) and select a **Reason**.
+  4. Click **Submit Adjustment**.
+  5. For cross-location adjustments, the record enters `PENDING` status. The Shop Manager must review and approve or reject it under **Adjustment History**.
+- **Accountant & Auditor Alerts:** Every stock adjustment (standard or cross-location) automatically generates an in-app notification and posts to the accountant/auditor bulletin board for immediate financial oversight and variance auditing.
 
 ### Stock Write-Offs
 
@@ -746,6 +791,54 @@ A dedicated **Stock Alerts** panel appears in the sidebar showing:
    - Organization name
    - Currency symbol
    - Contact information
+   - **Allow Negative Stock (`allow_negative_stock`):** Controls whether physical inventory can fall below zero. Setting to **False** guarantees ledger integrity and blocks any sale or dispatch of non-existent physical stock.
+
+### Shop Settings & POS Display Preferences
+
+Each shop manager or administrator can configure hardware, receipt formatting, and sales screen behavior under **Inventory / Sales → Shop Settings** (`/sales/shop-settings/`):
+- **Printer Configuration:** Thermal 80mm, Thermal 58mm, A4, A5, or No Print.
+- **Receipt Customization:** Header/footer notes, return policy, and customer name/phone visibility.
+- **Hide Zero-Stock Products in POS (`hide_zero_stock_in_pos`):** Hides out-of-stock products from the POS search and catalog grid to keep attendants focused on sellable inventory.
+- **Show Items If Physical Stock Exists (Ignore Undispatched Quantity) (`show_items_with_physical_stock_in_pos`):** Secondary toggle that determines whether "sellable stock" is evaluated as floor units or net available units (physical minus pending dispatch).
+
+### Inventory Availability Controls & Strict Workflow Settings
+
+In retail organizations operating with multiple branches, different shops sell different types of inventory. HendAxis POS supports tailored workflows for both unique and fast-moving replenishable goods:
+
+#### 1. Scenario A: Committed-Reserve Model (Unique / Bespoke Goods)
+- **Business Profile:** Furniture showrooms, custom electronics, artwork, high-value luxury goods where each sold unit is distinct and cannot be substituted.
+- **Settings:**
+  - Global `Allow Negative Stock = False`
+  - Shop `Hide Zero-Stock Products in POS = True`
+  - Shop `Show Items If Physical Stock Exists = False`
+- **Behavior:**
+  - `Sellable Stock = Physical Stock − Pending Dispatch`.
+  - Once a sale is paid for, it enters `PENDING_DISPATCH`. The units are immediately reserved and deducted from sellable stock.
+  - If physical stock equals pending dispatch, sellable stock is 0. The product is hidden from POS, and attempts to create new invoices are rejected by backend validation.
+  - Reserved items remain protected until the customer collects them.
+
+#### 2. Scenario B: Physical-Floor Model (Replenishable / Fast-Moving Goods)
+- **Business Profile:** Supermarkets, grocery stores, pharmacies, hardware and building supplies where goods are regularly replenished. Customers may pay in advance for delayed pickup, but attendants need to keep selling floor stock to active walk-in buyers.
+- **Settings:**
+  - Global `Allow Negative Stock = False`
+  - Shop `Hide Zero-Stock Products in POS = True`
+  - Shop `Show Items If Physical Stock Exists = True`
+- **Behavior:**
+  - `Sellable Stock = Physical Stock`.
+  - Attendants can continue selling and creating invoices as long as physical stock is sitting on the floor, even if `Physical Stock − Pending Dispatch` is negative.
+  - **Protected by Dispatch Guard:** When the earlier customer arrives, the manager cannot dispatch into negative stock. The manager dispatches what is on hand, and receives an incoming **Stock Transfer** or batch to fulfill the remainder.
+
+#### Summary Comparison Matrix
+
+| Feature / Behavior | Scenario A: Committed-Reserve | Scenario B: Physical-Floor | Scenario C: Backorder / Pre-Sales |
+| :--- | :--- | :--- | :--- |
+| **Inventory Nature** | Unique, one-off, bespoke items | Fungible, replenishable commodities | Pre-orders, dropshipping |
+| **Global `Allow Negative Stock`** | `False` | `False` | `True` |
+| **Shop `Hide Zero-Stock in POS`** | `True` | `True` | `False` |
+| **Shop `Show Physical Stock`** | `False` | `True` | `Any` |
+| **Sellable Stock Formula** | `Physical − Pending Dispatch` | `Physical Stock` | Unbounded |
+| **POS Display** | Hides when all on-hand units reserved | Displays as long as floor stock > 0 | Always visible |
+| **Dispatch Action** | Dispatches reserved stock | Guarded against physical stock deficit | Unrestricted |
 
 ### Payment Provider (Admin Only)
 

@@ -1896,6 +1896,71 @@ def api_product_search(request):
     return JsonResponse({'products': results})
 
 
+def _validate_stock_for_cart(cart_items, shop, user):
+    """
+    Validate that stock is available according to shop settings and tenant rules.
+    If allow_negative_stock is True, returns None (allowed).
+    If allow_negative_stock is False:
+      - Shop A (Unique items, show_items_with_physical_stock_in_pos=False in strict workflow):
+        Requires qty_needed <= (physical_stock - pending_dispatch).
+      - Shop B (Replaceable items, show_items_with_physical_stock_in_pos=True, or non-strict):
+        Requires qty_needed <= physical_stock (even if physical - pending_dispatch < 0).
+    Returns None if valid, or an error string if invalid.
+    """
+    from decimal import Decimal
+    from django.db.models import Sum, F, Q
+    from apps.inventory.models import InventoryLedger
+
+    tenant = user.tenant
+    if tenant.allow_negative_stock:
+        return None
+
+    shop_settings_obj = getattr(shop, 'shop_settings', None)
+    if not shop_settings_obj and shop:
+        try:
+            shop_settings_obj = ShopSettings.objects.get(shop=shop)
+        except ShopSettings.DoesNotExist:
+            shop_settings_obj = None
+
+    show_phys = bool(shop_settings_obj and shop_settings_obj.show_items_with_physical_stock_in_pos)
+    is_strict = bool(tenant.use_strict_sales_workflow)
+
+    for item in cart_items:
+        product_id = item.get('product_id') or item.get('id')
+        product = Product.objects.get(pk=product_id)
+        qty_needed = Decimal(str(item['quantity']))
+
+        phys_stock = InventoryLedger.objects.filter(
+            tenant=tenant,
+            location=shop,
+            product=product
+        ).aggregate(total=Sum('quantity'))['total'] or Decimal('0')
+
+        if is_strict and not show_phys:
+            # Shop A: Unique goods (available stock = physical - pending dispatch)
+            undispatched = SaleItem.objects.filter(
+                sale__tenant=tenant,
+                sale__shop=shop,
+                product=product,
+                sale__status__in=['PENDING_DISPATCH', 'PARTIALLY_DISPATCHED', 'COMPLETED'],
+                dispatched_quantity__lt=F('quantity')
+            ).exclude(
+                Q(sale__status__in=['VOIDED', 'REFUNDED']) | Q(sale__is_halted=True)
+            ).aggregate(
+                total=Sum(F('quantity') - F('dispatched_quantity'))
+            )['total'] or Decimal('0')
+
+            avail = max(Decimal('0'), phys_stock - undispatched)
+            if qty_needed > avail:
+                return f"Cannot sell/invoice {qty_needed} of '{product.name}'. Only {avail} available ({undispatched} already sold & pending dispatch)."
+        else:
+            # Shop B: Replaceable goods (allowed as long as physical stock in inventory >= qty_needed)
+            if qty_needed > phys_stock:
+                return f"Cannot sell/invoice {qty_needed} of '{product.name}'. Only {max(Decimal('0'), phys_stock)} physically in stock."
+
+    return None
+
+
 @login_required
 @require_POST
 def api_complete_sale(request):
@@ -1939,7 +2004,7 @@ def api_complete_sale(request):
         from apps.customers.models import Customer, CustomerTransaction
         customer = Customer.objects.filter(pk=customer_id, tenant=request.user.tenant).first()
 
-    # ── PENDING INVOICE path (Cashier Workflow) ──────────────────────────────
+    # ── PENDING INVOICE path (Cashier Workflow & Strict Sales Workflow) ────────
     # Creates a PENDING sale without deducting stock. The cashier will later
     # complete the sale and trigger stock deduction at that point.
     if payment_method == 'PENDING_INVOICE':
@@ -1947,6 +2012,10 @@ def api_complete_sale(request):
             return JsonResponse({'error': 'Cart is empty'}, status=400)
         if not customer_name or not customer_phone:
             return JsonResponse({'error': 'Customer name and phone are required for invoices'}, status=400)
+
+        stock_err = _validate_stock_for_cart(cart_items, shop, request.user)
+        if stock_err:
+            return JsonResponse({'error': stock_err}, status=400)
 
         shift = Shift.objects.filter(
             tenant=request.user.tenant,
@@ -2039,6 +2108,10 @@ def api_complete_sale(request):
     # Normal sale processing
     if not cart_items:
         return JsonResponse({'error': 'Cart is empty'}, status=400)
+
+    stock_err = _validate_stock_for_cart(cart_items, shop, request.user)
+    if stock_err:
+        return JsonResponse({'error': stock_err}, status=400)
 
     # Get open shift
     shift = Shift.objects.filter(
@@ -2245,7 +2318,7 @@ def api_dispatch_sale(request, pk):
     """
     import json
     from decimal import Decimal, InvalidOperation
-    from django.db.models import F
+    from django.db.models import F, Sum
     from apps.inventory.models import Batch, InventoryLedger
 
     if request.method != 'POST':
@@ -2314,6 +2387,19 @@ def api_dispatch_sale(request, pk):
                         f"Cannot dispatch {qty_to_dispatch} of '{item.product.name}' "
                         f"— only {remaining} remaining."
                     )
+
+                if not sale.tenant.allow_negative_stock:
+                    current_physical = InventoryLedger.objects.filter(
+                        tenant=sale.tenant,
+                        location=sale.shop,
+                        product=item.product
+                    ).aggregate(total=Sum('quantity'))['total'] or Decimal('0')
+                    if current_physical < qty_to_dispatch:
+                        raise ValueError(
+                            f"Cannot dispatch {qty_to_dispatch} of '{item.product.name}'. "
+                            f"Only {max(Decimal('0'), current_physical)} physically available in shop inventory. "
+                            f"Please receive new stock before dispatching."
+                        )
 
                 # Resolve batch (FEFO)
                 batch = item.batch
@@ -2397,7 +2483,7 @@ def api_halt_and_request_refund(request, pk):
     """
     import json
     from decimal import Decimal
-    from django.db.models import F
+    from django.db.models import F, Sum
     from .models import RefundRequest
 
     tenant = request.user.tenant
@@ -4082,7 +4168,7 @@ class FootprintItemAggregationAPIView(LoginRequiredMixin, View):
         phone = request.GET.get('phone')
         
         from .models import SaleItem, Sale
-        from django.db.models import F
+        from django.db.models import F, Sum
         
         sales = Sale.objects.filter(
             tenant=tenant, 

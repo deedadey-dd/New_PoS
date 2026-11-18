@@ -461,12 +461,19 @@
                             <ul>
                                 <li>Type in the search bar (supports product name or SKU)</li>
                                 <li>Click a product to add it to the cart</li>
+                                <li><strong>Catalog Visibility &amp; Stock Availability:</strong> Which products appear in the POS grid and search is controlled by your shop's inventory settings:
+                                    <ul>
+                                        <li>If <strong>"Hide Zero-Stock Products in POS"</strong> is enabled, out-of-stock items are automatically excluded from the sales catalog.</li>
+                                        <li>In <strong>Strict Sales Workflow</strong>, if <strong>"Show Items If Physical Stock Exists (Ignore Undispatched Quantity)"</strong> is OFF, sellable stock is calculated as <em>Physical Stock minus Pending Dispatch</em> (Committed-Reserve model for unique items). If ON, products remain visible as long as physical units sit on the shelf (Physical-Floor model for replenishable items).</li>
+                                    </ul>
+                                </li>
                             </ul>
                         </li>
                         <li><strong>Adjust quantities:</strong>
                             <ul>
                                 <li>Use <strong>+</strong> / <strong>-</strong> buttons to change quantity</li>
                                 <li>Click the <strong>trash icon</strong> to remove an item</li>
+                                <li>The system validates that requested quantity does not exceed the shop's sellable stock limit.</li>
                             </ul>
                         </li>
                         <li><strong>Apply discounts</strong> (if permitted):
@@ -477,7 +484,7 @@
                         </li>
                         <li><strong>Complete the sale:</strong>
                             <ul>
-                                <li>Click <strong>Checkout</strong></li>
+                                <li>Click <strong>Checkout</strong> (or <strong>Create Invoice</strong> in Cashier/Strict workflow)</li>
                                 <li>Enter the <strong>amount received</strong></li>
                                 <li>Select <strong>payment method</strong></li>
                                 <li>Click <strong>Complete Sale</strong></li>
@@ -597,7 +604,10 @@
                             </tbody>
                         </table>
                     </div>
-                    <p class="small text-muted">Stock is deducted only when the Cashier completes payment &mdash; not at invoice creation time.</p>
+                    <div class="alert alert-secondary py-2 small">
+                        <i class="bi bi-info-circle me-1"></i>
+                        <strong>Inventory Lifecycle in Strict Mode:</strong> When an Attendant creates an invoice, stock availability is validated against sellable inventory. When the Cashier collects payment, the sale transitions to <code>PENDING_DISPATCH</code> (inventory remains physically in the shop but is tracked as committed). Physical stock deduction and inventory ledger movements occur when the Shop Manager formally dispatches the items.
+                    </div>
                 </section>
 
                 <!-- Dispatch Management -->
@@ -699,6 +709,25 @@
                                 <li><strong>Zero Dispatch Halt</strong>: If no items were dispatched, halting freezes the order while preserving all original line items and invoice totals so that the cashier can initiate a 100% full refund. No phantom inventory return movements are generated.</li>
                                 <li><strong>Credit Sale Debt Reduction</strong>: If the sale was on credit, accountant approval reduces the customer's outstanding balance by the value of undispatched goods.</li>
                                 <li><strong>Resuming a Halted Dispatch or Rejection</strong>: If the Accountant rejects the refund, or if the Shop Manager halted by mistake and clicks <strong>Resume</strong>, the transaction is immediately unlocked. Because items were never deleted, <strong>100% of all undispatched line items and remaining quantities are instantly available in the dispatch modal</strong> with zero data loss.</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <h3 id="dispatch-stock-guard" class="mt-4">Physical Inventory Dispatch Guard</h3>
+                    <div class="card border-info mb-4">
+                        <div class="card-body">
+                            <h5><i class="bi bi-shield-check text-info me-2"></i>Preventing Negative Stock During Dispatch</h5>
+                            <p>To preserve balance sheet accuracy and physical audit integrity, the dispatch engine enforces strict inventory protection:</p>
+                            <ul>
+                                <li><strong>Negative Stock Protection:</strong> When global <em>Allow Negative Stock</em> is disabled (<code>allow_negative_stock = False</code>), a Shop Manager cannot dispatch more items than exist physically in the shop's inventory.</li>
+                                <li><strong>Handling Depleted Floor Stock:</strong> In shops using the <strong>Physical-Floor Model</strong> (<code>show_items_with_physical_stock_in_pos = True</code>), attendants may sell items to walk-in customers while prior orders remain in <code>PENDING_DISPATCH</code>. If physical stock reaches zero before the original customer arrives to pick up their order:
+                                    <ol class="mt-1 mb-2">
+                                        <li>The dispatch action will display an error: <em>"Cannot dispatch X units. Only Y units physically available in stock."</em></li>
+                                        <li>The manager can release whatever quantity is physically available using <strong>Partial Dispatch</strong> (if enabled).</li>
+                                        <li>To release the remainder, the shop must request a <strong>Stock Transfer</strong> from the central store or receive a new batch. Once the stock is received, the remaining items can be dispatched immediately.</li>
+                                        <li>If the customer prefers not to wait, the manager can click <strong>Halt &amp; Settle</strong> to freeze the remaining items, enabling the cashier to initiate an accountant-approved refund for the undispatched balance.</li>
+                                    </ol>
+                                </li>
                             </ul>
                         </div>
                     </div>
@@ -926,7 +955,7 @@
 
                     <h3 id="products">Products</h3>
 
-                    <h4>Viewing Products</h4>
+                    <h4>Viewing Products &amp; Location Scoping</h4>
                     <ol>
                         <li>Go to <strong>Inventory → Products</strong></li>
                         <li>Use filters to find products:
@@ -934,6 +963,12 @@
                                 <li>Search by name or SKU</li>
                                 <li>Filter by category</li>
                                 <li>Filter by low stock</li>
+                            </ul>
+                        </li>
+                        <li>Click on a product to view the <strong>Product Detail Page</strong>:
+                            <ul>
+                                <li><strong>Role-Based Location Scoping:</strong> To safeguard branch data privacy, <strong>Shop Managers</strong> are strictly restricted to their assigned shop &mdash; they only see batches, stock values, movement history, and pending dispatches for their own location. HQ roles (<strong>Admin, Stores Manager, Accountant, Auditor</strong>) have location selectors allowing them to view specific shops or all locations combined.</li>
+                                <li><strong>Pending Dispatch KPI:</strong> Displays the quantity of goods currently committed to paid customer orders awaiting collection or waybill dispatch.</li>
                             </ul>
                         </li>
                     </ol>
@@ -1207,6 +1242,7 @@
                             <li>Click <strong>Review</strong> on the pending record to <strong>Approve</strong> or <strong>Reject</strong>.</li>
                             <li>Stock levels are updated <strong>only after approval</strong>.</li>
                             <li>The <strong>Inventory Ledger</strong> is automatically updated with the authorized entry.</li>
+                            <li><strong>Accountant &amp; Auditor Alerts:</strong> Stock adjustments automatically trigger in-app notifications and bulletin board notices to Accountants and Auditors to guarantee financial oversight of inventory modifications.</li>
                         </ul>
                     </section>
 
@@ -1723,7 +1759,7 @@
                     </ol>
 
                     <h3 id="shop-settings"><i class="bi bi-printer me-2"></i>Shop Settings & Receipt Preferences</h3>
-                    <p>Shop Managers and Administrators can configure shop-specific POS hardware and receipt printing behavior:</p>
+                    <p>Shop Managers and Administrators can configure shop-specific POS hardware, receipt printing, and catalog visibility rules:</p>
                     <ol>
                         <li>Go to <strong>Inventory / Sales → Shop Settings</strong> in the sidebar</li>
                         <li>Configure settings for your shop:
@@ -1732,10 +1768,124 @@
                                 <li><strong>Receipt Header & Footer</strong> — customize welcome messages, tax registration numbers, or thank-you text</li>
                                 <li><strong>Include Customer Name & Phone Number on Receipts</strong> — toggle switch to explicitly show or hide customer contact details on printed receipt copies (Cashier, Manager, Customer, and Store copies)</li>
                                 <li><strong>Payment Method Toggles</strong> — enable or disable Cash, E-Cash, MoMo, or Credit payment options at POS</li>
+                                <li><strong>Hide Zero-Stock Products in POS</strong> — toggle switch to clean up the POS catalog by hiding items with zero sellable stock</li>
+                                <li><strong>Show Items If Physical Stock Exists (Ignore Undispatched Quantity)</strong> — in Strict Sales Workflow, determines whether sellable stock uses physical floor units or net units (physical minus pending dispatch)</li>
                             </ul>
                         </li>
                         <li>Click <strong>Save Shop Settings</strong></li>
                     </ol>
+
+                    <section id="workflow-settings" class="mt-4">
+                        <h3><i class="bi bi-sliders2-vertical me-2"></i>Inventory Controls &amp; Sales Workflow Settings</h3>
+                        <p class="lead">HendAxis POS provides three interrelated settings to govern inventory availability, catalog visibility, and dispatch execution across diverse retail environments.</p>
+
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-4">
+                                <div class="card h-100 border-primary">
+                                    <div class="card-header bg-primary text-white py-2 fw-bold">
+                                        1. Allow Negative Stock
+                                    </div>
+                                    <div class="card-body">
+                                        <p class="small text-muted mb-1"><strong>Scope:</strong> Global Tenant Setting (<code>/settings/</code>)</p>
+                                        <p class="small mb-0">Controls whether sales or dispatches can drive physical inventory below zero. When <strong>False</strong> (recommended for strict auditing), the system blocks any checkout or dispatch that would create negative physical stock.</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card h-100 border-success">
+                                    <div class="card-header bg-success text-white py-2 fw-bold">
+                                        2. Hide Zero-Stock in POS
+                                    </div>
+                                    <div class="card-body">
+                                        <p class="small text-muted mb-1"><strong>Scope:</strong> Local Shop Setting (<code>/sales/shop-settings/</code>)</p>
+                                        <p class="small mb-0">Controls POS catalog cleanliness. When <strong>True</strong>, products with zero sellable stock are filtered out from search results and category grids, preventing staff from cluttering carts with unavailable items.</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card h-100 border-info">
+                                    <div class="card-header bg-info text-white py-2 fw-bold">
+                                        3. Show Physical Stock
+                                    </div>
+                                    <div class="card-body">
+                                        <p class="small text-muted mb-1"><strong>Scope:</strong> Local Shop Setting (<code>/sales/shop-settings/</code>)</p>
+                                        <p class="small mb-0">Defines how "sellable stock" is evaluated in Strict Sales Workflow. When <strong>True</strong>, sellable stock equals floor units (ignoring pending dispatches). When <strong>False</strong>, sellable stock equals floor units minus pending dispatches.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <h4>Real-Life Retail Scenarios &amp; Best Practices</h4>
+                        <div class="table-responsive mb-4">
+                            <table class="table table-bordered align-middle">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>Business Scenario</th>
+                                        <th>Target Retail Type</th>
+                                        <th>Settings Configuration</th>
+                                        <th>POS &amp; Checkout Behavior</th>
+                                        <th>Dispatch &amp; Replenishment Behavior</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td class="fw-bold text-primary">Scenario A:<br>Committed-Reserve Model<br><span class="badge bg-primary">Unique Goods</span></td>
+                                        <td>Furniture, artwork, luxury goods, unique electronics, bespoke or serial-tracked items where sold items cannot be substituted.</td>
+                                        <td>
+                                            <ul class="list-unstyled small mb-0">
+                                                <li><code>Allow Negative Stock:</code> <strong>False</strong></li>
+                                                <li><code>Hide Zero-Stock:</code> <strong>True</strong></li>
+                                                <li><code>Show Physical Stock:</code> <strong>False</strong></li>
+                                            </ul>
+                                        </td>
+                                        <td>
+                                            <p class="small mb-1">Sellable Stock = <code>Physical Stock − Pending Dispatch</code>.</p>
+                                            <p class="small mb-0 text-muted">Once a product is sold and paid for, it is immediately reserved. If 5 are in stock and 5 are pending dispatch, sellable stock is 0. The product is automatically hidden from POS, and attendants are blocked from creating new invoices for it.</p>
+                                        </td>
+                                        <td>
+                                            <p class="small mb-0">The reserved items remain safely locked for the original buyer. Dispatches can be completed normally whenever the customer arrives to pick them up.</p>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="fw-bold text-success">Scenario B:<br>Physical-Floor Model<br><span class="badge bg-success">Replaceable Goods</span></td>
+                                        <td>Supermarkets, groceries, pharmaceuticals, hardware, building supplies, fast-moving commodities that are regularly replenished.</td>
+                                        <td>
+                                            <ul class="list-unstyled small mb-0">
+                                                <li><code>Allow Negative Stock:</code> <strong>False</strong></li>
+                                                <li><code>Hide Zero-Stock:</code> <strong>True</strong></li>
+                                                <li><code>Show Physical Stock:</code> <strong>True</strong></li>
+                                            </ul>
+                                        </td>
+                                        <td>
+                                            <p class="small mb-1">Sellable Stock = <code>Physical Stock</code>.</p>
+                                            <p class="small mb-0 text-muted">Floor attendants can continue selling and creating invoices as long as physical stock is sitting on the shelf, even if <code>Physical − Pending Dispatch &lt; 0</code>. Pending orders do not block walk-in cash sales.</p>
+                                        </td>
+                                        <td>
+                                            <p class="small mb-1"><strong>Protected by Dispatch Guard:</strong> If walk-in sales consume all physical units, the manager cannot dispatch into negative stock.</p>
+                                            <p class="small mb-0">When the pending customer arrives, the manager dispatches what is available and requests an incoming <strong>Stock Transfer</strong> or receives a new batch to fulfill the remaining items. Alternatively, manager uses <em>Halt &amp; Settle</em> for an accountant-approved refund.</p>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="fw-bold text-secondary">Scenario C:<br>Backorder Model<br><span class="badge bg-secondary">Pre-Sales</span></td>
+                                        <td>E-commerce pre-orders, dropshipping, or custom manufacturing with no physical warehouse constraint.</td>
+                                        <td>
+                                            <ul class="list-unstyled small mb-0">
+                                                <li><code>Allow Negative Stock:</code> <strong>True</strong></li>
+                                                <li><code>Hide Zero-Stock:</code> <strong>False</strong></li>
+                                                <li><code>Show Physical Stock:</code> <strong>Any</strong></li>
+                                            </ul>
+                                        </td>
+                                        <td>
+                                            <p class="small mb-0">Products remain visible at all times. Sales and invoices can be created regardless of stock levels, driving inventory counts into negative figures.</p>
+                                        </td>
+                                        <td>
+                                            <p class="small mb-0">Dispatches proceed without physical stock checks. Negative stock is normalized when future production batches or supplier purchase orders are received.</p>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
 
                     <h3>Payment Provider</h3>
                     <p>Configure Paystack for E-Cash payments:</p>
@@ -2044,9 +2194,11 @@
                                 data-bs-parent="#troubleshootingAccordion">
                                 <div class="accordion-body">
                                     <ul>
-                                        <li>Verify product is marked as <strong>Active</strong></li>
-                                        <li>Check if product has stock in your location</li>
-                                        <li>Verify batch isn't expired</li>
+                                        <li>Verify product is marked as <strong>Active</strong>.</li>
+                                        <li><strong>Zero-Stock Setting:</strong> Check if <em>Hide Zero-Stock Products in POS</em> is enabled under <strong>Shop Settings</strong>. If enabled, products with 0 sellable stock are hidden.</li>
+                                        <li><strong>Pending Dispatch Commitment:</strong> In Strict Sales Workflow with <em>Show Items If Physical Stock Exists</em> set to <strong>OFF</strong>, sellable stock is <code>Physical Stock − Pending Dispatch</code>. If all physical units are committed to pending dispatches, available stock is 0 and the item will be hidden. If you sell replenishable goods, set this toggle to <strong>ON</strong>.</li>
+                                        <li>Check if location-specific price is assigned under <strong>Inventory → Shop Pricing</strong>.</li>
+                                        <li>Verify batch isn't expired.</li>
                                     </ul>
                                 </div>
                             </div>
@@ -2061,7 +2213,7 @@
                         <li>Note any error messages for troubleshooting</li>
                     </ol>
 
-                    <section id="shop-settings">
+                    <section id="shop-settings-summary">
                         <h3><i class="bi bi-printer me-2"></i>Shop Settings & Printer Configuration</h3>
                         <p>Each shop can have unique configurations for receipts and stationery.</p>
                         <ol>

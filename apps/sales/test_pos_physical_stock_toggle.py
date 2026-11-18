@@ -132,3 +132,41 @@ class POSPhysicalStockToggleTest(TestCase):
         products = json.loads(response.context['products'])
         p_ids = [p['id'] for p in products]
         self.assertNotIn(self.product.pk, p_ids)
+
+    def test_invoice_creation_allowed_when_physical_minus_undispatched_is_negative(self):
+        # Physical stock = 50, undispatched = 60 (net = -10, negative!)
+        # With show_items_with_physical_stock_in_pos = True, attendants CAN create invoices up to 50
+        self.shop_settings.show_items_with_physical_stock_in_pos = True
+        self.shop_settings.save()
+
+        self.client.force_login(self.user)
+        import json
+        payload = {
+            'items': [{'product_id': self.product.pk, 'quantity': '10.00', 'unit_price': '5.00'}],
+            'payment_method': 'PENDING_INVOICE',
+            'customer_name': 'Test Buyer',
+            'customer_phone': '0555123456',
+        }
+        resp = self.client.post('/sales/api/checkout/', data=json.dumps(payload), content_type='application/json')
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data.get('success'))
+        self.assertTrue('sale_number' in data)
+
+    def test_invoice_creation_blocked_when_exceeds_physical_stock(self):
+        # Physical stock = 50. Attendant tries to invoice 55.
+        self.shop_settings.show_items_with_physical_stock_in_pos = True
+        self.shop_settings.save()
+
+        self.client.force_login(self.user)
+        import json
+        payload = {
+            'items': [{'product_id': self.product.pk, 'quantity': '55.00', 'unit_price': '5.00'}],
+            'payment_method': 'PENDING_INVOICE',
+            'customer_name': 'Test Buyer',
+            'customer_phone': '0555123456',
+        }
+        resp = self.client.post('/sales/api/checkout/', data=json.dumps(payload), content_type='application/json')
+        self.assertEqual(resp.status_code, 400)
+        data = resp.json()
+        self.assertIn('physically in stock', data.get('error', ''))
