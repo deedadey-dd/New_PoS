@@ -326,11 +326,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 let qtyPrefix = ['IN', 'RETURN_IN', 'ADJUST_ADD'].includes(data.transaction_code) ? '+' : '-';
                 let qtyClass = qtyPrefix === '+' ? 'text-success' : 'text-danger';
-                document.getElementById('ledgerQuantity').textContent = qtyPrefix + parseFloat(data.quantity).toFixed(0);
+                document.getElementById('ledgerQuantity').textContent = qtyPrefix + Number(parseFloat(data.quantity) || 0).toLocaleString();
                 document.getElementById('ledgerQuantity').className = 'col-8 text-end fw-bold fs-5 ' + qtyClass;
                 
-                document.getElementById('ledgerUnitCost').textContent = '{{ currency_symbol }}' + parseFloat(data.unit_cost).toFixed(2);
-                document.getElementById('ledgerTotalValue').textContent = '{{ currency_symbol }}' + parseFloat(data.total_value).toFixed(2);
+                document.getElementById('ledgerUnitCost').textContent = '{{ currency_symbol }}' + Number(parseFloat(data.unit_cost) || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                document.getElementById('ledgerTotalValue').textContent = '{{ currency_symbol }}' + Number(parseFloat(data.total_value) || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
                 
                 if (data.reference_type && data.reference_id) {
                     document.getElementById('ledgerReference').textContent = data.reference_type + ' #' + data.reference_id;

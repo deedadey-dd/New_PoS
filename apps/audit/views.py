@@ -213,7 +213,7 @@ class ProductLifecycleView(LoginRequiredMixin, AuditAccessMixin, SortableMixin, 
             in_entries = ledger.filter(transaction_type='IN', quantity__gt=0)
             
             bulk_filter = Q(reference_type='BulkBatch') | Q(notes__icontains='bulk receive')
-            bulk_receive_qty = in_entries.filter(bulk_filter).aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+            bulk_receive_qty = (in_entries.filter(bulk_filter).aggregate(q=Sum('quantity')) or {}).get('q') or Decimal('0')
             bulk_receive_count = in_entries.filter(bulk_filter).count()
 
             init_filter = (
@@ -221,37 +221,37 @@ class ProductLifecycleView(LoginRequiredMixin, AuditAccessMixin, SortableMixin, 
                 Q(reference_type__in=['Initial', 'INITIAL']) | 
                 Q(notes__icontains='initial demo')
             ) & ~bulk_filter & ~Q(reference_type__in=['Batch', 'GoodsReceipt'])
-            initial_stock_qty = in_entries.filter(init_filter).aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+            initial_stock_qty = (in_entries.filter(init_filter).aggregate(q=Sum('quantity')) or {}).get('q') or Decimal('0')
             initial_stock_count = in_entries.filter(init_filter).count()
 
             batch_filter = ~bulk_filter & ~init_filter
-            batch_receive_qty = in_entries.filter(batch_filter).aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+            batch_receive_qty = (in_entries.filter(batch_filter).aggregate(q=Sum('quantity')) or {}).get('q') or Decimal('0')
             batch_receive_count = in_entries.filter(batch_filter).count()
 
             total_in_qty = bulk_receive_qty + initial_stock_qty + batch_receive_qty
             total_in_count = in_entries.count()
 
             prod_entries = ledger.filter(transaction_type='PRODUCTION', quantity__gt=0)
-            production_qty = prod_entries.aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+            production_qty = (prod_entries.aggregate(q=Sum('quantity')) or {}).get('q') or Decimal('0')
             production_count = prod_entries.count()
 
             transfer_in_entries = ledger.filter(transaction_type='TRANSFER_IN', quantity__gt=0)
-            transfer_in_qty = transfer_in_entries.aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+            transfer_in_qty = (transfer_in_entries.aggregate(q=Sum('quantity')) or {}).get('q') or Decimal('0')
             transfer_in_count = transfer_in_entries.count()
 
             returns_entries = ledger.filter(
                 transaction_type__in=['RETURN', 'SALE_RETURN', 'SALE_VOID'],
                 quantity__gt=0
             )
-            returns_qty = returns_entries.aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+            returns_qty = (returns_entries.aggregate(q=Sum('quantity')) or {}).get('q') or Decimal('0')
             returns_count = returns_entries.count()
 
             adjust_pos_entries = ledger.filter(transaction_type='ADJUST', quantity__gt=0)
-            adjust_pos_qty = adjust_pos_entries.aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+            adjust_pos_qty = (adjust_pos_entries.aggregate(q=Sum('quantity')) or {}).get('q') or Decimal('0')
             adjust_pos_count = adjust_pos_entries.count()
 
             dispute_entries = ledger.filter(transaction_type='DISPUTE_REVERSAL', quantity__gt=0)
-            dispute_qty = dispute_entries.aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+            dispute_qty = (dispute_entries.aggregate(q=Sum('quantity')) or {}).get('q') or Decimal('0')
             dispute_count = dispute_entries.count()
 
             known_pos_types = [
@@ -259,7 +259,7 @@ class ProductLifecycleView(LoginRequiredMixin, AuditAccessMixin, SortableMixin, 
                 'SALE_RETURN', 'SALE_VOID', 'ADJUST', 'DISPUTE_REVERSAL'
             ]
             other_pos_entries = ledger.exclude(transaction_type__in=known_pos_types).filter(quantity__gt=0)
-            other_pos_qty = other_pos_entries.aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+            other_pos_qty = (other_pos_entries.aggregate(q=Sum('quantity')) or {}).get('q') or Decimal('0')
             other_pos_count = other_pos_entries.count()
 
             total_entries_qty = (
@@ -273,28 +273,28 @@ class ProductLifecycleView(LoginRequiredMixin, AuditAccessMixin, SortableMixin, 
 
             # ── 2. Stock Exits (Outflows) Breakdown ───────────────────
             sales_entries = ledger.filter(transaction_type='SALE', quantity__lt=0)
-            sales_qty = sales_entries.aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+            sales_qty = (sales_entries.aggregate(q=Sum('quantity')) or {}).get('q') or Decimal('0')
             sales_count = sales_entries.count()
 
             transfer_out_entries = ledger.filter(transaction_type='TRANSFER_OUT', quantity__lt=0)
-            transfer_out_qty = transfer_out_entries.aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+            transfer_out_qty = (transfer_out_entries.aggregate(q=Sum('quantity')) or {}).get('q') or Decimal('0')
             transfer_out_count = transfer_out_entries.count()
 
             damage_entries = ledger.filter(transaction_type='DAMAGE', quantity__lt=0)
-            damage_qty = damage_entries.aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+            damage_qty = (damage_entries.aggregate(q=Sum('quantity')) or {}).get('q') or Decimal('0')
             damage_count = damage_entries.count()
 
             adjust_neg_entries = ledger.filter(transaction_type='ADJUST', quantity__lt=0)
-            adjust_neg_qty = adjust_neg_entries.aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+            adjust_neg_qty = (adjust_neg_entries.aggregate(q=Sum('quantity')) or {}).get('q') or Decimal('0')
             adjust_neg_count = adjust_neg_entries.count()
 
             stock_out_entries = ledger.filter(transaction_type='OUT', quantity__lt=0)
-            stock_out_qty = stock_out_entries.aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+            stock_out_qty = (stock_out_entries.aggregate(q=Sum('quantity')) or {}).get('q') or Decimal('0')
             stock_out_count = stock_out_entries.count()
 
             known_neg_types = ['SALE', 'TRANSFER_OUT', 'DAMAGE', 'ADJUST', 'OUT']
             other_neg_entries = ledger.exclude(transaction_type__in=known_neg_types).filter(quantity__lt=0)
-            other_neg_qty = other_neg_entries.aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+            other_neg_qty = (other_neg_entries.aggregate(q=Sum('quantity')) or {}).get('q') or Decimal('0')
             other_neg_count = other_neg_entries.count()
 
             total_exits_qty = (
@@ -324,16 +324,16 @@ class ProductLifecycleView(LoginRequiredMixin, AuditAccessMixin, SortableMixin, 
                 if selected_location:
                     pending_sales_items = pending_sales_items.filter(sale__shop=selected_location)
 
-                total_pending_dispatch_qty = pending_sales_items.aggregate(
+                total_pending_dispatch_qty = (pending_sales_items.aggregate(
                     pending=Sum(F('quantity') - F('dispatched_quantity'))
-                )['pending'] or Decimal('0')
+                ) or {}).get('pending') or Decimal('0')
                 pending_dispatch_count = pending_sales_items.count()
 
                 loc_pending_map = {
                     item['sale__shop_id']: item['pending']
                     for item in pending_sales_items.order_by().values('sale__shop_id').annotate(
                         pending=Sum(F('quantity') - F('dispatched_quantity'))
-                    )
+                    ) if item and item.get('sale__shop_id')
                 }
             else:
                 pending_sales_items = SaleItem.objects.none()
@@ -343,9 +343,9 @@ class ProductLifecycleView(LoginRequiredMixin, AuditAccessMixin, SortableMixin, 
 
             # ── 4. Stock by Location & Overall Total Stock ────────────
             # True current total physical stock of the product across all locations (all-time)
-            overall_total_stock = all_time_ledger.aggregate(total=Sum('quantity'))['total'] or Decimal('0')
+            overall_total_stock = (all_time_ledger.aggregate(total=Sum('quantity')) or {}).get('total') or Decimal('0')
             if selected_location:
-                current_total_stock = all_time_ledger.filter(location=selected_location).aggregate(total=Sum('quantity'))['total'] or Decimal('0')
+                current_total_stock = (all_time_ledger.filter(location=selected_location).aggregate(total=Sum('quantity')) or {}).get('total') or Decimal('0')
             else:
                 current_total_stock = overall_total_stock
             available_total_stock = current_total_stock - total_pending_dispatch_qty
@@ -579,12 +579,16 @@ class ProductProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
             sales_filter &= Q(sale__shop_id=int(location_id))
 
         # 3. Aggregate sales performance by product
-        sales_items = SaleItem.objects.filter(sales_filter, product__in=products_qs).values('product_id').annotate(
+        sale_items_qs = SaleItem.objects.filter(sales_filter)
+        if q or (category_id and category_id.isdigit()):
+            sale_items_qs = sale_items_qs.filter(product__in=products_qs)
+
+        sales_items = sale_items_qs.values('product_id').annotate(
             qty_sold=Sum('quantity'),
             revenue=Sum('total'),
             cost=Sum(F('quantity') * F('unit_cost')),
         )
-        sales_map = {item['product_id']: item for item in sales_items}
+        sales_map = {item['product_id']: item for item in sales_items if item and item.get('product_id')}
 
         # 4. Include all active products, or any inactive products that had sales
         if q:
@@ -593,11 +597,11 @@ class ProductProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
             included_products = products_qs.filter(Q(is_active=True) | Q(id__in=sales_map.keys()))
 
         product_data = []
-        for p in included_products.select_related('category'):
+        for p in included_products.select_related('category').only('id', 'name', 'sku', 'category__name'):
             s = sales_map.get(p.id)
-            qty_sold = s['qty_sold'] if s else Decimal('0')
-            revenue = s['revenue'] if s else Decimal('0')
-            cost = s['cost'] if s else Decimal('0')
+            qty_sold = (s.get('qty_sold') if s and s.get('qty_sold') is not None else None) or Decimal('0')
+            revenue = (s.get('revenue') if s and s.get('revenue') is not None else None) or Decimal('0')
+            cost = (s.get('cost') if s and s.get('cost') is not None else None) or Decimal('0')
             profit = revenue - cost
             if revenue > 0:
                 margin_pct = round((profit / revenue) * 100, 1)
@@ -606,7 +610,7 @@ class ProductProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
                 
             product_data.append({
                 'product__id': p.id,
-                'product__name': p.name,
+                'product__name': p.name or '',
                 'product__sku': p.sku or '',
                 'product__category__name': p.category.name if p.category else '-',
                 'qty_sold': qty_sold,
@@ -625,15 +629,21 @@ class ProductProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
             
         reverse_sort = sort_dir == 'desc'
         if sort_by == 'product__name':
-            product_data.sort(key=lambda x: x['product__name'].lower(), reverse=reverse_sort)
+            product_data.sort(key=lambda x: (x.get('product__name') or '').lower(), reverse=reverse_sort)
         else:
-            product_data.sort(key=lambda x: (x[sort_by], x['revenue']), reverse=reverse_sort)
+            product_data.sort(
+                key=lambda x: (
+                    x.get(sort_by) if x.get(sort_by) is not None else Decimal('-999999999'),
+                    x.get('revenue') or Decimal('0')
+                ),
+                reverse=reverse_sort
+            )
         
         # Totals
         totals = {
-            'revenue': sum(p['revenue'] for p in product_data),
-            'cost': sum(p['cost'] for p in product_data),
-            'qty_sold': sum(p['qty_sold'] for p in product_data),
+            'revenue': sum((p.get('revenue') or Decimal('0')) for p in product_data),
+            'cost': sum((p.get('cost') or Decimal('0')) for p in product_data),
+            'qty_sold': sum((p.get('qty_sold') or Decimal('0')) for p in product_data),
         }
         totals['profit'] = totals['revenue'] - totals['cost']
         if totals['revenue'] > 0:
@@ -765,15 +775,15 @@ class LocationProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
                 
             if item_filters:
                 sale_items = sale_items.filter(item_filters)
-                revenue = sale_items.aggregate(total=Sum('total'))['total'] or Decimal('0')
+                revenue = (sale_items.aggregate(total=Sum('total')) or {}).get('total') or Decimal('0')
                 sale_count = shop_sales.filter(items__in=sale_items).distinct().count()
             else:
-                revenue = shop_sales.aggregate(total=Sum('total'))['total'] or Decimal('0')
+                revenue = (shop_sales.aggregate(total=Sum('total')) or {}).get('total') or Decimal('0')
                 sale_count = shop_sales.count()
             
-            cost = sale_items.aggregate(
+            cost = (sale_items.aggregate(
                 total=Sum(F('quantity') * F('unit_cost'))
-            )['total'] or Decimal('0')
+            ) or {}).get('total') or Decimal('0')
             
             profit = revenue - cost
             margin = round((profit / revenue * 100), 1) if revenue > 0 else 0
@@ -938,15 +948,15 @@ class ManagerProfitLossView(LoginRequiredMixin, AuditAccessMixin, View):
                 
             if item_filters:
                 sale_items = sale_items.filter(item_filters)
-                revenue = sale_items.aggregate(total=Sum('total'))['total'] or Decimal('0')
+                revenue = (sale_items.aggregate(total=Sum('total')) or {}).get('total') or Decimal('0')
                 sale_count = attendant_sales.filter(items__in=sale_items).distinct().count()
             else:
-                revenue = attendant_sales.aggregate(total=Sum('total'))['total'] or Decimal('0')
+                revenue = (attendant_sales.aggregate(total=Sum('total')) or {}).get('total') or Decimal('0')
                 sale_count = attendant_sales.count()
             
-            cost = sale_items.aggregate(
+            cost = (sale_items.aggregate(
                 total=Sum(F('quantity') * F('unit_cost'))
-            )['total'] or Decimal('0')
+            ) or {}).get('total') or Decimal('0')
             
             if sale_count > 0:  # Only include if they have sales
                 profit = revenue - cost
@@ -1152,12 +1162,16 @@ class ProductProfitLossExportView(LoginRequiredMixin, AuditAccessMixin, View):
         if location_id and location_id.isdigit():
             sales_filter &= Q(sale__shop_id=int(location_id))
 
-        sales_items = SaleItem.objects.filter(sales_filter, product__in=products_qs).values('product_id').annotate(
+        sale_items_qs = SaleItem.objects.filter(sales_filter)
+        if q or (category_id and category_id.isdigit()):
+            sale_items_qs = sale_items_qs.filter(product__in=products_qs)
+
+        sales_items = sale_items_qs.values('product_id').annotate(
             qty_sold=Sum('quantity'),
             revenue=Sum('total'),
             cost=Sum(F('quantity') * F('unit_cost')),
         )
-        sales_map = {item['product_id']: item for item in sales_items}
+        sales_map = {item['product_id']: item for item in sales_items if item and item.get('product_id')}
 
         if q:
             included_products = products_qs
@@ -1165,15 +1179,15 @@ class ProductProfitLossExportView(LoginRequiredMixin, AuditAccessMixin, View):
             included_products = products_qs.filter(Q(is_active=True) | Q(id__in=sales_map.keys()))
 
         product_data = []
-        for p in included_products.select_related('category'):
+        for p in included_products.select_related('category').only('id', 'name', 'sku', 'category__name'):
             s = sales_map.get(p.id)
-            qty_sold = s['qty_sold'] if s else Decimal('0')
-            revenue = s['revenue'] if s else Decimal('0')
-            cost = s['cost'] if s else Decimal('0')
+            qty_sold = (s.get('qty_sold') if s and s.get('qty_sold') is not None else None) or Decimal('0')
+            revenue = (s.get('revenue') if s and s.get('revenue') is not None else None) or Decimal('0')
+            cost = (s.get('cost') if s and s.get('cost') is not None else None) or Decimal('0')
             profit = revenue - cost
             margin = round((profit / revenue * 100), 1) if revenue > 0 else 0
             product_data.append({
-                'product__name': p.name,
+                'product__name': p.name or '',
                 'product__sku': p.sku or '',
                 'product__category__name': p.category.name if p.category else '-',
                 'qty_sold': qty_sold,
@@ -1182,7 +1196,7 @@ class ProductProfitLossExportView(LoginRequiredMixin, AuditAccessMixin, View):
                 'profit': profit,
                 'margin': margin,
             })
-        product_data.sort(key=lambda x: (x['profit'], x['revenue']), reverse=True)
+        product_data.sort(key=lambda x: (x.get('profit') or Decimal('0'), x.get('revenue') or Decimal('0')), reverse=True)
 
         headers = ['Product', 'SKU', 'Category', 'Qty Sold', 'Revenue', 'Cost', 'Profit', 'Margin %']
         rows = []
@@ -1278,15 +1292,15 @@ class LocationProfitLossExportView(LoginRequiredMixin, AuditAccessMixin, View):
                 
             if item_filters:
                 sale_items = sale_items.filter(item_filters)
-                revenue = sale_items.aggregate(total=Sum('total'))['total'] or Decimal('0')
+                revenue = (sale_items.aggregate(total=Sum('total')) or {}).get('total') or Decimal('0')
                 sale_count = shop_sales.filter(items__in=sale_items).distinct().count()
             else:
-                revenue = shop_sales.aggregate(total=Sum('total'))['total'] or Decimal('0')
+                revenue = (shop_sales.aggregate(total=Sum('total')) or {}).get('total') or Decimal('0')
                 sale_count = shop_sales.count()
             
-            cost = sale_items.aggregate(
+            cost = (sale_items.aggregate(
                 total=Sum(F('quantity') * F('unit_cost'))
-            )['total'] or Decimal('0')
+            ) or {}).get('total') or Decimal('0')
 
             profit = revenue - cost
             margin = round((profit / revenue * 100), 1) if revenue > 0 else 0
@@ -1388,15 +1402,15 @@ class ManagerProfitLossExportView(LoginRequiredMixin, AuditAccessMixin, View):
                 
             if item_filters:
                 sale_items = sale_items.filter(item_filters)
-                revenue = sale_items.aggregate(total=Sum('total'))['total'] or Decimal('0')
+                revenue = (sale_items.aggregate(total=Sum('total')) or {}).get('total') or Decimal('0')
                 sale_count = attendant_sales.filter(items__in=sale_items).distinct().count()
             else:
-                revenue = attendant_sales.aggregate(total=Sum('total'))['total'] or Decimal('0')
+                revenue = (attendant_sales.aggregate(total=Sum('total')) or {}).get('total') or Decimal('0')
                 sale_count = attendant_sales.count()
 
-            cost = sale_items.aggregate(
+            cost = (sale_items.aggregate(
                 total=Sum(F('quantity') * F('unit_cost'))
-            )['total'] or Decimal('0')
+            ) or {}).get('total') or Decimal('0')
 
             if sale_count > 0:
                 profit = revenue - cost

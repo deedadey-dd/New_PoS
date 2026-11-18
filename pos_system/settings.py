@@ -390,3 +390,8 @@ DBBACKUP_STORAGE_OPTIONS = {
 DBBACKUP_CLEANUP_KEEP = 30
 DBBACKUP_FILENAME_TEMPLATE = '{datetime}-pos-db-backup.{extension}'
 DBBACKUP_MEDIA_FILENAME_TEMPLATE = '{datetime}-pos-media-backup.{extension}'
+
+# File and form upload size limits (25MB)
+DATA_UPLOAD_MAX_MEMORY_SIZE = 26214400  # 25 MB
+FILE_UPLOAD_MAX_MEMORY_SIZE = 26214400  # 25 MB
+

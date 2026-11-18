@@ -85,3 +85,35 @@ class SaleListViewPerformanceTest(TestCase):
         # 15 dispatched sales
         self.assertEqual(response.context['summary_total_count'], 15)
 
+    def test_dispatch_list_sort_by_attendant_username(self):
+        """Test sorting by attendant__username or attendant does not raise FieldError."""
+        self.client.force_login(self.manager_user)
+        # Test backward-compatible sort=attendant__username
+        response = self.client.get(reverse('sales:dispatch_list') + '?sort=attendant__username&dir=asc')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('sales', response.context)
+
+        # Test new sort=attendant
+        response_desc = self.client.get(reverse('sales:dispatch_list') + '?sort=attendant&dir=desc')
+        self.assertEqual(response_desc.status_code, 200)
+        self.assertIn('sales', response_desc.context)
+
+    def test_sale_list_sort_by_attendant_username(self):
+        """Test sorting sale_list by attendant__username or attendant does not raise FieldError."""
+        self.client.force_login(self.admin_user)
+        response = self.client.get(reverse('sales:sale_list') + '?sort=attendant__username&dir=asc')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('sales', response.context)
+
+        response_desc = self.client.get(reverse('sales:sale_list') + '?sort=attendant&dir=desc')
+        self.assertEqual(response_desc.status_code, 200)
+        self.assertIn('sales', response_desc.context)
+
+    def test_sortable_mixin_invalid_field_fallback(self):
+        """Test that invalid sort params safely fallback to default_sort without raising FieldError."""
+        self.client.force_login(self.admin_user)
+        response = self.client.get(reverse('sales:sale_list') + '?sort=non_existent_field_xyz&dir=desc')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('sales', response.context)
+
+

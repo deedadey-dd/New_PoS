@@ -250,7 +250,7 @@ server {
     add_header X-XSS-Protection "1; mode=block" always;
 
     # Max upload size (adjust if needed)
-    client_max_body_size 10M;
+    client_max_body_size 25M;
 
     # Favicon
     location = /favicon.ico {

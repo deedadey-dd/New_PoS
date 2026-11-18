@@ -6,6 +6,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>POS - {{ shop.name }}</title>
+    <script>
+        // Apply the saved theme before the page paints to avoid a flash of the wrong theme.
+        (function () {
+            try {
+                var saved = localStorage.getItem('pos-theme');
+                if (saved === 'light' || saved === 'dark') {
+                    document.documentElement.setAttribute('data-bs-theme', saved);
+                }
+            } catch (e) { /* localStorage unavailable - keep the default dark theme */ }
+        })();
+    </script>
     <link rel="icon" type="image/png" href="{% static 'images/cart_icon.png' %}">
     <link rel="manifest" href="{% static 'manifest.json' %}">
     <meta name="theme-color" content="#4f46e5">
@@ -17,16 +28,80 @@
     <!-- Paystack Inline JS for E-Cash payments -->
     <script src="https://js.paystack.co/v1/inline.js"></script>
     <style>
-        :root {
+        /* ── Theme palette ─────────────────────────────────────────
+           Dark is the default; the light palette is applied when the
+           <html> element carries data-bs-theme="light" (toggled from
+           the header button and remembered in localStorage).        */
+        :root,
+        [data-bs-theme="dark"] {
             --pos-primary: #4f46e5;
             --pos-success: #10b981;
             --pos-warning: #f59e0b;
             --pos-danger: #ef4444;
+            --pos-accent: #a78bfa;
+            --pos-accent-strong: #7c3aed;
+            --pos-success-strong: #10b981;
+            --pos-warning-strong: #f59e0b;
+            --pos-credit: #e11d48;
+
+            --pos-bg: #1e1e2e;
+            --pos-bg-products: #262638;
+            --pos-bg-cart: #1a1a2e;
+            --pos-bg-elevated: #333333;
+            --pos-bg-elevated-hover: #3a3a4e;
+            --pos-bg-soft: #262638;
+            --pos-bg-subtle: #2a2a35;
+            --pos-bg-dialog: #262638;
+            --pos-qty-btn-bg: #444444;
+            --pos-border: #333333;
+            --pos-border-strong: #444444;
+            --pos-text: #ffffff;
+            --pos-text-muted: #aaaaaa;
+            --pos-text-subtle: #888888;
+            --pos-text-faint: #666666;
+            --pos-image-placeholder: #555555;
+            --pos-drag-handle: #555555;
+            --pos-overlay: rgba(0, 0, 0, 0.8);
+            --pos-shadow: rgba(0, 0, 0, 0.3);
+            --pos-dialog-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            --pos-card-border: rgba(255, 255, 255, 0.08);
+            --pos-card-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+        }
+
+        [data-bs-theme="light"] {
+            --pos-accent: #7c3aed;
+            --pos-accent-strong: #6d28d9;
+            --pos-success-strong: #047857;
+            --pos-warning-strong: #b45309;
+            --pos-credit: #be123c;
+
+            --pos-bg: #f4f5fb;
+            --pos-bg-products: #f8f9fd;
+            --pos-bg-cart: #ffffff;
+            --pos-bg-elevated: #ffffff;
+            --pos-bg-elevated-hover: #eef2ff;
+            --pos-bg-soft: #f1f3fa;
+            --pos-bg-subtle: #eef1f7;
+            --pos-bg-dialog: #ffffff;
+            --pos-qty-btn-bg: #e8ebf3;
+            --pos-border: #e2e5ef;
+            --pos-border-strong: #cfd4e2;
+            --pos-text: #1f2430;
+            --pos-text-muted: #5f6675;
+            --pos-text-subtle: #7a8194;
+            --pos-text-faint: #9aa1b1;
+            --pos-image-placeholder: #9aa1b1;
+            --pos-drag-handle: #c3c8d4;
+            --pos-overlay: rgba(15, 23, 42, 0.45);
+            --pos-shadow: rgba(15, 23, 42, 0.12);
+            --pos-dialog-shadow: 0 20px 60px rgba(15, 23, 42, 0.25);
+            --pos-card-border: rgba(0, 0, 0, 0.09);
+            --pos-card-shadow: 0 3px 10px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(15, 23, 42, 0.04);
         }
 
         body {
-            background: #1e1e2e;
-            color: #fff;
+            background: var(--pos-bg);
+            color: var(--pos-text);
             height: 100vh;
             overflow: hidden;
             display: flex;
@@ -55,15 +130,15 @@
             flex: 1;
             padding: 1rem;
             overflow-y: auto;
-            background: #262638;
+            background: var(--pos-bg-products);
         }
 
         .cart-section {
             width: 380px;
-            background: #1a1a2e;
+            background: var(--pos-bg-cart);
             display: flex;
             flex-direction: column;
-            border-left: 1px solid #333;
+            border-left: 1px solid var(--pos-border);
             height: 100%;
             overflow: hidden;
         }
@@ -73,20 +148,20 @@
         }
 
         .search-box input.form-control {
-            background: #333 !important;
-            border: 1px solid #444;
-            color: #fff !important;
+            background: var(--pos-bg-elevated) !important;
+            border: 1px solid var(--pos-border-strong);
+            color: var(--pos-text) !important;
             padding: 0.75rem 1rem 0.75rem 2.5rem;
             border-radius: 8px;
             font-size: 1rem;
         }
 
         .search-box input.form-control::placeholder {
-            color: #aaa;
+            color: var(--pos-text-muted);
         }
 
         .search-box input:focus {
-            background: #3a3a4e;
+            background: var(--pos-bg-elevated-hover);
             border-color: var(--pos-primary);
             outline: none;
             box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.3);
@@ -97,7 +172,7 @@
             left: 0.75rem;
             top: 50%;
             transform: translateY(-50%);
-            color: #888;
+            color: var(--pos-text-subtle);
             z-index: 1;
         }
 
@@ -107,14 +182,15 @@
             top: 100%;
             left: 0;
             right: 0;
-            background: #333;
-            border: 1px solid #444;
+            background: var(--pos-bg-elevated);
+            border: 1px solid var(--pos-border-strong);
             border-top: none;
             border-radius: 0 0 8px 8px;
             max-height: 300px;
             overflow-y: auto;
             z-index: 1000;
             display: none;
+            box-shadow: 0 8px 24px var(--pos-shadow);
         }
 
         .search-suggestions.show {
@@ -127,7 +203,7 @@
             align-items: center;
             padding: 0.75rem 1rem;
             cursor: pointer;
-            border-bottom: 1px solid #444;
+            border-bottom: 1px solid var(--pos-border-strong);
             transition: background 0.15s;
         }
 
@@ -146,7 +222,7 @@
 
         .suggestion-sku {
             font-size: 0.8rem;
-            color: #aaa;
+            color: var(--pos-text-muted);
             margin-left: 0.5rem;
         }
 
@@ -156,7 +232,7 @@
         }
 
         .suggestion-price {
-            color: var(--pos-success);
+            color: var(--pos-success-strong);
             font-weight: 600;
         }
 
@@ -168,7 +244,7 @@
         .suggestion-empty {
             padding: 1rem;
             text-align: center;
-            color: #888;
+            color: var(--pos-text-subtle);
         }
 
         .category-tabs {
@@ -182,9 +258,9 @@
         .category-tab {
             padding: 0.5rem 1rem;
             border-radius: 20px;
-            background: #333;
-            border: none;
-            color: #ccc;
+            background: var(--pos-bg-elevated);
+            border: 1px solid var(--pos-border);
+            color: var(--pos-text-muted);
             cursor: pointer;
             white-space: nowrap;
             transition: all 0.2s;
@@ -204,13 +280,15 @@
         }
 
         .product-card {
-            background: #333;
+            background: var(--pos-bg-elevated);
+            color: var(--pos-text);
             border-radius: 12px;
             overflow: hidden;
             text-align: center;
             cursor: pointer;
-            transition: all 0.2s;
-            border: 2px solid transparent;
+            transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+            border: 1px solid var(--pos-card-border, rgba(0, 0, 0, 0.09));
+            box-shadow: var(--pos-card-shadow, 0 2px 8px rgba(0, 0, 0, 0.08));
             position: relative;
             display: flex;
             flex-direction: column;
@@ -220,14 +298,14 @@
         .product-card:hover {
             transform: translateY(-2px);
             border-color: var(--pos-primary);
-            box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+            box-shadow: 0 6px 18px rgba(79, 70, 229, 0.25), var(--pos-card-shadow, 0 2px 8px rgba(0, 0, 0, 0.08));
         }
 
         .product-img-wrapper {
             position: relative;
             width: 100%;
             height: 110px;
-            background: #2a2a35;
+            background: var(--pos-bg-subtle);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -235,7 +313,7 @@
 
         .product-img-placeholder {
             font-size: 2.5rem;
-            color: #555;
+            color: var(--pos-image-placeholder);
         }
 
         .product-card-img {
@@ -265,11 +343,11 @@
 
         .product-card-footer {
             padding: 6px 8px;
-            background: #333;
+            background: var(--pos-bg-elevated);
         }
 
         .product-price {
-            color: var(--pos-success);
+            color: var(--pos-success-strong);
             font-weight: 700;
             font-size: 0.95rem;
             margin: 0;
@@ -308,7 +386,7 @@
         /* Cart Styles */
         .cart-header {
             padding: 1rem;
-            border-bottom: 1px solid #333;
+            border-bottom: 1px solid var(--pos-border);
             flex-shrink: 0;
         }
 
@@ -320,7 +398,7 @@
         }
 
         .cart-item {
-            background: #262638;
+            background: var(--pos-bg-soft);
             border-radius: 8px;
             padding: 0.75rem;
             margin-bottom: 0.5rem;
@@ -344,9 +422,9 @@
             width: 28px;
             height: 28px;
             border-radius: 6px;
-            border: none;
-            background: #444;
-            color: #fff;
+            border: 1px solid var(--pos-border);
+            background: var(--pos-qty-btn-bg);
+            color: var(--pos-text);
             cursor: pointer;
             display: flex;
             align-items: center;
@@ -355,6 +433,7 @@
 
         .qty-btn:hover {
             background: var(--pos-primary);
+            color: #fff;
         }
 
         .qty-value {
@@ -370,7 +449,7 @@
         }
 
         .cart-summary {
-            border-top: 1px solid #333;
+            border-top: 1px solid var(--pos-border);
             padding: 0.5rem 1rem;
             flex-shrink: 0;
         }
@@ -384,7 +463,7 @@
         .summary-total {
             font-size: 1.25rem;
             font-weight: 700;
-            color: var(--pos-success);
+            color: var(--pos-success-strong);
         }
 
         .cart-actions {
@@ -401,18 +480,37 @@
             position: relative;
         }
 
+        .customer-section .input-group-text,
+        .customer-section .form-control {
+            background: var(--pos-bg-elevated);
+            border-color: var(--pos-border-strong);
+            color: var(--pos-text);
+        }
+
+        .customer-section .form-control::placeholder {
+            color: var(--pos-text-muted);
+        }
+
+        .customer-section .form-control:focus {
+            background: var(--pos-bg-elevated-hover);
+            border-color: var(--pos-primary);
+            color: var(--pos-text);
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2);
+        }
+
         .customer-suggestions {
             position: absolute;
             top: 100%;
             left: 1rem;
             right: 1rem;
-            background: #333;
-            border: 1px solid #444;
+            background: var(--pos-bg-elevated);
+            border: 1px solid var(--pos-border-strong);
             border-radius: 0 0 8px 8px;
             max-height: 200px;
             overflow-y: auto;
             z-index: 1000;
             display: none;
+            box-shadow: 0 8px 24px var(--pos-shadow);
         }
 
         .customer-suggestions.show {
@@ -465,7 +563,7 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            color: #666;
+            color: var(--pos-text-faint);
         }
 
         .cart-empty i {
@@ -478,7 +576,7 @@
             display: none;
             position: fixed;
             inset: 0;
-            background: rgba(0, 0, 0, 0.8);
+            background: var(--pos-overlay);
             z-index: 1000;
             align-items: center;
             justify-content: center;
@@ -489,22 +587,35 @@
         }
 
         .checkout-dialog {
-            background: #262638;
+            background: var(--pos-bg-dialog);
+            color: var(--pos-text);
+            border: 1px solid var(--pos-border);
             border-radius: 16px;
             padding: 2rem;
             width: 400px;
             max-width: 90%;
+            box-shadow: var(--pos-dialog-shadow);
         }
 
         .checkout-input {
-            background: #333;
-            border: 2px solid #444;
-            color: #fff;
+            background: var(--pos-bg-elevated);
+            border: 2px solid var(--pos-border-strong);
+            color: var(--pos-text);
             padding: 1rem;
             font-size: 1.5rem;
             border-radius: 8px;
             text-align: center;
             width: 100%;
+        }
+
+        /* Amount field is locked while showing an exact (non-editable) total */
+        .checkout-input.bg-light {
+            background: var(--pos-bg-soft) !important;
+            color: var(--pos-text-muted) !important;
+        }
+
+        .checkout-input::placeholder {
+            color: var(--pos-text-faint);
         }
 
         .checkout-input:focus {
@@ -668,7 +779,7 @@
                 display: block;
                 width: 40px;
                 height: 4px;
-                background: #555;
+                background: var(--pos-drag-handle);
                 border-radius: 2px;
                 margin: 8px auto;
                 cursor: pointer;
@@ -826,7 +937,7 @@
             border-radius: 12px;
             font-size: 0.9rem;
             font-weight: 500;
-            box-shadow: 0 6px 24px rgba(0,0,0,0.45);
+            box-shadow: 0 6px 24px var(--pos-shadow);
             opacity: 0;
             transform: translateX(60px);
             transition: all 0.3s cubic-bezier(0.175,0.885,0.32,1.275);
@@ -867,6 +978,71 @@
             font-size: 1.3rem;
             flex-shrink: 0;
         }
+
+        /* ── Light-mode fine tuning ─────────────────────────────── */
+        [data-bs-theme="light"] .pos-header {
+            box-shadow: 0 2px 10px rgba(79, 70, 229, 0.25);
+        }
+
+        /* Bootstrap's white close icon must stay dark on light dialogs */
+        [data-bs-theme="light"] .btn-close-white {
+            filter: none;
+        }
+
+        /* outline-light buttons are invisible on a light dialog background */
+        [data-bs-theme="light"] .checkout-dialog .btn-outline-light {
+            --bs-btn-color: var(--pos-text);
+            --bs-btn-border-color: var(--pos-border-strong);
+            --bs-btn-hover-color: var(--pos-text);
+            --bs-btn-hover-bg: var(--pos-bg-elevated-hover);
+            --bs-btn-hover-border-color: var(--pos-border-strong);
+            --bs-btn-active-color: var(--pos-text);
+            --bs-btn-active-bg: var(--pos-bg-soft);
+            --bs-btn-active-border-color: var(--pos-border-strong);
+        }
+
+        /* Keyboard key chips: use a neutral chip on light dialogs */
+        [data-bs-theme="light"] .checkout-dialog kbd {
+            background: #e5e7eb !important;
+            color: #111827 !important;
+        }
+
+        /* The shortcuts table sits on the dialog background, so drop table-dark in light mode */
+        [data-bs-theme="light"] #shortcuts-modal .table-dark {
+            --bs-table-bg: transparent;
+            --bs-table-color: var(--pos-text);
+            --bs-table-border-color: var(--pos-border);
+            --bs-table-striped-color: var(--pos-text);
+            --bs-table-hover-color: var(--pos-text);
+        }
+
+        [data-bs-theme="light"] #shortcuts-modal .table-dark tr.border-secondary {
+            border-color: var(--pos-border) !important;
+        }
+
+        /* Warning text needs a darker tone on a white background */
+        [data-bs-theme="light"] .checkout-dialog .text-warning,
+        [data-bs-theme="light"] #posBundlesModal .text-warning {
+            color: var(--pos-warning-strong) !important;
+        }
+
+        [data-bs-theme="light"] #posBundlesModal .modal-content {
+            border: 1px solid var(--pos-border);
+        }
+
+        /* Theme toggle button */
+        #theme-toggle {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 34px;
+            height: 30px;
+            padding: 0;
+        }
+
+        #theme-toggle i {
+            font-size: 0.95rem;
+        }
     </style>
 </head>
 
@@ -898,6 +1074,12 @@
             </button>
             <button class="btn btn-outline-info btn-sm" onclick="openShortcutsHelpModal()" title="Keyboard Shortcuts (?)">
                 <i class="bi bi-keyboard"></i>
+            </button>
+            <!-- Light / Dark theme toggle -->
+            <button class="btn btn-outline-light btn-sm" id="theme-toggle" type="button"
+                onclick="toggleTheme()" title="Switch to light mode"
+                aria-label="Switch to light mode" aria-pressed="false">
+                <i class="bi bi-sun" id="theme-toggle-icon"></i>
             </button>
             <span class="text-light">{% if user %}{{ user.get_full_name|default:user.email }}{% else %}-{% endif %}</span>
             <a href="{% url 'core:logout' %}" class="btn btn-outline-light btn-sm">
@@ -981,8 +1163,8 @@
             <!-- Customer Selection -->
             <div class="customer-section">
                 <div class="input-group input-group-sm">
-                    <span class="input-group-text bg-dark border-secondary"><i class="bi bi-person"></i></span>
-                    <input type="text" id="customer-search" class="form-control bg-dark text-white border-secondary"
+                    <span class="input-group-text"><i class="bi bi-person"></i></span>
+                    <input type="text" id="customer-search" class="form-control"
                         placeholder="Customer (optional - F6 to focus)">
                     <button class="btn btn-outline-secondary" type="button" id="btn-clear-customer"
                         style="display: none;">
@@ -990,8 +1172,8 @@
                     </button>
                 </div>
                 <!-- Customer Info Display -->
-                <div id="selected-customer-info" class="small mt-1 p-2 rounded bg-dark"
-                    style="display: none; border: 1px dashed #555;">
+                <div id="selected-customer-info" class="small mt-1 p-2 rounded"
+                    style="display: none; border: 1px dashed var(--pos-border-strong); background: var(--pos-bg-soft);">
                     <div class="d-flex justify-content-between">
                         <span class="fw-bold" id="cust-name"></span>
                         <span id="cust-balance"></span>
@@ -1011,14 +1193,14 @@
                 {% endif %}
                 {% if request.user.tenant.use_cashier_workflow or request.user.tenant.use_strict_sales_workflow %}
                 <button class="btn-pay" id="btn-create-invoice" disabled
-                    style="background: #7c3aed; color:#fff;" title="Create Invoice (F2 / F8)">
+                    style="background: var(--pos-accent-strong); color:#fff;" title="Create Invoice (F2 / F8)">
                     <i class="bi bi-receipt"></i> <span>Create Invoice</span>
                     <kbd class="badge bg-black bg-opacity-25 px-1 py-0 small text-white-50 ms-auto" style="font-size:0.68rem; font-weight:normal;">F2</kbd>
                 </button>
                 {% endif %}
                 {% if not request.user.tenant.use_strict_sales_workflow %}
                 <button class="btn-pay btn-pay-credit" id="btn-pay-credit" disabled
-                    style="background: #e11d48; display: none;" title="Sell on Credit">
+                    style="background: var(--pos-credit); display: none;" title="Sell on Credit">
                     <i class="bi bi-credit-card-2-front"></i> <span>Sell on Credit</span>
                 </button>
                 {% endif %}
@@ -1126,7 +1308,7 @@
     <!-- ── Create Invoice Modal ─────────────────────────────────── -->
     <div class="checkout-modal" id="create-invoice-modal">
         <div class="checkout-dialog" style="max-width:420px;">
-            <h4 class="mb-3 text-center" style="color:#a78bfa;">
+            <h4 class="mb-3 text-center" style="color:var(--pos-accent);">
                 <i class="bi bi-receipt me-2"></i>Create Invoice
             </h4>
             <p class="text-muted text-center small mb-3">
@@ -1148,7 +1330,7 @@
             <div class="d-flex gap-2">
                 <button class="btn btn-secondary flex-fill" onclick="closeCreateInvoiceModal()">Cancel <kbd class="bg-dark text-white-50 ms-1 px-1 small">Esc</kbd></button>
                 <button class="btn flex-fill" id="btn-save-invoice"
-                    style="background:#7c3aed;color:#fff;"
+                    style="background:var(--pos-accent-strong);color:#fff;"
                     onclick="saveInvoice()">
                     <i class="bi bi-save me-1"></i>Save Invoice <kbd class="bg-dark text-white-50 ms-1 px-1 small">Enter</kbd>
                 </button>
@@ -1159,14 +1341,15 @@
     <!-- ── Invoice Created Popup ─────────────────────────────────── -->
     <div class="checkout-modal" id="invoice-created-modal">
         <div class="checkout-dialog text-center" style="max-width:400px;">
-            <div class="mb-3" style="font-size:3rem; color:#a78bfa;">
+            <div class="mb-3" style="font-size:3rem; color:var(--pos-accent);">
                 <i class="bi bi-receipt-cutoff"></i>
             </div>
-            <h4 class="mb-1" style="color:#a78bfa;">Invoice Created!</h4>
+            <h4 class="mb-1" style="color:var(--pos-accent);">Invoice Created!</h4>
             <p class="text-muted small mb-3">Give this code to the customer to present at the cashier for payment.</p>
-            <div class="p-3 mb-3 rounded" style="background:#1e1e2e; border:2px dashed #7c3aed;">
+            <div class="p-3 mb-3 rounded"
+                style="background: var(--pos-bg-soft); border: 2px dashed var(--pos-accent);">
                 <div class="text-muted small mb-1">Invoice Code</div>
-                <div class="h2 fw-bold" id="invoice-code-display" style="color:#a78bfa; letter-spacing:2px;"></div>
+                <div class="h2 fw-bold" id="invoice-code-display" style="color:var(--pos-accent); letter-spacing:2px;"></div>
                 <div class="text-muted small mt-2" id="invoice-customer-display"></div>
                 <div class="text-muted small" id="invoice-total-display"></div>
             </div>
@@ -1181,7 +1364,7 @@
     <!-- ── E-Cash Provider Selection Modal ────────────────────── -->
     <div class="checkout-modal" id="provider-select-modal">
         <div class="checkout-dialog" style="max-width:420px;">
-            <h4 class="mb-3 text-center" style="color:#a78bfa;">
+            <h4 class="mb-3 text-center" style="color:var(--pos-accent);">
                 <i class="bi bi-phone me-2"></i>Select E-Cash Provider
             </h4>
             <p class="text-muted text-center small mb-3">
@@ -1199,14 +1382,14 @@
     <!-- ── Number Prompt Modal ─────────────────────────────────── -->
     <div class="checkout-modal" id="number-prompt-modal">
         <div class="checkout-dialog" style="max-width:400px;">
-            <h4 class="mb-3 text-center" id="number-prompt-title" style="color:#a78bfa;">Title</h4>
+            <h4 class="mb-3 text-center" id="number-prompt-title" style="color:var(--pos-accent);">Title</h4>
             <p class="text-muted text-center small mb-3" id="number-prompt-text">Message</p>
             <div class="mb-4">
                 <input type="number" class="checkout-input" id="number-prompt-input" step="any" inputmode="decimal">
             </div>
             <div class="d-flex gap-2">
                 <button class="btn btn-secondary flex-fill" id="btn-number-prompt-cancel">Cancel</button>
-                <button class="btn flex-fill" id="btn-number-prompt-submit" style="background:#7c3aed;color:#fff;">
+                <button class="btn flex-fill" id="btn-number-prompt-submit" style="background:var(--pos-accent-strong);color:#fff;">
                     Submit
                 </button>
             </div>
@@ -1216,7 +1399,7 @@
     <!-- ── Discount Modal ─────────────────────────────────── -->
     <div class="checkout-modal" id="discount-modal">
         <div class="checkout-dialog" style="max-width:400px;">
-            <h4 class="mb-3 text-center" style="color:#a78bfa;">
+            <h4 class="mb-3 text-center" style="color:var(--pos-accent);">
                 <i class="bi bi-tag me-2"></i>Apply Discount
             </h4>
             <div class="mb-3 d-flex gap-2">
@@ -1232,7 +1415,7 @@
             </div>
             <div class="d-flex gap-2">
                 <button class="btn btn-secondary flex-fill" onclick="closeDiscountModal()">Cancel <kbd class="bg-dark text-white-50 ms-1 px-1 small">Esc</kbd></button>
-                <button class="btn flex-fill" id="btn-discount-submit" style="background:#7c3aed;color:#fff;" onclick="submitDiscount()">
+                <button class="btn flex-fill" id="btn-discount-submit" style="background:var(--pos-accent-strong);color:#fff;" onclick="submitDiscount()">
                     Apply <kbd class="bg-dark text-white-50 ms-1 px-1 small">Enter</kbd>
                 </button>
             </div>
@@ -1243,7 +1426,7 @@
     <div class="checkout-modal" id="pending-ecash-modal">
         <div class="checkout-dialog" style="max-width:500px; max-height:80vh; display:flex; flex-direction:column;">
             <div class="d-flex justify-content-between align-items-center mb-3">
-                <h4 class="mb-0" style="color:#f59e0b;"><i class="bi bi-hourglass-split me-2"></i>Pending Digital Payments</h4>
+                <h4 class="mb-0" style="color:var(--pos-warning-strong);"><i class="bi bi-hourglass-split me-2"></i>Pending Digital Payments</h4>
                 <button type="button" class="btn-close btn-close-white" onclick="closePendingEcashModal()"></button>
             </div>
             <p class="text-muted small mb-3">These are digital payments that were initialized but not confirmed. You can verify their status here if the system delayed previously. If they failed, void them from Sales History.</p>
@@ -1416,6 +1599,48 @@
             });
         }
 
+        // ── Theme (light / dark) ─────────────────────────────────
+        const THEME_STORAGE_KEY = 'pos-theme';
+
+        function getStoredTheme() {
+            try {
+                const saved = localStorage.getItem(THEME_STORAGE_KEY);
+                return (saved === 'light' || saved === 'dark') ? saved : null;
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function getCurrentTheme() {
+            return document.documentElement.getAttribute('data-bs-theme') === 'light' ? 'light' : 'dark';
+        }
+
+        function applyTheme(theme) {
+            const isLight = theme === 'light';
+            document.documentElement.setAttribute('data-bs-theme', isLight ? 'light' : 'dark');
+
+            const btn = document.getElementById('theme-toggle');
+            const icon = document.getElementById('theme-toggle-icon');
+            const label = isLight ? 'Switch to dark mode' : 'Switch to light mode';
+
+            if (btn) {
+                btn.title = label;
+                btn.setAttribute('aria-label', label);
+                btn.setAttribute('aria-pressed', isLight ? 'true' : 'false');
+            }
+            if (icon) {
+                icon.className = isLight ? 'bi bi-moon-stars' : 'bi bi-sun';
+            }
+        }
+
+        function toggleTheme() {
+            const next = getCurrentTheme() === 'light' ? 'dark' : 'light';
+            applyTheme(next);
+            try {
+                localStorage.setItem(THEME_STORAGE_KEY, next);
+            } catch (e) { /* localStorage unavailable - theme applies for this page only */ }
+        }
+
         let cart = [];
         let discountType = 'amount';
         let discountValue = 0;
@@ -1482,6 +1707,7 @@
 
         // Initialize
         document.addEventListener('DOMContentLoaded', function () {
+            applyTheme(getStoredTheme() || getCurrentTheme());
             renderProducts();
             loadCartFromStorage();
             initSearchAutocomplete();
@@ -2793,10 +3019,10 @@
             modal.id = 'manual-verify-modal';
             modal.innerHTML = `
                 <div class="checkout-dialog text-center" style="max-width:400px;">
-                    <div class="mb-3" style="font-size:3rem; color:#a78bfa;">
+                    <div class="mb-3" style="font-size:3rem; color:var(--pos-accent);">
                         <i class="bi bi-arrow-repeat spin"></i>
                     </div>
-                    <h4 class="mb-1" style="color:#a78bfa;">Awaiting Payment</h4>
+                    <h4 class="mb-1" style="color:var(--pos-accent);">Awaiting Payment</h4>
                     <p class="text-muted small mb-3">Please wait for the customer to complete the payment on their device.</p>
                     <div class="d-flex gap-2 mt-4">
                         <button class="btn btn-secondary flex-fill" onclick="closeVerifyModal()">Cancel</button>
@@ -2908,7 +3134,8 @@
                     const listContainer = document.getElementById('pending-ecash-list');
                     if (listContainer) {
                         listContainer.innerHTML = data.sales.map(s => `
-                            <div class="card bg-dark border-secondary mb-2">
+                            <div class="card mb-2"
+                                style="background: var(--pos-bg-elevated); border: 1px solid var(--pos-border);">
                                 <div class="card-body p-2 d-flex justify-content-between align-items-center">
                                     <div>
                                         <div class="fw-bold">${s.sale_number || 'Payment on Account'}</div>
@@ -3281,12 +3508,12 @@
     <!-- Product Bundles Modal -->
     <div class="modal fade" id="posBundlesModal" tabindex="-1" aria-labelledby="posBundlesModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered modal-lg">
-            <div class="modal-content bg-dark text-light border-secondary">
-                <div class="modal-header border-secondary">
+            <div class="modal-content">
+                <div class="modal-header">
                     <h5 class="modal-title" id="posBundlesModalLabel">
                         <i class="bi bi-boxes text-warning me-2"></i>Product Bundles
                     </h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
                     <p class="text-muted small">Click any bundle to populate your cart with its items. You can then edit quantities or remove items before selling or printing.</p>
@@ -3294,7 +3521,7 @@
                         <!-- Bundles loaded dynamically -->
                     </div>
                 </div>
-                <div class="modal-footer border-secondary">
+                <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                 </div>
             </div>
@@ -3328,14 +3555,15 @@
                 }, 0);
 
                 const itemsHtml = (b.items || []).map(item => `
-                    <span class="badge bg-secondary me-1 mb-1 text-light fs-6">
+                    <span class="badge bg-secondary me-1 mb-1 fs-6">
                         ${item.quantity}x ${item.product_name}
                     </span>
                 `).join('');
 
                 return `
                     <div class="col-md-6">
-                        <div class="card h-100 bg-secondary bg-opacity-10 border-secondary">
+                        <div class="card h-100"
+                            style="background: var(--pos-bg-soft); border: 1px solid var(--pos-border);">
                             <div class="card-body d-flex flex-column justify-content-between p-3">
                                 <div>
                                     <div class="d-flex justify-content-between align-items-start mb-2">

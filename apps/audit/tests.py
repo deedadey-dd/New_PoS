@@ -444,6 +444,45 @@ class ProductLifecycleViewTests(TestCase):
         self.assertEqual(response_empty.status_code, 200)
         self.assertIn('No products found matching "NonExistentSKUXYZ"', response_empty.content.decode())
 
+    def test_product_profit_loss_null_costs_and_sorting(self):
+        """Test that products with None/null unit_cost or zero sales handle sorting and aggregations safely."""
+        from apps.sales.models import Sale, SaleItem
+
+        # Create a sale item with zero or null cost
+        sale = Sale.objects.create(
+            tenant=self.tenant,
+            shop=self.location_b,
+            attendant=self.user,
+            status='COMPLETED',
+            payment_method='CASH',
+            total=Decimal('20.00'),
+            amount_paid=Decimal('20.00'),
+            is_dispatched=True
+        )
+        SaleItem.objects.create(
+            tenant=self.tenant,
+            sale=sale,
+            product=self.product,
+            quantity=Decimal('2.00'),
+            unit_price=Decimal('10.00'),
+            unit_cost=Decimal('0.00'),  # 0 cost
+            total=Decimal('20.00')
+        )
+
+        self.client.force_login(self.user)
+        for sort_field in ['profit', 'revenue', 'cost', 'qty_sold', 'margin_pct', 'product__name']:
+            response = self.client.get(f'/audit/profit-loss/products/?sort={sort_field}&dir=asc')
+            self.assertEqual(response.status_code, 200)
+            self.assertIsNotNone(response.context)
+            self.assertIn('totals', response.context)
+
+        # Test exports
+        response_excel = self.client.get('/audit/profit-loss/products/export/?format=excel')
+        self.assertEqual(response_excel.status_code, 200)
+
+        response_pdf = self.client.get('/audit/profit-loss/products/export/?format=pdf')
+        self.assertEqual(response_pdf.status_code, 200)
+
     def test_product_lifecycle_location_filter_and_export(self):
         """Test filtering by location and CSV export in ProductLifecycleView."""
         # Ledger for Location A

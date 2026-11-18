@@ -249,7 +249,7 @@
                                 <span class="badge bg-secondary">Cancelled</span>
                                 {% endif %}
                             </td>
-                            <td>{{ req.requested_by.get_full_name|default:req.requested_by.username }}</td>
+                            <td>{{ req.requested_by.get_full_name|default:req.requested_by.email }}</td>
                             <td>{{ req.created_at|date:"M d, Y H:i" }}</td>
                             <td class="text-end">
                                 <a href="{% url 'transfers:stock_request_detail' pk=req.pk %}"

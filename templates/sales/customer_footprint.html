@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load humanize %}
 
 {% block title %}Customer Footprint{% endblock %}
 
@@ -82,7 +83,7 @@
                 </div>
                 <div>
                     <div class="text-muted small">Unique Customers</div>
-                    <div class="fw-bold fs-4">{{ total_rows }}</div>
+                    <div class="fw-bold fs-4">{{ total_rows|intcomma }}</div>
                 </div>
             </div>
         </div>
@@ -95,7 +96,7 @@
                 </div>
                 <div>
                     <div class="text-muted small">Total Revenue (Filtered)</div>
-                    <div class="fw-bold fs-4">{{ current_tenant.currency_symbol|default:"$" }}{{ total_value|floatformat:2 }}</div>
+                    <div class="fw-bold fs-4">{{ current_tenant.currency_symbol|default:"$" }}{{ total_value|floatformat:"2g" }}</div>
                 </div>
             </div>
         </div>
@@ -180,8 +181,8 @@
                             <span class="badge bg-secondary bg-opacity-10 text-secondary rounded-pill">Walk-in</span>
                             {% endif %}
                         </td>
-                        <td class="text-center fw-semibold">{{ row.tx_count }}</td>
-                        <td class="text-end fw-semibold text-success">{{ current_tenant.currency_symbol|default:"$" }}{{ row.total_value|floatformat:2 }}</td>
+                        <td class="text-center fw-semibold">{{ row.tx_count|intcomma }}</td>
+                        <td class="text-end fw-semibold text-success">{{ current_tenant.currency_symbol|default:"$" }}{{ row.total_value|floatformat:"2g" }}</td>
                         <td class="text-end pe-4 text-muted small">
                             {% if row.last_visit %}{{ row.last_visit|date:"M d, Y H:i" }}{% else %}-{% endif %}
                         </td>
@@ -330,10 +331,15 @@ document.addEventListener('DOMContentLoaded', function() {
                     
                     data.items.forEach(item => {
                         const tr = document.createElement('tr');
+                        const formattedQty = Number(item.total_qty || 0).toLocaleString();
+                        const formattedVal = Number(item.total_value || 0).toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2
+                        });
                         tr.innerHTML = `
                             <td class="fw-medium">${item.product_name}</td>
-                            <td class="text-center fw-semibold">${item.total_qty}</td>
-                            <td class="text-end pe-3 fw-bold text-success">${item.total_value.toFixed(2)}</td>
+                            <td class="text-center fw-semibold">${formattedQty}</td>
+                            <td class="text-end pe-3 fw-bold text-success">${formattedVal}</td>
                         `;
                         modalItemsBody.appendChild(tr);
                     });

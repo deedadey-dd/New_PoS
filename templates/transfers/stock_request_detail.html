@@ -55,7 +55,7 @@
                                 </tr>
                                 <tr>
                                     <th class="text-muted">Requested By:</th>
-                                    <td>{{ request.requested_by.get_full_name|default:request.requested_by.username }}
+                                    <td>{{ request.requested_by.get_full_name|default:request.requested_by.email }}
                                     </td>
                                 </tr>
                             </table>
@@ -69,7 +69,7 @@
                                 {% if request.approved_by %}
                                 <tr>
                                     <th class="text-muted">Approved By:</th>
-                                    <td>{{ request.approved_by.get_full_name|default:request.approved_by.username }}
+                                    <td>{{ request.approved_by.get_full_name|default:request.approved_by.email }}
                                     </td>
                                 </tr>
                                 <tr>

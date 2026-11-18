@@ -125,17 +125,13 @@ class ProductDetailFilteringTests(TestCase):
         self.assertContains(response, "Central Warehouse")
         self.assertEqual(len(response.context['batches']), 2)
 
-    def test_shop_manager_can_filter_shop_locations(self):
-        """Shop manager can filter shop locations."""
+    def test_shop_manager_cannot_filter_other_shop_locations(self):
+        """Shop manager is restricted to their assigned shop and cannot filter other locations."""
         self.client.force_login(self.shop_manager)
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, 200)
-        self.assertTrue(response.context['can_filter_locations'])
-        
-        # Available locations for shop manager should include SHOP locations
-        avail_names = [loc.name for loc in response.context['available_locations']]
-        self.assertIn("Downtown Shop", avail_names)
-        self.assertIn("Uptown Shop", avail_names)
+        self.assertFalse(response.context['can_filter_locations'])
+        self.assertEqual(response.context['selected_location'], self.loc_shop_1)
 
     def test_filter_by_location(self):
         """Filtering by a specific location returns only batches and movements for that location."""

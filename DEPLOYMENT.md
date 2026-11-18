@@ -137,6 +137,9 @@ server {
     listen 80;
     server_name YOUR_SERVER_IP your-domain.com;
 
+    # Allow up to 25MB file uploads (product images, backups, etc.)
+    client_max_body_size 25M;
+
     location = /favicon.ico { access_log off; log_not_found off; }
     
     location /static/ {

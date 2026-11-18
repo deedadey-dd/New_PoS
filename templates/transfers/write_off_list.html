@@ -96,7 +96,7 @@
                                 <span class="text-white-50">—</span>
                                 {% endif %}
                             </td>
-                            <td>{{ wo.performed_by.get_full_name|default:wo.performed_by.username }}</td>
+                            <td>{{ wo.performed_by.get_full_name|default:wo.performed_by.email }}</td>
                         </tr>
                         {% empty %}
                         <tr>

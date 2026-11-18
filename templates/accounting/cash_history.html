@@ -634,7 +634,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 return response.json();
             })
             .then(data => {
-                document.getElementById('transferAmount').textContent = currencySymbol + parseFloat(data.amount).toFixed(2);
+                const formattedAmount = Number(parseFloat(data.amount) || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                document.getElementById('transferAmount').textContent = currencySymbol + formattedAmount;
                 
                 const statusBadge = document.getElementById('transferStatus');
                 statusBadge.className = 'badge';

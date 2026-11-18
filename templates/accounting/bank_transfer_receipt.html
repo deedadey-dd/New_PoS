@@ -147,7 +147,7 @@
     
     <div class="receipt-total">
         <span>TOTAL AMOUNT:</span>
-        <span>{{ currency_symbol|default:"GH₵" }} {{ bank_transfer.amount|floatformat:2 }}</span>
+        <span>{{ currency_symbol|default:"GH₵" }} {{ bank_transfer.amount|floatformat:"2g" }}</span>
     </div>
     
     <div class="signature-section">

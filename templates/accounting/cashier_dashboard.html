@@ -1647,6 +1647,7 @@ document.addEventListener('DOMContentLoaded', function () {
         html += '<th class="text-end">Price</th><th class="text-end">Total</th>';
         html += '</tr></thead><tbody>';
 
+        const fmtM = (v) => Number(parseFloat(v) || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
         data.items.forEach(function(item) {
             html += '<tr>';
             html += '<td>' + item.product_name + '<br><small class="text-muted">' + item.sku + '</small></td>';
@@ -1663,21 +1664,21 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 if (isFullRefund) {
                     html += '<td class="text-center text-primary fw-bold">' + dispQty + '</td>';
-                    html += '<td class="text-center text-danger fw-bold">' + (dispQty > 0 ? dispQty : parseFloat(item.quantity)) + '<br><small class="text-danger fw-semibold">-' + currencySymbol + itemTot.toFixed(2) + '</small></td>';
+                    html += '<td class="text-center text-danger fw-bold">' + (dispQty > 0 ? dispQty : parseFloat(item.quantity)) + '<br><small class="text-danger fw-semibold">-' + currencySymbol + fmtM(itemTot) + '</small></td>';
                 } else if (isPartialReturn) {
                     html += '<td class="text-center text-primary fw-bold">' + dispQty + '</td>';
-                    html += '<td class="text-center ' + (retQty > 0 ? 'text-danger fw-bold' : 'text-muted') + '">' + (retQty > 0 ? (retQty + '<br><small class="text-danger fw-semibold">-' + currencySymbol + retVal.toFixed(2) + '</small>') : '0') + '</td>';
+                    html += '<td class="text-center ' + (retQty > 0 ? 'text-danger fw-bold' : 'text-muted') + '">' + (retQty > 0 ? (retQty + '<br><small class="text-danger fw-semibold">-' + currencySymbol + fmtM(retVal) + '</small>') : '0') + '</td>';
                     html += '<td class="text-center text-success fw-bold">' + keptQty + '</td>';
                 } else if (isPartialHalt) {
                     html += '<td class="text-center text-success fw-bold">' + dispQty;
                     if (dispQty > 0) {
-                        html += '<br><small class="text-success fw-semibold">' + currencySymbol + dispVal.toFixed(2) + '</small>';
+                        html += '<br><small class="text-success fw-semibold">' + currencySymbol + fmtM(dispVal) + '</small>';
                     }
                     html += '</td>';
 
                     if (remQty > 0) {
                         html += '<td class="text-center text-danger fw-bold">' + remQty;
-                        html += '<br><small class="text-danger fw-semibold">-' + currencySymbol + remVal.toFixed(2) + '</small></td>';
+                        html += '<br><small class="text-danger fw-semibold">-' + currencySymbol + fmtM(remVal) + '</small></td>';
                     } else {
                         html += '<td class="text-center text-muted">0</td>';
                     }
@@ -1686,8 +1687,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     html += '<td class="text-center ' + (remQty > 0 ? 'text-warning-emphasis fw-bold' : 'text-muted') + '">' + remQty + '</td>';
                 }
             }
-            html += '<td class="text-end">' + currencySymbol + parseFloat(item.unit_price).toFixed(2) + '</td>';
-            html += '<td class="text-end">' + currencySymbol + parseFloat(item.total).toFixed(2) + '</td>';
+            html += '<td class="text-end">' + currencySymbol + fmtM(item.unit_price) + '</td>';
+            html += '<td class="text-end">' + currencySymbol + fmtM(item.total) + '</td>';
             html += '</tr>';
         });
 
@@ -1698,10 +1699,10 @@ document.addEventListener('DOMContentLoaded', function () {
             html += '<td class="text-center text-muted">—</td>';
             if (showDispatchCols) {
                 html += '<td class="text-center text-muted">0</td>';
-                html += '<td class="text-center text-danger fw-bold">—<br><small class="text-danger fw-semibold">-' + currencySymbol + legAmt.toFixed(2) + '</small></td>';
+                html += '<td class="text-center text-danger fw-bold">—<br><small class="text-danger fw-semibold">-' + currencySymbol + fmtM(legAmt) + '</small></td>';
             }
             html += '<td class="text-end text-muted">—</td>';
-            html += '<td class="text-end text-danger fw-bold">-' + currencySymbol + legAmt.toFixed(2) + '</td>';
+            html += '<td class="text-end text-danger fw-bold">-' + currencySymbol + fmtM(legAmt) + '</td>';
             html += '</tr>';
         }
 
@@ -1725,16 +1726,16 @@ document.addEventListener('DOMContentLoaded', function () {
             }
 
             html += '<div class="d-flex justify-content-between mb-1 text-muted">';
-            html += '<span>Original Sale Total</span><span>' + currencySymbol + origTotal.toFixed(2) + '</span>';
+            html += '<span>Original Sale Total</span><span>' + currencySymbol + fmtM(origTotal) + '</span>';
             html += '</div>';
 
             html += '<div class="d-flex justify-content-between mb-1 text-dark fw-medium">';
-            html += '<span>Original Amount Paid</span><span>' + currencySymbol + origPaid.toFixed(2) + '</span>';
+            html += '<span>Original Amount Paid</span><span>' + currencySymbol + fmtM(origPaid) + '</span>';
             html += '</div>';
 
             if (debtRed > 0) {
                 html += '<div class="d-flex justify-content-between mb-1 text-info">';
-                html += '<span><i class="bi bi-person-dash me-1"></i>Credit Debt Cancellation</span><span>-' + currencySymbol + debtRed.toFixed(2) + '</span>';
+                html += '<span><i class="bi bi-person-dash me-1"></i>Credit Debt Cancellation</span><span>-' + currencySymbol + fmtM(debtRed) + '</span>';
                 html += '</div>';
             }
 
@@ -1752,13 +1753,13 @@ document.addEventListener('DOMContentLoaded', function () {
                     refundColor = 'text-warning-emphasis';
                 }
                 html += '<div class="d-flex justify-content-between mb-1 ' + refundColor + ' fw-semibold">';
-                html += '<span><i class="bi bi-arrow-counterclockwise me-1"></i>' + refundLabel + '</span><span>-' + currencySymbol + refundAmt.toFixed(2) + '</span>';
+                html += '<span><i class="bi bi-arrow-counterclockwise me-1"></i>' + refundLabel + '</span><span>-' + currencySymbol + fmtM(refundAmt) + '</span>';
                 html += '</div>';
             }
 
             html += '<div class="d-flex justify-content-between fw-bold fs-5 border-top pt-2 mt-2 ' + (netRetained > 0 ? 'text-success' : 'text-secondary') + '">';
             if (netRetained > 0) {
-                html += '<span>Net Goods Value Retained (Kept)</span><span>' + currencySymbol + netRetained.toFixed(2) + '</span>';
+                html += '<span>Net Goods Value Retained (Kept)</span><span>' + currencySymbol + fmtM(netRetained) + '</span>';
             } else {
                 html += '<span>Net Goods Value Retained</span><span>' + currencySymbol + '0.00 (Refunded in Full)</span>';
             }
@@ -1766,35 +1767,35 @@ document.addEventListener('DOMContentLoaded', function () {
 
         } else {
             html += '<div class="d-flex justify-content-between mb-1">';
-            html += '<span>Subtotal</span><span>' + currencySymbol + parseFloat(data.subtotal).toFixed(2) + '</span>';
+            html += '<span>Subtotal</span><span>' + currencySymbol + fmtM(data.subtotal) + '</span>';
             html += '</div>';
 
             if (data.discount_amount) {
                 html += '<div class="d-flex justify-content-between mb-1 text-danger">';
-                html += '<span>Discount</span><span>-' + currencySymbol + parseFloat(data.discount_amount).toFixed(2) + '</span>';
+                html += '<span>Discount</span><span>-' + currencySymbol + fmtM(data.discount_amount) + '</span>';
                 html += '</div>';
             }
             if (data.tax_amount) {
                 html += '<div class="d-flex justify-content-between mb-1">';
-                html += '<span>Tax</span><span>' + currencySymbol + parseFloat(data.tax_amount).toFixed(2) + '</span>';
+                html += '<span>Tax</span><span>' + currencySymbol + fmtM(data.tax_amount) + '</span>';
                 html += '</div>';
             }
 
             html += '<div class="d-flex justify-content-between fw-bold fs-5 border-top pt-2">';
-            html += '<span>Total</span><span>' + currencySymbol + parseFloat(data.total).toFixed(2) + '</span>';
+            html += '<span>Total</span><span>' + currencySymbol + fmtM(data.total) + '</span>';
             html += '</div>';
 
             html += '<div class="d-flex justify-content-between mt-1 text-muted">';
-            html += '<span>Amount Paid</span><span>' + currencySymbol + parseFloat(data.amount_paid).toFixed(2) + '</span>';
+            html += '<span>Amount Paid</span><span>' + currencySymbol + fmtM(data.amount_paid) + '</span>';
             html += '</div>';
 
             if (data.overpayment_credited && parseFloat(data.overpayment_credited) > 0) {
                 html += '<div class="d-flex justify-content-between mt-1 text-info">';
-                html += '<span>Overage (Credited to Account)</span><span>' + currencySymbol + parseFloat(data.overpayment_credited).toFixed(2) + '</span>';
+                html += '<span>Overage (Credited to Account)</span><span>' + currencySymbol + fmtM(data.overpayment_credited) + '</span>';
                 html += '</div>';
             } else if (data.change_given && parseFloat(data.change_given) > 0 && !data.customer) {
                 html += '<div class="d-flex justify-content-between text-success">';
-                html += '<span>Change</span><span>' + currencySymbol + parseFloat(data.change_given).toFixed(2) + '</span>';
+                html += '<span>Change</span><span>' + currencySymbol + fmtM(data.change_given) + '</span>';
                 html += '</div>';
             }
         }

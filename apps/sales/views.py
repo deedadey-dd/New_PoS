@@ -612,7 +612,16 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
     model = Sale
     template_name = 'sales/sale_list.html'
     context_object_name = 'sales'
-    sortable_fields = ['created_at', 'latest_activity', 'sale_number', 'total', 'amount_paid', 'status', 'payment_method', 'attendant__username']
+    sortable_fields = [
+        'created_at', 'latest_activity', 'sale_number', 'total', 'amount_paid',
+        'status', 'payment_method', 'attendant', 'attendant__username', 'attendant__name', 'attendant__first_name'
+    ]
+    sort_mappings = {
+        'attendant': ['attendant__first_name', 'attendant__last_name', 'attendant__email'],
+        'attendant__username': ['attendant__first_name', 'attendant__last_name', 'attendant__email'],
+        'attendant__name': ['attendant__first_name', 'attendant__last_name', 'attendant__email'],
+        'attendant__first_name': ['attendant__first_name', 'attendant__last_name', 'attendant__email'],
+    }
     default_sort = '-created_at'
     
     def get_paginate_by(self, queryset):
@@ -984,7 +993,7 @@ class DispatchListView(SaleListView):
         
         from django.db.models import Sum, Count, Q
         filtered_qs = self.get_queryset()
-        summary = filtered_qs.order_by().aggregate(
+        summary = filtered_qs.order_by().select_related(None).prefetch_related(None).aggregate(
             total_sales_value=Sum('total', filter=~Q(status__in=['VOIDED', 'REFUNDED'])),
             total_paid_value=Sum('amount_paid', filter=~Q(status__in=['VOIDED', 'REFUNDED'])),
             total_count=Count('id'),

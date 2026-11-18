@@ -119,8 +119,8 @@
                     <i class="bi bi-people"></i>
                 </div>
             </div>
-            <h4 class="mb-1 fw-bold text-dark">{{ summary_total_count }}</h4>
-            <div class="text-muted small">{{ summary_active_count }} active customer{{ summary_active_count|pluralize }}</div>
+            <h4 class="mb-1 fw-bold text-dark">{{ summary_total_count|intcomma }}</h4>
+            <div class="text-muted small">{{ summary_active_count|intcomma }} active customer{{ summary_active_count|pluralize }}</div>
         </div>
     </div>
 
@@ -134,7 +134,7 @@
                 </div>
             </div>
             <h4 class="mb-1 fw-bold text-danger">{{ currency_symbol }}{{ summary_total_debt|floatformat:2|intcomma }}</h4>
-            <div class="text-muted small">{{ summary_debtors_count }} customer{{ summary_debtors_count|pluralize }} owe debt</div>
+            <div class="text-muted small">{{ summary_debtors_count|intcomma }} customer{{ summary_debtors_count|pluralize }} owe debt</div>
         </div>
     </div>
 
@@ -148,7 +148,7 @@
                 </div>
             </div>
             <h4 class="mb-1 fw-bold text-success">{{ currency_symbol }}{{ summary_total_credit|floatformat:2|intcomma }}</h4>
-            <div class="text-muted small">{{ summary_credit_count }} customer{{ summary_credit_count|pluralize }} in credit</div>
+            <div class="text-muted small">{{ summary_credit_count|intcomma }} customer{{ summary_credit_count|pluralize }} in credit</div>
         </div>
     </div>
 
@@ -163,7 +163,7 @@
             </div>
             <h4 class="mb-1 fw-bold text-dark">
                 {% if summary_total_count > 0 %}
-                    {{ summary_debtors_count }} <span class="fs-6 text-muted fw-normal">of {{ summary_total_count }}</span>
+                    {{ summary_debtors_count|intcomma }} <span class="fs-6 text-muted fw-normal">of {{ summary_total_count|intcomma }}</span>
                 {% else %}
                     0
                 {% endif %}
@@ -320,10 +320,11 @@ document.addEventListener('DOMContentLoaded', function () {
             document.getElementById('previewGoToPageBtn').href = '/customers/' + id + '/';
 
             let balanceHtml;
+            const formattedBalance = Math.abs(balance).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
             if (balance > 0) {
-                balanceHtml = '<span class="badge bg-danger fs-6">' + currencySymbol + balance.toFixed(2) + '</span> <small class="text-danger ms-1">Owes Shop</small>';
+                balanceHtml = '<span class="badge bg-danger fs-6">' + currencySymbol + formattedBalance + '</span> <small class="text-danger ms-1">Owes Shop</small>';
             } else if (balance < 0) {
-                balanceHtml = '<span class="badge bg-success fs-6">' + currencySymbol + Math.abs(balance).toFixed(2) + '</span> <small class="text-success ms-1">Credit</small>';
+                balanceHtml = '<span class="badge bg-success fs-6">' + currencySymbol + formattedBalance + '</span> <small class="text-success ms-1">Credit</small>';
             } else {
                 balanceHtml = '<span class="badge bg-secondary">No Balance</span>';
             }
