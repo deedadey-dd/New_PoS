@@ -2027,25 +2027,33 @@ class RefundRequest(TenantModel):
             self.save()
 
         # 4. Notify requester and roles via in-app & bulletin
-        from apps.notifications.services import notify_and_bulletin
-        refund_type_str = "Partial Return" if self.is_partial_return else ("Partial Refund & Settle" if self.is_partial_halt else "Refund")
-        amt_display = f"{tenant.currency_symbol}{self.refund_amount}" if (self.is_partial_halt or self.is_partial_return) else f"{tenant.currency_symbol}{sale.total}"
-        notify_and_bulletin(
-            tenant=tenant,
-            title=f"{refund_type_str} Disbursed: {self.refund_number}",
-            message=(
-                f"Refund {self.refund_number} for Sale {sale.sale_number} ({amt_display}) "
-                f"at {sale.shop.name} has been paid out by {disburser.get_full_name() or disburser.email} "
-                f"via {self.get_refund_method_display()}."
-            ),
-            notification_type='REFUND_REQUEST',
-            target_roles=['ACCOUNTANT', 'ADMIN', 'SHOP_MANAGER'],
-            target_users=[self.requested_by] if self.requested_by else [],
-            reference_type='RefundRequest',
-            reference_id=self.pk,
-            created_by=disburser,
-            exclude_users=[disburser]
-        )
+        try:
+            from apps.notifications.services import notify_and_bulletin
+            import logging
+            _logger = logging.getLogger(__name__)
+            refund_type_str = "Partial Return" if self.is_partial_return else ("Partial Refund & Settle" if self.is_partial_halt else "Refund")
+            amt_display = f"{tenant.currency_symbol}{self.refund_amount}" if (self.is_partial_halt or self.is_partial_return) else f"{tenant.currency_symbol}{sale.total}"
+            shop_name = sale.shop.name if sale.shop else "Shop"
+            disburser_name = disburser.get_full_name() or getattr(disburser, 'email', 'Cashier')
+            notify_and_bulletin(
+                tenant=tenant,
+                title=f"{refund_type_str} Disbursed: {self.refund_number}",
+                message=(
+                    f"Refund {self.refund_number} for Sale {sale.sale_number} ({amt_display}) "
+                    f"at {shop_name} has been paid out by {disburser_name} "
+                    f"via {self.get_refund_method_display()}."
+                ),
+                notification_type='REFUND_REQUEST',
+                target_roles=['ACCOUNTANT', 'ADMIN', 'SHOP_MANAGER'],
+                target_users=[self.requested_by] if self.requested_by else [],
+                reference_type='RefundRequest',
+                reference_id=self.pk,
+                created_by=disburser,
+                exclude_users=[disburser]
+            )
+        except Exception as notify_err:
+            import logging
+            logging.getLogger(__name__).warning("Could not dispatch payout notifications: %s", notify_err)
 
     def _apply_financial_adjustment(self, approver):
         """
@@ -2128,7 +2136,7 @@ class RefundRequest(TenantModel):
                     to_location=shop,
                     notes=(
                         f"Refund payout (Cross-payment): Sale {sale.sale_number} "
-                        f"[{self.refund_number}] — {self.reason[:100]}"
+                        f"[{self.refund_number}] — {(self.reason or '')[:100]}"
                     ),
                     confirmed_at=timezone.now(),
                     confirmed_by=approver,

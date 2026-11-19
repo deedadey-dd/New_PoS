@@ -19,7 +19,7 @@ from django.utils import timezone
 from django.core.exceptions import ValidationError
 
 from .models import Sale, SaleItem, Shift, ShopSettings
-from apps.inventory.models import Product, ShopPrice
+from apps.inventory.models import Product, ShopPrice, Batch
 from apps.core.models import Location
 from apps.core.mixins import PaginationMixin, SortableMixin
 from apps.core.decorators import AdminOrManagerRequiredMixin, AdminRequiredMixin
@@ -66,6 +66,19 @@ class POSView(LoginRequiredMixin, View):
                 total_stock=Sum('quantity')
             ).values_list('product_id', 'total_stock')
         )
+        # Fallback to Batch quantities if no ledger entries exist
+        batch_stocks = dict(
+            Batch.objects.filter(
+                tenant=request.user.tenant,
+                location=user_shop,
+                status='AVAILABLE'
+            ).values('product_id').annotate(
+                total_batch=Sum('current_quantity')
+            ).values_list('product_id', 'total_batch')
+        )
+        for pid, b_qty in batch_stocks.items():
+            cur = stock_by_product.get(pid, 0) or 0
+            stock_by_product[pid] = max(cur, b_qty or 0)
 
         # In strict sales workflow, deduct undispatched items on active sales to compute net available stock,
         # unless 'show_items_with_physical_stock_in_pos' is enabled for this shop.
@@ -1939,11 +1952,17 @@ def _validate_stock_for_cart(cart_items, shop, user):
         product = Product.objects.get(pk=product_id)
         qty_needed = Decimal(str(item['quantity']))
 
-        phys_stock = InventoryLedger.objects.filter(
+        ledger_phys = InventoryLedger.objects.filter(
             tenant=tenant,
             location=shop,
             product=product
         ).aggregate(total=Sum('quantity'))['total'] or Decimal('0')
+        batch_phys = Batch.objects.filter(
+            tenant=tenant,
+            location=shop,
+            product=product
+        ).exclude(status='DEPLETED').aggregate(total=Sum('current_quantity'))['total'] or Decimal('0')
+        phys_stock = max(ledger_phys, batch_phys)
 
         if is_strict and not show_phys:
             # Shop A: Unique goods (available stock = physical - pending dispatch)
@@ -2398,11 +2417,17 @@ def api_dispatch_sale(request, pk):
                     )
 
                 if not sale.tenant.allow_negative_stock:
-                    current_physical = InventoryLedger.objects.filter(
+                    ledger_phys = InventoryLedger.objects.filter(
                         tenant=sale.tenant,
                         location=sale.shop,
                         product=item.product
                     ).aggregate(total=Sum('quantity'))['total'] or Decimal('0')
+                    batch_phys = Batch.objects.filter(
+                        tenant=sale.tenant,
+                        location=sale.shop,
+                        product=item.product
+                    ).exclude(status='DEPLETED').aggregate(total=Sum('current_quantity'))['total'] or Decimal('0')
+                    current_physical = max(ledger_phys, batch_phys)
                     if current_physical < qty_to_dispatch:
                         raise ValueError(
                             f"Cannot dispatch {qty_to_dispatch} of '{item.product.name}'. "

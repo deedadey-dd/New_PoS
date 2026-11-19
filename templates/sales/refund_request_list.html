@@ -1997,13 +1997,35 @@
             })
             .then(({ ok, status, data }) => {
                 if (ok && data && data.success) {
-                    location.reload();
+                    confirmDisburseBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Disbursed!';
+                    confirmDisburseBtn.className = 'btn btn-success fw-bold px-4';
+
+                    // Close the modal cleanly and dismiss backdrops
+                    const modalInstance = bootstrap.Modal.getInstance(modalEl);
+                    if (modalInstance) {
+                        try { modalInstance.hide(); } catch (_) {}
+                    }
+                    document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+                    document.body.classList.remove('modal-open');
+                    document.body.style.removeProperty('overflow');
+                    document.body.style.removeProperty('padding-right');
+
+                    // Provide feedback toast
+                    if (typeof window.showAppToast === 'function') {
+                        window.showAppToast(data.message || 'Refund payout disbursed successfully!', 'success');
+                    }
+
+                    // Reload page smoothly to update balances and lists
+                    setTimeout(() => {
+                        window.location.href = window.location.pathname + window.location.search;
+                    }, 400);
                 } else {
                     const errorMsg = data?.error || data?.message || `Failed to process payout (HTTP ${status}). Please check till balance or refresh.`;
                     errAlert.textContent = errorMsg;
                     errAlert.classList.remove('d-none');
                     errAlert.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                     confirmDisburseBtn.disabled = false;
+                    confirmDisburseBtn.className = 'btn btn-primary fw-bold px-4';
                     confirmDisburseBtn.innerHTML = '<i class="bi bi-check2-circle me-1"></i>Disburse Refund';
                 }
             })
@@ -2016,6 +2038,7 @@
                 errAlert.classList.remove('d-none');
                 errAlert.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                 confirmDisburseBtn.disabled = false;
+                confirmDisburseBtn.className = 'btn btn-primary fw-bold px-4';
                 confirmDisburseBtn.innerHTML = '<i class="bi bi-check2-circle me-1"></i>Disburse Refund';
             });
         });
