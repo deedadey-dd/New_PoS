@@ -926,6 +926,11 @@
         document.body.style.removeProperty('overflow');
         document.body.style.removeProperty('padding-right');
 
+        // Blur active element so aria-hidden on hidden ancestors doesn't block focus
+        if (document.activeElement && typeof document.activeElement.blur === 'function') {
+            document.activeElement.blur();
+        }
+
         // Dispose existing instance so no stuck _isTransitioning / _isShown state remains
         const existing = bootstrap.Modal.getInstance(modalEl);
         if (existing) {
@@ -1814,27 +1819,37 @@
 
     function openDisburseModal(refundId, refundNumber, saleNumber, amount, amountNum, method, methodDisplay, customer, approvedBy, balInfo, isInsufficient) {
         const modalEl = document.getElementById('disburseModal');
+        if (!modalEl) return;
         modalEl.dataset.currentMethod = method;
         modalEl.dataset.amountNum = amountNum;
 
         safelyShowModal(modalEl, function() {
-            document.getElementById('disburse-refund-id').value = refundId;
-            document.getElementById('disburse-refund-number').textContent = refundNumber;
-            document.getElementById('disburse-sale-number').textContent = saleNumber;
-            document.getElementById('disburse-customer').textContent = customer;
-            document.getElementById('disburse-approved-by').textContent = approvedBy;
-            document.getElementById('disburse-amount-display').textContent = currencySymbol + amount;
-            document.getElementById('disburse-method-badge').textContent = methodDisplay;
-            document.getElementById('disburse-fund-source-display').textContent = methodDisplay;
+            const getEl = id => document.getElementById(id) || modalEl.querySelector('#' + id);
+            const refIdInput = getEl('disburse-refund-id');
+            if (refIdInput) refIdInput.value = refundId;
+            const refNum = getEl('disburse-refund-number');
+            if (refNum) refNum.textContent = refundNumber;
+            const saleNum = getEl('disburse-sale-number');
+            if (saleNum) saleNum.textContent = saleNumber;
+            const cust = getEl('disburse-customer');
+            if (cust) cust.textContent = customer;
+            const appr = getEl('disburse-approved-by');
+            if (appr) appr.textContent = approvedBy;
+            const amtDisp = getEl('disburse-amount-display');
+            if (amtDisp) amtDisp.textContent = currencySymbol + amount;
+            const mBadge = getEl('disburse-method-badge');
+            if (mBadge) mBadge.textContent = methodDisplay;
+            const fDisplay = getEl('disburse-fund-source-display');
+            if (fDisplay) fDisplay.textContent = methodDisplay;
 
             // Balance & Shortfall Indicators
-            const balanceCard = document.getElementById('disburse-balance-card');
-            const balanceDisplay = document.getElementById('disburse-current-balance-display');
-            const balanceLabel = document.getElementById('disburse-balance-source-label');
-            const balanceBadge = document.getElementById('disburse-balance-status-badge');
-            const warningBanner = document.getElementById('disburse-balance-warning-banner');
-            const warningText = document.getElementById('disburse-balance-warning-text');
-            const ackCheckbox = document.getElementById('acknowledge-balance-shortfall');
+            const balanceCard = getEl('disburse-balance-card');
+            const balanceDisplay = getEl('disburse-current-balance-display');
+            const balanceLabel = getEl('disburse-balance-source-label');
+            const balanceBadge = getEl('disburse-balance-status-badge');
+            const warningBanner = getEl('disburse-balance-warning-banner');
+            const warningText = getEl('disburse-balance-warning-text');
+            const ackCheckbox = getEl('acknowledge-balance-shortfall');
 
             if (balanceLabel) balanceLabel.textContent = balInfo.name;
             if (balanceDisplay) balanceDisplay.textContent = currencySymbol + balInfo.balance.toFixed(2);
@@ -1864,15 +1879,22 @@
             }
 
             // Clear inputs and error
-            document.getElementById('disburse-transaction-ref').value = '';
-            document.getElementById('disburse-notes').value = '';
-            const errAlert = document.getElementById('disburse-error-alert');
-            errAlert.classList.add('d-none');
-            errAlert.textContent = '';
+            const transRef = getEl('disburse-transaction-ref');
+            if (transRef) transRef.value = '';
+            const notesInput = getEl('disburse-notes');
+            if (notesInput) notesInput.value = '';
+            const errAlert = getEl('disburse-error-alert');
+            if (errAlert) {
+                errAlert.classList.add('d-none');
+                errAlert.textContent = '';
+            }
 
-            const confirmBtn = document.getElementById('confirm-disburse-btn');
-            confirmBtn.disabled = false;
-            confirmBtn.innerHTML = '<i class="bi bi-check2-circle me-1"></i>Disburse Refund (' + methodDisplay + ')';
+            const confirmBtn = getEl('confirm-disburse-btn');
+            if (confirmBtn) {
+                confirmBtn.disabled = false;
+                confirmBtn.className = 'btn btn-primary fw-bold px-4';
+                confirmBtn.innerHTML = '<i class="bi bi-check2-circle me-1"></i>Disburse Refund (' + methodDisplay + ')';
+            }
         });
     }
 
@@ -1939,69 +1961,105 @@
 
     const confirmDisburseBtn = document.getElementById('confirm-disburse-btn');
     if (confirmDisburseBtn) {
-        confirmDisburseBtn.addEventListener('click', () => {
+        confirmDisburseBtn.addEventListener('click', async () => {
             const modalEl = document.getElementById('disburseModal');
-            const refundId = document.getElementById('disburse-refund-id').value;
-            const transactionRef = document.getElementById('disburse-transaction-ref').value.trim();
-            const payoutNotes = document.getElementById('disburse-notes').value.trim();
-            const errAlert = document.getElementById('disburse-error-alert');
-            const ackCheckbox = document.getElementById('acknowledge-balance-shortfall');
-
-            if (!refundId) {
-                errAlert.textContent = 'Error: Missing refund identifier. Please close and re-open the modal.';
-                errAlert.classList.remove('d-none');
-                return;
+            if (document.activeElement && typeof document.activeElement.blur === 'function') {
+                document.activeElement.blur();
             }
 
-            const currentMethod = modalEl?.dataset.currentMethod || 'CASH';
-            const amountNum = parseFloat(modalEl?.dataset.amountNum || 0);
-            const balInfo = getCashierBalanceForMethod(currentMethod);
-            const isInsufficient = balInfo.balance < amountNum;
-
-            if (isInsufficient && (!ackCheckbox || !ackCheckbox.checked)) {
-                errAlert.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-1"></i><strong>Insufficient Till Balance:</strong> Please check the acknowledgment box above to confirm disbursing with insufficient balance before proceeding.';
-                errAlert.classList.remove('d-none');
-                errAlert.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                if (ackCheckbox) ackCheckbox.focus();
-                return;
+            const getEl = id => document.getElementById(id) || modalEl?.querySelector('#' + id);
+            let errAlert = getEl('disburse-error-alert');
+            if (!errAlert && modalEl) {
+                const modalBody = modalEl.querySelector('.modal-body');
+                if (modalBody) {
+                    errAlert = document.createElement('div');
+                    errAlert.id = 'disburse-error-alert';
+                    errAlert.className = 'alert alert-danger py-2 small mb-3 d-none';
+                    modalBody.insertBefore(errAlert, modalBody.firstChild);
+                }
             }
 
-            confirmDisburseBtn.disabled = true;
-            confirmDisburseBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Processing...';
-            errAlert.classList.add('d-none');
+            const setAlert = (msg, isHtml = false) => {
+                if (errAlert) {
+                    if (isHtml) errAlert.innerHTML = msg;
+                    else errAlert.textContent = msg;
+                    errAlert.classList.remove('d-none');
+                    try { errAlert.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (_) {}
+                } else if (typeof window.showAppToast === 'function') {
+                    window.showAppToast(msg, 'error');
+                } else {
+                    alert(msg);
+                }
+            };
 
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 25000);
+            const clearAlert = () => {
+                if (errAlert) {
+                    errAlert.classList.add('d-none');
+                    errAlert.textContent = '';
+                }
+            };
 
-            fetch(`/sales/api/refund-requests/${refundId}/payout/`, {
-                method: 'POST',
-                signal: controller.signal,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': csrfToken
-                },
-                body: JSON.stringify({
-                    transaction_reference: transactionRef,
-                    payout_notes: payoutNotes
-                })
-            })
-            .then(async response => {
-                clearTimeout(timeoutId);
+            try {
+                const refundIdInput = getEl('disburse-refund-id');
+                const refundId = refundIdInput ? refundIdInput.value : '';
+                const transRefInput = getEl('disburse-transaction-ref');
+                const transactionRef = transRefInput ? transRefInput.value.trim() : '';
+                const notesInput = getEl('disburse-notes');
+                const payoutNotes = notesInput ? notesInput.value.trim() : '';
+                const ackCheckbox = getEl('acknowledge-balance-shortfall');
+
+                if (!refundId) {
+                    setAlert('Error: Missing refund identifier. Please close and re-open the modal.');
+                    return;
+                }
+
+                const currentMethod = modalEl?.dataset.currentMethod || 'CASH';
+                const amountNum = parseFloat(modalEl?.dataset.amountNum || 0);
+                const balInfo = getCashierBalanceForMethod(currentMethod);
+                const isInsufficient = balInfo.balance < amountNum;
+
+                if (isInsufficient && (!ackCheckbox || !ackCheckbox.checked)) {
+                    setAlert('<i class="bi bi-exclamation-triangle-fill me-1"></i><strong>Insufficient Till Balance:</strong> Please check the acknowledgment box above to confirm disbursing with insufficient balance before proceeding.', true);
+                    if (ackCheckbox) ackCheckbox.focus();
+                    return;
+                }
+
+                clearAlert();
+                confirmDisburseBtn.disabled = true;
+                confirmDisburseBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Processing...';
+
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 25000);
+
+                let response;
+                try {
+                    response = await fetch(`/sales/api/refund-requests/${refundId}/payout/`, {
+                        method: 'POST',
+                        signal: controller.signal,
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': csrfToken
+                        },
+                        body: JSON.stringify({
+                            transaction_reference: transactionRef,
+                            payout_notes: payoutNotes
+                        })
+                    });
+                } finally {
+                    clearTimeout(timeoutId);
+                }
+
                 let data = null;
                 try {
                     data = await response.json();
-                } catch (_) {
-                    // Response body was not JSON (e.g. gateway timeout or HTML 500)
-                }
-                return { ok: response.ok, status: response.status, data };
-            })
-            .then(({ ok, status, data }) => {
-                if (ok && data && data.success) {
+                } catch (_) {}
+
+                if (response && response.ok && data && data.success) {
                     confirmDisburseBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Disbursed!';
                     confirmDisburseBtn.className = 'btn btn-success fw-bold px-4';
 
                     // Close the modal cleanly and dismiss backdrops
-                    const modalInstance = bootstrap.Modal.getInstance(modalEl);
+                    const modalInstance = modalEl ? bootstrap.Modal.getInstance(modalEl) : null;
                     if (modalInstance) {
                         try { modalInstance.hide(); } catch (_) {}
                     }
@@ -2020,28 +2078,35 @@
                         window.location.href = window.location.pathname + window.location.search;
                     }, 400);
                 } else {
-                    const errorMsg = data?.error || data?.message || `Failed to process payout (HTTP ${status}). Please check till balance or refresh.`;
-                    errAlert.textContent = errorMsg;
-                    errAlert.classList.remove('d-none');
-                    errAlert.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    const errorMsg = data?.error || data?.message || `Failed to process payout (HTTP ${response?.status || 'Error'}). Please check till balance or refresh.`;
+                    setAlert(errorMsg);
                     confirmDisburseBtn.disabled = false;
                     confirmDisburseBtn.className = 'btn btn-primary fw-bold px-4';
                     confirmDisburseBtn.innerHTML = '<i class="bi bi-check2-circle me-1"></i>Disburse Refund';
                 }
-            })
-            .catch(err => {
-                clearTimeout(timeoutId);
+            } catch (err) {
+                console.error('Error during disburse payout execution:', err);
                 const isTimeout = err && err.name === 'AbortError';
-                errAlert.textContent = isTimeout
+                const errMsg = isTimeout
                     ? 'Request timed out after 25 seconds. Please refresh the page to see if payout was processed.'
-                    : 'Network error: ' + err;
-                errAlert.classList.remove('d-none');
-                errAlert.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    : 'Error: ' + (err?.message || err);
+                setAlert(errMsg);
                 confirmDisburseBtn.disabled = false;
                 confirmDisburseBtn.className = 'btn btn-primary fw-bold px-4';
                 confirmDisburseBtn.innerHTML = '<i class="bi bi-check2-circle me-1"></i>Disburse Refund';
-            });
+            }
         });
     }
+
+    // Ensure all modals blur active elements when hidden to prevent aria-hidden focus blocking
+    document.querySelectorAll('.modal').forEach(m => {
+        m.addEventListener('hide.bs.modal', function() {
+            if (document.activeElement && m.contains(document.activeElement)) {
+                if (typeof document.activeElement.blur === 'function') {
+                    document.activeElement.blur();
+                }
+            }
+        });
+    });
 </script>
 {% endblock %}
