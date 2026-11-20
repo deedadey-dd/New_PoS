@@ -752,6 +752,11 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
         elif dispatch_status in ['dispatched', 'completed']:
             queryset = queryset.filter(status__in=['COMPLETED', 'PENDING_DISPATCH', 'PARTIALLY_DISPATCHED'], is_dispatched=True)
             
+        # Sync conflict filter
+        sync_conflict = self.request.GET.get('sync_conflict')
+        if sync_conflict in ['1', 'true', 'yes']:
+            queryset = queryset.filter(has_sync_conflict=True)
+
         # Text search (Invoice Number, Customer Name, Customer Phone)
         q = self.request.GET.get('q', '').strip()
         if q:
@@ -773,6 +778,12 @@ class SaleListView(LoginRequiredMixin, SortableMixin, ListView):
         
         # Check if full view (Auditor/Accountant/Admin)
         context['is_full_view'] = role_name in ['AUDITOR', 'ACCOUNTANT', 'ADMIN']
+
+        # Total sync conflicts count for user location
+        conflict_scope = {'tenant': user.tenant, 'has_sync_conflict': True}
+        if role_name not in ['AUDITOR', 'ACCOUNTANT', 'ADMIN'] and user.location:
+            conflict_scope['shop'] = user.location
+        context['total_sync_conflicts_count'] = Sale.objects.filter(**conflict_scope).count()
         
         # Summary metrics on filtered queryset
         from django.db.models import Sum, Count, Q
@@ -3048,95 +3059,141 @@ def initialize_ecash_payment(request):
                     phone = sale_obj.customer_phone
                 elif getattr(sale_obj, 'customer', None) and sale_obj.customer.phone:
                     phone = sale_obj.customer.phone
-                    
-        # Generate predictable email based on phone to avoid Paystack fraud drops
-        if phone:
-            clean_phone = re.sub(r'\D', '', phone)
-            customer_email = f'momo_{clean_phone}@hendaxis.com'
+
+        # Phone Number & Carrier Normalization
+        raw_phone = str(phone).strip() if phone else ''
+        clean_digits = re.sub(r'\D', '', raw_phone)
+        if clean_digits.startswith('233') and len(clean_digits) >= 12:
+            phone_local = '0' + clean_digits[3:12]
+            phone_intl = '+233' + clean_digits[3:12]
+            phone_clean = '233' + clean_digits[3:12]
+        elif clean_digits.startswith('0') and len(clean_digits) >= 10:
+            phone_local = clean_digits[:10]
+            phone_intl = '+233' + clean_digits[1:10]
+            phone_clean = '233' + clean_digits[1:10]
+        elif len(clean_digits) == 9:
+            phone_local = '0' + clean_digits
+            phone_intl = '+233' + clean_digits
+            phone_clean = '233' + clean_digits
+        else:
+            phone_local = raw_phone
+            phone_intl = raw_phone
+            phone_clean = clean_digits
+
+        # Carrier detection (Ghanaian networks)
+        network_code = 'MTN'
+        paystack_momo_provider = 'mtn'
+        if phone_local and len(phone_local) >= 3:
+            prefix = phone_local[:3]
+            if prefix in ['024', '054', '055', '059', '053']:
+                network_code = 'MTN'
+                paystack_momo_provider = 'mtn'
+            elif prefix in ['020', '050']:
+                network_code = 'VODAFONE'
+                paystack_momo_provider = 'vod'
+            elif prefix in ['027', '057', '026', '056']:
+                network_code = 'AIRTELTIGO'
+                paystack_momo_provider = 'tgo'
+
+        # Customer name split
+        cust_name = customer.name.strip() if customer and customer.name else "Walk-in Customer"
+        name_parts = cust_name.split()
+        first_name = name_parts[0] if name_parts else "Customer"
+        last_name = " ".join(name_parts[1:]) if len(name_parts) > 1 else "Customer"
+
+        # Generate predictable email based on phone to avoid fraud drops
+        if phone_clean:
+            customer_email = f'momo_{phone_clean}@hendaxis.com'
+        elif customer and customer.email:
+            customer_email = customer.email
         else:
             unique_suffix = uuid.uuid4().hex[:8]
             customer_email = f'walkin_{unique_suffix}@hendaxis.com'
-        
-        if customer and customer.email and not phone:
-            customer_email = customer.email
-        
+
         # Generate unique reference
         reference = f"ECASH-{timezone.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8].upper()}"
-        
-        # For payment on account, we don't create a sale - just return Paystack config
-        if is_payment_on_account:
-            return JsonResponse({
-                'success': True,
-                'sale_id': None,  # No sale for payment on account
-                'sale_number': None,
-                'reference': reference,
-                'paystack_public_key': provider.public_key,
-                'customer_email': customer_email,
-                'tenant_id': tenant.pk,
-                'total': str(total),
-                'is_payment_on_account': True,
-                'customer_id': customer_id,
-                'customer_name': customer.name if customer else None
-            })
-        
-        with transaction.atomic():
-            if existing_sale_id:
-                sale = Sale.objects.get(
-                    tenant=tenant,
-                    pk=existing_sale_id,
-                    status='PENDING'
-                )
-                sale.paystack_reference = reference
-                sale.save(update_fields=['paystack_reference'])
-            else:
-                # Create pending sale for normal cart checkout
-                # Get current shift if any
-                current_shift = Shift.objects.filter(
-                    tenant=tenant,
-                    attendant=user,
-                    status='OPEN'
-                ).first()
-                
-                sale = Sale.objects.create(
-                    tenant=tenant,
-                    shop=shop,
-                    attendant=user,
-                    shift=current_shift,
-                    customer=customer,
-                    payment_method='ECASH',
-                    status='PENDING',
-                    discount_amount=discount,
-                    paystack_reference=reference
-                )
-                
-                # Create sale items
-                for item_data in items:
-                    product = Product.objects.filter(
+
+        sale = None
+        if not is_payment_on_account:
+            with transaction.atomic():
+                if existing_sale_id:
+                    sale = Sale.objects.get(
                         tenant=tenant,
-                        pk=item_data['product_id'],
-                        is_active=True
+                        pk=existing_sale_id,
+                        status='PENDING'
+                    )
+                    sale.paystack_reference = reference
+                    sale.save(update_fields=['paystack_reference'])
+                else:
+                    current_shift = Shift.objects.filter(
+                        tenant=tenant,
+                        attendant=user,
+                        status='OPEN'
                     ).first()
                     
-                    if product:
-                        SaleItem.objects.create(
+                    sale = Sale.objects.create(
+                        tenant=tenant,
+                        shop=shop,
+                        attendant=user,
+                        shift=current_shift,
+                        customer=customer,
+                        payment_method='ECASH',
+                        status='PENDING',
+                        discount_amount=discount,
+                        paystack_reference=reference
+                    )
+                    
+                    for item_data in items:
+                        product = Product.objects.filter(
                             tenant=tenant,
-                            sale=sale,
-                            product=product,
-                            quantity=Decimal(str(item_data['quantity'])),
-                            unit_price=Decimal(str(item_data['unit_price']))
-                        )
-                
-                sale.calculate_totals()
-            
-        # Get checkout type and metadata
+                            pk=item_data['product_id'],
+                            is_active=True
+                        ).first()
+                        
+                        if product:
+                            SaleItem.objects.create(
+                                tenant=tenant,
+                                sale=sale,
+                                product=product,
+                                quantity=Decimal(str(item_data['quantity'])),
+                                unit_price=Decimal(str(item_data['unit_price']))
+                            )
+                    
+                    sale.calculate_totals()
+
+        # Checkout type and comprehensive metadata
         checkout_type = provider.get_checkout_type
         authorization_url = ''
-        
-        # If it requires server-side initialization
-        metadata = {'customer_number': data.get('phone', '')}
+        token = ''
+        amount_to_charge = total if is_payment_on_account else sale.total
+
+        metadata = {
+            'phone': phone_local,
+            'phonenumber': phone_local,
+            'customer_number': phone_local,
+            'intl_phone': phone_intl,
+            'clean_phone': phone_clean,
+            'network': network_code,
+            'paystack_provider': paystack_momo_provider,
+            'first_name': first_name,
+            'last_name': last_name,
+            'device_type': 'pos_terminal',
+            'is_pos_checkout': True,
+            'sale_id': None if is_payment_on_account else sale.pk,
+            'sale_number': None if is_payment_on_account else sale.sale_number,
+            'is_payment_on_account': is_payment_on_account,
+            'customer_id': customer_id if is_payment_on_account else (customer.pk if customer else None),
+            'channels': ['mobile_money', 'card'],
+            'custom_fields': [
+                {'display_name': 'Phone Number', 'variable_name': 'phone', 'value': phone_local},
+                {'display_name': 'Network', 'variable_name': 'network', 'value': network_code},
+            ]
+        }
+
+        # Initialize for non-inline providers
         if checkout_type != 'inline':
             init_result = provider.initialize_payment(
-                amount=total if is_payment_on_account else sale.total,
+                amount=amount_to_charge,
                 email=customer_email,
                 reference=reference,
                 metadata=metadata
@@ -3147,7 +3204,9 @@ def initialize_ecash_payment(request):
                     'error': f'Failed to initialize payment: {init_result.message}'
                 }, status=400)
             authorization_url = init_result.authorization_url
-        
+            if hasattr(init_result, 'data') and isinstance(init_result.data, dict):
+                token = init_result.data.get('token', '')
+
         return JsonResponse({
             'success': True,
             'sale_id': None if is_payment_on_account else sale.pk,
@@ -3156,11 +3215,18 @@ def initialize_ecash_payment(request):
             'public_key': getattr(provider, 'public_key', ''),
             'checkout_type': checkout_type,
             'authorization_url': authorization_url,
+            'token': token,
             'customer_email': customer_email,
-            'phone': phone,
+            'phone': phone_local,
+            'phone_intl': phone_intl,
+            'network': network_code,
+            'paystack_provider': paystack_momo_provider,
             'tenant_id': tenant.pk,
-            'total': str(total if is_payment_on_account else sale.total),
-            'provider': provider.provider_name
+            'total': str(amount_to_charge),
+            'provider': provider.provider_name,
+            'is_payment_on_account': is_payment_on_account,
+            'customer_id': customer_id if is_payment_on_account else (customer.pk if customer else None),
+            'customer_name': customer.name if customer else None
         })
         
     except Exception as e:
@@ -3193,6 +3259,23 @@ def verify_ecash_payment(request):
                 'success': False,
                 'error': 'Missing payment reference.'
             }, status=400)
+
+        # Idempotency check: if sale is already completed, return success immediately
+        if sale_id:
+            already_completed = Sale.objects.filter(
+                tenant=tenant,
+                pk=sale_id,
+                paystack_reference=reference,
+                status='COMPLETED'
+            ).first()
+            if already_completed:
+                return JsonResponse({
+                    'success': True,
+                    'sale_id': already_completed.pk,
+                    'sale_number': already_completed.sale_number,
+                    'message': 'Payment already verified and sale completed.',
+                    'already_completed': True
+                })
         
         provider_config_id = data.get('provider_config_id')
         token = data.get('token', '')
@@ -3286,7 +3369,23 @@ def verify_ecash_payment(request):
                 'error': 'Missing sale ID.'
             }, status=400)
         
-        # Get the sale
+        # Check if already completed (e.g. from background poll or webhook)
+        already_completed = Sale.objects.filter(
+            tenant=tenant,
+            pk=sale_id,
+            paystack_reference=reference,
+            status='COMPLETED'
+        ).first()
+        if already_completed:
+            return JsonResponse({
+                'success': True,
+                'sale_id': already_completed.pk,
+                'sale_number': already_completed.sale_number,
+                'message': 'Payment already verified and sale completed.',
+                'already_completed': True
+            })
+
+        # Get the pending sale
         sale = Sale.objects.filter(
             tenant=tenant,
             pk=sale_id,
@@ -3394,253 +3493,240 @@ def api_pending_ecash_sales(request):
 
 # ============ Offline Sync API ============
 
+def _process_offline_sale_payload(data, user, tenant):
+    """
+    Core processor for a single offline sale payload.
+    Used by both single sync and batch sync APIs.
+    """
+    client_sale_id = data.get('client_sale_id')
+    if not client_sale_id:
+        return {
+            'success': False,
+            'client_sale_id': None,
+            'status': 'failed',
+            'error': 'Missing client_sale_id for offline sync.'
+        }
+
+    # Idempotency check - if this sale was already synced, return existing record
+    existing = Sale.objects.filter(
+        tenant=tenant,
+        client_sale_id=client_sale_id
+    ).first()
+    if existing:
+        return {
+            'success': True,
+            'client_sale_id': client_sale_id,
+            'sale_id': existing.pk,
+            'sale_number': existing.sale_number,
+            'status': 'already_synced',
+            'already_synced': True,
+            'has_conflicts': getattr(existing, 'has_sync_conflict', False),
+            'conflicts': [existing.sync_conflict_notes] if existing.has_sync_conflict else [],
+            'message': 'Sale already synced (duplicate client_sale_id).'
+        }
+
+    # Extract sale data
+    cart_items = data.get('items', [])
+    discount_amount = Decimal(str(data.get('discount_amount', 0)))
+    customer_id = data.get('customer_id')
+    payment_method = data.get('payment_method', 'CASH')
+    amount_paid = Decimal(str(data.get('amount_paid', 0)))
+    offline_created_at = data.get('offline_created_at')
+    is_payment_on_account = data.get('is_payment_on_account', False)
+
+    # Handle payment on account
+    if is_payment_on_account:
+        if not customer_id:
+            return {'success': False, 'client_sale_id': client_sale_id, 'status': 'failed', 'error': 'Customer required for payment on account'}
+        if amount_paid <= 0:
+            return {'success': False, 'client_sale_id': client_sale_id, 'status': 'failed', 'error': 'Payment amount must be positive'}
+        
+        from apps.customers.models import Customer, CustomerTransaction
+        customer = Customer.objects.filter(tenant=tenant, pk=customer_id).first()
+        if not customer:
+            return {'success': False, 'client_sale_id': client_sale_id, 'status': 'failed', 'error': 'Customer not found'}
+            
+        try:
+            with transaction.atomic():
+                balance_before = customer.current_balance
+                customer.current_balance -= amount_paid
+                customer.save(update_fields=['current_balance'])
+                
+                txn = CustomerTransaction.objects.create(
+                    tenant=tenant,
+                    customer=customer,
+                    transaction_type='CREDIT',
+                    amount=amount_paid,
+                    description=f"Payment on account ({payment_method})",
+                    reference_id=f"POA-OFF-{timezone.now().strftime('%Y%m%d%H%M%S')}",
+                    balance_before=balance_before,
+                    balance_after=customer.current_balance,
+                    performed_by=user
+                )
+                
+                return {
+                    'success': True,
+                    'client_sale_id': client_sale_id,
+                    'sale_id': txn.pk,
+                    'sale_number': 'POA-' + str(txn.pk),
+                    'status': 'synced',
+                    'has_conflicts': False,
+                    'conflicts': [],
+                    'message': 'Offline payment synced successfully.'
+                }
+        except Exception as e:
+            return {'success': False, 'client_sale_id': client_sale_id, 'status': 'failed', 'error': str(e)}
+
+    if not cart_items:
+        return {'success': False, 'client_sale_id': client_sale_id, 'status': 'failed', 'error': 'No items in offline sale.'}
+
+    # Only CASH, CREDIT, MIXED and MOMO allowed for offline sales
+    if payment_method not in ('CASH', 'CREDIT', 'MIXED', 'MOMO'):
+        return {'success': False, 'client_sale_id': client_sale_id, 'status': 'failed', 'error': 'Only Cash, Credit, Mixed or Momo payments are supported offline.'}
+
+    # Get shop
+    shop = user.location
+    if not shop or shop.location_type != 'SHOP':
+        shop = Location.objects.filter(
+            tenant=tenant,
+            location_type='SHOP',
+            is_active=True
+        ).first()
+
+    if not shop:
+        return {'success': False, 'client_sale_id': client_sale_id, 'status': 'failed', 'error': 'No shop location configured.'}
+
+    customer = None
+    if customer_id:
+        from apps.customers.models import Customer
+        customer = Customer.objects.filter(tenant=tenant, pk=customer_id).first()
+
+    current_shift = Shift.objects.filter(
+        tenant=tenant,
+        attendant=user,
+        status='OPEN'
+    ).first()
+
+    sync_conflicts = []
+
+    with transaction.atomic():
+        sale = Sale(
+            tenant=tenant,
+            shop=shop,
+            attendant=user,
+            shift=current_shift,
+            customer=customer,
+            payment_method=payment_method,
+            status='PENDING',
+            discount_amount=discount_amount,
+            client_sale_id=client_sale_id,
+            synced_at=timezone.now(),
+        )
+
+        if offline_created_at:
+            from datetime import datetime
+            try:
+                sale.offline_created_at = datetime.fromisoformat(
+                    offline_created_at.replace('Z', '+00:00')
+                )
+            except (ValueError, AttributeError):
+                pass
+
+        sale.save()
+
+        # Create sale items and check stock conflicts
+        from apps.inventory.models import InventoryLedger, Batch
+        from django.db.models import Sum
+
+        for item_data in cart_items:
+            product = Product.objects.filter(
+                tenant=tenant,
+                pk=item_data.get('product_id'),
+                is_active=True
+            ).first()
+
+            if not product:
+                sync_conflicts.append(
+                    f"Product ID {item_data.get('product_id')} ({item_data.get('product_name', 'Unknown')}) not found or inactive."
+                )
+                continue
+
+            quantity = Decimal(str(item_data.get('quantity', 0)))
+            available = InventoryLedger.objects.filter(
+                tenant=tenant,
+                product=product,
+                location=shop
+            ).aggregate(total=Sum('quantity'))['total'] or Decimal('0')
+
+            if available < quantity:
+                sync_conflicts.append(
+                    f"{product.name}: sold {quantity} offline, available in ledger was {available}"
+                )
+
+            batch = None
+            batch_id = item_data.get('batch_id')
+            if batch_id:
+                batch = Batch.objects.filter(tenant=tenant, pk=batch_id).first()
+
+            SaleItem.objects.create(
+                tenant=tenant,
+                sale=sale,
+                product=product,
+                batch=batch,
+                quantity=quantity,
+                unit_price=Decimal(str(item_data.get('unit_price', 0))),
+            )
+
+        sale.calculate_totals()
+
+        if payment_method == 'MOMO':
+            shop_settings = getattr(shop, 'shop_settings', None)
+            if not shop_settings and shop:
+                try:
+                    from apps.sales.models import ShopSettings
+                    shop_settings = ShopSettings.objects.get(shop=shop)
+                except ShopSettings.DoesNotExist:
+                    shop_settings = None
+            if shop_settings and shop_settings.disallow_manual_momo_amount:
+                amount_paid = sale.total
+
+        if sync_conflicts:
+            sale.has_sync_conflict = True
+            sale.sync_conflict_notes = '\n'.join(sync_conflicts)
+            sale.save(update_fields=['has_sync_conflict', 'sync_conflict_notes'])
+
+        try:
+            sale.complete(amount_paid, payment_method)
+        except ValidationError as ve:
+            sale.has_sync_conflict = True
+            sale.sync_conflict_notes = (sale.sync_conflict_notes or '') + f'\nCompletion error: {str(ve)}'
+            sale.save(update_fields=['has_sync_conflict', 'sync_conflict_notes'])
+            sync_conflicts.append(f'Completion error: {str(ve)}')
+
+    return {
+        'success': True,
+        'client_sale_id': client_sale_id,
+        'sale_id': sale.pk,
+        'sale_number': sale.sale_number,
+        'status': 'conflict' if sync_conflicts else 'synced',
+        'has_conflicts': bool(sync_conflicts),
+        'conflicts': sync_conflicts,
+        'message': 'Offline sale synced successfully.' if not sync_conflicts else 'Sale synced with inventory conflicts - please review.'
+    }
+
+
 @login_required
 @require_POST
 def api_sync_offline_sales(request):
     """
     Sync a single offline sale to the server.
-    Uses client_sale_id for idempotency.
+    Uses client_sale_id for idempotency (backward-compatible).
     """
     try:
         data = json.loads(request.body)
-        user = request.user
-        tenant = user.tenant
-
-        client_sale_id = data.get('client_sale_id')
-        if not client_sale_id:
-            return JsonResponse({
-                'success': False,
-                'error': 'Missing client_sale_id for offline sync.'
-            }, status=400)
-
-        # Idempotency check - if this sale was already synced, return success
-        existing = Sale.objects.filter(
-            tenant=tenant,
-            client_sale_id=client_sale_id
-        ).first()
-        if existing:
-            return JsonResponse({
-                'success': True,
-                'sale_id': existing.pk,
-                'sale_number': existing.sale_number,
-                'message': 'Sale already synced (duplicate client_sale_id).',
-                'already_synced': True,
-            })
-
-        # Extract sale data
-        cart_items = data.get('items', [])
-        discount_amount = Decimal(str(data.get('discount_amount', 0)))
-        customer_id = data.get('customer_id')
-        payment_method = data.get('payment_method', 'CASH')
-        amount_paid = Decimal(str(data.get('amount_paid', 0)))
-        offline_created_at = data.get('offline_created_at')
-        is_payment_on_account = data.get('is_payment_on_account', False)
-
-        # Handle payment on account
-        if is_payment_on_account:
-            if not customer_id:
-                return JsonResponse({'error': 'Customer required for payment on account'}, status=400)
-            if amount_paid <= 0:
-                return JsonResponse({'error': 'Payment amount must be positive'}, status=400)
-            
-            from apps.customers.models import Customer, CustomerTransaction
-            customer = Customer.objects.filter(tenant=tenant, pk=customer_id).first()
-            if not customer:
-                return JsonResponse({'error': 'Customer not found'}, status=400)
-                
-            try:
-                with transaction.atomic():
-                    balance_before = customer.current_balance
-                    customer.current_balance -= amount_paid
-                    customer.save()
-                    
-                    txn = CustomerTransaction.objects.create(
-                        tenant=tenant,
-                        customer=customer,
-                        transaction_type='CREDIT',
-                        amount=amount_paid,
-                        description=f"Payment on account ({payment_method})",
-                        reference_id=f"POA-OFF-{timezone.now().strftime('%Y%m%d%H%M%S')}",
-                        balance_before=balance_before,
-                        balance_after=customer.current_balance,
-                        performed_by=user
-                    )
-                    
-                    return JsonResponse({
-                        'success': True,
-                        'sale_id': txn.pk,
-                        'sale_number': 'POA-' + str(txn.pk),
-                        'has_conflicts': False,
-                        'conflicts': [],
-                        'message': 'Offline payment synced successfully.'
-                    })
-            except Exception as e:
-                return JsonResponse({'error': str(e)}, status=400)
-
-        if not cart_items:
-            return JsonResponse({
-                'success': False,
-                'error': 'No items in offline sale.'
-            }, status=400)
-
-        # Only CASH, CREDIT and MOMO allowed for offline sales (no E-Cash)
-        if payment_method not in ('CASH', 'CREDIT', 'MIXED', 'MOMO'):
-            return JsonResponse({
-                'success': False,
-                'error': 'Only Cash, Credit or Momo payments are supported offline.'
-            }, status=400)
-
-        # Get shop
-        shop = user.location
-        if not shop or shop.location_type != 'SHOP':
-            shop = Location.objects.filter(
-                tenant=tenant,
-                location_type='SHOP',
-                is_active=True
-            ).first()
-
-        if not shop:
-            return JsonResponse({
-                'success': False,
-                'error': 'No shop location configured.'
-            }, status=400)
-
-        # Get customer if specified
-        customer = None
-        if customer_id:
-            from apps.customers.models import Customer
-            customer = Customer.objects.filter(
-                tenant=tenant,
-                pk=customer_id
-            ).first()
-
-        # Get current shift if any
-        current_shift = Shift.objects.filter(
-            tenant=tenant,
-            attendant=user,
-            status='OPEN'
-        ).first()
-
-        sync_conflicts = []
-
-        with transaction.atomic():
-            # Create the sale
-            sale = Sale(
-                tenant=tenant,
-                shop=shop,
-                attendant=user,
-                shift=current_shift,
-                customer=customer,
-                payment_method=payment_method,
-                status='PENDING',
-                discount_amount=discount_amount,
-                client_sale_id=client_sale_id,
-                synced_at=timezone.now(),
-            )
-
-            # Parse offline_created_at if provided
-            if offline_created_at:
-                from datetime import datetime
-                try:
-                    sale.offline_created_at = datetime.fromisoformat(
-                        offline_created_at.replace('Z', '+00:00')
-                    )
-                except (ValueError, AttributeError):
-                    pass  # Keep as None if parsing fails
-
-            sale.save()
-
-            # Create sale items and check for stock conflicts
-            for item_data in cart_items:
-                product = Product.objects.filter(
-                    tenant=tenant,
-                    pk=item_data.get('product_id'),
-                    is_active=True
-                ).first()
-
-                if not product:
-                    sync_conflicts.append(
-                        f"Product ID {item_data.get('product_id')} not found or inactive."
-                    )
-                    continue
-
-                # Check stock availability
-                from apps.inventory.models import InventoryLedger
-                from django.db.models import Sum
-                quantity = Decimal(str(item_data.get('quantity', 0)))
-                available = InventoryLedger.objects.filter(
-                    tenant=tenant,
-                    product=product,
-                    location=shop
-                ).aggregate(
-                    total=Sum('quantity')
-                )['total'] or Decimal('0')
-
-                if available < quantity:
-                    sync_conflicts.append(
-                        f"{product.name}: requested {quantity}, available {available}"
-                    )
-
-                # Determine batch
-                batch = None
-                batch_id = item_data.get('batch_id')
-                if batch_id:
-                    from apps.inventory.models import Batch
-                    batch = Batch.objects.filter(
-                        tenant=tenant,
-                        pk=batch_id
-                    ).first()
-
-                SaleItem.objects.create(
-                    tenant=tenant,
-                    sale=sale,
-                    product=product,
-                    batch=batch,
-                    quantity=quantity,
-                    unit_price=Decimal(str(item_data.get('unit_price', 0))),
-                )
-
-            # Calculate totals
-            sale.calculate_totals()
-
-            if payment_method == 'MOMO':
-                shop_settings = getattr(shop, 'shop_settings', None)
-                if not shop_settings and shop:
-                    try:
-                        from apps.sales.models import ShopSettings
-                        shop_settings = ShopSettings.objects.get(shop=shop)
-                    except ShopSettings.DoesNotExist:
-                        shop_settings = None
-                if shop_settings and shop_settings.disallow_manual_momo_amount:
-                    amount_paid = sale.total
-
-            # Flag sync conflicts if any
-            if sync_conflicts:
-                sale.has_sync_conflict = True
-                sale.sync_conflict_notes = '\n'.join(sync_conflicts)
-                sale.save(update_fields=['has_sync_conflict', 'sync_conflict_notes'])
-
-            # Complete the sale (deducts inventory)
-            try:
-                sale.complete(amount_paid, payment_method)
-            except ValidationError as ve:
-                # If completion fails (e.g., credit limit), flag as conflict
-                sale.has_sync_conflict = True
-                sale.sync_conflict_notes += f'\nCompletion error: {str(ve)}'
-                sale.save(update_fields=['has_sync_conflict', 'sync_conflict_notes'])
-                # Still mark as synced, but with conflict
-                sync_conflicts.append(f'Completion error: {str(ve)}')
-
-        return JsonResponse({
-            'success': True,
-            'sale_id': sale.pk,
-            'sale_number': sale.sale_number,
-            'has_conflicts': bool(sync_conflicts),
-            'conflicts': sync_conflicts,
-            'message': 'Offline sale synced successfully.' if not sync_conflicts
-                       else 'Sale synced with conflicts - please review.',
-        })
-
+        result = _process_offline_sale_payload(data, request.user, request.user.tenant)
+        status_code = 200 if result.get('success') else 400
+        return JsonResponse(result, status=status_code)
     except json.JSONDecodeError:
         return JsonResponse({
             'success': False,
@@ -3651,6 +3737,79 @@ def api_sync_offline_sales(request):
             'success': False,
             'error': str(e)
         }, status=500)
+
+
+@login_required
+@require_POST
+def api_sync_offline_batch(request):
+    """
+    Sync a batch of offline sales to the server in chronological order.
+    Executes each sale in an atomic sub-transaction so partial success is preserved.
+    """
+    try:
+        data = json.loads(request.body)
+        sales_list = data.get('sales', [])
+        if not isinstance(sales_list, list):
+            return JsonResponse({'success': False, 'error': 'Invalid payload: "sales" must be a list.'}, status=400)
+
+        if not sales_list:
+            return JsonResponse({
+                'success': True,
+                'total': 0,
+                'synced_count': 0,
+                'conflict_count': 0,
+                'failed_count': 0,
+                'results': []
+            })
+
+        user = request.user
+        tenant = user.tenant
+
+        # Sort sales chronologically by offline_created_at
+        def get_offline_timestamp(s):
+            val = s.get('offline_created_at') or ''
+            return str(val)
+
+        sorted_sales = sorted(sales_list, key=get_offline_timestamp)
+
+        results = []
+        synced_count = 0
+        conflict_count = 0
+        failed_count = 0
+
+        for sale_data in sorted_sales:
+            try:
+                res = _process_offline_sale_payload(sale_data, user, tenant)
+                results.append(res)
+                if res.get('success'):
+                    if res.get('has_conflicts'):
+                        conflict_count += 1
+                    else:
+                        synced_count += 1
+                else:
+                    failed_count += 1
+            except Exception as item_err:
+                failed_count += 1
+                results.append({
+                    'success': False,
+                    'client_sale_id': sale_data.get('client_sale_id'),
+                    'status': 'failed',
+                    'error': str(item_err)
+                })
+
+        return JsonResponse({
+            'success': True,
+            'total': len(sorted_sales),
+            'synced_count': synced_count,
+            'conflict_count': conflict_count,
+            'failed_count': failed_count,
+            'results': results
+        })
+
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'error': 'Invalid JSON data.'}, status=400)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
 # ============ Excel Export Views ============

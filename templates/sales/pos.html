@@ -1075,6 +1075,11 @@
             <button class="btn btn-outline-info btn-sm" onclick="openShortcutsHelpModal()" title="Keyboard Shortcuts (?)">
                 <i class="bi bi-keyboard"></i>
             </button>
+            <!-- Install PWA Button (Shown when browser supports installation) -->
+            <button class="btn btn-outline-success btn-sm" id="btn-pwa-install" style="display: none;"
+                onclick="triggerPwaInstall()" title="Install POS App on this Device">
+                <i class="bi bi-download me-1"></i>Install App
+            </button>
             <!-- Light / Dark theme toggle -->
             <button class="btn btn-outline-light btn-sm" id="theme-toggle" type="button"
                 onclick="toggleTheme()" title="Switch to light mode"
@@ -1468,6 +1473,83 @@
         </div>
     </div>
 
+    <!-- ── App Custom Message Dialog Modal (Replaces browser alert & confirm) ── -->
+    <div class="checkout-modal" id="pos-message-modal" style="z-index: 10050;">
+        <div class="checkout-dialog text-center" style="max-width:440px; padding: 24px; border: 1px solid var(--pos-border); border-radius: 16px; box-shadow: 0 15px 35px rgba(0,0,0,0.5);">
+            <div id="pos-message-icon" class="mb-3" style="font-size:3.2rem; line-height: 1;">
+                <i class="bi bi-info-circle-fill text-info"></i>
+            </div>
+            <h4 class="mb-2" id="pos-message-title" style="color:var(--pos-accent); font-weight: 600;">Notification</h4>
+            <div class="text-muted small mb-4" id="pos-message-body" style="font-size:0.95rem; line-height: 1.5; max-height: 250px; overflow-y: auto;">
+                Message content goes here.
+            </div>
+            <div class="d-flex gap-2" id="pos-message-actions">
+                <button class="btn btn-secondary flex-fill" id="btn-pos-message-cancel" style="display:none;">Cancel</button>
+                <button class="btn flex-fill" id="btn-pos-message-confirm" style="background:var(--pos-accent-strong); color:#fff; font-weight:600;">
+                    OK
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── In-App E-Cash Payment Modal ───────────────────────── -->
+    <div class="checkout-modal" id="ecash-active-modal" style="z-index: 10000; background: rgba(15, 23, 42, 0.75); backdrop-filter: blur(3px);">
+        <div class="checkout-dialog ecash-active-dialog" style="max-width:580px; width: 95%; max-height:92vh; display:flex; flex-direction:column; padding:0; overflow:hidden; border: 1px solid var(--pos-border); border-radius: 16px; box-shadow: 0 25px 50px rgba(0,0,0,0.6); background: var(--pos-bg-card, #1e293b);">
+            <!-- Header -->
+            <div class="p-3 d-flex justify-content-between align-items-center border-bottom border-secondary border-opacity-25" style="background: rgba(0,0,0,0.25);">
+                <div class="d-flex align-items-center gap-2">
+                    <div style="font-size: 1.3rem; color: var(--pos-accent);"><i class="bi bi-phone"></i></div>
+                    <div>
+                        <div class="fw-bold" style="color: var(--pos-text-primary, #fff); font-size: 1.05rem;" id="ecash-modal-title">E-Cash Payment</div>
+                        <div class="small text-muted" id="ecash-modal-subtitle">Processing via Gateway</div>
+                    </div>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-success fs-6 fw-bold px-2 py-1" id="ecash-modal-amount">GHS 0.00</span>
+                    <button type="button" class="btn-close btn-close-white ms-1" onclick="cancelECashPayment()" title="Close payment view"></button>
+                </div>
+            </div>
+
+            <!-- Customer Info & Tool Bar -->
+            <div class="px-3 py-2 bg-dark bg-opacity-50 border-bottom border-secondary border-opacity-25 d-flex flex-wrap justify-content-between align-items-center gap-2 small">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="text-muted"><i class="bi bi-person-fill"></i> <span id="ecash-phone-label">Customer MoMo:</span></span>
+                    <span class="badge bg-secondary font-monospace" id="ecash-phone-display" style="font-size:0.9rem; letter-spacing:0.5px;">-</span>
+                    <button type="button" class="btn btn-xs btn-outline-light py-0 px-2" id="btn-ecash-copy-phone" onclick="copyECashPhone()" title="Copy phone number">
+                        <i class="bi bi-clipboard me-1"></i>Copy
+                    </button>
+                </div>
+                <div class="d-flex align-items-center gap-1">
+                    <button type="button" class="btn btn-xs btn-outline-info py-0 px-2" id="btn-ecash-popout" onclick="popOutECashWindow()" title="Pop out into floating window beside POS">
+                        <i class="bi bi-box-arrow-up-right me-1"></i>Pop Out
+                    </button>
+                </div>
+            </div>
+
+            <!-- Live Status Ticker -->
+            <div class="px-3 py-2 bg-black bg-opacity-40 border-bottom border-secondary border-opacity-25 d-flex justify-content-between align-items-center small">
+                <div class="d-flex align-items-center text-warning">
+                    <span class="spinner-grow spinner-grow-sm me-2 text-warning" role="status" style="width: 0.8rem; height: 0.8rem;"></span>
+                    <span id="ecash-ticker-msg">Awaiting customer payment...</span>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-warning py-0 px-2" id="btn-ecash-manual-verify" onclick="triggerManualVerification()">
+                    <i class="bi bi-arrow-repeat me-1"></i>Verify Now
+                </button>
+            </div>
+
+            <!-- Dynamic Modal Body: IFrame or USSD View -->
+            <div id="ecash-modal-body" class="flex-grow-1 position-relative" style="min-height: 440px; background: #ffffff;">
+                <!-- Loaded dynamically -->
+            </div>
+
+            <!-- Footer -->
+            <div class="p-2 px-3 border-top border-secondary border-opacity-25 d-flex justify-content-between align-items-center small bg-dark bg-opacity-25">
+                <span class="text-muted font-monospace small" id="ecash-ref-display">REF: -</span>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="cancelECashPayment()">Cancel Payment</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Mobile Cart Toggle Button -->
     <button class="mobile-cart-toggle" id="mobile-cart-toggle" onclick="toggleMobileCart()">
         <i class="bi bi-cart3"></i>
@@ -1492,6 +1574,7 @@
         "currency": "{{ currency_symbol|default:'$'|escapejs }}",
         "csrfToken": "{{ csrf_token }}",
         "syncUrl": "{% url 'sales:api_sync_offline_sales' %}",
+        "batchSyncUrl": "{% url 'sales:api_sync_offline_batch' %}",
         "checkoutUrl": "/sales/api/checkout/",
         "hasShift": {% if shift %}true{% else %}false{% endif %},
         "waiveShift": {% if request.user.tenant.waive_shift_requirement %}true{% else %}false{% endif %},
@@ -1513,16 +1596,50 @@
         const CURRENCY = _posContext.currency;
         const CSRF_TOKEN = _posContext.csrfToken;
         const SYNC_URL = _posContext.syncUrl;
+        const BATCH_SYNC_URL = _posContext.batchSyncUrl;
         const CHECKOUT_URL = _posContext.checkoutUrl;
         const HAS_SHIFT = _posContext.hasShift;
         const WAIVE_SHIFT = _posContext.waiveShift;
         const ALLOW_NEGATIVE_STOCK = _posContext.allowNegativeStock;
         const DISALLOW_MANUAL_MOMO = _posContext.disallowManualMomo;
 
-        const PRODUCTS = JSON.parse(document.getElementById('pos-products-data').textContent || '[]');
-        const BUNDLES = JSON.parse(document.getElementById('pos-bundles-data').textContent || '[]');
-        const CUSTOMERS = JSON.parse(document.getElementById('pos-customers-data').textContent || '[]');
-        const AVAILABLE_PROVIDERS = JSON.parse(document.getElementById('pos-providers-data').textContent || '[]');
+        let PRODUCTS = JSON.parse(document.getElementById('pos-products-data').textContent || '[]');
+        let BUNDLES = JSON.parse(document.getElementById('pos-bundles-data').textContent || '[]');
+        let CUSTOMERS = JSON.parse(document.getElementById('pos-customers-data').textContent || '[]');
+        let AVAILABLE_PROVIDERS = JSON.parse(document.getElementById('pos-providers-data').textContent || '[]');
+
+        // Offline catalog resilience: cache fresh copies and hydrate on empty offline boot
+        try {
+            if (PRODUCTS && PRODUCTS.length > 0) {
+                localStorage.setItem('pos_cached_products', JSON.stringify(PRODUCTS));
+            } else {
+                const cachedProducts = localStorage.getItem('pos_cached_products');
+                if (cachedProducts) PRODUCTS = JSON.parse(cachedProducts);
+            }
+
+            if (BUNDLES && BUNDLES.length > 0) {
+                localStorage.setItem('pos_cached_bundles', JSON.stringify(BUNDLES));
+            } else {
+                const cachedBundles = localStorage.getItem('pos_cached_bundles');
+                if (cachedBundles) BUNDLES = JSON.parse(cachedBundles);
+            }
+
+            if (CUSTOMERS && CUSTOMERS.length > 0) {
+                localStorage.setItem('pos_cached_customers', JSON.stringify(CUSTOMERS));
+            } else {
+                const cachedCustomers = localStorage.getItem('pos_cached_customers');
+                if (cachedCustomers) CUSTOMERS = JSON.parse(cachedCustomers);
+            }
+
+            if (AVAILABLE_PROVIDERS && AVAILABLE_PROVIDERS.length > 0) {
+                localStorage.setItem('pos_cached_providers', JSON.stringify(AVAILABLE_PROVIDERS));
+            } else {
+                const cachedProviders = localStorage.getItem('pos_cached_providers');
+                if (cachedProviders) AVAILABLE_PROVIDERS = JSON.parse(cachedProviders);
+            }
+        } catch (storageErr) {
+            console.warn('[POS] Catalog storage error:', storageErr);
+        }
 
         // --- POS Toast Notification System ---
         function showPosToast(message, type = 'warning', durationMs = 3500) {
@@ -1599,6 +1716,124 @@
             });
         }
 
+        // ── Custom Alert & Confirm System (replaces native window alert/confirm) ──
+        function showPosAlert(title, message, type = 'info') {
+            return new Promise((resolve) => {
+                const modal = document.getElementById('pos-message-modal');
+                const titleEl = document.getElementById('pos-message-title');
+                const bodyEl = document.getElementById('pos-message-body');
+                const iconEl = document.getElementById('pos-message-icon');
+                const confirmBtn = document.getElementById('btn-pos-message-confirm');
+                const cancelBtn = document.getElementById('btn-pos-message-cancel');
+
+                const icons = {
+                    success: '<i class="bi bi-check-circle-fill text-success"></i>',
+                    error:   '<i class="bi bi-x-circle-fill text-danger"></i>',
+                    warning: '<i class="bi bi-exclamation-triangle-fill text-warning"></i>',
+                    info:    '<i class="bi bi-info-circle-fill text-info"></i>'
+                };
+
+                iconEl.innerHTML = icons[type] || icons.info;
+                titleEl.textContent = title;
+                bodyEl.innerHTML = message;
+                cancelBtn.style.display = 'none';
+                confirmBtn.textContent = 'OK';
+                confirmBtn.className = 'btn flex-fill ' + (type === 'error' ? 'btn-danger' : (type === 'success' ? 'btn-success' : 'btn-primary'));
+
+                modal.classList.add('active');
+
+                const cleanup = () => {
+                    modal.classList.remove('active');
+                    document.removeEventListener('keydown', keydownHandler);
+                    confirmBtn.removeEventListener('click', clickHandler);
+                };
+
+                const clickHandler = () => {
+                    cleanup();
+                    resolve(true);
+                };
+
+                const keydownHandler = (e) => {
+                    if (!modal.classList.contains('active')) return;
+                    if (e.key === 'Enter' || e.key === 'Escape') {
+                        e.preventDefault();
+                        cleanup();
+                        resolve(true);
+                    }
+                };
+
+                confirmBtn.addEventListener('click', clickHandler);
+                document.addEventListener('keydown', keydownHandler);
+                setTimeout(() => confirmBtn.focus(), 80);
+            });
+        }
+
+        function showPosConfirm(title, message, confirmText = 'Confirm', cancelText = 'Cancel', type = 'warning') {
+            return new Promise((resolve) => {
+                const modal = document.getElementById('pos-message-modal');
+                const titleEl = document.getElementById('pos-message-title');
+                const bodyEl = document.getElementById('pos-message-body');
+                const iconEl = document.getElementById('pos-message-icon');
+                const confirmBtn = document.getElementById('btn-pos-message-confirm');
+                const cancelBtn = document.getElementById('btn-pos-message-cancel');
+
+                const icons = {
+                    success: '<i class="bi bi-check-circle-fill text-success"></i>',
+                    error:   '<i class="bi bi-x-circle-fill text-danger"></i>',
+                    danger:  '<i class="bi bi-exclamation-octagon-fill text-danger"></i>',
+                    warning: '<i class="bi bi-exclamation-triangle-fill text-warning"></i>',
+                    info:    '<i class="bi bi-question-circle-fill text-info"></i>'
+                };
+
+                iconEl.innerHTML = icons[type] || icons.warning;
+                titleEl.textContent = title;
+                bodyEl.innerHTML = message;
+                cancelBtn.style.display = 'block';
+                cancelBtn.textContent = cancelText;
+                confirmBtn.textContent = confirmText;
+                confirmBtn.className = 'btn flex-fill ' + (type === 'danger' || type === 'error' ? 'btn-danger' : 'btn-primary');
+
+                modal.classList.add('active');
+
+                const cleanup = () => {
+                    modal.classList.remove('active');
+                    document.removeEventListener('keydown', keydownHandler);
+                    confirmBtn.removeEventListener('click', onConfirm);
+                    cancelBtn.removeEventListener('click', onCancel);
+                };
+
+                const onConfirm = () => {
+                    cleanup();
+                    resolve(true);
+                };
+
+                const onCancel = () => {
+                    cleanup();
+                    resolve(false);
+                };
+
+                const keydownHandler = (e) => {
+                    if (!modal.classList.contains('active')) return;
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        onConfirm();
+                    } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        onCancel();
+                    }
+                };
+
+                confirmBtn.addEventListener('click', onConfirm);
+                cancelBtn.addEventListener('click', onCancel);
+                document.addEventListener('keydown', keydownHandler);
+                setTimeout(() => confirmBtn.focus(), 80);
+            });
+        }
+
+        // Global fallback so any untrapped alert() automatically routes to custom dialog
+        window.posAlert = showPosAlert;
+        window.posConfirm = showPosConfirm;
+
         // ── Theme (light / dark) ─────────────────────────────────
         const THEME_STORAGE_KEY = 'pos-theme';
 
@@ -1653,6 +1888,7 @@
         const syncManager = new OfflineSyncManager({
             csrfToken: CSRF_TOKEN,
             syncUrl: SYNC_URL,
+            batchSyncUrl: BATCH_SYNC_URL,
             checkoutUrl: CHECKOUT_URL,
             onStatusChange: function(isOnline) {
                 const indicator = document.getElementById('offline-indicator');
@@ -1688,17 +1924,22 @@
                 const bar = document.getElementById('sync-status-bar');
                 const text = document.getElementById('sync-status-text');
                 bar.classList.add('active');
-                text.textContent = `Syncing sale ${current} of ${total}...`;
+                text.textContent = `Batch syncing sales: ${current} of ${total}...`;
             },
-            onSyncComplete: function(synced, failed) {
+            onSyncComplete: function(synced, failed, conflicts = 0) {
                 const bar = document.getElementById('sync-status-bar');
                 const text = document.getElementById('sync-status-text');
-                if (failed === 0) {
-                    text.textContent = `✓ ${synced} sale(s) synced successfully!`;
+                if (failed === 0 && conflicts === 0) {
+                    text.textContent = `✓ All ${synced} sale(s) synced cleanly!`;
+                    showPosToast(`✓ All ${synced} offline sales synced successfully!`, 'success', 4000);
+                } else if (conflicts > 0) {
+                    text.textContent = `✓ ${synced} synced (${conflicts} with stock adjustments)`;
+                    showPosToast(`Synced ${synced} sales (${conflicts} had inventory adjustments)`, 'warning', 6000);
                 } else {
                     text.textContent = `${synced} synced, ${failed} failed - check sales history`;
+                    showPosToast(`${synced} synced, ${failed} failed to sync`, 'error', 5000);
                 }
-                setTimeout(() => bar.classList.remove('active'), 4000);
+                setTimeout(() => bar.classList.remove('active'), 4500);
             },
             onSyncError: function(error) {
                 console.error('Sync error:', error);
@@ -2834,9 +3075,219 @@
             document.getElementById('provider-select-modal').classList.add('active');
         }
 
+        // ── Active E-Cash Session State & Live Polling ─────────────
+        let currentECashSession = {
+            reference: null,
+            saleId: null,
+            isPaymentOnAccount: false,
+            customerId: null,
+            total: 0,
+            providerId: null,
+            providerName: '',
+            token: '',
+            phone: '',
+            authorizationUrl: '',
+            checkoutType: '',
+            pollingTimer: null,
+            popupWindow: null,
+            pollCount: 0
+        };
+
+        function startECashPolling() {
+            stopECashPolling();
+            currentECashSession.pollCount = 0;
+            currentECashSession.pollingTimer = setInterval(async () => {
+                if (!currentECashSession.reference) {
+                    stopECashPolling();
+                    return;
+                }
+                currentECashSession.pollCount++;
+                const ticker = document.getElementById('ecash-ticker-msg');
+                if (ticker) {
+                    ticker.textContent = `Checking payment confirmation... (${currentECashSession.pollCount * 3}s)`;
+                }
+
+                try {
+                    const verified = await verifyECashPayment(
+                        currentECashSession.reference,
+                        currentECashSession.saleId,
+                        currentECashSession.isPaymentOnAccount,
+                        currentECashSession.customerId,
+                        currentECashSession.total,
+                        currentECashSession.providerId,
+                        currentECashSession.token,
+                        true // isBackgroundPoll = true
+                    );
+                    if (verified) {
+                        stopECashPolling();
+                    }
+                } catch (e) {
+                    console.warn('E-Cash poll error:', e);
+                }
+            }, 3200);
+        }
+
+        function stopECashPolling() {
+            if (currentECashSession.pollingTimer) {
+                clearInterval(currentECashSession.pollingTimer);
+                currentECashSession.pollingTimer = null;
+            }
+        }
+
+        function closeECashActiveModal() {
+            stopECashPolling();
+            const modal = document.getElementById('ecash-active-modal');
+            if (modal) modal.classList.remove('active');
+            if (currentECashSession.popupWindow && !currentECashSession.popupWindow.closed) {
+                try { currentECashSession.popupWindow.close(); } catch (e) {}
+            }
+            const iframe = document.getElementById('ecash-iframe');
+            if (iframe) iframe.src = 'about:blank';
+        }
+
+        function openECashActiveModal() {
+            const modal = document.getElementById('ecash-active-modal');
+            const titleEl = document.getElementById('ecash-modal-title');
+            const subtitleEl = document.getElementById('ecash-modal-subtitle');
+            const amountEl = document.getElementById('ecash-modal-amount');
+            const phoneEl = document.getElementById('ecash-phone-display');
+            const refEl = document.getElementById('ecash-ref-display');
+            const bodyEl = document.getElementById('ecash-modal-body');
+            const popoutBtn = document.getElementById('btn-ecash-popout');
+            const tickerEl = document.getElementById('ecash-ticker-msg');
+
+            titleEl.textContent = `${currentECashSession.providerName} Payment`;
+            subtitleEl.textContent = currentECashSession.checkoutType === 'ussd' ? 'USSD Prompt Sent' : 'Complete Payment';
+            amountEl.textContent = `${CURRENCY}${parseFloat(currentECashSession.total).toFixed(2)}`;
+            phoneEl.textContent = currentECashSession.phone || 'N/A';
+            refEl.textContent = `REF: ${currentECashSession.reference}`;
+            tickerEl.textContent = 'Awaiting customer payment confirmation...';
+
+            if (currentECashSession.checkoutType === 'redirect') {
+                popoutBtn.style.display = 'inline-block';
+                bodyEl.innerHTML = `
+                    <div style="position:relative; width:100%; height:460px; background:#fff;">
+                        <div id="ecash-iframe-loader" style="position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; background:#ffffff; color:#333; z-index:1;">
+                            <div class="spinner-border text-primary mb-2" role="status"></div>
+                            <div class="fw-semibold">Loading payment portal...</div>
+                            <div class="text-muted small mt-1">If page fails to load, click "Pop Out" above.</div>
+                        </div>
+                        <iframe id="ecash-iframe" src="${currentECashSession.authorizationUrl}" style="width:100%; height:100%; border:0;" allow="payment" onload="const l=document.getElementById('ecash-iframe-loader'); if(l) l.style.display='none';"></iframe>
+                    </div>
+                `;
+            } else if (currentECashSession.checkoutType === 'ussd') {
+                popoutBtn.style.display = 'none';
+                bodyEl.innerHTML = `
+                    <div class="p-4 text-center d-flex flex-column align-items-center justify-content-center" style="min-height:380px; color:var(--pos-text); background: var(--pos-bg-dialog);">
+                        <div class="mb-3" style="width:76px; height:76px; border-radius:50%; background:rgba(37,99,235,0.15); display:flex; align-items:center; justify-content:center; color:#3b82f6; font-size:2.4rem;">
+                            <i class="bi bi-phone-vibrate"></i>
+                        </div>
+                        <h4 class="fw-bold mb-1" style="color:var(--pos-text);">Approval Prompt Sent</h4>
+                        <div class="badge bg-primary fs-6 font-monospace mb-3 px-3 py-2">${currentECashSession.phone}</div>
+                        <p class="text-muted small mb-3" style="max-width:340px;">
+                            A Mobile Money prompt has been sent directly to the customer's device. Ask them to confirm and authorize with their PIN.
+                        </p>
+                        <div class="alert alert-info py-2 px-3 small d-inline-flex align-items-center mb-0">
+                            <i class="bi bi-info-circle me-2"></i> This screen will automatically complete once payment is received.
+                        </div>
+                    </div>
+                `;
+            }
+
+            modal.classList.add('active');
+            startECashPolling();
+        }
+
+        function popOutECashWindow() {
+            if (!currentECashSession.authorizationUrl) return;
+            const w = 480;
+            const h = 720;
+            const left = Math.max(0, window.screen.width - w - 30);
+            const top = 50;
+            
+            if (currentECashSession.popupWindow && !currentECashSession.popupWindow.closed) {
+                currentECashSession.popupWindow.focus();
+            } else {
+                currentECashSession.popupWindow = window.open(
+                    currentECashSession.authorizationUrl,
+                    'ECashPaymentPopup',
+                    `width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=yes,status=no`
+                );
+            }
+
+            const bodyEl = document.getElementById('ecash-modal-body');
+            if (bodyEl) {
+                bodyEl.innerHTML = `
+                    <div class="p-4 text-center d-flex flex-column align-items-center justify-content-center" style="min-height:380px; color:var(--pos-text); background: var(--pos-bg-dialog);">
+                        <div class="mb-3" style="width:72px; height:72px; border-radius:50%; background:rgba(14,165,233,0.15); display:flex; align-items:center; justify-content:center; color:#0ea5e9; font-size:2.2rem;">
+                            <i class="bi bi-window-stack"></i>
+                        </div>
+                        <h5 class="fw-bold mb-1">Window Open Beside POS</h5>
+                        <p class="text-muted small mb-3" style="max-width:320px;">
+                            Payment page is loaded in a compact side window so you can monitor the POS in the background.
+                        </p>
+                        <button class="btn btn-sm btn-outline-primary" onclick="if(currentECashSession.popupWindow && !currentECashSession.popupWindow.closed) currentECashSession.popupWindow.focus();">
+                            <i class="bi bi-box-arrow-in-up-right me-1"></i>Focus Payment Window
+                        </button>
+                    </div>
+                `;
+            }
+        }
+
+        function copyECashPhone() {
+            if (!currentECashSession.phone) return;
+            navigator.clipboard.writeText(currentECashSession.phone).then(() => {
+                const btn = document.getElementById('btn-ecash-copy-phone');
+                if (btn) {
+                    const orig = btn.innerHTML;
+                    btn.innerHTML = '<i class="bi bi-check2 text-success me-1"></i>Copied!';
+                    setTimeout(() => { btn.innerHTML = orig; }, 2000);
+                }
+                showPosToast('Phone number copied to clipboard', 'success', 2000);
+            }).catch(() => {
+                showPosToast('Could not copy phone number', 'warning', 2000);
+            });
+        }
+
+        async function triggerManualVerification() {
+            const btn = document.getElementById('btn-ecash-manual-verify');
+            if (btn) {
+                btn.innerHTML = '<i class="bi bi-arrow-repeat spin me-1"></i>Checking...';
+                btn.disabled = true;
+            }
+            await verifyECashPayment(
+                currentECashSession.reference,
+                currentECashSession.saleId,
+                currentECashSession.isPaymentOnAccount,
+                currentECashSession.customerId,
+                currentECashSession.total,
+                currentECashSession.providerId,
+                currentECashSession.token,
+                false // not background poll, show custom error if not yet complete
+            );
+            if (btn) {
+                btn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i>Verify Now';
+                btn.disabled = false;
+            }
+        }
+
+        async function cancelECashPayment() {
+            const confirmed = await showPosConfirm(
+                'Cancel E-Cash Payment?',
+                'Are you sure you want to stop waiting? If the customer completes the payment later, you can still verify it under Pending Digital Payments.',
+                'Yes, Exit',
+                'Keep Waiting',
+                'warning'
+            );
+            if (confirmed) {
+                closeECashActiveModal();
+                fetchPendingEcashSales();
+            }
+        }
+
         async function openECashCheckout() {
             if (AVAILABLE_PROVIDERS.length === 0) {
-                alert('No e-cash payment providers are configured for this shop.');
+                await showPosAlert('No E-Cash Providers', 'No e-cash payment providers are configured for this shop.', 'warning');
                 return;
             }
 
@@ -2865,7 +3316,7 @@
             const isPaymentOnAccount = cart.length === 0 && selectedCustomer;
 
             if (cart.length === 0 && !selectedCustomer) {
-                alert('Cart is empty! Select a customer for payment on account.');
+                await showPosAlert('Cart is Empty', 'Cart is empty! Select a customer for payment on account.', 'warning');
                 return;
             }
 
@@ -2882,7 +3333,7 @@
 
                 total = parseFloat(amountStr);
                 if (isNaN(total) || total <= 0) {
-                    alert('Please enter a valid payment amount.');
+                    await showPosAlert('Invalid Amount', 'Please enter a valid payment amount.', 'warning');
                     return;
                 }
             } else {
@@ -2891,7 +3342,7 @@
             }
 
             if (total <= 0) {
-                alert('Invalid total amount for payment.');
+                await showPosAlert('Invalid Total', 'Invalid total amount for payment.', 'warning');
                 return;
             }
 
@@ -2902,7 +3353,7 @@
             if (!phone && ['paystack', 'appsnmobile', 'expresspay', 'nalopay'].includes(provider.provider.toLowerCase())) {
                 phone = await promptAsync(`<i class="bi bi-phone me-2"></i>Phone Number`, `Please enter customer's Mobile Money phone number for ${provider.name}:`, '', 'tel');
                 if (!phone) {
-                    alert('Phone number is required for this payment method.');
+                    await showPosAlert('Phone Required', 'Customer phone number is required for Mobile Money / E-Cash.', 'warning');
                     return;
                 }
             }
@@ -2939,28 +3390,49 @@
                 document.querySelectorAll('.pos-toast').forEach(t => t.remove());
 
                 if (!data.success) {
-                    alert(data.error || 'Failed to initialize payment.');
+                    await showPosAlert('Initialization Error', data.error || 'Failed to initialize payment.', 'error');
                     return;
                 }
 
+                // Setup current active session
+                currentECashSession = {
+                    reference: data.reference,
+                    saleId: data.sale_id,
+                    isPaymentOnAccount: data.is_payment_on_account,
+                    customerId: data.customer_id,
+                    total: total,
+                    providerId: provider.id,
+                    providerName: data.provider || provider.name,
+                    token: data.token || '',
+                    phone: data.phone || phone,
+                    authorizationUrl: data.authorization_url || '',
+                    checkoutType: data.checkout_type,
+                    pollingTimer: null,
+                    popupWindow: null,
+                    pollCount: 0
+                };
+
                 // Handle different checkout flows based on provider type
                 if (data.checkout_type === 'inline' && data.public_key) {
-                    // Open Paystack inline popup
+                    // Open Paystack inline popup with Mobile Money channels prioritized and prefilled
                     const handler = PaystackPop.setup({
                         key: data.public_key,
                         email: data.customer_email || `walkin_${Math.random().toString(36).substring(2, 10)}@example.com`,
-                        phone: data.phone,
+                        phone: data.phone || phone,
                         amount: Math.round(total * 100), // Convert to pesewas
                         currency: 'GHS',
                         ref: data.reference,
+                        channels: ['mobile_money', 'card'],
                         mobile_money: {
-                            phone: data.phone
+                            phone: data.phone || phone,
+                            provider: data.paystack_provider || 'mtn'
                         },
                         metadata: {
                             device_type: "pos_terminal",
                             is_pos_checkout: "true",
                             tenant_id: data.tenant_id,
                             sale_id: data.sale_id,
+                            phone: data.phone || phone,
                             custom_fields: [
                                 {
                                     display_name: "Sale Number",
@@ -2970,92 +3442,81 @@
                                 {
                                     display_name: "Phone Number",
                                     variable_name: "phone",
-                                    value: data.phone
+                                    value: data.phone || phone
+                                },
+                                {
+                                    display_name: "Network",
+                                    variable_name: "network",
+                                    value: data.network || 'MTN'
                                 }
                             ]
                         },
                         callback: function (response) {
-                            // Payment successful - verify and complete
-                            verifyECashPayment(response.reference, data.sale_id, data.is_payment_on_account, data.customer_id, total, provider.id, '');
+                            // Payment successful callback from Paystack inline
+                            verifyECashPayment(response.reference, data.sale_id, data.is_payment_on_account, data.customer_id, total, provider.id, '', false);
                         },
                         onClose: function () {
-                            // User closed popup without completing
                             console.log('Payment popup closed');
                         }
                     });
 
                     handler.openIframe();
+                    // Background polling ticker starts as well
+                    startECashPolling();
                 } 
                 else if (data.checkout_type === 'redirect' && data.authorization_url) {
-                    // Redirect to payment URL
-                    // Open in new tab or popup
-                    const paymentWindow = window.open(data.authorization_url, 'PaymentCheckout', 'width=600,height=700');
-                    
-                    // Show verify button to check status
-                    showVerifyModal(data.reference, data.sale_id, data.is_payment_on_account, data.customer_id, total, provider.id, '');
+                    // Open in-app modal with iframe & compact window popout option
+                    openECashActiveModal();
                 }
                 else if (data.checkout_type === 'ussd') {
-                    // Prompt was sent to phone
-                    alert(`A payment prompt has been sent to the customer's phone. Please wait for them to confirm.`);
-                    // Show verify button to check status
-                    showVerifyModal(data.reference, data.sale_id, data.is_payment_on_account, data.customer_id, total, provider.id, '');
+                    // Open in-app modal with USSD approval card & live ticker
+                    openECashActiveModal();
                 }
                 else {
-                    alert('Unknown checkout type or missing checkout URL.');
+                    await showPosAlert('Configuration Notice', 'Unknown checkout type or missing checkout URL.', 'warning');
                 }
 
             } catch (error) {
                 document.querySelectorAll('.pos-toast').forEach(t => t.remove());
                 console.error('E-Cash error:', error);
-                alert('Failed to initialize e-cash payment. Please try again.');
+                await showPosAlert('Error', 'Failed to initialize e-cash payment. Please try again.', 'error');
             }
         }
 
         // Add a modal to verify payment manually if it's redirect or ussd
         function showVerifyModal(reference, saleId, isPaymentOnAccount, customerId, total, providerId, token) {
-            // We can reuse the checkout-modal with a loading spinner and verify button
-            const modal = document.createElement('div');
-            modal.className = 'checkout-modal active';
-            modal.id = 'manual-verify-modal';
-            modal.innerHTML = `
-                <div class="checkout-dialog text-center" style="max-width:400px;">
-                    <div class="mb-3" style="font-size:3rem; color:var(--pos-accent);">
-                        <i class="bi bi-arrow-repeat spin"></i>
-                    </div>
-                    <h4 class="mb-1" style="color:var(--pos-accent);">Awaiting Payment</h4>
-                    <p class="text-muted small mb-3">Please wait for the customer to complete the payment on their device.</p>
-                    <div class="d-flex gap-2 mt-4">
-                        <button class="btn btn-secondary flex-fill" onclick="closeVerifyModal()">Cancel</button>
-                        <button class="btn btn-primary flex-fill" onclick="manualVerify('${reference}', '${saleId}', ${isPaymentOnAccount}, ${customerId || 'null'}, ${total}, ${providerId}, '${token}')">
-                            Verify Payment
-                        </button>
-                    </div>
-                </div>
-            `;
-            document.body.appendChild(modal);
+            currentECashSession.reference = reference;
+            currentECashSession.saleId = saleId;
+            currentECashSession.isPaymentOnAccount = isPaymentOnAccount;
+            currentECashSession.customerId = customerId;
+            currentECashSession.total = total;
+            currentECashSession.providerId = providerId;
+            currentECashSession.token = token;
+            openECashActiveModal();
         }
 
         function closeVerifyModal() {
-            const m = document.getElementById('manual-verify-modal');
-            if (m) m.remove();
+            closeECashActiveModal();
         }
 
         window.manualVerify = function(reference, saleId, isPaymentOnAccount, customerId, total, providerId, token) {
             const btn = event.currentTarget;
-            btn.innerHTML = '<i class="bi bi-arrow-repeat spin me-1"></i>Verifying...';
-            btn.disabled = true;
+            if (btn) {
+                btn.innerHTML = '<i class="bi bi-arrow-repeat spin me-1"></i>Verifying...';
+                btn.disabled = true;
+            }
             
-            verifyECashPayment(reference, saleId, isPaymentOnAccount, customerId, total, providerId, token)
+            verifyECashPayment(reference, saleId, isPaymentOnAccount, customerId, total, providerId, token, false)
                 .finally(() => {
-                    if(document.getElementById('manual-verify-modal')) {
-                        btn.innerHTML = 'Verify Payment';
+                    if (btn) {
+                        btn.innerHTML = 'Verify';
                         btn.disabled = false;
                     }
                 });
         };
 
         // Verify and complete e-cash payment
-        async function verifyECashPayment(reference, saleId, isPaymentOnAccount = false, customerId = null, amount = 0, providerId = null, token = '') {
+        async function verifyECashPayment(reference, saleId, isPaymentOnAccount = false, customerId = null, amount = 0, providerId = null, token = '', isBackgroundPoll = false) {
             try {
                 const response = await fetch('{% url "sales:verify_ecash_payment" %}', {
                     method: 'POST',
@@ -3077,7 +3538,7 @@
                 const data = await response.json();
 
                 if (data.success) {
-                    closeVerifyModal();
+                    closeECashActiveModal();
                     // Reset cart
                     cart = [];
                     discountType = 'amount';
@@ -3092,7 +3553,8 @@
                     document.getElementById('selected-customer-info').style.display = 'none';
                     document.getElementById('btn-pay-credit').style.display = 'none';
 
-                    alert('E-Cash payment successful!');
+                    // Custom success modal instead of browser native alert!
+                    await showPosAlert('Payment Confirmed!', 'E-Cash payment received and verified successfully!', 'success');
 
                     // Open appropriate receipt
                     {% if shop_settings.auto_print_receipts and shop_settings.receipt_printer_type != 'NO_PRINT' %}
@@ -3104,12 +3566,19 @@
                         window.open(`/sales/${data.sale_id}/receipt/`, '_blank');
                     }
                     {% endif %}
+                    return true;
                 } else {
-                    alert(data.error || 'Payment verification failed. Please contact support.');
+                    if (!isBackgroundPoll) {
+                        await showPosAlert('Verification Notice', data.error || 'Payment not yet confirmed. Please ensure customer completed approval.', 'warning');
+                    }
+                    return false;
                 }
             } catch (error) {
                 console.error('Verification error:', error);
-                alert('Failed to verify payment. Please check your transaction history.');
+                if (!isBackgroundPoll) {
+                    await showPosAlert('Verification Error', 'Failed to verify payment status. Please check your transaction history.', 'error');
+                }
+                return false;
             } finally {
                 // Refresh pending sales list in case it changed
                 fetchPendingEcashSales();
@@ -3171,7 +3640,8 @@
 
         async function voidPendingSale(saleId) {
             if (!saleId) return;
-            if (!confirm("Are you sure you want to cancel and void this pending sale?")) return;
+            const confirmed = await showPosConfirm("Void Pending Sale?", "Are you sure you want to cancel and void this pending digital payment?", "Yes, Void", "Cancel", "danger");
+            if (!confirmed) return;
             
             try {
                 const formData = new FormData();
@@ -3190,11 +3660,11 @@
                     showPosToast('Sale voided successfully.', 'success');
                     fetchPendingEcashSales();
                 } else {
-                    alert(data.error || 'Failed to void sale.');
+                    await showPosAlert('Void Failed', data.error || 'Failed to void sale.', 'error');
                 }
             } catch (e) {
                 console.error(e);
-                alert('Error voiding sale.');
+                await showPosAlert('Error', 'Error voiding sale.', 'error');
             }
         }
 
@@ -3302,6 +3772,7 @@
             const saleData = {
                 items: cart.map(item => ({
                     product_id: item.id,
+                    product_name: item.name,
                     quantity: item.quantity,
                     unit_price: item.price,
                     batch_id: item.batch_id || null
@@ -3336,7 +3807,31 @@
 
                     if (result.mode === 'offline') {
                         // Sale was queued offline
-                        alert('✓ Sale saved offline! It will sync automatically when you\'re back online.');
+                        // 1. Immediately deduct local in-memory stock & save to storage
+                        if (saleData && saleData.items) {
+                            saleData.items.forEach(item => {
+                                const prod = PRODUCTS.find(p => p.id === item.product_id);
+                                if (prod && typeof prod.stock === 'number') {
+                                    prod.stock = Math.max(0, prod.stock - item.quantity);
+                                }
+                            });
+                            try {
+                                localStorage.setItem('pos_cached_products', JSON.stringify(PRODUCTS));
+                            } catch (e) {}
+                            renderProducts();
+                        }
+
+                        // 2. Show notification
+                        showPosToast('✓ Sale recorded offline (queued for auto-sync)', 'success', 4000);
+
+                        // 3. Print / prompt offline receipt
+                        {% if shop_settings.auto_print_receipts and shop_settings.receipt_printer_type != 'NO_PRINT' %}
+                        printOfflineReceipt(saleData, result.client_sale_id);
+                        {% else %}
+                        if (confirm('Sale saved offline. Would you like to print an offline receipt?')) {
+                            printOfflineReceipt(saleData, result.client_sale_id);
+                        }
+                        {% endif %}
                     } else {
                         // Sale completed online
                         // Open receipt for printing
@@ -3656,12 +4151,190 @@
 
 
     <script>
-        // Register Service Worker for PWA install & offline caching
+        // --- Helper: Escape HTML for safe printing ---
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        // --- Offline Receipt Printing Function ---
+        function printOfflineReceipt(saleData, clientSaleId) {
+            const shopName = "{{ shop.name|escapejs }}";
+            const attendantName = "{{ user.get_full_name|default:user.email|escapejs }}";
+            const currency = CURRENCY || '$';
+            const shortId = (clientSaleId || '').substring(0, 8).toUpperCase();
+            const dateStr = new Date().toLocaleString();
+
+            let itemsHtml = '';
+            let subtotal = 0;
+            (saleData.items || []).forEach(item => {
+                const lineTotal = item.quantity * item.unit_price;
+                subtotal += lineTotal;
+                itemsHtml += `
+                    <tr>
+                        <td style="padding: 4px 0; font-size: 12px;">${escapeHtml(item.product_name || 'Item')}</td>
+                        <td style="padding: 4px 0; text-align: center; font-size: 12px;">${item.quantity}</td>
+                        <td style="padding: 4px 0; text-align: right; font-size: 12px;">${currency}${Number(item.unit_price).toFixed(2)}</td>
+                        <td style="padding: 4px 0; text-align: right; font-size: 12px;">${currency}${lineTotal.toFixed(2)}</td>
+                    </tr>
+                `;
+            });
+
+            const discount = Number(saleData.discount_amount || 0);
+            const total = Math.max(0, subtotal - discount);
+            const paid = Number(saleData.amount_paid || total);
+            const change = Math.max(0, paid - total);
+
+            const receiptHtml = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Offline Receipt - ${shortId}</title>
+                    <style>
+                        @page { size: auto; margin: 4mm; }
+                        body { font-family: 'Courier New', monospace; width: 280px; margin: 0 auto; padding: 10px; color: #000; }
+                        .center { text-align: center; }
+                        .bold { font-weight: bold; }
+                        .divider { border-top: 1px dashed #000; margin: 8px 0; }
+                        .badge { border: 1px solid #000; padding: 2px 6px; font-size: 10px; display: inline-block; margin-top: 4px; }
+                        table { width: 100%; border-collapse: collapse; }
+                    </style>
+                </head>
+                <body>
+                    <div class="center">
+                        <h3 style="margin: 0;">${shopName}</h3>
+                        <div class="badge">OFFLINE RECEIPT</div>
+                        <div style="font-size: 11px; margin-top: 4px;">Ref: OFF-${shortId}</div>
+                        <div style="font-size: 10px;">${dateStr}</div>
+                        <div style="font-size: 10px;">Attendant: ${attendantName}</div>
+                    </div>
+                    <div class="divider"></div>
+                    <table>
+                        <thead>
+                            <tr style="border-bottom: 1px solid #000; font-size: 11px;">
+                                <th style="text-align: left;">Item</th>
+                                <th style="text-align: center;">Qty</th>
+                                <th style="text-align: right;">Price</th>
+                                <th style="text-align: right;">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${itemsHtml}
+                        </tbody>
+                    </table>
+                    <div class="divider"></div>
+                    <table>
+                        <tr style="font-size: 11px;">
+                            <td>Subtotal:</td>
+                            <td style="text-align: right;">${currency}${subtotal.toFixed(2)}</td>
+                        </tr>
+                        ${discount > 0 ? `<tr style="font-size: 11px;"><td>Discount:</td><td style="text-align: right;">-${currency}${discount.toFixed(2)}</td></tr>` : ''}
+                        <tr style="font-size: 13px; font-weight: bold;">
+                            <td>Total:</td>
+                            <td style="text-align: right;">${currency}${total.toFixed(2)}</td>
+                        </tr>
+                        <tr style="font-size: 11px;">
+                            <td>Paid (${saleData.payment_method || 'CASH'}):</td>
+                            <td style="text-align: right;">${currency}${paid.toFixed(2)}</td>
+                        </tr>
+                        <tr style="font-size: 11px;">
+                            <td>Change:</td>
+                            <td style="text-align: right;">${currency}${change.toFixed(2)}</td>
+                        </tr>
+                    </table>
+                    <div class="divider"></div>
+                    <div class="center" style="font-size: 10px;">
+                        *** STORED OFFLINE ***<br>
+                        This transaction will sync when back online.<br>
+                        Thank you for your business!
+                    </div>
+                    <script>
+                        window.onload = function() {
+                            window.print();
+                            setTimeout(function() { window.close(); }, 750);
+                        };
+                    <\/script>
+                </body>
+                </html>
+            `;
+
+            const printWin = window.open('', '_blank', 'width=360,height=580');
+            if (printWin) {
+                printWin.document.open();
+                printWin.document.write(receiptHtml);
+                printWin.document.close();
+            } else {
+                showPosToast('Pop-up blocked: Enable pop-ups to print receipts.', 'warning');
+            }
+        }
+
+        // --- Register Service Worker for PWA install & offline caching ---
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('/serviceworker.js', { scope: '/' })
-                    .then(reg => console.log('[PWA] Service worker registered, scope:', reg.scope))
+                    .then(reg => {
+                        console.log('[PWA] Service worker registered, scope:', reg.scope);
+
+                        // Warm the cache with the current fully loaded POS HTML page
+                        if (navigator.serviceWorker.controller) {
+                            navigator.serviceWorker.controller.postMessage({
+                                type: 'CACHE_CURRENT_PAGE',
+                                url: window.location.href,
+                                html: document.documentElement.outerHTML
+                            });
+                        }
+
+                        // Check for service worker updates
+                        reg.onupdatefound = () => {
+                            const installing = reg.installing;
+                            if (installing) {
+                                installing.onstatechange = () => {
+                                    if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+                                        showPosToast('POS updated in background! Refresh whenever ready.', 'info', 5000);
+                                    }
+                                };
+                            }
+                        };
+                    })
                     .catch(err => console.warn('[PWA] Service worker registration failed:', err));
+            });
+        }
+
+        // --- PWA Installation Handling for Laptops & Tablets ---
+        let deferredPrompt = null;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            const installBtn = document.getElementById('btn-pwa-install');
+            if (installBtn) {
+                installBtn.style.display = 'inline-flex';
+            }
+        });
+
+        window.addEventListener('appinstalled', () => {
+            deferredPrompt = null;
+            const installBtn = document.getElementById('btn-pwa-install');
+            if (installBtn) {
+                installBtn.style.display = 'none';
+            }
+            showPosToast('Hendaxis POS app installed successfully!', 'success');
+        });
+
+        function triggerPwaInstall() {
+            if (!deferredPrompt) return;
+            deferredPrompt.prompt();
+            deferredPrompt.userChoice.then((choiceResult) => {
+                if (choiceResult.outcome === 'accepted') {
+                    console.log('[PWA] User accepted install prompt');
+                }
+                deferredPrompt = null;
+                const installBtn = document.getElementById('btn-pwa-install');
+                if (installBtn) installBtn.style.display = 'none';
             });
         }
     </script>

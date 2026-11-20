@@ -13,6 +13,8 @@ class OfflineSyncManager {
         this.isSyncing = false;
         this.csrfToken = options.csrfToken || '';
         this.syncUrl = options.syncUrl || '/sales/api/sync-offline/';
+        this.batchSyncUrl = options.batchSyncUrl || '/sales/api/sync-offline-batch/';
+        this.batchSize = options.batchSize || 25;
         this.checkoutUrl = options.checkoutUrl || '/sales/api/checkout/';
         
         // Callbacks
@@ -235,7 +237,8 @@ class OfflineSyncManager {
     // ==================== Sync Engine ====================
 
     /**
-     * Sync all pending sales to the server.
+     * Sync all pending sales to the server using the high-performance Batch API,
+     * falling back to sequential single-sale sync if the batch endpoint is unreachable.
      */
     async syncPendingSales() {
         if (this.isSyncing) {
@@ -255,41 +258,124 @@ class OfflineSyncManager {
         }
 
         this.isSyncing = true;
-        console.log(`[OfflineSync] Syncing ${pendingSales.length} pending sales...`);
+        console.log(`[OfflineSync] Batch syncing ${pendingSales.length} pending sales...`);
 
         let synced = 0;
+        let conflicts = 0;
         let failed = 0;
 
-        for (const sale of pendingSales) {
+        // Process in chunks of batchSize
+        for (let i = 0; i < pendingSales.length; i += this.batchSize) {
+            if (!this.isOnline()) {
+                console.warn('[OfflineSync] Network dropped during batch sync.');
+                break;
+            }
+
+            const chunk = pendingSales.slice(i, i + this.batchSize);
+
+            // Mark this chunk as 'syncing'
+            for (const s of chunk) {
+                await this._updateSaleStatus(s.client_sale_id, 'syncing');
+            }
+
             try {
-                await this._updateSaleStatus(sale.client_sale_id, 'syncing');
-                this.onSyncProgress(synced + failed + 1, pendingSales.length);
+                const batchPayload = {
+                    sales: chunk.map(s => ({
+                        ...s.sale_data,
+                        client_sale_id: s.client_sale_id,
+                        offline_created_at: s.created_at
+                    }))
+                };
 
+                const response = await fetch(this.batchSyncUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': this.csrfToken,
+                    },
+                    body: JSON.stringify(batchPayload)
+                });
+
+                if (!response.ok) {
+                    // Fallback to sequential single sync for this chunk if batch fails with HTTP error
+                    console.warn(`[OfflineSync] Batch sync HTTP ${response.status}, falling back to sequential sync.`);
+                    const seqRes = await this._syncChunkSequentially(chunk);
+                    synced += seqRes.synced;
+                    conflicts += seqRes.conflicts;
+                    failed += seqRes.failed;
+                    continue;
+                }
+
+                const batchResult = await response.json();
+                if (batchResult.success && Array.isArray(batchResult.results)) {
+                    for (const res of batchResult.results) {
+                        const clientSaleId = res.client_sale_id;
+                        if (res.success) {
+                            await this._removeSale(clientSaleId);
+                            if (res.has_conflicts) {
+                                conflicts++;
+                            } else {
+                                synced++;
+                            }
+                        } else {
+                            await this._updateSaleStatus(clientSaleId, 'error', res.error || 'Sync validation failed');
+                            failed++;
+                        }
+                    }
+                } else {
+                    const seqRes = await this._syncChunkSequentially(chunk);
+                    synced += seqRes.synced;
+                    conflicts += seqRes.conflicts;
+                    failed += seqRes.failed;
+                }
+
+            } catch (err) {
+                console.error('[OfflineSync] Network error during batch sync:', err);
+                for (const s of chunk) {
+                    await this._updateSaleStatus(s.client_sale_id, 'pending', err.message);
+                }
+                failed += chunk.length;
+                break; // Stop further batches if network dropped
+            }
+
+            this.onSyncProgress(Math.min(i + chunk.length, pendingSales.length), pendingSales.length);
+        }
+
+        this.isSyncing = false;
+        await this._updatePendingCount();
+
+        console.log(`[OfflineSync] Sync complete: ${synced} clean, ${conflicts} conflicts, ${failed} failed`);
+        this.onSyncComplete(synced, failed, conflicts);
+    }
+
+    /**
+     * Sequential single-sale sync fallback for a slice of sales.
+     */
+    async _syncChunkSequentially(chunk) {
+        let synced = 0;
+        let conflicts = 0;
+        let failed = 0;
+
+        for (const sale of chunk) {
+            try {
                 const result = await this._syncSingleSale(sale);
-
                 if (result.success) {
                     await this._removeSale(sale.client_sale_id);
-                    synced++;
+                    if (result.has_conflicts) {
+                        conflicts++;
+                    } else {
+                        synced++;
+                    }
                 } else {
-                    // Permanent failure (e.g., invalid product)
                     await this._updateSaleStatus(sale.client_sale_id, 'error', result.error);
                     failed++;
                 }
             } catch (error) {
-                // Network error or server down - stop syncing, keep as pending
-                console.error(`[OfflineSync] Sync error for ${sale.client_sale_id}:`, error);
                 await this._updateSaleStatus(sale.client_sale_id, 'pending', error.message);
                 failed++;
-                // If network error, stop trying the rest
-                if (!this.isOnline()) break;
             }
         }
-
-        this.isSyncing = false;
-        this._updatePendingCount();
-
-        console.log(`[OfflineSync] Sync complete: ${synced} synced, ${failed} failed`);
-        this.onSyncComplete(synced, failed);
+        return { synced, conflicts, failed };
     }
 
     /**

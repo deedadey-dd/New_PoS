@@ -217,6 +217,101 @@
 </div>
 {% endif %}
 
+<!-- Today's Fund Summary (Available to Shop Managers and Attendants) -->
+{% if today_cash_sales is not None or user.role.name == 'SHOP_MANAGER' or user.role.name == 'SHOP_ATTENDANT' %}
+<div class="card border-0 shadow-sm rounded-4 mb-4" id="fund-summary-container">
+    <div class="card-header bg-white border-0 py-3 d-flex flex-wrap justify-content-between align-items-center">
+        <div>
+            <h5 class="mb-1 text-primary fw-bold"><i class="bi bi-wallet2 me-2"></i>Today's Fund Summary</h5>
+            <small class="text-muted">Breakdown of collections across all payment channels for today</small>
+        </div>
+        <div class="d-flex align-items-center gap-2 mt-2 mt-md-0">
+            <!-- Offline Status Badge on Dashboard -->
+            <span class="badge bg-success-subtle text-success border border-success-subtle px-3 py-2" id="dash-offline-badge">
+                <span class="status-dot-sm bg-success me-1 d-inline-block rounded-circle" style="width: 8px; height: 8px;"></span>
+                <span id="dash-offline-text">Online &amp; Synced</span>
+            </span>
+            {% if pending_sync_conflicts_count > 0 %}
+            <a href="{% url 'sales:sale_list' %}?sync_conflict=1" class="btn btn-sm btn-outline-danger rounded-pill px-3" title="View sales synced offline that had stock or balance discrepancies">
+                <i class="bi bi-exclamation-triangle-fill me-1"></i>{{ pending_sync_conflicts_count }} Sync Conflict{{ pending_sync_conflicts_count|pluralize }}
+            </a>
+            {% endif %}
+        </div>
+    </div>
+    <div class="card-body p-3 pt-0">
+        <!-- Offline Sync Notice Banner (shown dynamically if offline sales are pending) -->
+        <div class="alert alert-warning border-0 rounded-3 d-none mb-3" id="dash-pending-offline-banner">
+            <div class="d-flex align-items-center justify-content-between">
+                <div>
+                    <i class="bi bi-cloud-arrow-up-fill me-2 fs-5"></i>
+                    <strong>Offline Sales Active:</strong>
+                    <span id="dash-pending-offline-msg">You have offline sales saved on this terminal.</span>
+                </div>
+                <a href="{% url 'sales:pos' %}" class="btn btn-warning btn-sm fw-bold">Open POS to Sync</a>
+            </div>
+        </div>
+
+        <div class="row g-3">
+            <!-- 1. Cash on Hand -->
+            <div class="col-6 col-md-3">
+                <div class="p-3 rounded-4 bg-light h-100 border-start border-4 border-success">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <span class="text-muted small text-uppercase fw-bold">Cash in Drawer</span>
+                        <div class="p-2 rounded-circle bg-success bg-opacity-10 text-success">
+                            <i class="bi bi-cash-stack fs-5"></i>
+                        </div>
+                    </div>
+                    <h4 class="mb-0 fw-bold text-success" id="dash-cash-amount">{{ currency_symbol }}{{ today_cash_sales|floatformat:"2g"|default:"0.00" }}</h4>
+                    <small class="text-muted" id="dash-cash-subtext">Cash tendered today</small>
+                </div>
+            </div>
+
+            <!-- 2. Local Momo -->
+            <div class="col-6 col-md-3">
+                <div class="p-3 rounded-4 bg-light h-100 border-start border-4 border-warning">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <span class="text-muted small text-uppercase fw-bold">Local MoMo</span>
+                        <div class="p-2 rounded-circle bg-warning bg-opacity-10 text-warning">
+                            <i class="bi bi-phone fs-5"></i>
+                        </div>
+                    </div>
+                    <h4 class="mb-0 fw-bold text-warning" id="dash-momo-amount">{{ currency_symbol }}{{ today_momo_sales|floatformat:"2g"|default:"0.00" }}</h4>
+                    <small class="text-muted" id="dash-momo-subtext">Mobile money payments</small>
+                </div>
+            </div>
+
+            <!-- 3. E-Cash / Digital -->
+            <div class="col-6 col-md-3">
+                <div class="p-3 rounded-4 bg-light h-100 border-start border-4 border-info">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <span class="text-muted small text-uppercase fw-bold">E-Cash (Online)</span>
+                        <div class="p-2 rounded-circle bg-info bg-opacity-10 text-info">
+                            <i class="bi bi-credit-card fs-5"></i>
+                        </div>
+                    </div>
+                    <h4 class="mb-0 fw-bold text-info">{{ currency_symbol }}{{ today_ecash_sales|floatformat:"2g"|default:"0.00" }}</h4>
+                    <small class="text-muted">Digital gateway</small>
+                </div>
+            </div>
+
+            <!-- 4. Customer Credit / Active Shift -->
+            <div class="col-6 col-md-3">
+                <div class="p-3 rounded-4 bg-light h-100 border-start border-4 border-primary">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <span class="text-muted small text-uppercase fw-bold">Customer Credit</span>
+                        <div class="p-2 rounded-circle bg-primary bg-opacity-10 text-primary">
+                            <i class="bi bi-journal-bookmark fs-5"></i>
+                        </div>
+                    </div>
+                    <h4 class="mb-0 fw-bold text-primary">{{ currency_symbol }}{{ today_credit_sales|floatformat:"2g"|default:"0.00" }}</h4>
+                    <small class="text-muted">Issued on account</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <!-- Quick Actions - Admin Only -->
 {% if user.role.name == 'ADMIN' %}
 <div class="row g-4 mb-4">
@@ -1056,4 +1151,91 @@ document.addEventListener('DOMContentLoaded', function () {
 {% endif %}
 
 {% include 'sales/partials/partial_dispatch_modal.html' %}
+
+<script>
+    // Offline Dashboard Hydration: Inspects IndexedDB for pending sales made on this device
+    (function checkOfflineDashboardFunds() {
+        const isOnline = navigator.onLine;
+        const offlineBadge = document.getElementById('dash-offline-badge');
+        const offlineText = document.getElementById('dash-offline-text');
+        const pendingBanner = document.getElementById('dash-pending-offline-banner');
+        const pendingMsg = document.getElementById('dash-pending-offline-msg');
+        const cashAmountEl = document.getElementById('dash-cash-amount');
+        const momoAmountEl = document.getElementById('dash-momo-amount');
+        const cashSubtext = document.getElementById('dash-cash-subtext');
+        const momoSubtext = document.getElementById('dash-momo-subtext');
+
+        if (!offlineBadge) return;
+
+        function updateOfflineStatus(online) {
+            if (!online) {
+                offlineBadge.className = 'badge bg-warning text-dark border border-warning px-3 py-2';
+                if (offlineText) offlineText.innerHTML = '<i class="bi bi-wifi-off me-1"></i>Offline Mode';
+            } else {
+                offlineBadge.className = 'badge bg-success-subtle text-success border border-success-subtle px-3 py-2';
+                if (offlineText) offlineText.innerHTML = '<span class="status-dot-sm bg-success me-1 d-inline-block rounded-circle" style="width: 8px; height: 8px;"></span>Online &amp; Synced';
+            }
+        }
+
+        updateOfflineStatus(isOnline);
+        window.addEventListener('online', () => updateOfflineStatus(true));
+        window.addEventListener('offline', () => updateOfflineStatus(false));
+
+        // Open IndexedDB pos_offline_db
+        try {
+            const req = indexedDB.open('pos_offline_db', 1);
+            req.onsuccess = function (e) {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains('pending_sales')) return;
+
+                const tx = db.transaction('pending_sales', 'readonly');
+                const store = tx.objectStore('pending_sales');
+                const getAllReq = store.getAll();
+
+                getAllReq.onsuccess = function () {
+                    const sales = (getAllReq.result || []).filter(s => s.status === 'pending');
+                    if (sales.length > 0) {
+                        let offlineCash = 0;
+                        let offlineMomo = 0;
+
+                        sales.forEach(s => {
+                            const d = s.sale_data || {};
+                            const method = d.payment_method || 'CASH';
+                            const paid = parseFloat(d.amount_paid) || 0;
+                            if (method === 'CASH') offlineCash += paid;
+                            else if (method === 'MOMO') offlineMomo += paid;
+                        });
+
+                        // Show offline alert banner
+                        if (pendingBanner && pendingMsg) {
+                            pendingBanner.classList.remove('d-none');
+                            let parts = [];
+                            if (offlineCash > 0) parts.push(`Cash: +${offlineCash.toFixed(2)}`);
+                            if (offlineMomo > 0) parts.push(`MoMo: +${offlineMomo.toFixed(2)}`);
+                            const extra = parts.length > 0 ? ` (${parts.join(', ')})` : '';
+                            pendingMsg.innerHTML = `You have <strong>${sales.length} offline sale(s)</strong> saved on this device${extra}.`;
+                        }
+
+                        // Add offline tender to displayed cards
+                        const currency = "{{ currency_symbol|default:'$'|escapejs }}";
+                        const baseCash = parseFloat("{{ today_cash_sales|default:'0' }}") || 0;
+                        const baseMomo = parseFloat("{{ today_momo_sales|default:'0' }}") || 0;
+
+                        if (offlineCash > 0 && cashAmountEl) {
+                            cashAmountEl.textContent = `${currency}${(baseCash + offlineCash).toFixed(2)}`;
+                            if (cashSubtext) cashSubtext.innerHTML = `Includes <span class="badge bg-warning text-dark">+${currency}${offlineCash.toFixed(2)} offline</span>`;
+                        }
+
+                        if (offlineMomo > 0 && momoAmountEl) {
+                            momoAmountEl.textContent = `${currency}${(baseMomo + offlineMomo).toFixed(2)}`;
+                            if (momoSubtext) momoSubtext.innerHTML = `Includes <span class="badge bg-warning text-dark">+${currency}${offlineMomo.toFixed(2)} offline</span>`;
+                        }
+                    }
+                };
+            };
+        } catch (err) {
+            console.warn('[Dashboard] Offline hydration check error:', err);
+        }
+    })();
+</script>
 {% endblock %}

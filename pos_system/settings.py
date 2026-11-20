@@ -345,18 +345,25 @@ CORS_ALLOW_ALL_ORIGINS = DEBUG  # Allow all in dev/electron
 CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:8000').split(',')
 
 # PWA Settings
-PWA_APP_NAME = 'New PoS'
+PWA_APP_NAME = 'Hendaxis POS'
 PWA_APP_DESCRIPTION = 'Offline-First Point of Sale System'
-PWA_THEME_COLOR = '#0A0302'
-PWA_BACKGROUND_COLOR = '#ffffff'
+PWA_THEME_COLOR = '#4f46e5'
+PWA_BACKGROUND_COLOR = '#1e1e2e'
 PWA_DISPLAY = 'standalone'
 PWA_SCOPE = '/'
-PWA_START_URL = '/'
+PWA_START_URL = '/sales/pos/'
 PWA_ICONS = [
     {
-        'src': '/static/images/logo.png',
+        'src': '/static/images/icons/icon-192x192.png',
+        'sizes': '192x192',
+        'type': 'image/png',
+        'purpose': 'any maskable'
+    },
+    {
+        'src': '/static/images/icons/icon-512x512.png',
         'sizes': '512x512',
-        'type': 'image/png'
+        'type': 'image/png',
+        'purpose': 'any maskable'
     }
 ]
 PWA_SERVICE_WORKER_PATH = BASE_DIR / 'static/js/serviceworker.js'

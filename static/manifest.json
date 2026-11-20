@@ -1,8 +1,8 @@
 {
     "name": "Hendaxis POS",
     "short_name": "POS",
-    "description": "Point of Sale System - Manage sales, inventory, and more",
-    "start_url": "/",
+    "description": "Point of Sale System - Offline-First POS",
+    "start_url": "/sales/pos/",
     "scope": "/",
     "display": "standalone",
     "orientation": "any",

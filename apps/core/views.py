@@ -363,6 +363,45 @@ class DashboardView(LoginRequiredMixin, View):
             
             context['today_sales'] = today_sales
 
+            # Fund Summary Breakdown (Cash, Momo, E-Cash, Credit) for Today
+            from decimal import Decimal
+            fund_summary_raw = Sale.objects.filter(**sales_filter).values('payment_method').annotate(
+                total=Sum('amount_paid')
+            )
+            fund_summary = {
+                'CASH': Decimal('0.00'),
+                'MOMO': Decimal('0.00'),
+                'ECASH': Decimal('0.00'),
+                'CREDIT': Decimal('0.00'),
+            }
+            for entry in fund_summary_raw:
+                pm = entry.get('payment_method')
+                if pm in fund_summary:
+                    fund_summary[pm] += (entry.get('total') or Decimal('0.00'))
+
+            context['today_cash_sales'] = fund_summary['CASH']
+            context['today_momo_sales'] = fund_summary['MOMO']
+            context['today_ecash_sales'] = fund_summary['ECASH']
+            context['today_credit_sales'] = fund_summary['CREDIT']
+            context['today_fund_summary'] = fund_summary
+
+            # Active shift for cashier/attendant
+            from apps.sales.models import Shift
+            active_shift = None
+            if is_attendant:
+                active_shift = Shift.objects.filter(tenant=user.tenant, attendant=user, status='OPEN').first()
+            elif role_name == 'SHOP_MANAGER' and user.location:
+                active_shift = Shift.objects.filter(tenant=user.tenant, shop=user.location, status='OPEN').first()
+            context['active_shift'] = active_shift
+
+            # Sync conflicts count
+            conflict_filter = {'tenant': user.tenant, 'has_sync_conflict': True}
+            if is_attendant:
+                conflict_filter['attendant'] = user
+            elif role_name == 'SHOP_MANAGER' and user.location:
+                conflict_filter['shop'] = user.location
+            context['pending_sync_conflicts_count'] = Sale.objects.filter(**conflict_filter).count()
+
             # Calculate items dispatched today
             items_dispatched_cache_key = f'items_dispatched_{user.id}_{today}'
             items_dispatched_today = cache.get(items_dispatched_cache_key)

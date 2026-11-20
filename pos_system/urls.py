@@ -22,10 +22,13 @@ def serve_serviceworker(request):
     """Serve the service worker from root path for correct PWA scope."""
     import os
     sw_path = os.path.join(settings.STATICFILES_DIRS[0], 'serviceworker.js')
-    with open(sw_path, 'r') as f:
+    with open(sw_path, 'r', encoding='utf-8') as f:
         content = f.read()
     from django.http import HttpResponse
-    return HttpResponse(content, content_type='application/javascript')
+    response = HttpResponse(content, content_type='application/javascript')
+    response['Service-Worker-Allowed'] = '/'
+    response['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    return response
 
 
 def admin_honeypot(request, subpath=None):

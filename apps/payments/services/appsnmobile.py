@@ -80,8 +80,11 @@ class AppsnMobileProvider(BasePaymentProvider):
         Since it's USSD, this actually triggers the prompt on user's phone.
         Required metadata: 'network', 'customer_number'
         """
-        customer_number = metadata.get('customer_number', '') if metadata else ''
-        network = metadata.get('network', 'MTN') if metadata else 'MTN'
+        customer_number = ''
+        network = 'MTN'
+        if metadata:
+            customer_number = metadata.get('customer_number') or metadata.get('phone') or metadata.get('phonenumber') or ''
+            network = metadata.get('network', 'MTN')
         
         if not customer_number:
             return PaymentResult(

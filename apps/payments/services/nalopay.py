@@ -79,6 +79,10 @@ class NalopayProvider(BasePaymentProvider):
         
         if metadata:
             payload['metadata'] = metadata
+            phone = metadata.get('phone') or metadata.get('phonenumber') or metadata.get('customer_number')
+            if phone:
+                payload['phone'] = str(phone)
+                payload['customer_number'] = str(phone)
             
         response = self._make_request('POST', '/checkout/initialize', payload)
         

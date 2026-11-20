@@ -73,9 +73,11 @@ class ExpressPayProvider(BasePaymentProvider):
         phone = "0000000000"
         
         if metadata:
-            if 'first_name' in metadata: first_name = metadata['first_name']
-            if 'last_name' in metadata: last_name = metadata['last_name']
-            if 'phone' in metadata: phone = metadata['phone']
+            if metadata.get('first_name'): first_name = str(metadata['first_name'])
+            if metadata.get('last_name'): last_name = str(metadata['last_name'])
+            if metadata.get('phone'): phone = str(metadata['phone'])
+            elif metadata.get('phonenumber'): phone = str(metadata['phonenumber'])
+            elif metadata.get('customer_number'): phone = str(metadata['customer_number'])
             
         payload = {
             'merchant-id': self.settings.merchant_id,

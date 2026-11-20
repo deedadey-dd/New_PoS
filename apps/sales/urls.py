@@ -52,6 +52,7 @@ urlpatterns = [
     
     # Offline Sync
     path('api/sync-offline/', views.api_sync_offline_sales, name='api_sync_offline_sales'),
+    path('api/sync-offline-batch/', views.api_sync_offline_batch, name='api_sync_offline_batch'),
     
     # Reports
     path('report/', views.ShopSalesReportView.as_view(), name='shop_sales_report'),

@@ -153,6 +153,14 @@
                class="nav-pill-custom pill-success {% if selected_refund_status == 'no_refunds' %}active{% endif %}">
                 <i class="bi bi-check2-circle"></i> Active Sales
             </a>
+            {% if total_sync_conflicts_count > 0 or request.GET.sync_conflict %}
+            <a href="?sync_conflict=1{% if selected_payment %}&payment={{ selected_payment }}{% endif %}{% if selected_shop %}&shop={{ selected_shop }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}{% if q %}&q={{ q }}{% endif %}"
+               class="nav-pill-custom pill-danger {% if request.GET.sync_conflict == '1' %}active{% endif %}"
+               title="Sales synced from offline mode that had stock or balance discrepancies">
+                <i class="bi bi-exclamation-triangle-fill"></i> Sync Conflicts
+                <span class="badge rounded-pill bg-danger text-white nav-pill-count ms-1">{{ total_sync_conflicts_count|default:0 }}</span>
+            </a>
+            {% endif %}
         </div>
 
         <!-- Tier 2: Payment Method Navigation Pills -->
@@ -453,6 +461,11 @@
                             <span class="badge bg-primary">Pending Invoice</span>
                             {% else %}
                             <span class="badge bg-secondary">{{ sale.get_status_display }}</span>
+                            {% endif %}
+                            {% if sale.has_sync_conflict %}
+                            <span class="badge bg-danger text-white border border-danger ms-1" data-bs-toggle="tooltip" title="{{ sale.sync_conflict_notes|default:'Inventory discrepancy during offline sync' }}">
+                                <i class="bi bi-exclamation-triangle-fill me-1"></i>Sync Conflict
+                            </span>
                             {% endif %}
                             {% if sale.has_approved_pending_payout %}
                                 <div class="mt-1">
