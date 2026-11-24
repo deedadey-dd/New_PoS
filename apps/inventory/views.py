@@ -106,11 +106,60 @@ class ProductListView(LoginRequiredMixin, SortableMixin, ListView):
     model = Product
     template_name = 'inventory/product_list.html'
     context_object_name = 'products'
-    sortable_fields = ['name', 'sku', 'default_selling_price', 'total_stock', 'category__name']
+    sortable_fields = ['name', 'sku', 'default_selling_price', 'total_stock', 'pending_dispatch_qty', 'net_available_stock', 'category__name']
     default_sort = 'name'
     
+    def _resolve_locations(self):
+        """
+        Resolve available locations and the currently selected location based on role & permissions.
+        """
+        user = self.request.user
+        tenant = user.tenant
+        role_name = user.role.name if user.role else ''
+
+        is_hq_role = bool(user.is_superuser or role_name in ['ADMIN', 'ACCOUNTANT', 'AUDITOR', 'STORES_MANAGER', 'PRODUCTION_MANAGER'])
+        can_filter_locations = is_hq_role or bool(tenant.shops_can_see_other_stock)
+        can_view_dispatch = bool(user.is_superuser or role_name in ['ADMIN', 'ACCOUNTANT', 'AUDITOR'])
+
+        if can_filter_locations:
+            available_locations = Location.objects.filter(
+                tenant=tenant, is_active=True
+            ).order_by('location_type', 'name')
+        elif user.location:
+            available_locations = Location.objects.filter(pk=user.location_id)
+        else:
+            available_locations = Location.objects.none()
+
+        location_param = self.request.GET.get('location', '').strip()
+        selected_location = None
+
+        if location_param and location_param != 'all':
+            try:
+                selected_location = available_locations.get(pk=location_param)
+            except (Location.DoesNotExist, ValueError):
+                selected_location = None
+        elif location_param == 'all' and can_filter_locations:
+            selected_location = None
+        elif not can_filter_locations and user.location:
+            selected_location = user.location
+        elif not is_hq_role and user.location and 'location' not in self.request.GET:
+            # Branch staff default to their assigned location unless explicitly filtering
+            selected_location = user.location
+
+        return {
+            'is_hq_role': is_hq_role,
+            'can_filter_locations': can_filter_locations,
+            'can_view_dispatch': can_view_dispatch,
+            'available_locations': available_locations,
+            'selected_location': selected_location,
+        }
+
     def _get_user_location(self):
         """Get the user's effective location."""
+        loc_ctx = self._resolve_locations()
+        if loc_ctx['selected_location']:
+            return loc_ctx['selected_location']
+
         user = self.request.user
         if user.location:
             return user.location
@@ -128,14 +177,20 @@ class ProductListView(LoginRequiredMixin, SortableMixin, ListView):
         return None
     
     def get_queryset(self):
-        from django.db.models import Sum, Subquery, OuterRef, Value, IntegerField, Case, When, F
+        from django.db.models import Sum, Subquery, OuterRef, Value, IntegerField, Case, When, F, DecimalField, ExpressionWrapper
         from django.db.models.functions import Coalesce
         from decimal import Decimal
         from .models import InventoryLedger, FavoriteProduct
+        from apps.sales.models import SaleItem
         
         user = self.request.user
+        tenant = user.tenant
+        loc_ctx = self._resolve_locations()
+        selected_location = loc_ctx['selected_location']
+        can_view_dispatch = loc_ctx['can_view_dispatch']
+
         queryset = Product.objects.filter(
-            tenant=user.tenant
+            tenant=tenant
         ).select_related('category')
         
         # Search filter
@@ -159,33 +214,41 @@ class ProductListView(LoginRequiredMixin, SortableMixin, ListView):
         elif active_status == 'inactive':
             queryset = queryset.filter(is_active=False)
         
-        # Annotate total_stock for sorting and filtering
-        user_location = user.location
-        user_location_type = None
-        
-        if not user_location and user.role:
-            role_location_map = {
-                'PRODUCTION_MANAGER': 'PRODUCTION',
-                'STORES_MANAGER': 'STORES',
-                'SHOP_MANAGER': 'SHOP',
-            }
-            user_location_type = role_location_map.get(user.role.name)
-            
-        stock_filter = {'product': OuterRef('pk'), 'tenant': user.tenant}
-        if user_location:
-            stock_filter['location'] = user_location
-        elif user_location_type:
-            stock_filter['location__location_type'] = user_location_type
+        # Annotate total_stock (physical stock in selected location or all locations)
+        stock_filter = {'product': OuterRef('pk'), 'tenant': tenant}
+        if selected_location:
+            stock_filter['location'] = selected_location
             
         stock_subquery = InventoryLedger.objects.filter(**stock_filter).order_by().values('product').annotate(
             total=Sum('quantity')
         ).values('total')
+
+        # Annotate pending dispatch (sales pending dispatch in selected location or all locations)
+        pending_filter = {
+            'product': OuterRef('pk'),
+            'sale__tenant': tenant,
+            'sale__status__in': ['PENDING_DISPATCH', 'PARTIALLY_DISPATCHED', 'COMPLETED'],
+            'dispatched_quantity__lt': F('quantity')
+        }
+        if selected_location:
+            pending_filter['sale__shop'] = selected_location
+
+        pending_subquery = SaleItem.objects.filter(**pending_filter).exclude(
+            Q(sale__status__in=['VOIDED', 'REFUNDED']) | Q(sale__is_halted=True)
+        ).order_by().values('product').annotate(
+            pending_total=Sum(F('quantity') - F('dispatched_quantity'))
+        ).values('pending_total')
         
         queryset = queryset.annotate(
-            total_stock=Coalesce(Subquery(stock_subquery), Decimal('0.00'))
+            total_stock=Coalesce(Subquery(stock_subquery), Decimal('0.00')),
+            pending_dispatch_qty=Coalesce(Subquery(pending_subquery), Decimal('0.00')),
+            net_available_stock=ExpressionWrapper(
+                Coalesce(Subquery(stock_subquery), Decimal('0.00')) - Coalesce(Subquery(pending_subquery), Decimal('0.00')),
+                output_field=DecimalField()
+            )
         )
 
-        # Stock status filter (out_of_stock, low_stock, needs_reorder, in_stock, available)
+        # Stock status filter
         stock_status = self.request.GET.get('stock_status')
         low_stock_q = (
             Q(reorder_level__gt=0, total_stock__gt=0, total_stock__lte=F('reorder_level')) |
@@ -204,6 +267,10 @@ class ProductListView(LoginRequiredMixin, SortableMixin, ListView):
             )
         elif stock_status == 'available':
             queryset = queryset.filter(total_stock__gt=Decimal('0.00'))
+        elif stock_status == 'has_pending_dispatch' and can_view_dispatch:
+            queryset = queryset.filter(pending_dispatch_qty__gt=Decimal('0.00'))
+        elif stock_status == 'dispatch_deficit' and can_view_dispatch:
+            queryset = queryset.filter(net_available_stock__lt=Decimal('0.00'), pending_dispatch_qty__gt=Decimal('0.00'))
         
         # Annotate favorites: is_favorite = 1 for favorites, 0 for others
         effective_location = self._get_user_location()
@@ -239,99 +306,119 @@ class ProductListView(LoginRequiredMixin, SortableMixin, ListView):
         return sorted_qs
     
     def get_context_data(self, **kwargs):
-        from .models import FavoriteProduct
+        from .models import FavoriteProduct, InventoryLedger
+        from django.db.models import Sum, Q, F
+        from decimal import Decimal
         
         context = super().get_context_data(**kwargs)
         user = self.request.user
+        tenant = user.tenant
+        loc_ctx = self._resolve_locations()
+        selected_location = loc_ctx['selected_location']
+        can_view_dispatch = loc_ctx['can_view_dispatch']
+        show_dispatch = can_view_dispatch and (self.request.GET.get('show_dispatch') in ['1', 'true', 'on', 'yes'])
+
+        context['is_hq_role'] = loc_ctx['is_hq_role']
+        context['can_filter_locations'] = loc_ctx['can_filter_locations']
+        context['can_view_dispatch'] = can_view_dispatch
+        context['show_dispatch'] = show_dispatch
+        context['available_locations'] = loc_ctx['available_locations']
+        context['selected_location'] = selected_location
+        context['current_location'] = selected_location or (user.location if not loc_ctx['can_filter_locations'] else None)
         
         context['categories'] = Category.objects.filter(
-            tenant=user.tenant, is_active=True
+            tenant=tenant, is_active=True
         )
         
         # Get favorite IDs for star rendering in template
         effective_location = self._get_user_location()
         if effective_location:
             context['favorite_ids'] = set(FavoriteProduct.objects.filter(
-                tenant=user.tenant, location=effective_location
+                tenant=tenant, location=effective_location
             ).values_list('product_id', flat=True))
         else:
             context['favorite_ids'] = set()
         
-        # Determine user's location(s) for stock display
-        user_location = user.location
-        user_location_type = None
-        
-        # Map role to location type if user has no specific location
-        if not user_location and user.role:
-            role_location_map = {
-                'PRODUCTION_MANAGER': 'PRODUCTION',
-                'STORES_MANAGER': 'STORES',
-                'SHOP_MANAGER': 'SHOP',
-            }
-            user_location_type = role_location_map.get(user.role.name)
-        
-        # Calculate stock by product for user's location
-        stock_filter = {'product__tenant': user.tenant}
-        if user_location:
-            stock_filter['location'] = user_location
-        elif user_location_type:
-            stock_filter['location__location_type'] = user_location_type
-        
-        # Get stock quantities from ledger
-        from django.db.models import Sum
+        # Calculate stock by product for template lookups
+        stock_filter = {'product__tenant': tenant}
+        if selected_location:
+            stock_filter['location'] = selected_location
+            
         stock_data = InventoryLedger.objects.filter(
             **stock_filter
         ).values('product_id').annotate(
             total_stock=Sum('quantity')
         )
-        
-        # Create dict for easy lookup in template
-        context['stock_by_product'] = {
-            item['product_id']: item['total_stock'] or 0 
+        stock_map = {
+            item['product_id']: item['total_stock'] or Decimal('0.00')
             for item in stock_data
         }
-        
-        # Pass location info for display
-        if user_location:
-            context['current_location'] = user_location
-        elif user_location_type:
-            context['current_location'] = Location.objects.filter(
-                tenant=user.tenant,
-                is_active=True,
-                location_type=user_location_type
-            ).first()
+        context['stock_by_product'] = stock_map
+
+        # Pending dispatch and Net available by product for quick lookup
+        if can_view_dispatch:
+            from apps.sales.models import SaleItem
+            pending_items_qs = SaleItem.objects.filter(
+                sale__tenant=tenant,
+                sale__status__in=['PENDING_DISPATCH', 'PARTIALLY_DISPATCHED', 'COMPLETED'],
+                dispatched_quantity__lt=F('quantity')
+            ).exclude(
+                Q(sale__status__in=['VOIDED', 'REFUNDED']) | Q(sale__is_halted=True)
+            )
+            if selected_location:
+                pending_items_qs = pending_items_qs.filter(sale__shop=selected_location)
+
+            pending_data = pending_items_qs.values('product_id').annotate(
+                total_pending=Sum(F('quantity') - F('dispatched_quantity'))
+            )
+            pending_map = {
+                item['product_id']: item['total_pending'] or Decimal('0.00')
+                for item in pending_data
+            }
+            context['pending_by_product'] = pending_map
+            context['net_available_by_product'] = {
+                p_id: (stock_map.get(p_id, Decimal('0.00')) - pending_map.get(p_id, Decimal('0.00')))
+                for p_id in (set(stock_map.keys()) | set(pending_map.keys()))
+            }
         else:
-            context['current_location'] = None
-        
-        # Summary metrics from the filtered queryset
+            context['pending_by_product'] = {}
+            context['net_available_by_product'] = {}
+
+        # Summary metrics calculated from the filtered queryset
         filtered_products = self.get_queryset()
         context['summary_total_products'] = filtered_products.count()
-        context['summary_active_categories'] = Category.objects.filter(tenant=user.tenant, is_active=True).count()
-        
-        # Calculate total stock units and low/out of stock counts for current view
-        stock_map = context['stock_by_product']
-        total_units = Decimal('0.00')
-        low_stock_count = 0
-        out_of_stock_count = 0
-        low_stock_only_count = 0
-        for p in filtered_products:
-            qty = stock_map.get(p.id, Decimal('0.00'))
-            qty_dec = Decimal(str(qty)) if qty is not None else Decimal('0.00')
-            total_units += qty_dec
-            reorder_lvl = getattr(p, 'reorder_level', Decimal('0.00')) or Decimal('0.00')
-            if qty_dec <= Decimal('0.00'):
-                out_of_stock_count += 1
-                low_stock_count += 1
-            elif (reorder_lvl > 0 and qty_dec <= reorder_lvl) or (reorder_lvl <= 0 and qty_dec < Decimal('10.00')):
-                low_stock_only_count += 1
-                low_stock_count += 1
-                
-        context['summary_total_units'] = total_units
-        context['summary_low_stock_count'] = low_stock_count
-        context['summary_out_of_stock_count'] = out_of_stock_count
-        context['summary_low_stock_only_count'] = low_stock_only_count
+        context['summary_active_categories'] = Category.objects.filter(tenant=tenant, is_active=True).count()
+
+        summary_data = filtered_products.aggregate(
+            total_phys=Sum('total_stock'),
+            total_pending=Sum('pending_dispatch_qty'),
+            total_net=Sum('net_available_stock')
+        )
+        context['summary_total_units'] = summary_data['total_phys'] or Decimal('0.00')
+        context['summary_total_pending_units'] = summary_data['total_pending'] or Decimal('0.00')
+        context['summary_total_net_units'] = summary_data['total_net'] or Decimal('0.00')
+
+        # Count low and out of stock
+        low_stock_q = (
+            Q(reorder_level__gt=0, total_stock__gt=0, total_stock__lte=F('reorder_level')) |
+            Q(reorder_level__lte=0, total_stock__gt=0, total_stock__lt=Decimal('10.00'))
+        )
+        context['summary_out_of_stock_count'] = filtered_products.filter(total_stock__lte=Decimal('0.00')).count()
+        context['summary_low_stock_only_count'] = filtered_products.filter(low_stock_q).count()
+        context['summary_low_stock_count'] = context['summary_out_of_stock_count'] + context['summary_low_stock_only_count']
+
+        if can_view_dispatch:
+            context['summary_pending_products_count'] = filtered_products.filter(pending_dispatch_qty__gt=Decimal('0.00')).count()
+            context['summary_dispatch_deficit_count'] = filtered_products.filter(net_available_stock__lt=Decimal('0.00'), pending_dispatch_qty__gt=Decimal('0.00')).count()
+        else:
+            context['summary_pending_products_count'] = 0
+            context['summary_dispatch_deficit_count'] = 0
+
         context['selected_stock_status'] = self.request.GET.get('stock_status', '')
         context['selected_status'] = self.request.GET.get('status', '')
+        context['selected_location_id'] = str(selected_location.pk) if selected_location else ''
+        
+        return context
         
         return context
 
@@ -1051,11 +1138,11 @@ class ProductBulkUploadView(LoginRequiredMixin, View):
 class InventoryExportView(LoginRequiredMixin, View):
     """
     Export inventory to Excel.
-    Allowed: STORES_MANAGER, SHOP_MANAGER, ADMIN
+    Allowed: STORES_MANAGER, SHOP_MANAGER, ADMIN, ACCOUNTANT, AUDITOR
     """
     def get(self, request):
         role_name = request.user.role.name if request.user.role else ''
-        if role_name not in ['STORES_MANAGER', 'SHOP_MANAGER', 'ADMIN']:
+        if not (request.user.is_superuser or role_name in ['STORES_MANAGER', 'SHOP_MANAGER', 'ADMIN', 'ACCOUNTANT', 'AUDITOR']):
             messages.error(request, "Permission denied.")
             return redirect('inventory:product_list')
             
@@ -1063,64 +1150,109 @@ class InventoryExportView(LoginRequiredMixin, View):
         ws = wb.active
         ws.title = "Inventory"
         
+        can_view_dispatch = bool(request.user.is_superuser or role_name in ['ADMIN', 'ACCOUNTANT', 'AUDITOR'])
+        show_dispatch = can_view_dispatch and (request.GET.get('show_dispatch') in ['1', 'true', 'on', 'yes'])
+
+        # Resolve location
+        location_id = request.GET.get('location', '').strip()
+        location = None
+        if location_id and location_id != 'all':
+            location = Location.objects.filter(tenant=request.user.tenant, pk=location_id, is_active=True).first()
+        elif not (request.user.is_superuser or role_name in ['ADMIN', 'ACCOUNTANT', 'AUDITOR', 'STORES_MANAGER', 'PRODUCTION_MANAGER']) and request.user.location:
+            location = request.user.location
+
         # Headers
-        headers = ['Name', 'Category', 'SKU', 'Unit', 'Stock Qty', 'Selling Price']
-        # If Admin or Stores Manager, maybe include Cost Price?
+        if show_dispatch:
+            headers = ['Name', 'Category', 'SKU', 'Unit', 'Physical Stock', 'Pending Dispatch', 'Net Available', 'Selling Price']
+        else:
+            headers = ['Name', 'Category', 'SKU', 'Unit', 'Stock Qty', 'Selling Price']
+            
         if role_name in ['ADMIN', 'STORES_MANAGER']:
             headers.append('Cost Price')
             
         ws.append(headers)
         
-        # Filter products based on location
+        # Filter products
         products = Product.objects.filter(tenant=request.user.tenant, is_active=True).select_related('category')
         
-        location = request.user.location
-        
-        for product in products:
-            qty = 0
-            price = 0
-            cost = 0 
-            
-            # If user has a location, get stock/price for that location
-            if location:
-                # Stock (Need to implement Ledger aggregation later or use existing logic)
-                stock_in = InventoryLedger.objects.filter(product=product, location=location, quantity__gt=0).aggregate(Sum('quantity'))['quantity__sum'] or 0
-                stock_out = InventoryLedger.objects.filter(product=product, location=location, quantity__lt=0).aggregate(Sum('quantity'))['quantity__sum'] or 0
-                qty = stock_in + stock_out
-                
-                # Price
-                shop_price = ShopPrice.objects.filter(product=product, location=location).first()
-                if shop_price:
-                    price = shop_price.selling_price
-                
-                # Cost - get average from available batches
-                avg_cost = Batch.objects.filter(
-                    product=product,
-                    location=location,
-                    status='AVAILABLE',
-                    current_quantity__gt=0
-                ).aggregate(Avg('unit_cost'))['unit_cost__avg']
-                cost = avg_cost if avg_cost else Decimal('0')
-            else:
-                # Admin without location
-                pass
+        # Batch query physical stock from InventoryLedger
+        stock_filter = {'product__tenant': request.user.tenant}
+        if location:
+            stock_filter['location'] = location
+        stock_data = InventoryLedger.objects.filter(**stock_filter).values('product_id').annotate(
+            total=Sum('quantity')
+        )
+        stock_map = {item['product_id']: item['total'] or Decimal('0.00') for item in stock_data}
 
-            row = [
-                product.name,
-                product.category.name if product.category else '',
-                product.sku or '',
-                product.unit_of_measure,
-                qty,
-                price
-            ]
+        # Batch query pending dispatch if show_dispatch
+        pending_map = {}
+        if show_dispatch:
+            from apps.sales.models import SaleItem
+            pending_filter = {
+                'sale__tenant': request.user.tenant,
+                'sale__status__in': ['PENDING_DISPATCH', 'PARTIALLY_DISPATCHED', 'COMPLETED'],
+                'dispatched_quantity__lt': F('quantity')
+            }
+            if location:
+                pending_filter['sale__shop'] = location
+            pending_data = SaleItem.objects.filter(**pending_filter).exclude(
+                Q(sale__status__in=['VOIDED', 'REFUNDED']) | Q(sale__is_halted=True)
+            ).values('product_id').annotate(
+                total_pending=Sum(F('quantity') - F('dispatched_quantity'))
+            )
+            pending_map = {item['product_id']: item['total_pending'] or Decimal('0.00') for item in pending_data}
+
+        # Batch query costs
+        cost_filter = {'product__tenant': request.user.tenant, 'status': 'AVAILABLE', 'current_quantity__gt': 0}
+        if location:
+            cost_filter['location'] = location
+        cost_data = Batch.objects.filter(**cost_filter).values('product_id').annotate(
+            avg_cost=Avg('unit_cost')
+        )
+        cost_map = {item['product_id']: item['avg_cost'] or Decimal('0.00') for item in cost_data}
+
+        # Batch query shop prices if location
+        price_map = {}
+        if location:
+            shop_prices = ShopPrice.objects.filter(location=location).values('product_id', 'selling_price')
+            price_map = {item['product_id']: item['selling_price'] for item in shop_prices}
+
+        for product in products:
+            phys_qty = stock_map.get(product.id, Decimal('0.00'))
+            pend_qty = pending_map.get(product.id, Decimal('0.00'))
+            net_qty = phys_qty - pend_qty
+            price = price_map.get(product.id, product.default_selling_price)
+            cost = cost_map.get(product.id, Decimal('0.00'))
+
+            if show_dispatch:
+                row = [
+                    product.name,
+                    product.category.name if product.category else '',
+                    product.sku or '',
+                    product.unit_of_measure,
+                    float(phys_qty),
+                    float(pend_qty),
+                    float(net_qty),
+                    float(price) if price else 0.0
+                ]
+            else:
+                row = [
+                    product.name,
+                    product.category.name if product.category else '',
+                    product.sku or '',
+                    product.unit_of_measure,
+                    float(phys_qty),
+                    float(price) if price else 0.0
+                ]
             
             if role_name in ['ADMIN', 'STORES_MANAGER']:
-                row.append(cost)
+                row.append(float(cost) if cost else 0.0)
                 
             ws.append(row)
             
         response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-        response['Content-Disposition'] = 'attachment; filename=inventory_export.xlsx'
+        loc_suffix = f"_{location.name.replace(' ', '_')}" if location else "_All_Locations"
+        response['Content-Disposition'] = f'attachment; filename=inventory_export{loc_suffix}.xlsx'
         
         wb.save(response)
         return response
