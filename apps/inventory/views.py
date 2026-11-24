@@ -177,7 +177,7 @@ class ProductListView(LoginRequiredMixin, SortableMixin, ListView):
         return None
     
     def get_queryset(self):
-        from django.db.models import Sum, Subquery, OuterRef, Value, IntegerField, Case, When, F, DecimalField, ExpressionWrapper
+        from django.db.models import Sum, Subquery, OuterRef, Value, IntegerField, Case, When, F, DecimalField, ExpressionWrapper, Exists
         from django.db.models.functions import Coalesce
         from decimal import Decimal
         from .models import InventoryLedger, FavoriteProduct
@@ -248,6 +248,18 @@ class ProductListView(LoginRequiredMixin, SortableMixin, ListView):
             )
         )
 
+        # Toggle to hide products with no inventory activity
+        hide_no_activity = self.request.GET.get('hide_no_activity') in ['1', 'true', 'on', 'yes']
+        if hide_no_activity:
+            activity_filter = {'product': OuterRef('pk'), 'tenant': tenant}
+            if selected_location:
+                activity_filter['location'] = selected_location
+            queryset = queryset.annotate(
+                has_inventory_activity=Exists(InventoryLedger.objects.filter(**activity_filter))
+            ).filter(
+                Q(has_inventory_activity=True) | Q(pending_dispatch_qty__gt=Decimal('0.00'))
+            )
+
         # Stock status filter
         stock_status = self.request.GET.get('stock_status')
         low_stock_q = (
@@ -317,11 +329,13 @@ class ProductListView(LoginRequiredMixin, SortableMixin, ListView):
         selected_location = loc_ctx['selected_location']
         can_view_dispatch = loc_ctx['can_view_dispatch']
         show_dispatch = can_view_dispatch and (self.request.GET.get('show_dispatch') in ['1', 'true', 'on', 'yes'])
+        hide_no_activity = self.request.GET.get('hide_no_activity') in ['1', 'true', 'on', 'yes']
 
         context['is_hq_role'] = loc_ctx['is_hq_role']
         context['can_filter_locations'] = loc_ctx['can_filter_locations']
         context['can_view_dispatch'] = can_view_dispatch
         context['show_dispatch'] = show_dispatch
+        context['hide_no_activity'] = hide_no_activity
         context['available_locations'] = loc_ctx['available_locations']
         context['selected_location'] = selected_location
         context['current_location'] = selected_location or (user.location if not loc_ctx['can_filter_locations'] else None)
@@ -1152,6 +1166,7 @@ class InventoryExportView(LoginRequiredMixin, View):
         
         can_view_dispatch = bool(request.user.is_superuser or role_name in ['ADMIN', 'ACCOUNTANT', 'AUDITOR'])
         show_dispatch = can_view_dispatch and (request.GET.get('show_dispatch') in ['1', 'true', 'on', 'yes'])
+        hide_no_activity = request.GET.get('hide_no_activity') in ['1', 'true', 'on', 'yes']
 
         # Resolve location
         location_id = request.GET.get('location', '').strip()
@@ -1174,6 +1189,12 @@ class InventoryExportView(LoginRequiredMixin, View):
         
         # Filter products
         products = Product.objects.filter(tenant=request.user.tenant, is_active=True).select_related('category')
+        if hide_no_activity:
+            from django.db.models import Exists, OuterRef
+            act_filter = {'product': OuterRef('pk'), 'tenant': request.user.tenant}
+            if location:
+                act_filter['location'] = location
+            products = products.filter(Exists(InventoryLedger.objects.filter(**act_filter)))
         
         # Batch query physical stock from InventoryLedger
         stock_filter = {'product__tenant': request.user.tenant}

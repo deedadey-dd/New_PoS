@@ -3,22 +3,41 @@
 {% block title %}Shop Settings - {{ current_tenant.name }}{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
     <div>
-        <h2 class="mb-1"><i class="bi bi-shop me-2"></i>Shop Settings</h2>
-        <p class="text-muted mb-0">Configure receipt printing and layout for this shop.</p>
+        <h2 class="mb-1">
+            <i class="bi bi-shop me-2 text-primary"></i>Shop Settings
+            {% if current_shop %}
+            <span class="text-secondary fs-4 ms-1">&mdash; {{ current_shop.name }}</span>
+            {% endif %}
+        </h2>
+        <p class="text-muted mb-0">Configure receipt printing, POS stock display, and payment options for this shop location.</p>
     </div>
+    {% if can_switch_shops %}
+    <div class="d-flex align-items-center gap-2 bg-white p-2 rounded shadow-sm border">
+        <label for="shopSelector" class="small fw-semibold text-muted mb-0 text-nowrap"><i class="bi bi-geo-alt me-1 text-primary"></i>Configuring Shop:</label>
+        <select id="shopSelector" class="form-select form-select-sm" style="min-width: 190px;" onchange="window.location.href='{% url 'sales:shop_settings' %}?shop=' + this.value">
+            {% for s in available_shops %}
+            <option value="{{ s.pk }}" {% if s.pk == current_shop.pk %}selected{% endif %}>{{ s.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    {% endif %}
 </div>
 
 <div class="row">
     <div class="col-lg-8 mx-auto">
         <div class="card shadow-sm">
-            <div class="card-header bg-primary text-white">
-                <h5 class="mb-0"><i class="bi bi-printer me-2"></i>Printing Settings</h5>
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-printer me-2"></i>Printing &amp; POS Display Settings</h5>
+                {% if current_shop %}
+                <span class="badge bg-white text-primary fw-semibold"><i class="bi bi-geo-alt me-1"></i>{{ current_shop.name }}</span>
+                {% endif %}
             </div>
             <div class="card-body">
-                <form method="post">
+                <form method="post" action="{% url 'sales:shop_settings' %}?shop={{ current_shop.pk }}">
                     {% csrf_token %}
+                    <input type="hidden" name="shop" value="{{ current_shop.pk }}">
                     
                     <div class="mb-4">
                         <label class="form-label fw-bold">Receipt Printer Type</label>
@@ -167,8 +186,21 @@
                         <div class="form-text">If enabled, attendants cannot enter custom or excess amount figures for Local Momo in POS; the exact invoice total is locked to prevent change errors.</div>
                     </div>
 
-                    <div class="text-end mt-4 pt-3 border-top">
-                        <button type="submit" class="btn btn-primary px-4">
+                    {% if can_switch_shops %}
+                    <div class="mb-4 form-check form-switch bg-light p-3 rounded border">
+                        <input class="form-check-input ms-0 me-2" type="checkbox" name="apply_to_all_shops" value="1" id="id_apply_to_all_shops">
+                        <label class="form-check-label fw-bold text-dark user-select-none" for="id_apply_to_all_shops" style="cursor: pointer;">
+                            <i class="bi bi-broadcast me-1 text-primary"></i>Apply these settings to ALL shops in {{ current_tenant.name }}
+                        </label>
+                        <div class="form-text small ms-4">Syncs POS physical stock display, receipt printing, and layout preferences across all active shops in this company.</div>
+                    </div>
+                    {% endif %}
+
+                    <div class="d-flex justify-content-between align-items-center mt-4 pt-3 border-top">
+                        <span class="small text-muted">
+                            <i class="bi bi-info-circle me-1"></i>Saving updates for <strong>{{ current_shop.name }}</strong>
+                        </span>
+                        <button type="submit" class="btn btn-primary px-4 fw-semibold">
                             <i class="bi bi-save me-2"></i>Save Settings
                         </button>
                     </div>

@@ -266,3 +266,72 @@ class ProductListLocationAndDispatchTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response['Content-Type'], 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         self.assertIn('Shop_North', response['Content-Disposition'])
+
+    def test_hide_products_with_no_inventory_activity_company_wide(self):
+        """Toggle hide_no_activity=1 filters out products that have never had inventory activity."""
+        product_inactive = Product.objects.create(
+            tenant=self.tenant,
+            name="Dormant Item",
+            sku="DORMANT-001",
+            category=self.category,
+            default_selling_price=Decimal("20.00")
+        )
+
+        self.client.force_login(self.admin)
+        url = reverse('inventory:product_list')
+
+        # Without toggle: dormant item is present
+        resp_all = self.client.get(url)
+        self.assertEqual(resp_all.status_code, 200)
+        p_ids_all = [p.id for p in resp_all.context['products']]
+        self.assertIn(product_inactive.id, p_ids_all)
+        self.assertIn(self.product_a.id, p_ids_all)
+        self.assertIn(self.product_b.id, p_ids_all)
+        self.assertFalse(resp_all.context['hide_no_activity'])
+
+        # With toggle hide_no_activity=1: dormant item is excluded
+        resp_filtered = self.client.get(url + '?hide_no_activity=1')
+        self.assertEqual(resp_filtered.status_code, 200)
+        p_ids_filtered = [p.id for p in resp_filtered.context['products']]
+        self.assertNotIn(product_inactive.id, p_ids_filtered)
+        self.assertIn(self.product_a.id, p_ids_filtered)
+        self.assertIn(self.product_b.id, p_ids_filtered)
+        self.assertTrue(resp_filtered.context['hide_no_activity'])
+        self.assertEqual(resp_filtered.context['summary_total_products'], 2)
+
+    def test_hide_no_activity_location_scoped(self):
+        """When location is selected, hide_no_activity filters out products with no activity in that specific location."""
+        # Product C has inventory activity ONLY in Shop South
+        product_south_only = Product.objects.create(
+            tenant=self.tenant,
+            name="South Coast Cider",
+            sku="SOUTH-CIDER",
+            category=self.category,
+            default_selling_price=Decimal("15.00")
+        )
+        InventoryLedger.objects.create(
+            tenant=self.tenant,
+            product=product_south_only,
+            location=self.shop_south,
+            quantity=Decimal("25.00")
+        )
+
+        self.client.force_login(self.admin)
+
+        # In Shop North with hide_no_activity=1: product_south_only has NO activity in Shop North, so it must be hidden
+        url_north = reverse('inventory:product_list') + f'?location={self.shop_north.pk}&hide_no_activity=1'
+        resp_north = self.client.get(url_north)
+        self.assertEqual(resp_north.status_code, 200)
+        p_ids_north = [p.id for p in resp_north.context['products']]
+        self.assertNotIn(product_south_only.id, p_ids_north)
+        self.assertIn(self.product_a.id, p_ids_north)
+        self.assertIn(self.product_b.id, p_ids_north)
+
+        # In Shop South with hide_no_activity=1: product_south_only HAS activity in Shop South, so it must be visible
+        url_south = reverse('inventory:product_list') + f'?location={self.shop_south.pk}&hide_no_activity=1'
+        resp_south = self.client.get(url_south)
+        self.assertEqual(resp_south.status_code, 200)
+        p_ids_south = [p.id for p in resp_south.context['products']]
+        self.assertIn(product_south_only.id, p_ids_south)
+        self.assertIn(self.product_a.id, p_ids_south)
+        self.assertIn(self.product_b.id, p_ids_south)

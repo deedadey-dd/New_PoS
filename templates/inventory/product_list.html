@@ -46,12 +46,17 @@
                 <i class="bi bi-truck me-1"></i>Dispatch Audit Active
             </span>
             {% endif %}
+            {% if hide_no_activity %}
+            <span class="badge bg-secondary-subtle text-secondary border border-secondary border-opacity-25 ms-1">
+                <i class="bi bi-eye-slash me-1"></i>Active Inventory Only
+            </span>
+            {% endif %}
         </p>
     </div>
     <div class="d-flex gap-2">
         <!-- Export: STORES_MANAGER, SHOP_MANAGER, ADMIN, ACCOUNTANT, AUDITOR -->
         {% if user.role.name in 'STORES_MANAGER,SHOP_MANAGER,ADMIN,ACCOUNTANT,AUDITOR' or user.is_superuser %}
-        <a href="{% url 'inventory:product_export' %}?{% if selected_location %}location={{ selected_location.pk }}&{% endif %}{% if show_dispatch %}show_dispatch=1{% endif %}" class="btn btn-outline-success rounded-pill px-3">
+        <a href="{% url 'inventory:product_export' %}?{% if selected_location %}location={{ selected_location.pk }}&{% endif %}{% if show_dispatch %}show_dispatch=1&{% endif %}{% if hide_no_activity %}hide_no_activity=1{% endif %}" class="btn btn-outline-success rounded-pill px-3">
             <i class="bi bi-file-earmark-spreadsheet me-1"></i>Export
         </a>
         {% endif %}
@@ -149,7 +154,7 @@
                     <div>
                         <span class="text-muted small fw-semibold text-uppercase d-block mb-1">Pending Dispatch</span>
                         <h4 class="fw-bold mb-0 text-info">{{ summary_total_pending_units|floatformat:0|intcomma }}</h4>
-                        <a href="?stock_status=has_pending_dispatch{% if selected_location %}&location={{ selected_location.pk }}{% endif %}{% if show_dispatch %}&show_dispatch=1{% endif %}"
+                        <a href="?stock_status=has_pending_dispatch{% if selected_location %}&location={{ selected_location.pk }}{% endif %}{% if show_dispatch %}&show_dispatch=1{% endif %}{% if hide_no_activity %}&hide_no_activity=1{% endif %}"
                            class="badge bg-info-subtle text-info text-decoration-none rounded-pill mt-1" style="font-size: 0.72rem;">
                             {{ summary_pending_products_count|default:0 }} Products Awaiting
                         </a>
@@ -171,7 +176,7 @@
                             {{ summary_total_net_units|floatformat:0|intcomma }}
                         </h4>
                         {% if summary_dispatch_deficit_count > 0 %}
-                        <a href="?stock_status=dispatch_deficit{% if selected_location %}&location={{ selected_location.pk }}{% endif %}{% if show_dispatch %}&show_dispatch=1{% endif %}"
+                        <a href="?stock_status=dispatch_deficit{% if selected_location %}&location={{ selected_location.pk }}{% endif %}{% if show_dispatch %}&show_dispatch=1{% endif %}{% if hide_no_activity %}&hide_no_activity=1{% endif %}"
                            class="badge bg-danger text-white text-decoration-none rounded-pill mt-1" style="font-size: 0.72rem;" title="Products where pending dispatch exceeds physical stock">
                             <i class="bi bi-exclamation-triangle-fill me-1"></i>{{ summary_dispatch_deficit_count }} Deficit
                         </a>
@@ -252,11 +257,11 @@
                         <span class="text-muted small fw-semibold text-uppercase d-block mb-1">Low / Out of Stock</span>
                         <h4 class="fw-bold mb-0 {% if summary_low_stock_count > 0 %}text-danger{% else %}text-muted{% endif %}">{{ summary_low_stock_count|intcomma }}</h4>
                         <div class="d-flex flex-wrap gap-1 mt-1">
-                            <a href="?stock_status=out_of_stock{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if selected_location %}&location={{ selected_location.pk }}{% endif %}"
+                            <a href="?stock_status=out_of_stock{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if selected_location %}&location={{ selected_location.pk }}{% endif %}{% if show_dispatch %}&show_dispatch=1{% endif %}{% if hide_no_activity %}&hide_no_activity=1{% endif %}"
                                class="badge bg-danger-subtle text-danger text-decoration-none rounded-pill" style="font-size: 0.7rem;" title="Filter Out of Stock">
                                 {{ summary_out_of_stock_count|default:0 }} Out
                             </a>
-                            <a href="?stock_status=low_stock{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if selected_location %}&location={{ selected_location.pk }}{% endif %}"
+                            <a href="?stock_status=low_stock{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if selected_location %}&location={{ selected_location.pk }}{% endif %}{% if show_dispatch %}&show_dispatch=1{% endif %}{% if hide_no_activity %}&hide_no_activity=1{% endif %}"
                                class="badge bg-warning-subtle text-warning-emphasis text-decoration-none rounded-pill" style="font-size: 0.7rem;" title="Filter Low on Stock">
                                 {{ summary_low_stock_only_count|default:0 }} Low
                             </a>
@@ -347,9 +352,9 @@
                 </div>
             </div>
 
-            <!-- Toolbar Row: Dispatch Mode Switch & Action Buttons -->
+            <!-- Toolbar Row: Dispatch Mode Switch, Activity Filter & Action Buttons -->
             <div class="d-flex flex-wrap justify-content-between align-items-center mt-3 pt-2 border-top border-light-subtle gap-2">
-                <div>
+                <div class="d-flex flex-wrap align-items-center gap-3">
                     {% if can_view_dispatch %}
                     <div class="form-check form-switch d-inline-flex align-items-center gap-2 mb-0">
                         <input class="form-check-input mt-0" type="checkbox" role="switch" id="showDispatchToggle"
@@ -360,12 +365,20 @@
                         </label>
                     </div>
                     {% endif %}
+                    <div class="form-check form-switch d-inline-flex align-items-center gap-2 mb-0">
+                        <input class="form-check-input mt-0" type="checkbox" role="switch" id="hideNoActivityToggle"
+                               name="hide_no_activity" value="1" {% if hide_no_activity %}checked{% endif %}
+                               onchange="this.form.submit()" style="cursor: pointer; width: 2.2rem; height: 1.15rem;">
+                        <label class="form-check-label small fw-semibold text-dark user-select-none" for="hideNoActivityToggle" style="cursor: pointer;">
+                            <i class="bi bi-eye-slash me-1 text-secondary"></i>Hide Products With No Inventory Activity
+                        </label>
+                    </div>
                 </div>
                 <div class="d-flex gap-2">
                     <button type="submit" class="btn btn-sm btn-primary px-3 fw-semibold">
                         <i class="bi bi-funnel me-1"></i>Apply Filter
                     </button>
-                    {% if request.GET.search or request.GET.category or request.GET.stock_status or request.GET.status or request.GET.location or request.GET.show_dispatch %}
+                    {% if request.GET.search or request.GET.category or request.GET.stock_status or request.GET.status or request.GET.location or request.GET.show_dispatch or request.GET.hide_no_activity %}
                     <a href="{% url 'inventory:product_list' %}" class="btn btn-sm btn-outline-secondary" title="Clear Filters">
                         <i class="bi bi-x-lg me-1"></i>Reset
                     </a>

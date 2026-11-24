@@ -32,11 +32,32 @@ class POSView(LoginRequiredMixin, View):
     
     def get(self, request):
         from django.db.models import Sum, Prefetch, F, Q
+        from apps.core.models import Location
         from apps.inventory.models import InventoryLedger, Category
         from apps.customers.models import Customer
         
         # Get user's shop location
         user_shop = request.user.location
+        role_name = request.user.role.name if request.user.role else ''
+        is_hq_or_admin = bool(request.user.is_superuser or role_name in ['ADMIN', 'ACCOUNTANT', 'AUDITOR'])
+        shop_param = request.GET.get('shop')
+
+        if is_hq_or_admin:
+            if shop_param:
+                explicit_shop = Location.objects.filter(
+                    tenant=request.user.tenant,
+                    location_type='SHOP',
+                    pk=shop_param,
+                    is_active=True
+                ).first()
+                if explicit_shop:
+                    user_shop = explicit_shop
+            elif not user_shop or user_shop.location_type != 'SHOP':
+                user_shop = Location.objects.filter(
+                    tenant=request.user.tenant,
+                    location_type='SHOP',
+                    is_active=True
+                ).order_by('name').first()
         
         if not user_shop or user_shop.location_type != 'SHOP':
             messages.error(request, "You must be assigned to a shop to use the POS.")
@@ -236,6 +257,12 @@ class POSView(LoginRequiredMixin, View):
                     'items': b_items
                 })
         
+        available_pos_shops = Location.objects.filter(
+            tenant=request.user.tenant,
+            location_type='SHOP',
+            is_active=True
+        ).order_by('name') if is_hq_or_admin else Location.objects.none()
+
         context = {
             'shop': user_shop,
             'products': json.dumps(products_with_prices),
@@ -247,6 +274,8 @@ class POSView(LoginRequiredMixin, View):
             'shift': open_shift,
             'allow_negative_stock': request.user.tenant.allow_negative_stock,
             'currency_symbol': request.user.tenant.currency_symbol if request.user.tenant.currency else '$',
+            'is_hq_or_admin': is_hq_or_admin,
+            'available_pos_shops': available_pos_shops,
         }
         
         return render(request, self.template_name, context)
@@ -4049,30 +4078,47 @@ class ShopSalesReportExportView(LoginRequiredMixin, View):
 
 class ShopSettingsUpdateView(LoginRequiredMixin, AdminOrManagerRequiredMixin, UpdateView):
     """
-    Shop Manager view to configure print layouts and receipts.
-    (Excludes payment API keys to enforce separation of concerns).
+    Shop Manager / Admin view to configure print layouts, receipts, and POS stock behavior.
+    Supports multi-shop selection for admins and managers.
     """
     model = ShopSettings
     form_class = ShopManagerSettingsForm
     template_name = 'sales/shop_settings.html'
-    success_url = reverse_lazy('sales:shop_settings')
-    
+
     def get_object(self, queryset=None):
+        from apps.core.models import Location
         user = self.request.user
-        shop = user.location
-        
-        if not shop or shop.location_type != 'SHOP':
-            from apps.core.models import Location
+        role_name = user.role.name if user.role else ''
+        can_select_any_shop = bool(user.is_superuser or role_name in ['ADMIN', 'ACCOUNTANT', 'AUDITOR'])
+
+        shop = None
+        shop_param = self.request.POST.get('shop') or self.request.GET.get('shop')
+
+        # If a shop param is provided, validate it for the tenant
+        if shop_param and (can_select_any_shop or (user.location and str(user.location_id) == str(shop_param))):
+            shop = Location.objects.filter(
+                tenant=user.tenant,
+                location_type='SHOP',
+                pk=shop_param,
+                is_active=True
+            ).first()
+
+        # If not provided, fallback to user's assigned shop location
+        if not shop and user.location and user.location.location_type == 'SHOP':
+            shop = user.location
+
+        # Fallback to first active shop for tenant
+        if not shop:
             shop = Location.objects.filter(
                 tenant=user.tenant,
                 location_type='SHOP',
                 is_active=True
-            ).first()
-            
+            ).order_by('name').first()
+
         if not shop:
             from django.http import Http404
             raise Http404("No shop found for this tenant.")
-            
+
         settings, _ = ShopSettings.objects.get_or_create(
             tenant=user.tenant,
             shop=shop,
@@ -4080,9 +4126,66 @@ class ShopSettingsUpdateView(LoginRequiredMixin, AdminOrManagerRequiredMixin, Up
         )
         return settings
 
+    def get_success_url(self):
+        return f"{reverse_lazy('sales:shop_settings')}?shop={self.object.shop.pk}"
+
+    def get_context_data(self, **kwargs):
+        from apps.core.models import Location
+        context = super().get_context_data(**kwargs)
+        user = self.request.user
+        role_name = user.role.name if user.role else ''
+        can_switch_shops = bool(user.is_superuser or role_name in ['ADMIN', 'ACCOUNTANT', 'AUDITOR'])
+
+        available_shops = Location.objects.filter(
+            tenant=user.tenant,
+            location_type='SHOP',
+            is_active=True
+        ).order_by('name')
+
+        context['current_shop'] = self.object.shop
+        context['available_shops'] = available_shops
+        context['can_switch_shops'] = can_switch_shops and (available_shops.count() > 1)
+        return context
+
     def form_valid(self, form):
-        messages.success(self.request, "Shop settings have been updated.")
-        return super().form_valid(form)
+        from apps.core.models import Location
+        response = super().form_valid(form)
+        current_settings = self.object
+
+        if self.request.POST.get('apply_to_all_shops') == '1':
+            other_shops = Location.objects.filter(
+                tenant=self.request.user.tenant,
+                location_type='SHOP',
+                is_active=True
+            ).exclude(pk=current_settings.shop.pk)
+
+            updated_count = 1
+            for other_shop in other_shops:
+                s, _ = ShopSettings.objects.get_or_create(
+                    tenant=self.request.user.tenant,
+                    shop=other_shop,
+                    defaults={'receipt_printer_type': current_settings.receipt_printer_type}
+                )
+                s.show_items_with_physical_stock_in_pos = current_settings.show_items_with_physical_stock_in_pos
+                s.hide_zero_stock_in_pos = current_settings.hide_zero_stock_in_pos
+                s.auto_print_receipts = current_settings.auto_print_receipts
+                s.receipt_printer_type = current_settings.receipt_printer_type
+                s.receipt_font_family = current_settings.receipt_font_family
+                s.receipt_font_weight = current_settings.receipt_font_weight
+                s.receipt_font_size = current_settings.receipt_font_size
+                s.show_logo_on_receipt = current_settings.show_logo_on_receipt
+                s.show_customer_info_on_receipt = current_settings.show_customer_info_on_receipt
+                s.receipt_header = current_settings.receipt_header
+                s.receipt_footer = current_settings.receipt_footer
+                s.enable_momo_payment = current_settings.enable_momo_payment
+                s.disallow_manual_momo_amount = current_settings.disallow_manual_momo_amount
+                s.save()
+                updated_count += 1
+            messages.success(self.request, f"Settings saved for {current_settings.shop.name} and synced to all {updated_count} shops.")
+        else:
+            messages.success(self.request, f"Settings for {current_settings.shop.name} have been updated.")
+
+        return response
 
 
 class AdminShopPaymentConfigView(LoginRequiredMixin, AdminRequiredMixin, UpdateView):

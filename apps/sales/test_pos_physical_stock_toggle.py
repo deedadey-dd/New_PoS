@@ -170,3 +170,125 @@ class POSPhysicalStockToggleTest(TestCase):
         self.assertEqual(resp.status_code, 400)
         data = resp.json()
         self.assertIn('physically in stock', data.get('error', ''))
+
+    def test_admin_can_update_specific_shop_settings_via_query_param(self):
+        """Admin without assigned location can configure a specific shop using ?shop=<id>."""
+        from apps.core.models import Role
+        admin_role, _ = Role.objects.get_or_create(name='ADMIN')
+        admin_user = User.objects.create_user(
+            email="admin_strict@test.com",
+            password="password123",
+            tenant=self.tenant,
+            role=admin_role,
+            is_staff=True,
+            location=None
+        )
+
+        shop2 = Location.objects.create(
+            name="Branch Shop",
+            tenant=self.tenant,
+            location_type="SHOP"
+        )
+        shop2_settings = ShopSettings.objects.create(
+            tenant=self.tenant,
+            shop=shop2,
+            show_items_with_physical_stock_in_pos=False
+        )
+
+        self.client.force_login(admin_user)
+
+        # GET with ?shop=shop2.pk loads shop2
+        resp_get = self.client.get(f'/sales/shop-settings/?shop={shop2.pk}')
+        self.assertEqual(resp_get.status_code, 200)
+        self.assertEqual(resp_get.context['current_shop'], shop2)
+
+        # POST with shop=shop2.pk updates shop2
+        post_data = {
+            'shop': str(shop2.pk),
+            'receipt_printer_type': 'THERMAL_80MM',
+            'receipt_font_family': 'CONSOLAS',
+            'receipt_font_weight': 'NORMAL',
+            'receipt_font_size': 'NORMAL',
+            'show_items_with_physical_stock_in_pos': 'on',
+            'auto_print_receipts': 'on',
+        }
+        resp_post = self.client.post(f'/sales/shop-settings/?shop={shop2.pk}', data=post_data)
+        self.assertEqual(resp_post.status_code, 302)
+
+        shop2_settings.refresh_from_db()
+        self.assertTrue(shop2_settings.show_items_with_physical_stock_in_pos)
+
+        # shop 1 settings remain unchanged
+        self.shop_settings.refresh_from_db()
+        self.assertFalse(self.shop_settings.show_items_with_physical_stock_in_pos)
+
+    def test_admin_apply_settings_to_all_shops(self):
+        """When apply_to_all_shops is checked, settings are synced across all shops of the tenant."""
+        from apps.core.models import Role
+        admin_role, _ = Role.objects.get_or_create(name='ADMIN')
+        admin_user = User.objects.create_user(
+            email="admin_sync@test.com",
+            password="password123",
+            tenant=self.tenant,
+            role=admin_role,
+            is_staff=True,
+            location=None
+        )
+
+        shop2 = Location.objects.create(
+            name="Branch Shop 2",
+            tenant=self.tenant,
+            location_type="SHOP"
+        )
+        shop2_settings = ShopSettings.objects.create(
+            tenant=self.tenant,
+            shop=shop2,
+            show_items_with_physical_stock_in_pos=False
+        )
+
+        self.client.force_login(admin_user)
+
+        post_data = {
+            'shop': str(self.shop.pk),
+            'receipt_printer_type': 'THERMAL_80MM',
+            'receipt_font_family': 'CONSOLAS',
+            'receipt_font_weight': 'NORMAL',
+            'receipt_font_size': 'NORMAL',
+            'show_items_with_physical_stock_in_pos': 'on',
+            'auto_print_receipts': 'on',
+            'apply_to_all_shops': '1',
+        }
+        resp = self.client.post('/sales/shop-settings/', data=post_data)
+        self.assertEqual(resp.status_code, 302)
+
+        self.shop_settings.refresh_from_db()
+        shop2_settings.refresh_from_db()
+        self.assertTrue(self.shop_settings.show_items_with_physical_stock_in_pos)
+        self.assertTrue(shop2_settings.show_items_with_physical_stock_in_pos)
+
+    def test_admin_can_access_pos_and_switch_shops(self):
+        """Admin without assigned shop can access POS and switch via ?shop=<id>."""
+        from apps.core.models import Role
+        admin_role, _ = Role.objects.get_or_create(name='ADMIN')
+        admin_user = User.objects.create_user(
+            email="admin_pos@test.com",
+            password="password123",
+            tenant=self.tenant,
+            role=admin_role,
+            is_staff=True,
+            location=None
+        )
+
+        shop2 = Location.objects.create(
+            name="Branch Shop 3",
+            tenant=self.tenant,
+            location_type="SHOP"
+        )
+
+        self.client.force_login(admin_user)
+
+        # Access POS with ?shop=shop2.pk
+        resp = self.client.get(f'/sales/pos/?shop={shop2.pk}')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.context['shop'], shop2)
+        self.assertTrue(resp.context['is_hq_or_admin'])
