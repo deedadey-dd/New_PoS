@@ -109,6 +109,9 @@ def notify_and_bulletin(
                     title=title,
                     body=message,
                     post_type=post_type,
+                    notification_type=notification_type,
+                    reference_type=reference_type,
+                    reference_id=reference_id,
                     is_active=True,
                     is_pinned=is_pinned
                 )

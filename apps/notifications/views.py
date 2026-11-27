@@ -32,6 +32,14 @@ class NotificationListView(LoginRequiredMixin, ListView):
                 pass
         return super().get(request, *args, **kwargs)
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        user = self.request.user
+        for notif in context.get('notifications', []):
+            notif.target_url = notif.get_target_url(user)
+            notif.action_label = notif.get_action_label(user)
+        return context
+
 
 @login_required
 @require_POST
@@ -50,15 +58,26 @@ def mark_all_read(request):
 
 
 @login_required
+def open_notification(request, pk):
+    """Mark a notification as read and redirect to the corresponding role-specific page."""
+    notification = get_object_or_404(Notification, pk=pk, user=request.user)
+    notification.mark_as_read()
+    target_url = notification.get_target_url(request.user)
+    if target_url:
+        return redirect(target_url)
+    return redirect('notifications:notification_list')
+
+
+@login_required
 @require_POST
 def mark_as_read(request, pk):
-    """Mark a single notification as read."""
+    """Mark a single notification as read and redirect to the corresponding role-specific page."""
     notification = get_object_or_404(Notification, pk=pk, user=request.user)
     notification.mark_as_read()
     
-    # Redirect to the related object if available
-    if notification.reference_type == 'Transfer' and notification.reference_id:
-        return redirect('transfers:transfer_detail', pk=notification.reference_id)
+    target_url = notification.get_target_url(request.user)
+    if target_url:
+        return redirect(target_url)
     
     return redirect('notifications:notification_list')
 
@@ -176,6 +195,19 @@ class BulletinBoardView(LoginRequiredMixin, ListView):
                 user_posts = BulletinPost.objects.filter(created_by=user).order_by('-created_at')
                 context['history_pinned_posts'] = user_posts.filter(is_pinned=True)[:5]
                 context['history_recent_posts'] = user_posts.filter(is_pinned=False)[:10]
+
+        # Attach role-specific target URLs and action labels to posts
+        for post in context.get('posts', []):
+            post.target_url = post.get_target_url(user)
+            post.action_label = post.get_action_label(user)
+
+        for post in context.get('history_pinned_posts', []):
+            post.target_url = post.get_target_url(user)
+            post.action_label = post.get_action_label(user)
+
+        for post in context.get('history_recent_posts', []):
+            post.target_url = post.get_target_url(user)
+            post.action_label = post.get_action_label(user)
             
         return context
 
@@ -316,4 +348,22 @@ def bulletin_mark_all_read(request):
     BulletinRead.objects.bulk_create(reads_to_create, ignore_conflicts=True)
     
     messages.success(request, 'All bulletin messages marked as read.')
+    return redirect('notifications:bulletin_board')
+
+
+@login_required
+def open_bulletin(request, pk):
+    """Mark a bulletin post as read for the user and redirect to the corresponding role-specific page."""
+    post = get_object_or_404(BulletinPost, pk=pk)
+    user = request.user
+    role_name = user.role.name if user.role else None
+    is_superadmin = user.is_superuser or role_name in ['SUPER_ADMIN', 'TENANT_MANAGER']
+    
+    if not is_superadmin and post.tenant_id != getattr(user.tenant, 'id', None):
+        return redirect('notifications:bulletin_board')
+        
+    BulletinRead.objects.get_or_create(bulletin_post=post, user=user)
+    target_url = post.get_target_url(user)
+    if target_url:
+        return redirect(target_url)
     return redirect('notifications:bulletin_board')

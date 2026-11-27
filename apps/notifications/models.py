@@ -71,6 +71,38 @@ class Notification(TenantModel):
         """Get recent notifications for a user."""
         return cls.objects.filter(user=user).select_related('tenant')[:limit]
 
+    def get_target_url(self, user=None):
+        """Get role-specific target URL for this notification."""
+        from .navigation import resolve_target_url
+        return resolve_target_url(self, user or self.user)
+
+    def get_action_label(self, user=None):
+        """Get role-specific action button label for this notification."""
+        from .navigation import resolve_action_label
+        return resolve_action_label(self, user or self.user)
+
+    @property
+    def target_url(self):
+        """Direct property returning role-specific target URL for this notification's user."""
+        if hasattr(self, '_target_url'):
+            return self._target_url
+        return self.get_target_url(self.user)
+
+    @target_url.setter
+    def target_url(self, value):
+        self._target_url = value
+
+    @property
+    def action_label(self):
+        """Direct property returning role-specific action button label for this notification's user."""
+        if hasattr(self, '_action_label'):
+            return self._action_label
+        return self.get_action_label(self.user)
+
+    @action_label.setter
+    def action_label(self, value):
+        self._action_label = value
+
 
 class BulletinPost(TenantModel):
     """
@@ -115,6 +147,16 @@ class BulletinPost(TenantModel):
         help_text="If true, this post is pinned to the top of the user's history."
     )
     expires_at = models.DateTimeField(null=True, blank=True)
+
+    # Activity and reference targeting
+    notification_type = models.CharField(
+        max_length=30,
+        choices=Notification.TYPE_CHOICES,
+        default='SYSTEM',
+        blank=True
+    )
+    reference_type = models.CharField(max_length=50, blank=True, default='')
+    reference_id = models.PositiveIntegerField(null=True, blank=True)
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -124,6 +166,38 @@ class BulletinPost(TenantModel):
 
     def __str__(self):
         return f"{self.title} ({self.get_post_type_display()})"
+
+    def get_target_url(self, user=None):
+        """Get role-specific target URL for this bulletin post."""
+        from .navigation import resolve_target_url
+        return resolve_target_url(self, user)
+
+    def get_action_label(self, user=None):
+        """Get role-specific action button label for this bulletin post."""
+        from .navigation import resolve_action_label
+        return resolve_action_label(self, user)
+
+    @property
+    def target_url(self):
+        """Cached or precomputed target URL."""
+        if hasattr(self, '_target_url'):
+            return self._target_url
+        return None
+
+    @target_url.setter
+    def target_url(self, value):
+        self._target_url = value
+
+    @property
+    def action_label(self):
+        """Cached or precomputed action label."""
+        if hasattr(self, '_action_label'):
+            return self._action_label
+        return "View Details"
+
+    @action_label.setter
+    def action_label(self, value):
+        self._action_label = value
 
 
 class BulletinRead(models.Model):

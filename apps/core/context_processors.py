@@ -50,7 +50,11 @@ def tenant_context(request):
         # Add notification data
         from apps.notifications.models import Notification, BulletinPost, BulletinRead
         context['unread_notification_count'] = Notification.get_unread_count(user)
-        context['recent_notifications'] = Notification.get_recent_for_user(user, limit=5)
+        recent_notifs = list(Notification.get_recent_for_user(user, limit=5))
+        for notif in recent_notifs:
+            notif.target_url = notif.get_target_url(user)
+            notif.action_label = notif.get_action_label(user)
+        context['recent_notifications'] = recent_notifs
         
         # Calculate bulletin unread count
         # This is a slightly simplified count for performance (we can just call the view's query)
@@ -70,7 +74,11 @@ def tenant_context(request):
         read_post_ids = BulletinRead.objects.filter(user=user).values_list('bulletin_post_id', flat=True)
         unread_qs = qs.exclude(id__in=read_post_ids).order_by('-created_at')
         context['bulletin_unread_count'] = unread_qs.count()
-        context['latest_unread_bulletin'] = unread_qs.first()
+        latest_bulletin = unread_qs.first()
+        if latest_bulletin:
+            latest_bulletin.target_url = latest_bulletin.get_target_url(user)
+            latest_bulletin.action_label = latest_bulletin.get_action_label(user)
+        context['latest_unread_bulletin'] = latest_bulletin
 
         
         # Add shop settings if user is assigned to a shop location

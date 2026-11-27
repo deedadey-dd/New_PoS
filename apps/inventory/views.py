@@ -1430,7 +1430,9 @@ class BatchUpdateView(LoginRequiredMixin, UpdateView):
                     created_by=self.request.user,
                     title=f"Batch Edit Alert: {form.instance.batch_number}",
                     body=body,
-                    post_type='SYSTEM_UPDATE'
+                    post_type='SYSTEM_UPDATE',
+                    reference_type='Batch',
+                    reference_id=form.instance.pk
                 )
                 post.target_roles.set(target_roles)
 
@@ -1868,6 +1870,9 @@ class StockAdjustmentView(LoginRequiredMixin, View):
                     f"• Status: {adjustment.get_status_display()}"
                 ),
                 post_type='ANNOUNCEMENT',
+                notification_type='STOCK_ADJUSTMENT',
+                reference_type='StockAdjustment',
+                reference_id=adjustment.pk,
                 is_pinned=needs_approval
             )
             roles_to_target = Role.objects.filter(name__in=['ACCOUNTANT', 'AUDITOR', 'ADMIN', 'SHOP_MANAGER'])
@@ -2474,7 +2479,10 @@ class ShopPriceSetView(LoginRequiredMixin, View):
                 created_by=request.user,
                 title=f'Global Price Change: {product.name}',
                 body=message_body,
-                post_type='PRICE_ALERT'
+                post_type='PRICE_ALERT',
+                notification_type='PRICE_CHANGE',
+                reference_type='Product',
+                reference_id=product.id
             )
                 
             messages.success(request, f'Global uniform price for "{product.name}" set to {request.user.tenant.currency_symbol}{selling_price} for all shops.')
@@ -2524,7 +2532,10 @@ class ShopPriceSetView(LoginRequiredMixin, View):
                 created_by=request.user,
                 title=f'Price Change: {product.name}',
                 body=message_body,
-                post_type='PRICE_ALERT'
+                post_type='PRICE_ALERT',
+                notification_type='PRICE_CHANGE',
+                reference_type='Product',
+                reference_id=product.id
             )
             post.target_locations.add(shop)
             
